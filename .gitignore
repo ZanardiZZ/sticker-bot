@@ -1,0 +1,45 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dist/
+build/
+
+# Logs
+logs/
+*.log
+
+# Env / Configs sensíveis
+.env
+.env.local
+.env.*.local
+secrets/
+config.json
+
+# Arquivos gerados por processamento
+tmp/
+media/
+output/
+downloads/
+stickers_temp/
+stickers_processed/
+__pycache__/
+
+# Sistema
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Docker (se aplicável)
+*.pid
+docker-compose.override.yml
+
+# Outros
+*.bak
+*.old
+*.zip
+*.tar.gz
+*.tgz
