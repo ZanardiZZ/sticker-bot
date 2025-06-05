@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Figurinhas</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #f4f4f4; }
+    .grid { display: flex; flex-wrap: wrap; gap: 16px; }
+    .card { background: white; padding: 10px; border-radius: 8px; width: 180px; box-shadow: 0 2px 5px #ccc; }
+    .card img { width: 100%; height: auto; }
+    .info { font-size: 0.9em; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <h1>Figurinhas Armazenadas</h1>
+  <div class="grid">
+    <% figurinhas.forEach(f => { %>
+      <div class="card">
+        <img src="/stickers/<%= f.file %>" alt="figurinha">
+        <div class="info"><strong>📌</strong> <%= f.descricao %></div>
+        <div class="info"><strong>👤</strong> <%= f.remetente %></div>
+        <div class="info"><strong>🚫 NSFW:</strong> <%= f.nsfw ? "Sim" : "Não" %></div>
+        <div class="info"><strong>📅</strong> <%= f.data %></div>
+      </div>
+    <% }); %>
+  </div>
+</body>
+</html>
