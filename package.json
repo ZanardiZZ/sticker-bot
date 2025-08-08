@@ -1,0 +1,41 @@
+{
+  "name": "sticker-bot",
+  "version": "1.0.0",
+  "description": "Bot de figurinhas e vídeos para WhatsApp",
+  "main": "bot.cjs",
+  "scripts": {
+    "start": "node bot.cjs"
+  },
+  "keywords": [
+    "whatsapp",
+    "bot",
+    "stickers"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@dqbd/tiktoken": "^1.0.21",
+    "@open-wa/wa-automate": "^4.76.0",
+    "@tensorflow/tfjs-node": "^4.22.0",
+    "@xenova/transformers": "^2.17.2",
+    "axios": "^1.11.0",
+    "better-sqlite3": "^11.10.0",
+    "blockhash-core": "^0.1.0",
+    "dotenv": "^16.5.0",
+    "ejs": "^3.1.10",
+    "express": "^5.1.0",
+    "image-hash": "^5.3.2",
+    "jpeg-js": "^0.4.4",
+    "long": "^5.3.2",
+    "node-fetch": "^3.3.2",
+    "nsfwjs": "^4.2.1",
+    "openai": "^5.0.1",
+    "qrcode-terminal": "^0.12.0",
+    "sharp": "^0.34.3",
+    "sqlite3": "^5.1.7",
+    "tiktoken": "^1.0.21",
+    "venom-bot": "^5.3.0",
+    "wa-sticker-formatter": "^4.4.4",
+    "webp-converter": "^2.3.3"
+  }
+}
