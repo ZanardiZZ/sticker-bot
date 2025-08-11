@@ -48,8 +48,8 @@ function start(client) {
       //}
 
       // 1. Comandos (#random, #id, #forçar, etc.)
-      if (message.type === 'chat' && comandosAceitos.some(cmd => texto.startsWith(cmd))
-          { if (await processarComando(client, message)) 
+      if (message.type === 'chat' && comandosAceitos.some(cmd => texto.startsWith(cmd))) { 
+            if (await processarComando(client, message)) 
             return;
           }
 
