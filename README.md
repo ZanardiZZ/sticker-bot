@@ -16,12 +16,16 @@ Bot de WhatsApp para gerenciamento inteligente de figurinhas, vídeos, imagens e
 ## 📂 Estrutura do Projeto
 
 /handlers → Manipuladores para cada tipo de mídia (stickers, vídeos, imagens, áudios)
-/services → Serviços auxiliares (IA, NSFW, conversão de formatos, etc.)
-/utils → Funções utilitárias
-configRuntime.js → Configurações dinâmicas
-database.js → Operações no banco de dados SQLite
-bot.js → Arquivo principal do bot
 
+/services → Serviços auxiliares (IA, NSFW, conversão de formatos, etc.)
+
+/utils → Funções utilitárias
+
+configRuntime.js → Configurações dinâmicas
+
+database.js → Operações no banco de dados SQLite
+
+bot.js → Arquivo principal do bot
 
 
 ## 🛠️ Requisitos
@@ -61,30 +65,23 @@ npm install -g pm2
 pm2 start bot.js --name sticker-bot
 pm2 logs sticker-bot
 
-📜 Comandos Disponíveis no WhatsApp
+📜 Comandos Disponíveis no WhatsApp (nem todos estão funcionais ainda)
 #random → Envia uma figurinha aleatória.
-
 #tag <nova_tag> → Atualiza a tag da última mídia recebida.
-
 #forçar → Força a reanálise de mídia pendente.
-
 #help → Lista todos os comandos disponíveis.
 
-🌐 Interface Web
+🌐 Interface Web (ainda será adicionado ao projeto)
 Servidor web integrado para navegação das figurinhas e busca por descrição ou tag.
-
 Acesse via: http://<IP_DO_SERVIDOR>:<PORTA>
 
 🧠 IA Integrada
-Descrição e tags automáticas usando OpenAI GPT-4o.
-
+Descrição e tags automáticas usando OpenAI GPT-4o (ou outro modelo que desejar).
 Categorização de conteúdo NSFW usando nsfwjs com TensorFlow.
 
 ⚠️ Avisos
 O bot requer conexão ativa com o WhatsApp Web.
-
 Figurinhas/vídeos/imagens duplicadas são automaticamente detectadas.
-
 Em caso de mensagens sem mediaBlob, o bot ignora para evitar travamentos.
 
 📄 Licença
