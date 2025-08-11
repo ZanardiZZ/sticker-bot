@@ -7,7 +7,7 @@ const { tratarErro } = require('./utils/erro.js');
 const handleSticker = require('./handlers/stickerHandler.js');
 const handleImage   = require('./handlers/imageHandler.js');
 const handleVideo   = require('./handlers/videoHandler.js');
-
+const comandosAceitos = ['#random', '#id', '#top10', '#forçar'];
 venom
   .create({
     session: 'sticker-bot',
@@ -39,16 +39,19 @@ function start(client) {
 
   client.onMessage(async message => {
     try {
-      const body = (message.body || '').trim();
+      const body = (message.body || '').trim().toLowerCase();
 
       // Comando para descobrir o ID do grupo
-      if (body === '#id' && message.isGroupMsg) {
-        await client.sendText(message.from, `🆔 ID do grupo: *${message.from}*`);
-        return;
-      }
+      //if (body === '#id' && message.isGroupMsg) {
+      //  await client.sendText(message.from, `🆔 ID do grupo: *${message.from}*`);
+      //  return;
+      //}
 
       // 1. Comandos (#random, #id, #forçar, etc.)
-      if (await processarComando(client, message)) return;
+      if (message.type === 'chat' && comandosAceitos.some(cmd => texto.startsWith(cmd))
+          { if (await processarComando(client, message)) 
+            return;
+          }
 
       // 2. Stickers
       if (message.type === 'sticker') {
