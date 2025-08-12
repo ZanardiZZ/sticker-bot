@@ -33,6 +33,13 @@ venom
   .then(start)
   .catch(err => console.error('❌ Erro ao iniciar o bot:', err));
 
+function normalizarChatId(chatId) {
+  if (chatId.endsWith('@c.us') || chatId.endsWith('@g.us') || chatId.endsWith('@broadcast')) {
+    return chatId;
+  }
+  // Se vier com final inválido (ex: @lid), assume que é usuário e adiciona @c.us
+  return chatId + '@c.us';
+}
 function start(client) {
   console.log('🤖 Bot iniciado e aguardando mensagens...');
   startRandomScheduler(client);
@@ -40,6 +47,7 @@ function start(client) {
   client.onMessage(async message => {
     try {
       const body = (message.body || '').trim().toLowerCase();
+      const chatId = normalizarChatId(message.from);
 
       // Comando para descobrir o ID do grupo
       //if (body === '#id' && message.isGroupMsg) {
@@ -49,7 +57,7 @@ function start(client) {
 
       // 1. Comandos (#random, #id, #forçar, etc.)
       if (message.type === 'chat' && comandosAceitos.some(cmd => body.startsWith(cmd))) { 
-            if (await processarComando(client, message)) 
+            if (await processarComando(client, message, chatId)) 
             return;
           }
 

@@ -16,7 +16,9 @@ const {
 const path = require('path');
 const { gerarDescricaoETag } = require('../utils/ia.js');
 const { gerarHashVisual }        = require('../utils/hash.js');
-async function processarComando(client, message) {
+
+
+async function processarComando(client, message, chatId) {
   const body = (message.body || '').trim();
   if (!body.startsWith('#')) return false;
 
@@ -30,9 +32,9 @@ async function processarComando(client, message) {
   /* 1️⃣ banco -------------------------------------------------------- */
   let stk = getRandomStickerFromDB();
   if (stk) {
-    await sendSticker(client, message.from, stk.filePath);
+    await sendSticker(client, chatId, stk.filePath);
     await client.sendText(
-      message.from,
+      chatId,
       `✅ Figurinha adicionada!\n\n📝 *Descrição:* ${stk.description}` +
       `\n🏷️ ${stk.tag}\n🆔 ${stk.id}`
     );
@@ -53,7 +55,7 @@ async function processarComando(client, message) {
   }
 
   if (!stk || tentativa >= MAX) {
-    await client.sendText(message.from, '⚠️ Nenhuma figurinha nova disponível.');
+    await client.sendText(chatId, '⚠️ Nenhuma figurinha nova disponível.');
     return true;
   }
 
@@ -63,10 +65,10 @@ async function processarComando(client, message) {
 
     // envia a figurinha (tenta caminho; se falhar, buffer)
     try {
-      await sendSticker(client, message.from, stk.filePath);
+      await sendSticker(client, chatId, stk.filePath);
     } catch {
       const buf = fs.readFileSync(stk.filePath);
-      await sendSticker(client, message.from, stk.filePath);
+      await sendSticker(client, chatId, stk.filePath);
     }
 
     // insere no banco e obtém ID
@@ -82,14 +84,14 @@ async function processarComando(client, message) {
 
     // resposta padrão
     await client.sendText(
-      message.from,
+      chatId,
       `✅ Figurinha adicionada!\n\n📝 *Descrição:* ${description}` +
       `\n🏷️ ${tag}\n🆔 ${novoId}`
     );
 
   } catch (err) {
     console.error('IA-random:', err);
-    await client.sendText(message.from, '⚠️ Erro ao gerar descrição automática.');
+    await client.sendText(chatId, '⚠️ Erro ao gerar descrição automática.');
   }
   return true;
 }
@@ -97,22 +99,22 @@ async function processarComando(client, message) {
 
     case 'id': {
       if (args.length === 1 && message.isGroupMsg) {
-        await client.sendText(message.from, `🆔 ID do grupo: *${message.from}*`);
+        await client.sendText(chatId, `🆔 ID do grupo: *${chatId}*`);
         return true;
       }
       const idNum = parseInt(args[1], 10);
       if (!idNum) {
-        await client.sendText(message.from, '❌ Use: `#id <número>`');
+        await client.sendText(chatId, '❌ Use: `#id <número>`');
         return true;
       }
       const sticker = buscarFigurinhaPorId(idNum);
       if (!sticker) {
-        await client.sendText(message.from, `❌ Figurinha ID ${idNum} não encontrada.`);
+        await client.sendText(chatId, `❌ Figurinha ID ${idNum} não encontrada.`);
         return true;
       }
-      await client.sendImageAsSticker(message.from, sticker.filePath);
+      await client.sendImageAsSticker(chatId, sticker.filePath);
       await client.sendText(
-        message.from,
+        chatId,
         `🆔 *ID:* ${sticker.id}\n📝 *Descrição:* ${sticker.description}\n🏷️ *Tag:* ${sticker.tag}`
       );
       marcarFigurinhaComoUsada(sticker.id);
@@ -127,14 +129,14 @@ async function processarComando(client, message) {
     case 'top10': {
       const top = topFigurinhas(10);
       if (!top.length) {
-        await client.sendText(message.from, '⚠️ Nenhuma figurinha foi usada ainda.');
+        await client.sendText(chatId, '⚠️ Nenhuma figurinha foi usada ainda.');
         return true;
       }
       const lista = top
         .map((f, i) => `${i + 1}. 🆔 ${f.id} - ${f.descricao.slice(0, 50)} (${f.shuffle_count} usos)`)
         .join('\n');
       await client.sendText(
-        message.from,
+        chatId,
         `📊 *Top 10 figurinhas mais usadas:*\n\n${lista}`
       );
       return true;
@@ -142,7 +144,7 @@ async function processarComando(client, message) {
 
     default: {
       await client.sendText(
-        message.from,
+        chatId,
         '🤖 Comando desconhecido: *#' + comando + '*\n\n' +
         'Comandos disponíveis:\n' +
         '• #random → Figurinha aleatória\n' +
