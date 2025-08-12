@@ -180,5 +180,7 @@ async function forceAdd(client, message) {
   pendentesForcar.delete(origId);
 }
 
-module.exports = handleSticker;
-module.exports.force = forceAdd;
+module.exports = {
+  handleSticker,
+  forceAdd,
+}
