@@ -3,12 +3,10 @@ node_modules/
 npm-debug.log*
 yarn.lock
 pnpm-lock.yaml
-
 # Segredos/ambiente
 .env
 .env.*
 *.local
-
 # Logs e temporários
 logs/
 *.log
@@ -17,12 +15,10 @@ tmp/
 temp/
 *.tmp
 .DS_Store
-
 # Build/coverage
 dist/
 build/
 coverage/
-
 # Bot (mídias e caches)
 stickers/
 stickersolds/
@@ -30,16 +26,20 @@ stickers.db
 videos/
 tokens/
 nsfwjs/
-
 # Sessões Venom/Open-WA/WPPConnect
 tokens*/
 .venom/
 WPPConnect-*/ 
 chats*/ 
 Auth*/ 
-
 # Modelos grandes
 *.h5
 *.bin
 *.pb
 *.onnx
+
+# managed by open-wa
+**.data.json
+**.node-persist**
+**_IGNORE_**
+# end managed by open-wa
