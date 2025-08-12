@@ -16,6 +16,7 @@ const {
 const path = require('path');
 const { gerarDescricaoETag } = require('../utils/ia.js');
 const { gerarHashVisual }        = require('../utils/hash.js');
+const fs = require('fs');
 
 
 async function processarComando(client, message, chatId) {
