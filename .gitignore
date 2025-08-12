@@ -43,3 +43,6 @@ Auth*/
 **.node-persist**
 **_IGNORE_**
 # end managed by open-wa
+inputAnimated.webp
+.gitignore
+testWebpToGif.js
