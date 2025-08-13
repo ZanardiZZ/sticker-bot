@@ -1,30 +1,9 @@
-// handlers/stickerHandler.js
-const { decryptFile, looksLikeImage } = require('../utils/decrypt.js');
-const { gerarHashVisual, hammingDistance } = require('../utils/hash.js');
-const { gerarDescricaoETag } = require('../utils/ia.js');
-const { isImageNSFW } = require('../utils/nsfw.js');
-const { getRepresentativeFrame } = require('../utils/frames.js');
-const {
-  listarFigurinhas,
-  inserirFigurinha,
-  buscarPorHash,
-  atualizarDescricao
-} = require('../database.js');
-
-const crypto = require('crypto');
-const path = require('path');
-const fs = require('fs');
-const sharp = require('sharp');
-
-const localPath = 'stickers';
-if (!fs.existsSync(localPath)) {
-  fs.mkdirSync(localPath, { recursive: true });
-}
-
-const pendentesForcar = new Map();
-const MAX_DIST_SIMILAR = 5;
+// ...imports e setup iguais...
 
 async function handleSticker(client, message) {
+  const destino = message.from;
+  console.log('handleSticker - Recebido from:', destino);
+
   // 1) Decrypt
   const originalBuffer = await decryptFile(client, message);
   if (!originalBuffer) throw new Error('404 - Falha ao baixar arquivo');
@@ -56,7 +35,7 @@ async function handleSticker(client, message) {
     if (similares.length > 0) {
       pendentesForcar.set(message.id, { visualHash, buffer: originalBuffer });
       await client.sendText(
-        message.from,
+        destino,
         `⚠️ Figurinha parecida detectada (ID ${similares[0].id}).\nEnvie #forçar para confirmar a adição.`
       );
       return;
@@ -68,7 +47,7 @@ async function handleSticker(client, message) {
   if (existente) {
     if (existente.descricao && existente.tag) {
       await client.sendText(
-        message.from,
+        destino,
         `♻️ Figurinha já cadastrada!\n📝 ${existente.descricao}\n🏷️ ${existente.tag}\n🆔 ${existente.id}`
       );
       return;
@@ -77,7 +56,7 @@ async function handleSticker(client, message) {
     const { description, tag } = await gerarDescricaoETag(analysisPng);
     atualizarDescricao(existente.id, description, tag);
     await client.sendText(
-      message.from,
+      destino,
       `🆙 Figurinha atualizada!\n📝 ${description}\n🏷️ ${tag}\n🆔 ${existente.id}`
     );
     return;
@@ -114,13 +93,14 @@ async function handleSticker(client, message) {
     tag,
     nsfw: 0,
     remetente: message.sender?.id || message.author || 'desconhecido',
-    grupo: message.from,
+    grupo: destino,
     visual_hash: visualHash
   });
 
   // 11) Responde ao usuário
+  console.log('handleSticker - Enviando mensagem para:', destino);
   await client.sendText(
-    message.from,
+    destino,
     `✅ Figurinha adicionada!\n📝 ${description}\n🏷️ ${tag}\n🆔 ${id}`
   );
 }
@@ -131,6 +111,8 @@ async function forceAdd(client, message) {
     return;
   }
   const [origId, { visualHash, buffer: originalBuffer }] = pendentesForcar.entries().next().value;
+  const destino = message.from;
+  console.log('forceAdd - Enviando mensagem para:', destino);
 
   // frame para análise
   const analysisPng = await getRepresentativeFrame(originalBuffer);
@@ -169,12 +151,12 @@ async function forceAdd(client, message) {
     tag,
     nsfw: 0,
     remetente: message.sender?.id || message.author || 'desconhecido',
-    grupo: message.from,
+    grupo: destino,
     visual_hash: visualHash || null
   });
 
   await client.sendText(
-    message.from,
+    destino,
     `✅ Figurinha adicionada com #forçar!\n📝 ${description}\n🏷️ ${tag}\n🆔 ${id}`
   );
   pendentesForcar.delete(origId);
@@ -183,4 +165,4 @@ async function forceAdd(client, message) {
 module.exports = {
   handleSticker,
   forceAdd,
-}
+};

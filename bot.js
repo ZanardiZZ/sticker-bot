@@ -48,6 +48,7 @@ function start(client) {
     try {
       const body = (message.body || '').trim().toLowerCase();
       const chatId = normalizarChatId(message.from);
+      console.log('Recebido from:', message.from);
 
       // Comando para descobrir o ID do grupo
       //if (body === '#id' && message.isGroupMsg) {
