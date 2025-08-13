@@ -1,4 +1,27 @@
-// ...imports e setup iguais...
+const { decryptFile, looksLikeImage } = require('../utils/decrypt.js');
+const { gerarHashVisual, hammingDistance } = require('../utils/hash.js');
+const { gerarDescricaoETag } = require('../utils/ia.js');
+const { isImageNSFW } = require('../utils/nsfw.js');
+const { getRepresentativeFrame } = require('../utils/frames.js');
+const {
+  listarFigurinhas,
+  inserirFigurinha,
+  buscarPorHash,
+  atualizarDescricao
+} = require('../database.js');
+
+const crypto = require('crypto');
+const path = require('path');
+const fs = require('fs');
+const sharp = require('sharp');
+
+const localPath = 'stickers';
+if (!fs.existsSync(localPath)) {
+  fs.mkdirSync(localPath, { recursive: true });
+}
+
+const pendentesForcar = new Map();
+const MAX_DIST_SIMILAR = 5;
 
 async function handleSticker(client, message) {
   const destino = message.from;
