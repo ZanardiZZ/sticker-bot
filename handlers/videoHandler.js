@@ -15,15 +15,24 @@ const localPath = '/mnt/nas/Media/Figurinhas/Videos';
 if (!fs.existsSync(localPath)) {
   fs.mkdirSync(localPath, { recursive: true });
 }
+function normalizeChatId(id) {
+  if (!id) return id;
+  if (id.endsWith('@lid')) return id.replace('@lid', '@c.us');
+  return id;
+}
+
+
 
 async function handleVideo(client, message) {
+  let destino = normalizeChatId(message.chatId || message.from);
+  console.log('handleVideo - Recebido destino:', destino);
+
   const buffer = await decryptFile(client, message);;
   if (!buffer) throw new Error('404 - Falha ao baixar vídeo');
 
   const hash = createHash('md5').update(buffer).digest('hex');
   const existente = jaExisteVideo(hash);
   if (existente && existente.descricao) {
-    const destino = message.chatId || message.from;
     return client.sendText(destino,
       `♻️ Já processado!\n📝 Descrição: ${existente.descricao}\n🆔 ID: ${existente.id}`
     );
@@ -59,13 +68,11 @@ async function handleVideo(client, message) {
       });
     }
 
-    const destino = message.chatId || message.from;
     await client.sendText(destino,
       `✅ Vídeo processado!\n📝 Descrição: ${description}\n🏷️ Tag: ${tag}\n🆔 ID: ${id}`
     );
   } catch (err) {
     console.error('❌ falha IA vídeo:', err);
-    const destino = message.chatId || message.from;
     await client.sendText(destino,
       '❌ Erro ao gerar descrição. Tente novamente mais tarde.'
     );

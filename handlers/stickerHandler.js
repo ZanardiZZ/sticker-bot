@@ -23,8 +23,15 @@ if (!fs.existsSync(localPath)) {
 const pendentesForcar = new Map();
 const MAX_DIST_SIMILAR = 5;
 
+function normalizeChatId(id) {
+  if (!id) return id;
+  if (id.endsWith('@lid')) return id.replace('@lid', '@c.us');
+  return id;
+}
+
+
 async function handleSticker(client, message) {
-  const destino = message.from;
+  let destino = normalizeChatId(message.from);
   console.log('handleSticker - Recebido from:', destino);
 
   // 1) Decrypt
@@ -130,11 +137,11 @@ async function handleSticker(client, message) {
 
 async function forceAdd(client, message) {
   if (!pendentesForcar.size) {
-    await client.sendText(message.from, '❌ Nenhuma figurinha pendente para forçar.');
+    await client.sendText(normalizeChatId(message.from), '❌ Nenhuma figurinha pendente para forçar.');
     return;
   }
   const [origId, { visualHash, buffer: originalBuffer }] = pendentesForcar.entries().next().value;
-  const destino = message.from;
+  const destino = normalizeChatId(message.from);
   console.log('forceAdd - Enviando mensagem para:', destino);
 
   // frame para análise
