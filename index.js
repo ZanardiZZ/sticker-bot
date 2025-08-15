@@ -110,13 +110,13 @@ async function start(client) {
     ];
 
     // Tratamento comando inválido
-    if (body.startsWith('#')) {
+    if (message.body.startsWith('#')) {
       // Verifica se começa com algum comando válido
       const isValid = validCommands.some(cmd => {
         if (cmd.endsWith('ID')) {
-          return body.startsWith(cmd);
+          return message.body.startsWith(cmd);
         }
-        return body === cmd || body.startsWith(cmd + ' ');
+        return message.body === cmd || message.body.startsWith(cmd + ' ');
       });
       if (!isValid) {
         await client.sendText(chatId,
