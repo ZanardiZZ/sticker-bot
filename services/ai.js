@@ -1,12 +1,12 @@
 require('dotenv').config();
-const { Configuration, OpenAIApi } = require('openai');
+const OpenAI = require('openai');
+
 const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const configuration = new Configuration({
+const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
-const openai = new OpenAIApi(configuration);
 
 /**
  * Chama a OpenAI com prompt textual customizado, retorna descrição e tags.
@@ -73,14 +73,14 @@ async function transcribeAudioBuffer(buffer) {
 
 async function getTagsFromTextPrompt(prompt) {
   try {
-    const response = await openai.createChatCompletion({
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.3,
-      max_tokens: 200,
-    });
+    const response = await openai.chat.completions.create({
+  model: 'gpt-4o-mini',
+  messages: [{ role: 'user', content: prompt }],
+  temperature: 0.3,
+  max_tokens: 200,
+});
 
-    const text = response.data.choices[0].message.content.trim();
+    const text = response.choices[0].message.content.trim();
 
     // Espera tags separados por vírgula: "tag1, tag2, tag3 ..."
 
@@ -126,14 +126,14 @@ Responda no formato JSON:
 
 async function getAiAnnotationsFromPrompt(prompt) {
   try {
-    const response = await openai.createChatCompletion({
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.3,
-      max_tokens: 300,
-    });
+    const response = await openai.chat.completions.create({
+  model: 'gpt-4o-mini',
+  messages: [{ role: 'user', content: prompt }],
+  temperature: 0.3,
+  max_tokens: 200,
+});
 
-    const text = response.data.choices[0].message.content;
+    const text = response.choices[0].message.content.trim();
     // Extrai JSON do texto (espera que a resposta contenha JSON entre chaves {...})
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return { description: null, tags: null };
