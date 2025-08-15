@@ -318,7 +318,7 @@ if (message.body === '#top5users') {
     if (!message.isMedia) return;
 
     try {
-      const buffer = await client.downloadMedia(message);
+      const buffer = await client.decryptFile(message);
       const ext = message.mimetype.split('/')[1] || 'bin';
 
       const hashMd5 = getMD5(buffer);
