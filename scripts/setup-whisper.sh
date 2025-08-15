@@ -41,6 +41,6 @@ mkdir -p build && cd build
 cmake .. && make -j"$(nproc)"
 
 echo "Baixando modelo multilíngue base..."
-wget -nc https://huggingface.co/ggerganov/whisper.cpp/resolve/main/models/ggml-base.bin
+wget -nc https://huggingface.co/ggerganov/whisper.cpp/blob/main/ggml-small.bin
 
 echo "Setup do whisper concluído."
