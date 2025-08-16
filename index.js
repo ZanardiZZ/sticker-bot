@@ -569,17 +569,17 @@ if (message.body === '#top5users') {
       const forceInsert = !!forceMap[chatId];
 
       if (!forceInsert) {
-        const existing = await findByHashVisual(hashVisual);
-        if (existing) {
-          await client.sendText(
-            chatId,
-            'Mídia visualmente semelhante já existe no banco. Use #forçar respondendo à mídia para salvar duplicado.'
-          );
-          return;
-        }
-      } else {
-        forceMap[chatId] = false;
-      }
+  const existing = await findByHashVisual(hashVisual);
+  if (existing) {
+    await client.sendText(
+      chatId,
+      `Mídia visualmente semelhante já existe no banco. ID: ${existing.id}. Use #forçar respondendo à mídia para salvar duplicado ou use #ID ${existing.id} para solicitar esta mídia.`
+    );
+    return;
+  }
+} else {
+  forceMap[chatId] = false;
+}
 
       const dir = path.resolve(__dirname, 'media');
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
