@@ -1,6 +1,29 @@
 #!/bin/bash
 set -e
 
+# Adicionando instalação de dependências do Chromium para Puppeteer
+install_chromium_deps() {
+  echo "Instalando dependências Chromium necessárias para Puppeteer..."
+  sudo apt-get update
+  sudo apt-get install -y \
+    libnss3 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libx11-xcb1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libgbm1 \
+    libpango-1.0-0 \
+    libgtk-3-0 \
+    libasound2
+}
+
+# Invoca instalação de dependências essenciais do Chromium
+install_chromium_deps
+
+
 # Função para instalar dependências via apt caso estejam faltando
 install_deps() {
   echo "Atualizando repositórios e instalando dependências necessárias..."
