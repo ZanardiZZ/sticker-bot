@@ -1,6 +1,6 @@
 require('dotenv').config();
 const OpenAI = require('openai');
-
+const os = require('os');
 const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -74,7 +74,7 @@ async function transcribeAudioBuffer(buffer) {
 async function getTagsFromTextPrompt(prompt) {
   try {
     const response = await openai.chat.completions.create({
-  model: 'gpt-4o-mini',
+  model: 'gpt-4.1-mini',
   messages: [{ role: 'user', content: prompt }],
   temperature: 0.3,
   max_tokens: 200,
@@ -104,24 +104,80 @@ async function getTagsFromTextPrompt(prompt) {
  * @returns {Promise<{description: string|null, tags: string[]|null}>}
  */
 async function getAiAnnotations(buffer) {
-  const base64Image = buffer.toString('base64');
-  const prompt = `
-Você é um assistente que vai analisar uma imagem enviada em base64.
-Por favor, forneça:
-1) Uma breve descrição da imagem, em até 30 palavras.
-2) Uma lista de 5 tags relevantes, separadas por vírgula, relacionadas ao conteúdo da imagem.
+  try {
+    const sharp = require('sharp');
+    const DESC_MAX = 200;
+    const VISION_MODEL = 'gpt-4o-mini';
 
-Base64 da imagem:
-${base64Image}
+    const webpBuffer = await sharp(buffer)
+      .resize(512, 512, { fit: 'inside' })
+      .webp({ quality: 85 })
+      .toBuffer();
+    const b64 = webpBuffer.toString('base64');
 
-Responda no formato JSON:
-{
-  "description": "texto curto da descrição",
-  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"]
-}
-`.trim();
+    function cleanJsonBlock(text) {
+      const start = text.indexOf('{');
+      const end = text.lastIndexOf('}');
+      if (start === -1 || end === -1) return text;
+      return text.substring(start, end + 1);
+    }
 
-  return await getAiAnnotationsFromPrompt(prompt);
+    function pickHashtags(text, count = 5) {
+      const words = text.match(/\b\w+\b/g) || [];
+      const uniqueWords = [...new Set(words.map(w => w.toLowerCase()))];
+      const hashtags = uniqueWords.slice(0, count).map(w => `#${w}`);
+      return hashtags.length ? hashtags : ['#imagem'];
+    }
+
+    const messages = [
+      { role: 'system', content:
+        `Você gera descrições curtas para imagens e CINCO hashtags únicas. ` +
+        `Responda ESTRITAMENTE em JSON: {"description":"...","tags":["#...",...] } ` +
+        `A descrição ≤${DESC_MAX} chars. Hashtags começam com #.`
+      },
+      { role: 'user', content: [
+          { type: 'text', text: `Descreva a imagem (≤${DESC_MAX} chars) e dê CINCO hashtags.` },
+          { type: 'image_url', image_url: { url: `data:image/webp;base64,${b64}` } }
+        ]
+      }
+    ];
+
+    const resp = await openai.chat.completions.create({
+      model: VISION_MODEL,
+      max_tokens: 300,
+      temperature: 0.4,
+      messages
+    });
+
+    const raw = resp.choices[0].message.content;
+    try {
+      const parsed = JSON.parse(cleanJsonBlock(raw));
+      let description = String(parsed.description || '').trim();
+      let tags = Array.isArray(parsed.tags) ? parsed.tags.map(t => t.trim()) : [];
+      if (tags.length < 5) {
+        // Completa com hashtags geradas via pickHashtags para totalizar 5
+        const extraTags = pickHashtags(description, 5 - tags.length);
+        tags = tags.concat(extraTags).slice(0, 5);
+      } else if (tags.length > 5) {
+        tags = tags.slice(0, 5);
+      }
+      if (tags.length === 0) tags = ['#imagem'];
+      return {
+        description: description.slice(0, DESC_MAX) || 'Sem descrição.',
+        tags
+      };
+    } catch {
+      const description = String(raw || '')
+        .replace(/#[^\s#]+/gu, '')
+        .trim()
+        .slice(0, DESC_MAX) || 'Sem descrição.';
+      const tags = pickHashtags(raw, 5);
+      return { description, tags };
+    }
+  } catch (err) {
+    console.error('❌ Erro na IA (imagem):', err);
+    throw new Error('Erro na IA ao gerar descrição de imagem');
+  }
 }
 
 async function getAiAnnotationsFromPrompt(prompt) {

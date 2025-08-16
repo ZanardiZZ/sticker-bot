@@ -231,6 +231,15 @@ function incrementRandomCount(id) {
   });
 }
 
+function countMedia() {
+  return new Promise((resolve, reject) => {
+    db.get(`SELECT COUNT(*) as total FROM media`, (err, row) => {
+      if (err) reject(err);
+      else resolve(row ? row.total : 0);
+    });
+  });
+}
+
 function getRandomMedia() {
   return new Promise((resolve, reject) => {
     db.get(`SELECT * FROM media ORDER BY RANDOM() LIMIT 1`, (err, row) => {
@@ -311,4 +320,5 @@ module.exports = {
   getMediaWithLowestRandomCount,
   getTop10Media,
   getTop5UsersByStickerCount,
+  countMedia 
 };

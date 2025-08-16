@@ -12,8 +12,7 @@ yarn-error.log*
 .env
 
 # Build outputs / Whisper build artifacts
-whisper.cpp/build/
-whisper.cpp/models/
+whisper.cpp/
 
 # OS files
 .DS_Store
@@ -28,7 +27,7 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
-
+_IGNORE_StickerBotSession/
 # Misc
 *.pid
 *.seed
@@ -37,3 +36,6 @@ Thumbs.db
 coverage/
 
 # If you have any other local config files add here
+media/
+media.db
+StickerBotSession.data.json

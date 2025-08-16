@@ -1,8 +1,11 @@
 require('dotenv').config();
 const { create } = require('@open-wa/wa-automate');
 const fs = require('fs');
+const sharp = require('sharp'); 
 const path = require('path');
 const cron = require('node-cron');
+const mime = require('mime-types');
+const { decryptMedia } = require('@open-wa/wa-decrypt');
 const {
   saveMedia,
   getRandomMedia,
@@ -13,7 +16,10 @@ const {
   findById,    
   updateMediaTags,
   processOldStickers,
-  getMediaWithLowestRandomCount
+  getMediaWithLowestRandomCount,
+  getTop10Media,
+  getTop5UsersByStickerCount,
+  countMedia
 } = require('./database');
 const { isNSFW } = require('./services/nsfwFilter');
 const { getAiAnnotations, transcribeAudioBuffer, getAiAnnotationsFromPrompt } = require('./services/ai');
@@ -64,7 +70,7 @@ async function sendRandomMediaToGroup(client) {
     if (media.mimetype.startsWith('image/')) {
       await client.sendImageAsSticker(AUTO_SEND_GROUP_ID, media.file_path, {
         pack: 'StickerBot',
-        author: 'Bot',
+        author: 'ZZ-Bot',
       });
     } else {
       await client.sendFile(AUTO_SEND_GROUP_ID, media.file_path, 'media', 'Aqui está sua mídia aleatória!');
@@ -90,9 +96,56 @@ function scheduleAutoSend(client) {
   console.log('Agendamento de envios automáticos configurado.');
 }
 
+function cleanDescriptionTags(description, tags) {
+  const badPhrases = [
+    'desculpe',
+    'não posso ajudar',
+    'não disponível',
+    'sem descrição',
+    'audio salvo sem descrição ai'
+  ];
+  let cleanDesc = description ? description.toLowerCase() : '';
+  // Se descrição conter alguma frase ruim, limpar
+  if (badPhrases.some(phrase => cleanDesc.includes(phrase))) {
+    cleanDesc = '';
+  } else {
+    cleanDesc = description; // mantém original
+  }
+
+  // Limpa tags que sejam obviamente ruins ou que comecem com ## etc
+  let cleanTags = [];
+  if (tags && Array.isArray(tags)) {
+    cleanTags = tags.filter(t => {
+      if (!t) return false;
+      // tags que tenham ## ou palavras ruins
+      if (t.includes('##')) return false;
+      const low = t.toLowerCase();
+      if (badPhrases.some(phrase => low.includes(phrase))) return false;
+      return true;
+    });
+  } else if (typeof tags === 'string') {
+    cleanTags = tags.split(',').map(t => t.trim()).filter(t => t.length > 0);
+  }
+
+  return { description: cleanDesc, tags: cleanTags };
+}
+
+
 async function start(client) {
   console.log('Bot iniciado!');
-
+  if (ADMIN_NUMBER) {
+    try {
+      // Primeiro, envia o vCard para adicionar o admin como contato
+      await client.sendContactVcard(ADMIN_NUMBER, ADMIN_NUMBER, 'Admin');
+      console.log('Cartão de contato enviado ao admin para adicioná-lo.');
+      
+      // Depois envia a mensagem de início
+      await client.sendText(ADMIN_NUMBER, '🤖 Bot iniciado com sucesso!');
+      console.log('Mensagem de início enviada para o admin.');
+    } catch (err) {
+      console.error('Erro ao enviar mensagem para o admin:', err);
+    }
+  }
   scheduleAutoSend(client);
 
   client.onMessage(async message => {
@@ -101,13 +154,14 @@ async function start(client) {
 
 
     const validCommands = [
-      '#random',
-      '#editar ID',
-      '#top10',
-      '#top5users',
-      '#ID',
-      '#forçar'
-    ];
+  '#random',
+  '#editar ID',
+  '#top10',
+  '#top5users',
+  '#ID',
+  '#forçar',
+  '#count'
+];
 
     // Tratamento comando inválido
     if (message.body.startsWith('#')) {
@@ -126,52 +180,64 @@ async function start(client) {
       }
     }
     // Comando #random para enviar mídia aleatória
-    if (message.body === '#random') {
-      try {
-        // Processa a pasta antiga e insere mídias novas no DB com IA
-        const novasMedias = await processOldStickers();
+   if (message.body === '#random') {
+  try {
+    const novasMedias = await processOldStickers();
 
-        let media;
-        if (novasMedias.length > 0) {
-          // Prioriza a última mídia inserida da pasta antiga
-          media = {
-            id: novasMedias[novasMedias.length - 1].id,
-            file_path: novasMedias[novasMedias.length - 1].filePath,
-            mimetype: 'image/webp',
-          };
-        } else {
-          // Se não houver mídia nova, pega a do banco com menor count_random
-          media = await getMediaWithLowestRandomCount();
-        }
-
-        if (!media) {
-          await client.sendText(chatId, 'Nenhuma mídia salva ainda.');
-          return;
-        }
-
-        await incrementRandomCount(media.id);
-
-        if (media.mimetype.startsWith('image/')) {
-          await client.sendImageAsSticker(chatId, media.file_path, {
-            pack: 'StickerBot',
-            author: 'Bot',
-          });
-        } else {
-          await client.sendFile(chatId, media.file_path, 'media', 'Aqui está sua mídia aleatória!');
-        }
-      } catch (err) {
-        console.error('Erro no comando #random:', err);
-        await client.sendText(chatId, 'Erro ao buscar mídia.');
-      }
-      return;
+    let media;
+    if (novasMedias.length > 0) {
+      const lastMedia = novasMedias[novasMedias.length - 1];
+      media = await findById(lastMedia.id); // Pega info completa do banco
+    } else {
+      media = await getMediaWithLowestRandomCount();
     }
 
-    if (taggingMap[chatId]) {
+    if (!media) {
+  await client.sendText(chatId, 'Nenhuma mídia salva ainda.');
+  return;
+}
+
+await incrementRandomCount(media.id);
+
+if (media.mimetype.startsWith('image/')) {
+  await client.sendImageAsSticker(chatId, media.file_path, {
+    pack: 'StickerBot',
+    author: 'ZZ-Bot',
+  });
+} else {
+  await client.sendFile(chatId, media.file_path, 'media', 'Aqui está sua mídia aleatória!');
+}
+
+const cleanRandom = cleanDescriptionTags(media.description, media.tags ? (typeof media.tags === 'string' ? media.tags.split(',') : media.tags) : []);
+
+let responseMessageRandom = `\n📝 ${cleanRandom.description || ''}\n` +
+  `🏷️ ${cleanRandom.tags.length > 0 ? cleanRandom.tags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ') : ''}\n` +
+  `🆔 ${media.id}`;
+
+await client.sendText(chatId, responseMessageRandom);
+  } catch (err) {
+    console.error('Erro no comando #random:', err);
+    await client.sendText(chatId, 'Erro ao buscar mídia.');
+  }
+  return;
+}
+if (message.body === '#count') {
+  try {
+    const total = await countMedia();
+    await client.sendText(chatId, `Existem ${total} figurinhas salvas no banco de dados.`);
+  } catch (err) {
+    console.error('Erro ao contar figurinhas:', err);
+    await client.sendText(chatId, 'Erro ao obter contagem de figurinhas.');
+  }
+  return;
+}
+//#EDITAR
+if (taggingMap[chatId]) {
       if (message.type === 'chat' && message.body) {
         const mediaId = taggingMap[chatId];
-        const newTagsText = message.body.trim();
+        const newText = message.body.trim();
 
-        if (newTagsText.length > MAX_TAGS_LENGTH) {
+        if (newText.length > MAX_TAGS_LENGTH) {
           await client.sendText(chatId, `Texto muito longo. Limite de ${MAX_TAGS_LENGTH} caracteres.`);
           taggingMap[chatId] = null;
           return;
@@ -185,20 +251,59 @@ async function start(client) {
             return;
           }
 
-          let updatedTags = media.tags ? media.tags + ',' + newTagsText : newTagsText;
-          if (updatedTags.length > MAX_TAGS_LENGTH) {
-            updatedTags = updatedTags.substring(0, MAX_TAGS_LENGTH);
+          // Parse formato: descricao: texto; tags: tag1,tag2
+          let newDescription = media.description || '';
+          let newTags = media.tags ? (typeof media.tags === 'string' ? media.tags.split(',') : media.tags) : [];
+
+          // Se o usuário quer limpar a descrição, pode enviar descricao: nenhum ou descricao: limpar
+          const clearDescriptionCmds = ['nenhum', 'limpar', 'clear', 'apagar', 'remover'];
+
+          const parts = newText.split(';');
+          for (const part of parts) {
+            const [key, ...rest] = part.split(':');
+            if (!key || rest.length === 0) continue;
+            const value = rest.join(':').trim();
+            if (key.trim().toLowerCase() === 'descricao' || key.trim().toLowerCase() === 'description') {
+              if (clearDescriptionCmds.includes(value.toLowerCase())) {
+                newDescription = '';
+              } else {
+                newDescription = value;
+              }
+            } else if (key.trim().toLowerCase() === 'tags') {
+              const tagsArr = value.split(',').map(t => t.trim()).filter(t => t.length > 0);
+              newTags = tagsArr;
+            }
           }
 
-          // Atualiza as tags no banco
-          await updateMediaTags(mediaId, updatedTags);
+          if (parts.length === 1) {
+            // Caso o texto seja apenas tags simples separados por vírgula
+            if (!newText.toLowerCase().startsWith('descricao:') && !newText.toLowerCase().startsWith('description:')) {
+              newTags = newText.split(',').map(t => t.trim()).filter(t => t.length > 0);
+            }
+          }
 
-          await client.sendText(chatId, `Tags atualizadas para a mídia ID ${mediaId}.`);
+          let combinedLength = (newDescription.length || 0) + (newTags.join(',').length || 0);
+          if (combinedLength > MAX_TAGS_LENGTH) {
+            const allowedTagsLength = Math.max(0, MAX_TAGS_LENGTH - newDescription.length);
+            let tagsStr = newTags.join(',');
+            if (tagsStr.length > allowedTagsLength) {
+              tagsStr = tagsStr.substring(0, allowedTagsLength);
+              newTags = tagsStr.split(',').map(t => t.trim());
+            }
+          }
+
+          const updateDescription = newDescription;
+          const updateTags = newTags.join(',');
+
+          await updateMediaDescription(mediaId, updateDescription);
+          await updateMediaTags(mediaId, updateTags);
+
+          await client.sendText(chatId, `Descrição e tags atualizadas para a mídia ID ${mediaId}.`);
           taggingMap[chatId] = null;
 
         } catch (err) {
           console.error('Erro ao adicionar tags:', err);
-          await client.sendText(chatId, 'Erro ao adicionar tags.');
+          await client.sendText(chatId, 'Erro ao adicionar tags/descrição.');
           taggingMap[chatId] = null;
         }
 
@@ -212,10 +317,95 @@ async function start(client) {
         const mediaId = parts[2];
 
         taggingMap[chatId] = mediaId;
-        await client.sendText(chatId, `Modo edição ativado para a mídia ID ${mediaId}. Envie o texto das tags/descrição para adicionar.`);
+        await client.sendText(chatId,
+          `Modo edição ativado para a mídia ID ${mediaId}.
+Por favor, envie a mensagem no formato:
+
+descricao: [sua descrição aqui]; tags: tag1, tag2, tag3
+
+Você pode enviar apenas tags, por exemplo:
+tags: tag1, tag2, tag3
+
+Ou apenas descrição:
+descricao: sua descrição aqui
+
+Limite total de ${MAX_TAGS_LENGTH} caracteres.`
+        );
         return;
       }
     }
+
+    if (taggingMap[chatId]) {
+      if (message.type === 'chat' && message.body) {
+        const mediaId = taggingMap[chatId];
+        const newText = message.body.trim();
+
+        if (newText.length > MAX_TAGS_LENGTH) {
+          await client.sendText(chatId, `Texto muito longo. Limite de ${MAX_TAGS_LENGTH} caracteres.`);
+          taggingMap[chatId] = null;
+          return;
+        }
+
+        try {
+          const media = await findById(mediaId);
+          if (!media) {
+            await client.sendText(chatId, `Mídia com ID ${mediaId} não encontrada.`);
+            taggingMap[chatId] = null;
+            return;
+          }
+
+          // Parse formato: descricao: texto; tags: tag1,tag2
+          let newDescription = media.description || '';
+          let newTags = media.tags ? (typeof media.tags === 'string' ? media.tags.split(',') : media.tags) : [];
+
+          const parts = newText.split(';');
+          for (const part of parts) {
+            const [key, ...rest] = part.split(':');
+            if (!key || rest.length === 0) continue;
+            const value = rest.join(':').trim();
+            if (key.trim().toLowerCase() === 'descricao' || key.trim().toLowerCase() === 'description') {
+              newDescription = value;
+            } else if (key.trim().toLowerCase() === 'tags') {
+              const tagsArr = value.split(',').map(t => t.trim()).filter(t => t.length > 0);
+              newTags = tagsArr;
+            }
+          }
+
+          if (parts.length === 1) {
+            newTags = newText.split(',').map(t => t.trim()).filter(t => t.length > 0);
+          }
+
+          let combinedLength = (newDescription.length || 0) + (newTags.join(',').length || 0);
+          if (combinedLength > MAX_TAGS_LENGTH) {
+            const allowedTagsLength = Math.max(0, MAX_TAGS_LENGTH - newDescription.length);
+            let tagsStr = newTags.join(',');
+            if (tagsStr.length > allowedTagsLength) {
+              tagsStr = tagsStr.substring(0, allowedTagsLength);
+              newTags = tagsStr.split(',').map(t => t.trim());
+            }
+          }
+
+          const updateDescription = newDescription;
+          const updateTags = newTags.join(',');
+
+          await updateMediaDescription(mediaId, updateDescription);
+          await updateMediaTags(mediaId, updateTags);
+
+          await client.sendText(chatId, `Descrição e tags atualizadas para a mídia ID ${mediaId}.`);
+          taggingMap[chatId] = null;
+
+        } catch (err) {
+          console.error('Erro ao adicionar tags:', err);
+          await client.sendText(chatId, 'Erro ao adicionar tags/descrição.');
+          taggingMap[chatId] = null;
+        }
+
+        return;
+      }
+    }
+
+
+
 if (message.body === '#top10') {
   try {
     const top10 = await getTop10Media();
@@ -227,12 +417,12 @@ if (message.body === '#top10') {
     await client.sendText(chatId, 'Top 10 figurinhas mais usadas:');
     for (const media of top10) {
       if (media.mimetype.startsWith('image/')) {
-        await client.sendImageAsSticker(chatId, media.filePath, {
+        await client.sendImageAsSticker(chatId, media.file_path, {
           pack: 'Top10',
           author: 'Bot',
         });
       } else {
-        await client.sendFile(chatId, media.filePath, 'media', `Mídia usada ${media.usage_count} vezes.`);
+        await client.sendFile(chatId, media.file_path, 'media', `Mídia usada ${media.count_random} vezes.`);
       }
     }
   } catch (err) {
@@ -250,9 +440,33 @@ if (message.body === '#top5users') {
     }
 
     let reply = 'Top 5 usuários que enviaram figurinhas:\n\n';
-    topUsers.forEach((user, idx) => {
-      reply += `${idx + 1}. ${user.chat_id} - ${user.sticker_count} figurinhas\n`;
-    });
+
+    // Buscar nomes dos usuários no WhatsApp para melhor exibicao
+    for (let i = 0; i < topUsers.length; i++) {
+      const user = topUsers[i];
+      let userName = null;
+
+      try {
+        // Tenta pegar o contato
+        const contact = await client.getContact(user.chat_id);
+        if (contact) {
+          if (contact.pushname) {
+            userName = contact.pushname;
+          } else if (contact.formattedName) {
+            userName = contact.formattedName;
+          }
+        }
+      } catch (err) {
+        console.warn(`Não foi possível obter o contato para ${user.chat_id}`);
+      }
+
+      // Se não conseguiu nome, tenta extrair telefone (antes do @)
+      if (!userName) {
+        userName = user.chat_id.split('@')[0];
+      }
+
+      reply += `${i + 1}. ${userName} - ${user.sticker_count} figurinhas\n`;
+    }
 
     await client.sendText(chatId, reply);
   } catch (err) {
@@ -264,31 +478,41 @@ if (message.body === '#top5users') {
 
    // Comando #ID XXX para enviar figurinha específica pelo ID
     if (message.body && message.body.startsWith('#ID ')) {
-      const parts = message.body.split(' ');
-      if (parts.length === 2) {
-        const mediaId = parts[1];
-        try {
-          const media = await findById(mediaId);
-          if (!media) {
-            await client.sendText(chatId, `Mídia com ID ${mediaId} não encontrada.`);
-            return;
-          }
-
-          if (media.mimetype.startsWith('image/')) {
-            await client.sendImageAsSticker(chatId, media.filePath, {
-              pack: 'StickerBot',
-              author: 'Bot',
-            });
-          } else {
-            await client.sendFile(chatId, media.filePath, 'media', 'Aqui está sua mídia solicitada!');
-          }
-        } catch (err) {
-          console.error('Erro ao buscar mídia pelo ID:', err);
-          await client.sendText(chatId, 'Erro ao buscar essa mídia.');
-        }
+  const parts = message.body.split(' ');
+  if (parts.length === 2) {
+    const mediaId = parts[1];
+    try {
+      const media = await findById(mediaId);
+      if (!media) {
+        await client.sendText(chatId, `Mídia com ID ${mediaId} não encontrada.`);
         return;
       }
+
+      if (media.mimetype.startsWith('image/')) {
+        // Corrigir uso de filePath para file_path
+        await client.sendImageAsSticker(chatId, media.file_path, {
+          pack: 'StickerBot',
+          author: 'ZZ-Bot',
+        });
+      } else {
+        await client.sendFile(chatId, media.file_path, 'media', 'Aqui está sua mídia solicitada!');
+      }
+
+      // Enviar descrição e tags no formato esperado
+      const cleanMediaInfo = cleanDescriptionTags(media.description, media.tags ? (typeof media.tags === 'string' ? media.tags.split(',') : media.tags) : []);
+      let responseMessageID = `\n📝 ${cleanMediaInfo.description || ''}\n` +
+        `🏷️ ${cleanMediaInfo.tags.length > 0 ? cleanMediaInfo.tags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ') : ''}\n` +
+        `🆔 ${media.id}`;
+
+      await client.sendText(chatId, responseMessageID);
+
+    } catch (err) {
+      console.error('Erro ao buscar mídia pelo ID:', err);
+      await client.sendText(chatId, 'Erro ao buscar essa mídia.');
     }
+    return;
+  }
+}
 
     // Implementação do comando #forçar
     if (message.body && message.body.trim() === '#forçar') {
@@ -317,12 +541,30 @@ if (message.body === '#top5users') {
 
     if (!message.isMedia) return;
 
-    try {
-      const buffer = await client.decryptFile(message);
-      const ext = message.mimetype.split('/')[1] || 'bin';
+     try {
+      // Para descriptografar, pegar as propriedades necessárias da mensagem (mimetype, media data)
+      // A função decryptMedia da wa-decrypt aceita a mensagem inteira
+      const buffer = await decryptMedia(message);
 
-      const hashMd5 = getMD5(buffer);
-      const hashVisual = await getHashVisual(buffer);
+      const ext = message.mimetype.split('/')[1] || 'bin';
+      
+      console.log(`Processando mídia do tipo: ${message.mimetype}, extensão detectada: ${ext}`);
+
+      // Conversão para webp se for imagem
+      let bufferWebp = buffer;
+      let extToSave = ext;
+      let mimetypeToSave = message.mimetype;
+      if(message.mimetype.startsWith('image/')) {
+        console.log('Convertendo imagem para webp para garantir compatibilidade...');
+        bufferWebp = await sharp(buffer).webp().toBuffer();
+        extToSave = 'webp';
+        mimetypeToSave = 'image/webp';
+        console.log('Conversao para webp finalizada com sucesso.');
+      }
+
+      const pngBuffer = await sharp(bufferWebp).png().toBuffer();
+      const hashMd5 = getMD5(bufferWebp);
+      const hashVisual = await getHashVisual(bufferWebp);
 
       const forceInsert = !!forceMap[chatId];
 
@@ -342,64 +584,60 @@ if (message.body === '#top5users') {
       const dir = path.resolve(__dirname, 'media');
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-      const fileName = `media-${Date.now()}.${ext}`;
+      const fileName = `media-${Date.now()}.${extToSave}`;
       const filePath = path.join(dir, fileName);
-      fs.writeFileSync(filePath, buffer);
+      fs.writeFileSync(filePath, bufferWebp);
 
       const groupId = message.from.endsWith('@g.us') ? message.from : null;
 
-      const nsfw = await isNSFW(buffer);
+      const nsfw = await isNSFW(pngBuffer);
 
       let description = null;
       let tags = null;
 
       if (!nsfw) {
-        if (message.mimetype.startsWith('video/')) {
-          try {
-            const aiResult = await processVideo(filePath);
-            description = aiResult.description;
-            tags = aiResult.tags ? aiResult.tags.join(',') : null;
-          } catch (err) {
-            console.warn('Erro ao processar vídeo:', err);
-          }
-        } else if (message.mimetype.startsWith('image/')) {
-          const aiResult = await getAiAnnotations(buffer);
-          description = aiResult.description;
-          tags = aiResult.tags ? aiResult.tags.join(',') : null;
-        } else if (message.mimetype.startsWith('audio/')) {
-          try {
-            description = await transcribeAudioBuffer(buffer);
-
-            if (description) {
-              const prompt = `
-Você é um assistente que recebe a transcrição de um áudio em português e deve gerar até 5 tags relevantes, separadas por vírgula, relacionadas ao conteúdo dessa transcrição.
-
-Transcrição:
-${description}
-
-Resposta (tags separadas por vírgula):
-              `.trim();
-
-              const tagResult = await getAiAnnotationsFromPrompt(prompt);
-              tags = tagResult.tags ? tagResult.tags.join(',') : null;
-            } else {
-              tags = null;
-            }
-          } catch (err) {
-            console.warn('Erro ao processar áudio:', err);
-            description = 'Áudio salvo sem descrição AI.';
-            tags = null;
-          }
-        }
+  if (message.mimetype.startsWith('video/')) {
+    try {
+      const aiResult = await processVideo(filePath);
+      const clean = cleanDescriptionTags(aiResult.description, aiResult.tags);
+      description = clean.description;
+      tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
+    } catch (err) {
+      console.warn('Erro ao processar vídeo:', err);
+    }
+  } else if (mimetypeToSave.startsWith('image/')) {
+    const aiResult = await getAiAnnotations(pngBuffer);
+    const clean = cleanDescriptionTags(aiResult.description, aiResult.tags);
+    description = clean.description;
+    tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
+  } else if (message.mimetype.startsWith('audio/')) {
+    try {
+      description = await transcribeAudioBuffer(buffer);
+      if (description) {
+        const prompt = `\nVocê é um assistente que recebe a transcrição de um áudio em português e deve gerar até 5 tags relevantes, separadas por vírgula, relacionadas ao conteúdo dessa transcrição.\n\nTranscrição:\n${description}\n\nResposta (tags separadas por vírgula):\n              `.trim();
+        const tagResult = await getAiAnnotationsFromPrompt(prompt);
+        const clean = cleanDescriptionTags(null, tagResult.tags);
+        tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
       } else {
-        console.log('Mídia NSFW detectada, pulando IA');
+        tags = '';
       }
+    } catch (err) {
+      console.warn('Erro ao processar áudio:', err);
+      description = '';
+      tags = '';
+    }
+  }
+} else {
+  console.log('Mídia NSFW detectada, pulando IA');
+  description = '';
+  tags = '';
+}
 
       await saveMedia({
         chatId,
         groupId,
         filePath,
-        mimetype: message.mimetype,
+        mimetype: mimetypeToSave,
         timestamp: Date.now(),
         description,
         tags,
@@ -408,17 +646,41 @@ Resposta (tags separadas por vírgula):
         nsfw: nsfw ? 1 : 0
       });
 
-      await client.sendText(chatId, `Mídia salva como ${fileName}`);
+      // Busca mídia salva para obter ID e dados
+const savedMedia = await findByHashVisual(hashVisual);
 
-      if (message.mimetype.startsWith('image/')) {
-        await client.sendImageAsSticker(chatId, filePath, {
-          pack: 'StickerBot',
-          author: 'Bot'
-        });
-      }
+// Limpa novamente para exibir
+const clean = cleanDescriptionTags(savedMedia.description, savedMedia.tags ? (typeof savedMedia.tags === 'string' ? savedMedia.tags.split(',') : savedMedia.tags) : []);
+
+let responseMessage = `✅ Figurinha adicionada!\n\n`;
+responseMessage += `📝 ${clean.description || ''}\n`;
+responseMessage += `🏷️ ${clean.tags.length > 0 ? clean.tags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ') : ''}\n`;
+responseMessage += `🆔 ${savedMedia.id}`;
+
+await client.sendText(chatId, responseMessage);
+
     } catch (e) {
-      console.error('Erro ao processar mídia:', e);
-      await client.sendText(chatId, 'Erro ao processar sua mídia.');
+        console.error('Erro ao processar mídia:', e);
+        if (e.response && e.response.data) {
+          console.error('Detalhes do erro de resposta:', e.response.data);
+        }
+        await client.sendText(chatId, 'Erro ao processar sua mídia.');}
+
+      })
     }
+
+async function updateMediaDescription(id, description) {
+  return new Promise((resolve, reject) => {
+    const sqlite3 = require('sqlite3').verbose();
+    const path = require('path');
+    const dbPath = path.resolve(__dirname, 'media.db');
+    const db = new sqlite3.Database(dbPath);
+
+    db.run(`UPDATE media SET description = ? WHERE id = ?`, [description, id], function (err) {
+      if (err) reject(err);
+      else resolve(this.changes);
+    });
+
+    db.close();
   });
 }

@@ -1,12 +1,13 @@
 const nsfwjs = require('nsfwjs');
 const tf = require('@tensorflow/tfjs-node');
 const { createCanvas, loadImage } = require('canvas');
+const sharp = require('sharp');
 
 let model;
 
 async function loadModel() {
   if (!model) {
-    model = await nsfwjs.load(); // Carrega o modelo padrão NSFWJS
+    model = await nsfwjs.load('MobileNetV2'); // Default model
   }
   return model;
 }
@@ -19,7 +20,10 @@ async function loadModel() {
 async function isNSFW(buffer) {
   try {
     const model = await loadModel();
-    const img = await loadImage(buffer);
+
+    // Converte imagem webp para png (ou qualquer formato suportado) antes de carregar
+    const pngBuffer = await sharp(buffer).png().toBuffer();
+    const img = await loadImage(`data:image/png;base64,${pngBuffer.toString('base64')}`);
 
     const canvas = createCanvas(img.width, img.height);
     const ctx = canvas.getContext('2d');
