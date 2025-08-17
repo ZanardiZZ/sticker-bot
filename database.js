@@ -19,6 +19,7 @@ db.serialize(() => {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       chat_id TEXT NOT NULL,
       group_id TEXT,
+      sender_id TEXT,
       file_path TEXT NOT NULL,
       mimetype TEXT NOT NULL,
       timestamp INTEGER NOT NULL,
@@ -121,8 +122,12 @@ async function processOldStickers() {
 
     // Processa o batch limitado
     for (const { file, filePath, lastModified } of filesToProcess) {
-      const buffer = fs.readFileSync(filePath);
-      const hashVisual = await getHashVisual(buffer);
+      const bufferOriginal = fs.readFileSync(filePath);
+
+      // Converter para webp antes do hash visual para padronizar
+      const bufferWebp = await sharp(bufferOriginal).webp().toBuffer();
+
+      const hashVisual = await getHashVisual(bufferWebp);
 
       if (!hashVisual) continue;
 
@@ -133,7 +138,7 @@ async function processOldStickers() {
       let description = null;
       let tags = null;
       try {
-        const aiResult = await getAiAnnotations(buffer);
+        const aiResult = await getAiAnnotations(bufferWebp);
         description = aiResult.description || null;
         tags = aiResult.tags ? aiResult.tags.join(',') : null;
       } catch (e) {
@@ -149,7 +154,7 @@ async function processOldStickers() {
         description,
         tags,
         hashVisual,
-        hashMd5: getMD5(buffer),
+        hashMd5: getMD5(bufferWebp),
         nsfw: 0,
       });
 
@@ -182,6 +187,7 @@ function getMediaWithLowestRandomCount() {
 function saveMedia({
   chatId,
   groupId,
+  senderId = null,
   filePath,
   mimetype,
   timestamp,
@@ -194,13 +200,14 @@ function saveMedia({
   return new Promise((resolve, reject) => {
     const stmt = db.prepare(
       `
-      INSERT INTO media (chat_id, group_id, file_path, mimetype, timestamp, description, tags, hash_visual, hash_md5, nsfw, count_random)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+      INSERT INTO media (chat_id, group_id, sender_id, file_path, mimetype, timestamp, description, tags, hash_visual, hash_md5, nsfw, count_random)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     `
     );
     stmt.run(
       chatId,
       groupId,
+      senderId,
       filePath,
       mimetype,
       timestamp,
@@ -292,19 +299,20 @@ function getTop10Media() {
   });
 }
 
-function getTop5UsersByStickerCount() {
+// Atualizar getTop5UsersByStickerCount para usar sender_id e filtrar pelo grupo (parâmetro opcional)
+function getTop5UsersByStickerCount(groupId = null) {
   return new Promise((resolve, reject) => {
-    db.all(
-      `SELECT chat_id, COUNT(*) as sticker_count 
-       FROM media
-       GROUP BY chat_id
-       ORDER BY sticker_count DESC
-       LIMIT 5`,
-      (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows);
-      }
-    );
+    let sql = `SELECT sender_id as chat_id, COUNT(*) as sticker_count FROM media`;
+    const params = [];
+    if (groupId) {
+      sql += ` WHERE group_id = ?`;
+      params.push(groupId);
+    }
+    sql += ` GROUP BY sender_id ORDER BY sticker_count DESC LIMIT 5`;
+    db.all(sql, params, (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows);
+    });
   });
 }
 module.exports = {
@@ -320,5 +328,5 @@ module.exports = {
   getMediaWithLowestRandomCount,
   getTop10Media,
   getTop5UsersByStickerCount,
-  countMedia 
+  countMedia
 };

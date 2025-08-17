@@ -67,13 +67,35 @@ async function sendRandomMediaToGroup(client) {
 
     await incrementRandomCount(media.id);
 
-    if (media.mimetype.startsWith('image/')) {
-      await client.sendImageAsSticker(AUTO_SEND_GROUP_ID, media.file_path, {
-        pack: 'StickerBot',
-        author: 'ZZ-Bot',
-      });
-    } else {
-      await client.sendFile(AUTO_SEND_GROUP_ID, media.file_path, 'media', 'Aqui está sua mídia aleatória!');
+if (media.mimetype === 'image/webp' || media.file_path.endsWith('.webp')) {
+  await client.sendRawWebpAsSticker(chatId, media.file_path, {
+    pack: 'StickerBot',
+    author: 'ZZ-Bot',
+  });
+} else if (media.mimetype === 'image/gif' || media.file_path.endsWith('.gif')) {
+  await client.sendFile(chatId, media.file_path, 'media', 'Aqui está seu GIF!');
+} else if (media.mimetype.startsWith('image/')) {
+  await client.sendImageAsSticker(chatId, media.file_path, {
+    pack: 'StickerBot',
+    author: 'ZZ-Bot',
+  });
+} else {
+  await client.sendFile(chatId, media.file_path, 'media', 'Aqui está sua mídia aleatória!');
+}
+
+    // Buscar mídia completa para obter descrição, tags e ID
+    const fullMedia = await findById(media.id);
+    if (fullMedia) {
+      const clean = cleanDescriptionTags(
+        fullMedia.description,
+        fullMedia.tags ? (typeof fullMedia.tags === 'string' ? fullMedia.tags.split(',') : fullMedia.tags) : []
+      );
+
+      let responseMessage = `\n📝 ${clean.description || ''}\n` +
+        `🏷️ ${clean.tags.length > 0 ? clean.tags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ') : ''}\n` +
+        `🆔 ${fullMedia.id}`;
+
+      await client.sendText(AUTO_SEND_GROUP_ID, responseMessage);
     }
 
     console.log('Mídia enviada automaticamente ao grupo.');
@@ -88,12 +110,10 @@ function scheduleAutoSend(client) {
     return;
   }
 
-  // Agenda para 09:00, 14:00 e 20:00 todos os dias
-  cron.schedule('0 9 * * *', () => sendRandomMediaToGroup(client));
-  cron.schedule('0 14 * * *', () => sendRandomMediaToGroup(client));
-  cron.schedule('0 20 * * *', () => sendRandomMediaToGroup(client));
+  // Agenda toda hora cheia das 08:00 às 21:00
+  cron.schedule('0 8-21 * * *', () => sendRandomMediaToGroup(client));
 
-  console.log('Agendamento de envios automáticos configurado.');
+  console.log('Agendamento de envios automáticos configurado (todas as horas entre 08 e 21).');
 }
 
 function cleanDescriptionTags(description, tags) {
@@ -200,7 +220,7 @@ async function start(client) {
 await incrementRandomCount(media.id);
 
 if (media.mimetype.startsWith('image/')) {
-  await client.sendImageAsSticker(chatId, media.file_path, {
+  await client.sendRawWebpAsSticker(chatId, media.file_path, {
     pack: 'StickerBot',
     author: 'ZZ-Bot',
   });
@@ -358,18 +378,23 @@ Limite total de ${MAX_TAGS_LENGTH} caracteres.`
           let newDescription = media.description || '';
           let newTags = media.tags ? (typeof media.tags === 'string' ? media.tags.split(',') : media.tags) : [];
 
-          const parts = newText.split(';');
-          for (const part of parts) {
-            const [key, ...rest] = part.split(':');
-            if (!key || rest.length === 0) continue;
-            const value = rest.join(':').trim();
-            if (key.trim().toLowerCase() === 'descricao' || key.trim().toLowerCase() === 'description') {
-              newDescription = value;
-            } else if (key.trim().toLowerCase() === 'tags') {
-              const tagsArr = value.split(',').map(t => t.trim()).filter(t => t.length > 0);
-              newTags = tagsArr;
-            }
+         const parts = newText.split(';');
+      for (const part of parts) {
+        const [key, ...rest] = part.split(':');
+        if (!key || rest.length === 0) continue;
+        const value = rest.join(':').trim();
+        const keyLower = key.trim().toLowerCase();
+        if (keyLower === 'descricao' || keyLower === 'descrição' || keyLower === 'description') {
+          if (clearDescriptionCmds.includes(value.toLowerCase())) {
+            newDescription = '';
+          } else {
+            newDescription = value;
           }
+        } else if (keyLower === 'tags') {
+          const tagsArr = value.split(',').map(t => t.trim()).filter(t => t.length > 0);
+          newTags = tagsArr;
+        }
+      }
 
           if (parts.length === 1) {
             newTags = newText.split(',').map(t => t.trim()).filter(t => t.length > 0);
@@ -391,7 +416,18 @@ Limite total de ${MAX_TAGS_LENGTH} caracteres.`
           await updateMediaDescription(mediaId, updateDescription);
           await updateMediaTags(mediaId, updateTags);
 
-          await client.sendText(chatId, `Descrição e tags atualizadas para a mídia ID ${mediaId}.`);
+          const updatedMedia = await findById(mediaId);
+      const cleanUpdated = cleanDescriptionTags(
+        updatedMedia.description,
+        updatedMedia.tags ? (typeof updatedMedia.tags === 'string' ? updatedMedia.tags.split(',') : updatedMedia.tags) : []
+      );
+
+      let updatedMessage = `[32m[1m[4m[7m[42m✅ Figurinha Atualizada![0m\n\n` +
+        `📝 ${cleanUpdated.description || ''}\n` +
+        `🏷️ ${cleanUpdated.tags.length > 0 ? cleanUpdated.tags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ') : ''}\n` +
+        `🆔 ${updatedMedia.id}`;
+
+      await client.sendText(chatId, updatedMessage);
           taggingMap[chatId] = null;
 
         } catch (err) {
@@ -417,7 +453,7 @@ if (message.body === '#top10') {
     await client.sendText(chatId, 'Top 10 figurinhas mais usadas:');
     for (const media of top10) {
       if (media.mimetype.startsWith('image/')) {
-        await client.sendImageAsSticker(chatId, media.file_path, {
+        await client.sendRawWebpAsSticker(chatId, media.file_path, {
           pack: 'Top10',
           author: 'Bot',
         });
@@ -475,7 +511,35 @@ if (message.body === '#top5users') {
   }
   return;
 }
+ // Ativar modo edição respondendo a uma figurinha
+    if (message.hasQuotedMsg && message.body && message.body.toLowerCase().startsWith('#editar')) {
+      try {
+        const quotedMsg = await client.getQuotedMessage(message.id);
+        if (quotedMsg.isMedia) {
+          // Obtém buffer da mídia respondida
+          const buffer = await decryptMedia(quotedMsg);
+          const hashVisual = await getHashVisual(buffer);
+          const mediaRecord = await findByHashVisual(hashVisual);
 
+          if (mediaRecord) {
+            taggingMap[chatId] = mediaRecord.id;
+            await client.sendText(chatId,
+              `Modo edição ativado para a mídia ID ${mediaRecord.id}.
+Por favor, envie a mensagem no formato:\n\ndescricao: [sua descrição]; tags: tag1, tag2, tag3
+Você pode enviar apenas tags ou apenas descrição.
+Limite total de ${MAX_TAGS_LENGTH} caracteres.`);
+            return;
+          } else {
+            await client.sendText(chatId, 'Não foi possível encontrar o ID da mídia respondida.');
+          }
+        } else {
+          await client.sendText(chatId, 'Por favor responda a uma mensagem que contenha mídia para editar.');
+        }
+      } catch (err) {
+        console.error('Erro ao ativar modo edição via resposta:', err);
+        await client.sendText(chatId, 'Erro ao tentar ativar o modo edição.');
+      }
+    }
    // Comando #ID XXX para enviar figurinha específica pelo ID
     if (message.body && message.body.startsWith('#ID ')) {
   const parts = message.body.split(' ');
@@ -483,20 +547,32 @@ if (message.body === '#top5users') {
     const mediaId = parts[1];
     try {
       const media = await findById(mediaId);
-      if (!media) {
-        await client.sendText(chatId, `Mídia com ID ${mediaId} não encontrada.`);
-        return;
-      }
+      if (media.mimetype === 'image/webp' || media.file_path.endsWith('.webp')) {
+  await client.sendRawWebpAsSticker(chatId, media.file_path, {
+    pack: 'StickerBot',
+    author: 'ZZ-Bot',
+  });
+} else if (media.mimetype === 'image/gif' || media.file_path.endsWith('.gif')) {
+  await client.sendFile(chatId, media.file_path, 'media', 'Aqui está seu GIF!');
+} else {
+  await client.sendFile(chatId, media.file_path, 'media', 'Aqui está sua mídia solicitada!');
+}
 
-      if (media.mimetype.startsWith('image/')) {
-        // Corrigir uso de filePath para file_path
-        await client.sendImageAsSticker(chatId, media.file_path, {
-          pack: 'StickerBot',
-          author: 'ZZ-Bot',
-        });
-      } else {
-        await client.sendFile(chatId, media.file_path, 'media', 'Aqui está sua mídia solicitada!');
-      }
+if (media.mimetype === 'image/webp' || media.file_path.endsWith('.webp')) {
+  await client.sendRawWebpAsSticker(chatId, media.file_path, {
+    pack: 'StickerBot',
+    author: 'ZZ-Bot',
+  });
+} else if (media.mimetype === 'image/gif' || media.file_path.endsWith('.gif')) {
+  await client.sendFile(chatId, media.file_path, 'media', 'Aqui está seu GIF!');
+} else if (media.mimetype.startsWith('image/')) {
+  await client.sendImageAsSticker(chatId, media.file_path, {
+    pack: 'StickerBot',
+    author: 'ZZ-Bot',
+  });
+} else {
+  await client.sendFile(chatId, media.file_path, 'media', 'Aqui está sua mídia aleatória!');
+}
 
       // Enviar descrição e tags no formato esperado
       const cleanMediaInfo = cleanDescriptionTags(media.description, media.tags ? (typeof media.tags === 'string' ? media.tags.split(',') : media.tags) : []);
@@ -550,17 +626,22 @@ if (message.body === '#top5users') {
       
       console.log(`Processando mídia do tipo: ${message.mimetype}, extensão detectada: ${ext}`);
 
-      // Conversão para webp se for imagem
-      let bufferWebp = buffer;
-      let extToSave = ext;
-      let mimetypeToSave = message.mimetype;
-      if(message.mimetype.startsWith('image/')) {
-        console.log('Convertendo imagem para webp para garantir compatibilidade...');
-        bufferWebp = await sharp(buffer).webp().toBuffer();
-        extToSave = 'webp';
-        mimetypeToSave = 'image/webp';
-        console.log('Conversao para webp finalizada com sucesso.');
-      }
+// Conversão para webp se for imagem, exceto gifs
+let bufferWebp = buffer;
+let extToSave = ext;
+let mimetypeToSave = message.mimetype;
+if (message.mimetype.startsWith('image/') && message.mimetype !== 'image/gif') {
+  console.log('Convertendo imagem para webp para garantir compatibilidade...');
+  bufferWebp = await sharp(buffer).webp().toBuffer();
+  extToSave = 'webp';
+  mimetypeToSave = 'image/webp';
+  console.log('Conversao para webp finalizada com sucesso.');
+} else if (message.mimetype === 'image/gif') {
+  // Manter gif sem converter
+  bufferWebp = buffer;
+  extToSave = 'gif';
+  mimetypeToSave = 'image/gif';
+}
 
       const pngBuffer = await sharp(bufferWebp).png().toBuffer();
       const hashMd5 = getMD5(bufferWebp);
@@ -632,19 +713,20 @@ if (message.body === '#top5users') {
   description = '';
   tags = '';
 }
-
+const senderId = (message.sender && message.sender.id) ? message.sender.id : message.from;
       await saveMedia({
-        chatId,
-        groupId,
-        filePath,
-        mimetype: mimetypeToSave,
-        timestamp: Date.now(),
-        description,
-        tags,
-        hashVisual,
-        hashMd5,
-        nsfw: nsfw ? 1 : 0
-      });
+  chatId,
+  groupId,
+  senderId,
+  filePath,
+  mimetype: mimetypeToSave,
+  timestamp: Date.now(),
+  description,
+  tags,
+  hashVisual,
+  hashMd5,
+  nsfw: nsfw ? 1 : 0
+});
 
       // Busca mídia salva para obter ID e dados
 const savedMedia = await findByHashVisual(hashVisual);
