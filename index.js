@@ -8,12 +8,11 @@ const mime = require('mime-types');
 const { decryptMedia } = require('@open-wa/wa-decrypt');
 const {
   saveMedia,
-  getRandomMedia,
   incrementRandomCount,
   getMD5,
   getHashVisual,
   findByHashVisual,
-  findById,    
+  findById,
   updateMediaTags,
   processOldStickers,
   getMediaWithLowestRandomCount,
@@ -42,61 +41,69 @@ create({
   .then(client => start(client))
   .catch(e => console.error('Erro ao iniciar cliente:', e));
 
+async function fetchRandomMedia() {
+  const novasMedias = await processOldStickers();
+  if (novasMedias.length > 0) {
+    const last = novasMedias[novasMedias.length - 1];
+    const media = await findById(last.id);
+    if (media) return media;
+    return {
+      id: last.id,
+      file_path: last.filePath,
+      mimetype: 'image/webp',
+      description: '',
+      tags: []
+    };
+  }
+  return await getMediaWithLowestRandomCount();
+}
+
+async function sendMedia(client, media, chatId) {
+  if (media.mimetype === 'image/webp' || media.file_path.endsWith('.webp')) {
+    await client.sendRawWebpAsSticker(chatId, media.file_path, {
+      pack: 'StickerBot',
+      author: 'ZZ-Bot',
+    });
+  } else if (media.mimetype === 'image/gif' || media.file_path.endsWith('.gif')) {
+    await client.sendFile(chatId, media.file_path, 'media', 'Aqui está seu GIF!');
+  } else if (media.mimetype && media.mimetype.startsWith('image/')) {
+    await client.sendImageAsSticker(chatId, media.file_path, {
+      pack: 'StickerBot',
+      author: 'ZZ-Bot',
+    });
+  } else {
+    await client.sendFile(chatId, media.file_path, 'media', 'Aqui está sua mídia aleatória!');
+  }
+}
+
+function buildMediaResponse(media) {
+  const clean = cleanDescriptionTags(
+    media.description,
+    media.tags ? (typeof media.tags === 'string' ? media.tags.split(',') : media.tags) : []
+  );
+
+  return `\n📝 ${clean.description || ''}\n` +
+    `🏷️ ${clean.tags.length > 0 ? clean.tags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ') : ''}\n` +
+    `🆔 ${media.id}`;
+}
+
 async function sendRandomMediaToGroup(client) {
   if (!AUTO_SEND_GROUP_ID) {
     console.warn('AUTO_SEND_GROUP_ID não configurado no .env');
     return;
   }
   try {
-    const novasMedias = await processOldStickers();
-
-    let media;
-    if (novasMedias.length > 0) {
-      media = {
-        id: novasMedias[novasMedias.length - 1].id,
-        file_path: novasMedias[novasMedias.length - 1].filePath,
-        mimetype: 'image/webp',
-      };
-    } else {
-      media = await getMediaWithLowestRandomCount();
-    }
+    const media = await fetchRandomMedia();
     if (!media) {
       console.log('Nenhuma mídia disponível para envio automático.');
       return;
     }
 
     await incrementRandomCount(media.id);
+    await sendMedia(client, media, AUTO_SEND_GROUP_ID);
 
-if (media.mimetype === 'image/webp' || media.file_path.endsWith('.webp')) {
-  await client.sendRawWebpAsSticker(chatId, media.file_path, {
-    pack: 'StickerBot',
-    author: 'ZZ-Bot',
-  });
-} else if (media.mimetype === 'image/gif' || media.file_path.endsWith('.gif')) {
-  await client.sendFile(chatId, media.file_path, 'media', 'Aqui está seu GIF!');
-} else if (media.mimetype.startsWith('image/')) {
-  await client.sendImageAsSticker(chatId, media.file_path, {
-    pack: 'StickerBot',
-    author: 'ZZ-Bot',
-  });
-} else {
-  await client.sendFile(chatId, media.file_path, 'media', 'Aqui está sua mídia aleatória!');
-}
-
-    // Buscar mídia completa para obter descrição, tags e ID
-    const fullMedia = await findById(media.id);
-    if (fullMedia) {
-      const clean = cleanDescriptionTags(
-        fullMedia.description,
-        fullMedia.tags ? (typeof fullMedia.tags === 'string' ? fullMedia.tags.split(',') : fullMedia.tags) : []
-      );
-
-      let responseMessage = `\n📝 ${clean.description || ''}\n` +
-        `🏷️ ${clean.tags.length > 0 ? clean.tags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ') : ''}\n` +
-        `🆔 ${fullMedia.id}`;
-
-      await client.sendText(AUTO_SEND_GROUP_ID, responseMessage);
-    }
+    const responseMessage = buildMediaResponse(media);
+    await client.sendText(AUTO_SEND_GROUP_ID, responseMessage);
 
     console.log('Mídia enviada automaticamente ao grupo.');
   } catch (err) {
@@ -199,48 +206,26 @@ async function start(client) {
         return;
       }
     }
-    // Comando #random para enviar mídia aleatória
-   if (message.body === '#random') {
-  try {
-    const novasMedias = await processOldStickers();
+      // Comando #random para enviar mídia aleatória
+      if (message.body === '#random') {
+        try {
+          const media = await fetchRandomMedia();
+          if (!media) {
+            await client.sendText(chatId, 'Nenhuma mídia salva ainda.');
+            return;
+          }
 
-    let media;
-    if (novasMedias.length > 0) {
-      const lastMedia = novasMedias[novasMedias.length - 1];
-      media = await findById(lastMedia.id); // Pega info completa do banco
-    } else {
-      media = await getMediaWithLowestRandomCount();
-    }
+          await incrementRandomCount(media.id);
+          await sendMedia(client, media, chatId);
 
-    if (!media) {
-  await client.sendText(chatId, 'Nenhuma mídia salva ainda.');
-  return;
-}
-
-await incrementRandomCount(media.id);
-
-if (media.mimetype.startsWith('image/')) {
-  await client.sendRawWebpAsSticker(chatId, media.file_path, {
-    pack: 'StickerBot',
-    author: 'ZZ-Bot',
-  });
-} else {
-  await client.sendFile(chatId, media.file_path, 'media', 'Aqui está sua mídia aleatória!');
-}
-
-const cleanRandom = cleanDescriptionTags(media.description, media.tags ? (typeof media.tags === 'string' ? media.tags.split(',') : media.tags) : []);
-
-let responseMessageRandom = `\n📝 ${cleanRandom.description || ''}\n` +
-  `🏷️ ${cleanRandom.tags.length > 0 ? cleanRandom.tags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ') : ''}\n` +
-  `🆔 ${media.id}`;
-
-await client.sendText(chatId, responseMessageRandom);
-  } catch (err) {
-    console.error('Erro no comando #random:', err);
-    await client.sendText(chatId, 'Erro ao buscar mídia.');
-  }
-  return;
-}
+          const responseMessageRandom = buildMediaResponse(media);
+          await client.sendText(chatId, responseMessageRandom);
+        } catch (err) {
+          console.error('Erro no comando #random:', err);
+          await client.sendText(chatId, 'Erro ao buscar mídia.');
+        }
+        return;
+      }
 if (message.body === '#count') {
   try {
     const total = await countMedia();
