@@ -169,4 +169,4 @@ Responda no formato JSON:
 }
 
 
-module.exports = { processVideo };
+module.exports = { processVideo, extractFrames };

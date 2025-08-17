@@ -39,3 +39,6 @@ coverage/
 media/
 media.db
 StickerBotSession.data.json
+/temp
+*.bak
+*.old
