@@ -259,7 +259,7 @@ function scheduleAutoSend(client) {
 }
 
 // ---- Comandos
-const VALID_COMMANDS = ['#random', '#editar ID', '#top10', '#top5users', '#ID', '#forçar', '#count'];
+const VALID_COMMANDS = ['#random', '#editar', '#editar ID', '#top10', '#top5users', '#ID', '#forçar', '#count'];
 
 function isValidCommand(body) {
   if (!body || !body.startsWith('#')) return false;
