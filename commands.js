@@ -332,6 +332,7 @@ async function handleTaggingMode(client, message, chatId) {
 function isValidCommand(messageBody) {
   const validCommands = [
     '#random',
+    '#editar',
     '#editar ID',
     '#top10',
     '#top5users',
@@ -355,6 +356,7 @@ function isValidCommand(messageBody) {
 async function handleInvalidCommand(client, chatId) {
   const validCommands = [
     '#random',
+    '#editar',
     '#editar ID',
     '#top10',
     '#top5users',
