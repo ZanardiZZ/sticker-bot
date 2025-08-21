@@ -24,7 +24,6 @@ db.serialize(() => {
       mimetype TEXT NOT NULL,
       timestamp INTEGER NOT NULL,
       description TEXT,
-      tags TEXT,
       hash_visual TEXT,
       hash_md5 TEXT,
       nsfw INTEGER DEFAULT 0,
@@ -38,6 +37,26 @@ db.serialize(() => {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       file_name TEXT UNIQUE NOT NULL,
       last_modified INTEGER NOT NULL
+    )
+  `);
+
+  // Nova tabela para tags únicas
+  db.run(`
+    CREATE TABLE IF NOT EXISTS tags (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT UNIQUE NOT NULL,
+      usage_count INTEGER DEFAULT 0
+    )
+  `);
+
+  // Tabela intermediária para relação N:N entre media e tags
+  db.run(`
+    CREATE TABLE IF NOT EXISTS media_tags (
+      media_id INTEGER NOT NULL,
+      tag_id INTEGER NOT NULL,
+      PRIMARY KEY(media_id, tag_id),
+      FOREIGN KEY(media_id) REFERENCES media(id) ON DELETE CASCADE,
+      FOREIGN KEY(tag_id) REFERENCES tags(id) ON DELETE CASCADE
     )
   `);
 });
@@ -184,7 +203,104 @@ function getMediaWithLowestRandomCount() {
   });
 }
 
-function saveMedia({
+// Busca tags semelhantes para certos termos (simplificação com LIKE)
+function findSimilarTags(tagCandidates) {
+  return new Promise((resolve, reject) => {
+    if (!tagCandidates.length) return resolve([]);
+    const placeholders = tagCandidates.map(() => 'LOWER(name) LIKE ?').join(' OR ');
+    const params = tagCandidates.map(t => `%${t.toLowerCase()}%`);
+    db.all(
+      `SELECT id, name FROM tags WHERE ${placeholders} LIMIT 10`, 
+      params,
+      (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows);
+      }
+    );
+  });
+}
+
+// Adiciona tags que não existem e atualiza uso_count para existentes
+async function addOrUpdateTags(tags) {
+  const tagIds = [];
+  for (const tag of tags) {
+    const tagTrim = tag.trim();
+    if (!tagTrim) continue;
+
+    const existingTag = await new Promise((resolve, reject) =>
+      db.get(`SELECT id, usage_count FROM tags WHERE LOWER(name) = LOWER(?)`, [tagTrim], (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+      })
+    );
+
+    if (existingTag) {
+      await new Promise((resolve, reject) =>
+        db.run(`UPDATE tags SET usage_count = usage_count + 1 WHERE id = ?`, [existingTag.id], function (e) {
+          if (e) reject(e);
+          else resolve();
+        })
+      );
+      tagIds.push(existingTag.id);
+    } else {
+      const newTagId = await new Promise((resolve, reject) =>
+        db.run(`INSERT INTO tags(name, usage_count) VALUES (?, 1)`, [tagTrim], function (e) {
+          if (e) reject(e);
+          else resolve(this.lastID);
+        })
+      );
+      tagIds.push(newTagId);
+    }
+  }
+  return tagIds;
+}
+
+// Associa tags de tagIds a uma mídia mediaId na tabela media_tags
+function associateTagsToMedia(mediaId, tagIds) {
+  return new Promise((resolve, reject) => {
+    if (!tagIds.length) return resolve();
+    const placeholders = tagIds.map(() => '(?, ?)').join(',');
+    const params = [];
+    tagIds.forEach(tagId => { params.push(mediaId, tagId) });
+    const sql = `INSERT OR IGNORE INTO media_tags(media_id, tag_id) VALUES ${placeholders}`;
+    db.run(sql, params, function (err) {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
+// Processa e associa tags ao salvar mídia
+async function processAndAssociateTags(mediaId, newTagsRaw) {
+  if (!newTagsRaw) return;
+
+  let newTags = Array.isArray(newTagsRaw) ? newTagsRaw : newTagsRaw.split(',').map(t => t.trim()).filter(Boolean);
+
+  // Buscar tags similares existentes
+  const similarTags = await findSimilarTags(newTags);
+  const similarTagNames = similarTags.map(t => t.name.toLowerCase());
+
+  // Tags para inserir (quando poucas similares)
+  const tagsToInsert = [];
+
+  for (const tag of newTags) {
+    const lowerTag = tag.toLowerCase();
+    const matched = similarTagNames.filter(n => n.includes(lowerTag) || lowerTag.includes(n));
+    if (matched.length < 3) {
+      tagsToInsert.push(tag);
+    }
+  }
+
+  const combinedTags = [...new Set(similarTags.map(t => t.name).concat(tagsToInsert))];
+
+  // Inserir/atualizar tags e pegar IDs
+  const tagIds = await addOrUpdateTags(combinedTags);
+
+  // Associar tags à media
+  await associateTagsToMedia(mediaId, tagIds);
+}
+
+async function saveMedia({
   chatId,
   groupId,
   senderId = null,
@@ -200,8 +316,8 @@ function saveMedia({
   return new Promise((resolve, reject) => {
     const stmt = db.prepare(
       `
-      INSERT INTO media (chat_id, group_id, sender_id, file_path, mimetype, timestamp, description, tags, hash_visual, hash_md5, nsfw, count_random)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+      INSERT INTO media (chat_id, group_id, sender_id, file_path, mimetype, timestamp, description, hash_visual, hash_md5, nsfw, count_random)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     `
     );
     stmt.run(
@@ -212,13 +328,18 @@ function saveMedia({
       mimetype,
       timestamp,
       description,
-      tags,
       hashVisual,
       hashMd5,
       nsfw,
-      function (err) {
-        if (err) reject(err);
-        else resolve(this.lastID);
+      async function (err) {
+        if (err) return reject(err);
+        const mediaId = this.lastID;
+        try {
+          await processAndAssociateTags(mediaId, tags);
+          resolve(mediaId);
+        } catch (e) {
+          reject(e);
+        }
       }
     );
     stmt.finalize();
@@ -278,9 +399,40 @@ function findById(id) {
   });
 }
 
-function updateMediaTags(id, tags) {
+async function updateMediaTags(mediaId, newTagsToAdd) {
+  if (!mediaId) throw new Error('mediaId obrigatório');
+
+  const MAX_TAGS_LENGTH = 500;
+
+  const media = await findById(mediaId);
+  if (!media) throw new Error('Mídia não encontrada');
+
+  let currentTagsStr = media.tags || '';
+  // Quebrar tags atuais em array
+  let currentTags = Array.isArray(currentTagsStr) ? currentTagsStr : currentTagsStr.split(',').map(t => t.trim()).filter(Boolean);
+
+  let newTagsArray = [];
+  if (typeof newTagsToAdd === 'string') {
+    newTagsArray = newTagsToAdd.split(',').map(t => t.trim()).filter(Boolean);
+  } else if (Array.isArray(newTagsToAdd)) {
+    newTagsArray = newTagsToAdd.map(t => t.trim()).filter(Boolean);
+  }
+
+  // Combina e remove duplicados
+  const combinedTagsSet = new Set([...currentTags, ...newTagsArray]);
+  let combinedTagsArr = Array.from(combinedTagsSet);
+
+  // Junta em string para medir tamanho
+  let combinedTagsStr = combinedTagsArr.join(',');
+
+  if (combinedTagsStr.length > MAX_TAGS_LENGTH) {
+    // Se ultrapassar limite, substitui totalmente pelas novas tags (limpa as antigas)
+    combinedTagsArr = newTagsArray;
+    combinedTagsStr = combinedTagsArr.join(',');
+  }
+
   return new Promise((resolve, reject) => {
-    db.run(`UPDATE media SET tags = ? WHERE id = ?`, [tags, id], function (err) {
+    db.run(`UPDATE media SET tags = ? WHERE id = ?`, [combinedTagsStr, mediaId], function (err) {
       if (err) reject(err);
       else resolve(this.changes);
     });
@@ -294,6 +446,46 @@ function getTop10Media() {
       (err, rows) => {
         if (err) reject(err);
         else resolve(rows);
+      }
+    );
+  });
+}
+
+//Atualiza a descrição da figurinha, tentando primeiro adicionar na descrição existente
+//se for muito grande, limpa a anterio e aí sim adiciona
+async function updateMediaDescription(mediaId, newDescriptionToAdd) {
+  if (!mediaId) throw new Error('mediaId obrigatório');
+
+  const MAX_DESCRIPTION_LENGTH = 1024;
+
+  const media = await findById(mediaId);
+  if (!media) throw new Error('Mídia não encontrada');
+
+  let currentDescription = media.description || '';
+  let currentTags = media.tags || '';
+
+  // Normaliza tags para string
+  if (Array.isArray(currentTags)) currentTags = currentTags.join(',');
+
+  if (typeof newDescriptionToAdd !== 'string') newDescriptionToAdd = String(newDescriptionToAdd);
+
+  let combinedDescription = currentDescription ? (currentDescription.trim() + ' ' + newDescriptionToAdd.trim()) : newDescriptionToAdd.trim();
+
+  if (combinedDescription.length > MAX_DESCRIPTION_LENGTH) {
+    // Se exceder limite, substitui descrição e limpa tags
+    combinedDescription = newDescriptionToAdd.trim();
+    currentTags = '';
+    // Atualiza tags limpando
+    await updateMediaTags(mediaId, currentTags);
+  }
+
+  return new Promise((resolve, reject) => {
+    db.run(
+      `UPDATE media SET description = ? WHERE id = ?`,
+      [combinedDescription, mediaId],
+      function (err) {
+        if (err) reject(err);
+        else resolve(this.changes);
       }
     );
   });
@@ -324,6 +516,7 @@ module.exports = {
   findByHashVisual,
   findById,
   updateMediaTags,
+  updateMediaDescription,
   processOldStickers,
   getMediaWithLowestRandomCount,
   getTop10Media,

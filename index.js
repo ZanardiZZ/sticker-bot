@@ -28,6 +28,7 @@ const {
   findByHashVisual,
   findById,
   updateMediaTags,
+  updateMediaDescription,
   processOldStickers,
   getMediaWithLowestRandomCount,
   getTop10Media,
@@ -450,23 +451,74 @@ async function handleIncomingMedia(client, message) {
     // Se for WebP animado, preserva sem reprocessar (evita perder animação)
     if (!(mimetype === 'image/webp' && isAnimatedWebpBuffer(buffer))) {
       bufferToSave = await sharp(buffer).webp().toBuffer();
+      mimetypeToSave = 'image/webp';
+      extToSave = 'webp';
     }
-    extToSave = 'webp';
-    mimetypeToSave = 'image/webp';
   }
-}
-// ---- Atualização de descrição (sqlite3 local)
-async function updateMediaDescription(id, description) {
-  return new Promise((resolve, reject) => {
-    const sqlite3 = require('sqlite3').verbose();
-    const dbPath = path.resolve(__dirname, 'media.db');
-    const db = new sqlite3.Database(dbPath);
-    db.run('UPDATE media SET description = ? WHERE id = ?', [description, id], function (err) {
-      if (err) reject(err);
-      else resolve(this.changes);
+
+  // Verifica se é NSFW
+  let nsfwFlag = 0;
+  try {
+    nsfwFlag = (await isNSFW(bufferToSave)) ? 1 : 0;
+  } catch (err) {
+    console.error('Erro ao executar filtro NSFW:', err);
+    nsfwFlag = 0;
+  }
+
+  // Gera hash visual para identificar mídia
+  const hv = await getHashVisual(bufferToSave);
+
+  // Verifica se mídia já existe (por hash)
+  let existing = await findByHashVisual(hv);
+
+  if (existing && !forceMap.get(chatId)) {
+    // Já existe - enviar mensagem padrão com descrição, tags e id e msg aviso
+    const clean = cleanDescriptionTags(existing.description, existing.tags);
+    await client.sendText(chatId, 'Mídia já está salva no banco de dados. Aqui estão os dados:');
+    await client.sendText(chatId, renderInfoMessage({ ...clean, id: existing.id }));
+  } else {
+    // Salvar arquivo na pasta local
+    ensureDirSync(MEDIA_DIR);
+    const filename = `${Date.now()}.${extToSave}`;
+    const filePath = path.join(MEDIA_DIR, filename);
+    await fsp.writeFile(filePath, bufferToSave);
+
+    // Tentar obter descrição e tags via IA somente se não for NSFW
+    let description = '';
+    let tags = '';
+    if (nsfwFlag === 0) {
+      try {
+        const aiResult = await getAiAnnotations(bufferToSave);
+        description = aiResult.description || '';
+        tags = aiResult.tags ? aiResult.tags.join(',') : '';
+      } catch (err) {
+        console.error('Erro ao obter anotações AI:', err);
+      }
+    }
+
+     // Salva no banco com campo nsfw, descrição e tags
+    const newMediaId = await saveMedia({
+      chatId: chatId,
+      filePath: filePath,
+      mimetype: mimetypeToSave,
+      timestamp: Date.now(),
+      description: description,
+      tags: tags,
+      hashVisual: hv,
+      hashMd5: '', // se não tiver ainda
+      nsfw: nsfwFlag,
+      count_random: 0,
     });
-    db.close();
-  });
+
+    forceMap.delete(chatId);
+
+    // Envia mensagem com texto padrão
+    const media = await findById(newMediaId);
+    if (media) {
+      const clean = cleanDescriptionTags(media.description, media.tags);
+      await client.sendText(chatId, renderInfoMessage({ ...clean, id: media.id }));
+    }
+  }
 }
 
 // ---- Inicialização
