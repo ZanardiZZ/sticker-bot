@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const sharp = require('sharp');
 const fs = require('fs');
 const { getAiAnnotations } = require('./services/ai'); // Importa a função IA
+const axios = require('axios');
 
 // Variável para caminho da pasta de figurinhas antigas será lida do .env
 const OLD_STICKERS_PATH = process.env.OLD_STICKERS_PATH || null;
@@ -65,7 +66,35 @@ db.serialize(() => {
 function getMD5(buffer) {
   return crypto.createHash('md5').update(buffer).digest('hex');
 }
+//Função para buscar sinônimos
+async function getSynonyms(word) {
+  try {
+    const res = await axios.post('http://localhost:5000/synonyms', { word });
+    return res.data.synonyms || [];
+  } catch (err) {
+    console.error('Erro consultando sinônimos:', err.message);
+    return [];
+  }
+}
+// Função para expandir as tags com sinônimos via WordNet+OMW microserviço
+async function expandTagsWithSynonyms(tags) {
+  const expandedSet = new Set();
 
+  for (const tag of tags) {
+    const trimmedTag = tag.trim();
+    if (!trimmedTag) continue;
+    expandedSet.add(trimmedTag.toLowerCase());
+
+    try {
+      const syns = await getSynonyms(trimmedTag);
+      syns.forEach(s => expandedSet.add(s.toLowerCase()));
+    } catch (e) {
+      console.warn(`Falha ao obter sinônimos para tag "${trimmedTag}":`, e);
+    }
+  }
+
+  return Array.from(expandedSet);
+}
 // Gera hash visual simples (resize e md5) do buffer de imagem
 async function getHashVisual(buffer) {
   try {
@@ -204,13 +233,18 @@ function getMediaWithLowestRandomCount() {
 }
 
 // Busca tags semelhantes para certos termos (simplificação com LIKE)
-function findSimilarTags(tagCandidates) {
+async function findSimilarTags(tagCandidates) {
+  if (!tagCandidates.length) return [];
+
+  // Expande as tags com seus sinônimos
+  const expandedTags = await expandTagsWithSynonyms(tagCandidates);
+
   return new Promise((resolve, reject) => {
-    if (!tagCandidates.length) return resolve([]);
-    const placeholders = tagCandidates.map(() => 'LOWER(name) LIKE ?').join(' OR ');
-    const params = tagCandidates.map(t => `%${t.toLowerCase()}%`);
+    const placeholders = expandedTags.map(() => 'LOWER(name) LIKE ?').join(' OR ');
+    const params = expandedTags.map(t => `%${t}%`);
+
     db.all(
-      `SELECT id, name FROM tags WHERE ${placeholders} LIMIT 10`, 
+      `SELECT id, name FROM tags WHERE ${placeholders} LIMIT 10`,
       params,
       (err, rows) => {
         if (err) reject(err);
@@ -276,7 +310,7 @@ async function processAndAssociateTags(mediaId, newTagsRaw) {
 
   let newTags = Array.isArray(newTagsRaw) ? newTagsRaw : newTagsRaw.split(',').map(t => t.trim()).filter(Boolean);
 
-  // Buscar tags similares existentes
+  // Buscar tags similares existentes considerando sinônimos expandidos
   const similarTags = await findSimilarTags(newTags);
   const similarTagNames = similarTags.map(t => t.name.toLowerCase());
 
