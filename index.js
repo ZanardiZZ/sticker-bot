@@ -262,9 +262,15 @@ function scheduleAutoSend(client) {
     console.warn('AUTO_SEND_GROUP_ID não configurado no .env');
     return;
   }
-  // A cada hora cheia das 08:00 às 21:00
-  cron.schedule('0 8-21 * * *', () => sendRandomMediaToGroup(client));
-  console.log('Agendamento: envios automáticos de 08h às 21h, toda hora cheia.');
+
+  const tz = process.env.TIMEZONE || process.env.TZ || 'America/Sao_Paulo';
+
+  // A cada hora cheia das 08:00 às 21:00 no fuso configurado
+  cron.schedule('0 8-21 * * *', () => sendRandomMediaToGroup(client), {
+    timezone: tz,
+  });
+
+  console.log(`Agendamento: envios automáticos de 08h às 21h no fuso ${tz}, toda hora cheia.`);
 }
 
 // ---- Comandos
