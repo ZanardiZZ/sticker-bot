@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sticker Browser</title>
+  <link rel="stylesheet" href="/styles.css">
+
+  
+  <script async defer src="https://analytics.zanardizz.uk/script.js" data-website-id="1ae7469e-7785-4f09-9956-8afdd8efa316"></script>
+</head>
+<body>
+<nav>
+  <a href="/">Home</a>
+  <a href="/ranking/tags">Ranking Tags</a>
+  <a href="/ranking/users">Ranking Usuários</a>
+  <span id="userInfo" style="margin-left:auto;"></span>
+</nav>
+<header>
+  <strong>Sticker Browser</strong>
+  <input id="q" placeholder="Busca..."/>
+  <input id="tag" placeholder="Tag (todas)"/>
+  <input id="anyTag" placeholder="Qualquer tag(s)"/>
+  <select id="nsfw">
+    <option value="all">NSFW: Todos</option>
+    <option value="0">Só Safe</option>
+    <option value="1">Só NSFW</option>
+  </select>
+  <select id="sort">
+    <option value="newest">Mais novas</option>
+    <option value="oldest">Mais antigas</option>
+    <option value="popular">Populares</option>
+    <option value="name">Nome</option>
+    <option value="random">Aleatório</option>
+  </select>
+  <button id="reload">Recarregar</button>
+  <span id="count"></span>
+</header>
+<div class="grid" id="grid"></div>
+
+<div id="editModal">
+  <div class="box">
+    <h3>Edição Sticker <span id="editId"></span></h3>
+    <textarea id="editDesc" rows="3" placeholder="Descrição"></textarea>
+    <label style="font-size:.8rem;"><input type="checkbox" id="editNsfw"> NSFW</label>
+    <input id="editTags" placeholder="tags separadas por vírgula" />
+    <div style="display:flex; gap:.5rem; justify-content:flex-end;">
+      <button id="cancelEdit" class="btn-secondary">Cancelar</button>
+      <button id="saveEdit" class="btn-primary">Salvar</button>
+    </div>
+    <div id="editMsg" class="muted"></div>
+  </div>
+</div>
+
+<script src="/app.js" defer></script>
+</body>
+</html>

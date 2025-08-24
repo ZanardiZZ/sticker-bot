@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Admin – Configurações</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .dash { padding: 1rem; max-width: 900px; margin: auto; }
+    .panel { background:#1c1c1c; border-radius:8px; padding:.8rem; margin-bottom:12px; }
+    .panel h3 { margin:.2rem 0 .6rem 0; font-size:1rem; }
+    .muted { color:#bbb; font-size:.9rem; }
+    .warn { background:#3a241f; color:#ffd7c2; padding:.6rem; border:1px solid #5a3a2f; border-radius:6px; margin-bottom:10px; }
+    .row { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; }
+    .row > * { flex: 1 1 220px; }
+    table { width:100%; border-collapse:collapse; }
+    th, td { text-align:left; padding:.4rem .5rem; border-bottom:1px solid #333; font-size:.9rem; }
+    .btn-primary { background:#2f6fed; color:#fff; border:0; padding:.5rem .8rem; border-radius:6px; cursor:pointer; }
+  </style>
+
+  
+  <script async defer src="https://analytics.zanardizz.uk/script.js" data-website-id="1ae7469e-7785-4f09-9956-8afdd8efa316"></script>
+</head>
+<body>
+  <nav>
+    <a href="/">Home</a>
+    <strong>Admin</strong>
+  </nav>
+
+  <div class="dash">
+    <div id="mustChangeBanner" class="warn" style="display:none;">
+      Por segurança, altere sua senha inicial agora.
+    </div>
+
+    <div class="panel">
+      <h3>Minha conta</h3>
+      <div class="row">
+        <input id="cp_current" type="password" placeholder="Senha atual">
+        <input id="cp_new" type="password" placeholder="Nova senha (mín. 8)">
+        <input id="cp_new2" type="password" placeholder="Confirmar nova senha">
+      </div>
+      <div style="display:flex; gap:.5rem; justify-content:flex-end; margin-top:.6rem;">
+        <button id="btnChangePass" class="btn-primary">Alterar senha</button>
+      </div>
+      <div id="cp_msg" class="muted"></div>
+    </div>
+
+    <div class="panel">
+      <h3>Regras de IP</h3>
+      <div class="row">
+        <input id="ip" placeholder="IP para regra" />
+        <select id="action">
+          <option value="deny">Bloquear</option>
+          <option value="allow">Permitir</option>
+        </select>
+        <input id="ttl" type="number" min="0" placeholder="TTL (minutos, opcional)" style="max-width:160px;">
+        <input id="reason" placeholder="Motivo (opcional)" style="max-width:220px;">
+        <button id="addRule" class="btn-primary">Adicionar Regra</button>
+      </div>
+      <table id="tblRules">
+        <thead><tr><th>ID</th><th>IP</th><th>Ação</th><th>Expira</th><th>Criada por</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <p class="muted">Métricas de acesso agora estão no Umami.</p>
+  </div>
+
+  <script src="/admin.js" defer></script>
+</body>
+</html>

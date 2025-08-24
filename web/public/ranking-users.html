@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"/>
+  <title>Ranking de Usuários</title>
+  <link rel="stylesheet" href="/styles.css">
+
+  
+  <script async defer src="https://analytics.zanardizz.uk/script.js" data-website-id="1ae7469e-7785-4f09-9956-8afdd8efa316"></script>
+</head>
+<body>
+<nav>
+  <a href="/">Home</a>
+  <a href="/ranking/tags">Ranking Tags</a>
+  <a href="/ranking/users">Ranking Usuários</a>
+</nav>
+<section class="container">
+  <h1>Ranking de Usuários</h1>
+  <div class="toolbar">
+    <select id="metric"><option value="count">Qtd. Figurinhas</option><option value="popular">Soma count_random</option></select>
+    <select id="nsfw"><option value="all">NSFW: Todos</option><option value="0">Só Safe</option><option value="1">Só NSFW</option></select>
+    <input id="since" placeholder="Desde (YYYY-MM-DD)"/>
+    <input id="until" placeholder="Até (YYYY-MM-DD)"/>
+    <input id="limit" type="number" value="50" min="1" max="500" style="width:80px"/>
+    <button id="loadBtn" class="btn-primary">Carregar</button>
+  </div>
+  <table class="table">
+    <thead><tr><th>#</th><th>Sender</th><th>Métrica</th><th>Total Media</th><th>Total Random</th><th>Primeiro</th><th>Último</th><th>Atividade (dias)</th></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</section>
+<script src="/ranking-users.js" defer></script>
+</body>
+</html>
