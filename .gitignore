@@ -27,6 +27,7 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+tmp/
 _IGNORE_StickerBotSession/
 # Misc
 *.pid
