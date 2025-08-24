@@ -593,10 +593,12 @@ app.get('/api/rank/users', async (req, res) => {
     const sql = `
       SELECT
         m.sender_id AS sender_id,
-        COALESCE(c.display_name, '') AS display_name,
+        COALESCE(NULLIF(TRIM(c.display_name), ''), '') AS display_name,
         COUNT(*) AS sticker_count
       FROM media m
-      LEFT JOIN contacts c ON c.sender_id = m.sender_id
+      LEFT JOIN contacts c
+        ON replace(replace(lower(trim(c.sender_id)), '@s.whatsapp.net',''),'@c.us','')
+         = replace(replace(lower(trim(m.sender_id)), '@s.whatsapp.net',''),'@c.us','')
       ${whereSql}
       GROUP BY m.sender_id
       HAVING m.sender_id IS NOT NULL AND m.sender_id <> ''
@@ -605,15 +607,20 @@ app.get('/api/rank/users', async (req, res) => {
     `;
     params.push(limit);
 
-    const rows = await dbAll(sql, params);
-    const normalized = rows.map(r => ({
-      sender_id: r.sender_id,
-      chat_id: r.sender_id,
-      display_name: r.display_name || null,
-      count: r.sticker_count,
-      sticker_count: r.sticker_count
-    }));
-    res.json(normalized);
+    db.all(sql, params, (err, rows) => {
+      if (err) {
+        console.error('[rank/users] db error:', err);
+        return res.status(500).json({ error: 'db_error', message: err.message });
+      }
+      const normalized = (rows || []).map(r => ({
+        sender_id: r.sender_id,
+        chat_id: r.sender_id,
+        display_name: r.display_name || null,
+        count: r.sticker_count,
+        sticker_count: r.sticker_count
+      }));
+      res.json(normalized);
+    });
   } catch (err) {
     console.error('[rank/users] db error:', err);
     res.status(500).json({ error: 'db_error', message: err.message });
