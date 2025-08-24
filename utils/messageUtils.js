@@ -12,29 +12,25 @@ function cleanDescriptionTags(description, tags) {
   const badPhrases = [
     'desculpe',
     'não posso ajudar',
-    'não disponível', 
+    'não disponível',
     'sem descrição',
-    'audio salvo sem descrição ai'
+    'audio salvo sem descrição ai',
   ];
-  
-  let cleanDesc = description ? description.toLowerCase() : '';
-  if (badPhrases.some(phrase => cleanDesc.includes(phrase))) {
-    cleanDesc = '';
-  } else {
-    cleanDesc = description;
-  }
+
+  let cleanDesc = description ? String(description) : '';
+  if (badPhrases.some((p) => cleanDesc.toLowerCase().includes(p))) cleanDesc = '';
 
   let cleanTags = [];
-  if (tags && Array.isArray(tags)) {
-    cleanTags = tags.filter(t => {
-      if (!t) return false;
-      if (t.includes('##')) return false;
-      const low = t.toLowerCase();
-      if (badPhrases.some(phrase => low.includes(phrase))) return false;
-      return true;
-    });
+  if (Array.isArray(tags)) {
+    cleanTags = tags
+      .filter(Boolean)
+      .map((t) => String(t).trim())
+      .filter((t) => t && !t.includes('##') && !badPhrases.some((p) => t.toLowerCase().includes(p)));
   } else if (typeof tags === 'string') {
-    cleanTags = tags.split(',').map(t => t.trim()).filter(t => t.length > 0);
+    cleanTags = tags
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => t);
   }
 
   return { description: cleanDesc, tags: cleanTags };
