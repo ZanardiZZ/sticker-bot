@@ -55,11 +55,18 @@ function upsertContact(senderId, displayName) {
 
 /**
  * Chame isso em todo onMessage do open-wa.
+ * Evita gravar o ID do grupo (@g.us) como contato.
  */
 function upsertContactFromMessage(message) {
-  const senderId = message?.sender?.id || message?.from; // fallback
+  // Preferir id do remetente real. Em grupo: author; em DM: from (não é @g.us)
+  let senderId =
+    message?.sender?.id ||
+    message?.author ||
+    (message?.from && !String(message.from).endsWith('@g.us') ? message.from : null);
+
+  if (!senderId) return;
+
   const display = extractDisplayNameFromMessage(message);
-  // Mesmo sem display, inserimos o sender_id para futura atualização.
   upsertContact(senderId, display || '');
 }
 

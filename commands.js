@@ -191,23 +191,24 @@ async function handleTop5UsersCommand(client, chatId) {
 
     for (let i = 0; i < topUsers.length; i++) {
       const user = topUsers[i];
-      let userName = null;
+      let userName = (user.display_name && user.display_name.trim()) || null;
 
-      try {
-        const contact = await client.getContact(user.chat_id);
-        if (contact) {
-          if (contact.pushname) {
-            userName = contact.pushname;
-          } else if (contact.formattedName) {
-            userName = contact.formattedName;
-          }
+      if (!userName && user.sender_id) {
+        try {
+          const contact = await client.getContact(user.sender_id);
+          userName =
+            contact?.pushname ||
+            contact?.formattedName ||
+            contact?.notifyName ||
+            contact?.name ||
+            null;
+        } catch {
+          // ignore
         }
-      } catch (err) {
-        console.warn(`N�E3o foi poss�EDvel obter o contato para ${user.chat_id}`);
       }
 
       if (!userName) {
-        userName = user.chat_id.split('@')[0];
+        userName = user.sender_id ? String(user.sender_id).split('@')[0] : 'Desconhecido';
       }
 
       reply += `${i + 1}. ${userName} - ${user.sticker_count} figurinhas\n`;
