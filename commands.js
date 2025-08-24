@@ -230,7 +230,7 @@ async function handleSendMediaById(client, message, chatId) {
   try {
     const media = await findById(mediaId);
     if (!media) {
-      await client.sendText(chatId, 'M�EDdia n�E3o encontrada para o ID fornecido.');
+      await client.sendText(chatId, 'Mídia não encontrada para o ID fornecido.');
       return;
     }
 
