@@ -324,12 +324,22 @@ async function cmdTop5Users(client, chatId) {
   let reply = 'Top 5 usuários que enviaram figurinhas:\n\n';
   for (let i = 0; i < topUsers.length; i++) {
     const u = topUsers[i];
-    let name = null;
-    try {
-      const contact = await client.getContact(u.chat_id);
-      name = contact?.pushname || contact?.formattedName || null;
-    } catch {}
-    if (!name) name = u.chat_id ? u.chat_id.split('@')[0] : 'Desconhecido';
+    let name = (u.display_name && u.display_name.trim()) || null;
+
+    // Fallback: tentar obter via API em runtime, se necessário
+    if (!name && u.sender_id) {
+      try {
+        const contact = await client.getContact(u.sender_id);
+        name =
+          contact?.pushname ||
+          contact?.formattedName ||
+          contact?.notifyName ||
+          contact?.name ||
+          null;
+      } catch {}
+    }
+
+    if (!name) name = u.sender_id ? String(u.sender_id).split('@')[0] : 'Desconhecido';
     reply += `${i + 1}. ${name} - ${u.sticker_count} figurinhas\n`;
   }
   await client.sendText(chatId, reply);
@@ -525,9 +535,19 @@ async function handleIncomingMedia(client, message) {
       }
     }
 
-     // Salva no banco com campo nsfw, descrição e tags
+     // Identidades: remetente e grupo
+    const senderId =
+      message?.sender?.id ||
+      message?.author ||
+      (message?.from && !String(message.from).endsWith('@g.us') ? message.from : null);
+
+    const groupId = message?.from && String(message.from).endsWith('@g.us') ? message.from : null;
+
+    // Salva no banco com sender_id, group_id, nsfw, descrição e tags
     const newMediaId = await saveMedia({
       chatId: chatId,
+      groupId: groupId,
+      senderId: senderId || null,
       filePath: filePath,
       mimetype: mimetypeToSave,
       timestamp: Date.now(),
@@ -536,7 +556,6 @@ async function handleIncomingMedia(client, message) {
       hashVisual: hv,
       hashMd5: '', // se não tiver ainda
       nsfw: nsfwFlag,
-      count_random: 0,
     });
 
     forceMap.delete(chatId);
@@ -563,6 +582,10 @@ create({
 
 async function start(client) {
   console.log('🤖 Bot iniciado e aguardando mensagens...');
+  
+  // Certifica que a tabela contacts existe
+  initContactsTable();
+  
   scheduleAutoSend(client);
 
   client.onMessage(async (message) => {
