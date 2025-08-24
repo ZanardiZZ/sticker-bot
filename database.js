@@ -602,19 +602,31 @@ async function updateMediaDescription(mediaId, newDescriptionToAdd) {
   });
 }
 
-// Atualizar getTop5UsersByStickerCount para usar sender_id e filtrar pelo grupo (parâmetro opcional)
+// Atualiza a função para retornar display_name via JOIN com contacts
 function getTop5UsersByStickerCount(groupId = null) {
   return new Promise((resolve, reject) => {
-    let sql = `SELECT sender_id as chat_id, COUNT(*) as sticker_count FROM media`;
+    let sql = `
+      SELECT
+        m.sender_id,
+        COUNT(*) AS sticker_count,
+        COALESCE(c.display_name, '') AS display_name
+      FROM media m
+      LEFT JOIN contacts c ON c.sender_id = m.sender_id
+      WHERE m.sender_id IS NOT NULL
+    `;
     const params = [];
     if (groupId) {
-      sql += ` WHERE group_id = ?`;
+      sql += ` AND m.group_id = ?`;
       params.push(groupId);
     }
-    sql += ` GROUP BY sender_id ORDER BY sticker_count DESC LIMIT 5`;
+    sql += `
+      GROUP BY m.sender_id
+      ORDER BY sticker_count DESC
+      LIMIT 5
+    `;
     db.all(sql, params, (err, rows) => {
       if (err) reject(err);
-      else resolve(rows);
+      else resolve(rows || []);
     });
   });
 }
