@@ -10,6 +10,7 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const mime = require('mime-types');
+const { initContactsTable, upsertContactFromMessage } = require('./bot/contacts');
 // wa-sticker-formatter é opcional. Se não estiver instalado, caímos em fallback do open-wa
 let Sticker, StickerTypes;
 try {
@@ -28,6 +29,7 @@ const {
   findByHashVisual,
   findById,
   updateMediaTags,
+  getTagsForMedia,
   updateMediaDescription,
   processOldStickers,
   getMediaWithLowestRandomCount,
@@ -239,7 +241,8 @@ async function sendRandomMediaToGroup(client) {
 
     const full = await findById(media.id);
     if (full) {
-      const clean = cleanDescriptionTags(full.description, full.tags);
+      const tags = await getTagsForMedia(full.id);
+      const clean = cleanDescriptionTags(full.description, tags);
       await client.sendText(AUTO_SEND_GROUP_ID, renderInfoMessage({ ...clean, id: full.id }));
     }
 
@@ -278,7 +281,8 @@ async function cmdRandom(client, chatId) {
   await sendStickerForMediaRecord(client, chatId, media);
 
   const m = await findById(media.id);
-  const clean = cleanDescriptionTags(m.description, m.tags);
+  const tags = await getTagsForMedia(media.id);
+  const clean = cleanDescriptionTags(m.description, tags);
   await client.sendText(chatId, renderInfoMessage({ ...clean, id: m.id }));
 }
 
@@ -330,7 +334,8 @@ async function cmdID(client, chatId, body) {
     return;
   }
   await sendStickerForMediaRecord(client, chatId, media);
-  const clean = cleanDescriptionTags(media.description, media.tags);
+  const tags = await getTagsForMedia(media.id);
+  const clean = cleanDescriptionTags(media.description, tags);
   await client.sendText(chatId, renderInfoMessage({ ...clean, id: media.id }));
 }
 
@@ -385,28 +390,35 @@ async function handleTaggingText(client, chatId, text) {
 
     const clearCmds = ['nenhum', 'limpar', 'clear', 'apagar', 'remover'];
     let newDescription = media.description || '';
-    let newTags = media.tags ? (Array.isArray(media.tags) ? media.tags : String(media.tags).split(',')) : [];
+    const tags = await getTagsForMedia(mediaId);
+    let newTags = tags;
 
-    const parts = newText.split(';');
-    for (const part of parts) {
-      const [rawKey, ...rest] = part.split(':');
-      if (!rawKey || !rest.length) continue;
-      const key = rawKey.trim().toLowerCase();
-      const value = rest.join(':').trim();
-      if (['descricao', 'descrição', 'description'].includes(key)) {
-        newDescription = clearCmds.includes(value.toLowerCase()) ? '' : value;
-      } else if (key === 'tags') {
-        newTags = value.split(',').map((t) => t.trim()).filter(Boolean);
-      }
-    }
+const parts = newText.split(';');
+let descriptionChanged = false;
+let tagsChanged = false;
+for (const part of parts) {
+  const [rawKey, ...rest] = part.split(':');
+  if (!rawKey || !rest.length) continue;
+  const key = rawKey.trim().toLowerCase();
+  const value = rest.join(':').trim();
+  if (['descricao', 'descrição', 'description'].includes(key)) {
+    newDescription = ['nenhum', 'limpar', 'clear', 'apagar', 'remover'].includes(value.toLowerCase()) ? '' : value;
+    descriptionChanged = true;
+  } else if (key === 'tags') {
+    newTags = value.split(',').map((t) => t.trim()).filter(Boolean);
+    tagsChanged = true;
+  }
+}
 
-    if (parts.length === 1 && !newText.toLowerCase().startsWith('descricao:') && !newText.toLowerCase().startsWith('descrição:') && !newText.toLowerCase().startsWith('description:')) {
-      newTags = newText.split(',').map((t) => t.trim()).filter(Boolean);
-    }
+// Se apenas texto livre (sem "descricao:"), considerar só tag atualização
+if (parts.length === 1 && !newText.toLowerCase().startsWith('descricao:') && !newText.toLowerCase().startsWith('descrição:') && !newText.toLowerCase().startsWith('description:')) {
+  newTags = newText.split(',').map((t) => t.trim()).filter(Boolean);
+  tagsChanged = true;
+}
 
     // Enxugar para o limite total
-    let combined = (newDescription?.length || 0) + (newTags.join(',').length || 0);
-    if (combined > MAX_TAGS_LENGTH) {
+    let combinedLength = (newDescription?.length || 0) + (newTags.join(',').length || 0);
+    if (combinedLength > MAX_TAGS_LENGTH) {
       const allowTagsLen = Math.max(0, MAX_TAGS_LENGTH - (newDescription?.length || 0));
       let tagsStr = newTags.join(',');
       if (tagsStr.length > allowTagsLen) {
@@ -415,11 +427,17 @@ async function handleTaggingText(client, chatId, text) {
       }
     }
 
-    await updateMediaDescription(mediaId, newDescription);
-    await updateMediaTags(mediaId, newTags.join(','));
+   // Atualizar conforme flags
+if (descriptionChanged) {
+  await updateMediaDescription(mediaId, newDescription);
+}
+if (tagsChanged) {
+  await updateMediaTags(mediaId, newTags);
+}
 
     const updated = await findById(mediaId);
-    const clean = cleanDescriptionTags(updated.description, updated.tags);
+    const updatedTags = await getTagsForMedia(mediaId);
+    const clean = cleanDescriptionTags(updated.description, updatedTags);
     await client.sendText(chatId, `✅ Figurinha atualizada!\n\n${renderInfoMessage({ ...clean, id: updated.id })}`);
   } catch (err) {
     console.error('Erro ao adicionar tags:', err);
@@ -428,7 +446,7 @@ async function handleTaggingText(client, chatId, text) {
     taggingMap.delete(chatId);
   }
 
-  return true; // tratou
+  return true; // marcou como tratado
 }
 
 // ---- Pipeline de mídia recebida
@@ -536,11 +554,14 @@ create({
 async function start(client) {
   console.log('🤖 Bot iniciado e aguardando mensagens...');
   scheduleAutoSend(client);
-
+  initContactsTable();
   client.onMessage(async (message) => {
     try {
       const chatId = message.from;
-
+      try { upsertContactFromMessage(message);
+      } catch (e) {
+        console.error('[bot] upsertContactFromMessage error:', e);
+      }
       // 1) Comandos inválidos (que começam com # mas não constam na lista)
       if (message.body?.startsWith('#') && !isValidCommand(message.body)) {
           await client.sendText(chatId,'Comando não reconhecido.\nComandos disponíveis:\n' + VALID_COMMANDS.join('\n'));

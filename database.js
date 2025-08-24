@@ -14,6 +14,14 @@ const PROCESS_BATCH_SIZE = 5;
 const dbPath = path.resolve(__dirname, 'media.db');
 const db = new sqlite3.Database(dbPath);
 
+db.get('SELECT COUNT(*) as total FROM media', (err, row) => {
+  if (err) {
+    console.error("[DB] ERRO ao acessar tabela 'media':", err);
+  } else {
+    console.log(`[DB] Tabela 'media' tem ${row.total} registros.`);
+  }
+});
+
 db.serialize(() => {
   db.run(`
     CREATE TABLE IF NOT EXISTS media (
@@ -60,7 +68,24 @@ db.serialize(() => {
       FOREIGN KEY(tag_id) REFERENCES tags(id) ON DELETE CASCADE
     )
   `);
-});
+  // Tabela de usuários para login do painel
+  db.run(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'admin',
+      created_at INTEGER NOT NULL
+    )
+  `);
+  // Índices auxiliares
+  db.run(`CREATE INDEX IF NOT EXISTS idx_media_timestamp ON media(timestamp DESC)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_media_sender_id ON media(sender_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_media_nsfw ON media(nsfw)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_media_tags_tag_id ON media_tags(tag_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_media_tags_media_id ON media_tags(media_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name)`);
+ });
 
 // Gera hash MD5 de um buffer
 function getMD5(buffer) {
@@ -333,7 +358,28 @@ async function processAndAssociateTags(mediaId, newTagsRaw) {
   // Associar tags à media
   await associateTagsToMedia(mediaId, tagIds);
 }
+async function replaceTagsForMedia(mediaId, newTags) {
+  return new Promise((resolve, reject) => {
+    db.serialize(async () => {
+      try {
+        // 1. Deleta associações antigas
+        db.run(`DELETE FROM media_tags WHERE media_id = ?`, [mediaId], async (err) => {
+          if (err) return reject(err);
 
+          // 2. Insere/atualiza tags na tabela tags e obtém ids
+          const tagIds = await addOrUpdateTags(newTags);
+
+          // 3. Associa tags à mídia
+          await associateTagsToMedia(mediaId, tagIds);
+
+          resolve();
+        });
+      } catch (ex) {
+        reject(ex);
+      }
+    });
+  });
+}
 async function saveMedia({
   chatId,
   groupId,
@@ -423,7 +469,19 @@ function findByHashVisual(hashVisual) {
     );
   });
 }
-
+// Função para obter as tags associadas a uma mídia via tabela media_tags e tags
+function getTagsForMedia(mediaId) {
+  return new Promise((resolve, reject) => {
+    db.all(
+      `SELECT tags.name FROM tags INNER JOIN media_tags ON tags.id = media_tags.tag_id WHERE media_tags.media_id = ?`,
+      [mediaId],
+      (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows.map(r => r.name));
+      }
+    );
+  });
+}
 function findById(id) {
   return new Promise((resolve, reject) => {
     db.get(`SELECT * FROM media WHERE id = ? LIMIT 1`, [id], (err, row) => {
@@ -433,17 +491,9 @@ function findById(id) {
   });
 }
 
+// Atualiza tags da mídia usando estrutura de tabelas normalizadas media_tags e tags
 async function updateMediaTags(mediaId, newTagsToAdd) {
   if (!mediaId) throw new Error('mediaId obrigatório');
-
-  const MAX_TAGS_LENGTH = 500;
-
-  const media = await findById(mediaId);
-  if (!media) throw new Error('Mídia não encontrada');
-
-  let currentTagsStr = media.tags || '';
-  // Quebrar tags atuais em array
-  let currentTags = Array.isArray(currentTagsStr) ? currentTagsStr : currentTagsStr.split(',').map(t => t.trim()).filter(Boolean);
 
   let newTagsArray = [];
   if (typeof newTagsToAdd === 'string') {
@@ -452,25 +502,10 @@ async function updateMediaTags(mediaId, newTagsToAdd) {
     newTagsArray = newTagsToAdd.map(t => t.trim()).filter(Boolean);
   }
 
-  // Combina e remove duplicados
-  const combinedTagsSet = new Set([...currentTags, ...newTagsArray]);
-  let combinedTagsArr = Array.from(combinedTagsSet);
+  // Usa a função que remove associações antigas e associa as novas tags
+  await replaceTagsForMedia(mediaId, newTagsArray);
 
-  // Junta em string para medir tamanho
-  let combinedTagsStr = combinedTagsArr.join(',');
-
-  if (combinedTagsStr.length > MAX_TAGS_LENGTH) {
-    // Se ultrapassar limite, substitui totalmente pelas novas tags (limpa as antigas)
-    combinedTagsArr = newTagsArray;
-    combinedTagsStr = combinedTagsArr.join(',');
-  }
-
-  return new Promise((resolve, reject) => {
-    db.run(`UPDATE media SET tags = ? WHERE id = ?`, [combinedTagsStr, mediaId], function (err) {
-      if (err) reject(err);
-      else resolve(this.changes);
-    });
-  });
+  return newTagsArray.length;
 }
 
 function getTop10Media() {
@@ -542,6 +577,7 @@ function getTop5UsersByStickerCount(groupId = null) {
   });
 }
 module.exports = {
+  db,
   saveMedia,
   getRandomMedia,
   incrementRandomCount,
@@ -550,6 +586,7 @@ module.exports = {
   findByHashVisual,
   findById,
   updateMediaTags,
+  getTagsForMedia,
   updateMediaDescription,
   processOldStickers,
   getMediaWithLowestRandomCount,
@@ -557,3 +594,27 @@ module.exports = {
   getTop5UsersByStickerCount,
   countMedia
 };
+
+// Bootstrap do usuário admin (usa variáveis de ambiente ADMIN_USER / ADMIN_PASS)
+const bcryptBootstrap = require('bcryptjs');
+(function ensureAdmin() {
+  const username = process.env.ADMIN_USER || 'admin';
+  const password = process.env.ADMIN_PASS || 'admin123';
+  db.get(`SELECT id FROM users WHERE username = ?`, [username], async (err, row) => {
+    if (err) return console.error('Erro ao verificar admin:', err);
+    if (row) return;
+    try {
+      const hash = await bcryptBootstrap.hash(password, 10);
+      db.run(
+        `INSERT INTO users (username, password_hash, role, created_at) VALUES (?,?,?,?)`,
+        [username, hash, 'admin', Date.now()],
+        (e2) => {
+          if (e2) console.error('Erro criando admin:', e2);
+          else console.log('[bootstrap] Usuário admin criado:', username);
+        }
+      );
+    } catch (e) {
+      console.error('Erro hash admin:', e);
+    }
+  });
+})();
