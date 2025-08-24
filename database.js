@@ -607,26 +607,5 @@ module.exports = {
   countMedia
 };
 
-// Bootstrap do usuário admin (usa variáveis de ambiente ADMIN_USER / ADMIN_PASS)
-const bcryptBootstrap = require('bcryptjs');
-(function ensureAdmin() {
-  const username = process.env.ADMIN_USER || 'admin';
-  const password = process.env.ADMIN_PASS || 'admin123';
-  db.get(`SELECT id FROM users WHERE username = ?`, [username], async (err, row) => {
-    if (err) return console.error('Erro ao verificar admin:', err);
-    if (row) return;
-    try {
-      const hash = await bcryptBootstrap.hash(password, 10);
-      db.run(
-        `INSERT INTO users (username, password_hash, role, created_at) VALUES (?,?,?,?)`,
-        [username, hash, 'admin', Date.now()],
-        (e2) => {
-          if (e2) console.error('Erro criando admin:', e2);
-          else console.log('[bootstrap] Usuário admin criado:', username);
-        }
-      );
-    } catch (e) {
-      console.error('Erro hash admin:', e);
-    }
-  });
-})();
+// Admin bootstrap is handled by the web server's safer initialization path
+// which generates a random password and sets must_change_password=1
