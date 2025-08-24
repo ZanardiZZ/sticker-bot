@@ -1,15 +1,38 @@
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const cookieParser = require('cookie-parser');
+const rateLimit = require('express-rate-limit');
 const { db } = require('../database.js');
 
 const sessions = new Map(); // sid -> sessão
 const ADMIN_USERS = (process.env.ADMIN_USERS || '').split(',').map(s => s.trim()).filter(Boolean);
 
+// Rate limiter for login endpoint
+const loginRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 attempts per window
+  message: { error: 'too_many_attempts' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Cookie name selection: __Host-sid in production for security, sid otherwise
+const getCookieName = () => {
+  return process.env.NODE_ENV === 'production' ? '__Host-sid' : 'sid';
+};
+
 function authMiddleware(app) {
   app.use(cookieParser());
   app.use((req, _res, next) => {
-    const sid = req.cookies.sid;
+    // Read both cookie names for backward compatibility
+    const cookieName = getCookieName();
+    let sid = req.cookies[cookieName];
+    
+    // Fallback to 'sid' for backward compatibility in production
+    if (!sid && process.env.NODE_ENV === 'production') {
+      sid = req.cookies.sid;
+    }
+    
     if (sid && sessions.has(sid)) {
       const sess = sessions.get(sid);
       sess.lastSeen = Date.now();
@@ -31,7 +54,7 @@ function requireAdmin(req, res, next) {
 }
 
 function registerAuthRoutes(app) {
-  app.post('/api/login', (req, res) => {
+  app.post('/api/login', loginRateLimit, (req, res) => {
     const { username, password } = req.body || {};
     if (!username || !password) return res.status(400).json({ error: 'missing_credentials' });
     db.get(
@@ -54,20 +77,42 @@ function registerAuthRoutes(app) {
           createdAt: Date.now(),
           lastSeen: Date.now()
         });
-        res.cookie('sid', sid, {
+        
+        const cookieName = getCookieName();
+        const cookieOptions = {
           httpOnly: true,
           sameSite: 'lax',
-          secure: !!process.env.COOKIE_SECURE
-        });
+          path: '/'
+        };
+        
+        // Force secure in production
+        if (process.env.NODE_ENV === 'production') {
+          cookieOptions.secure = true;
+        }
+        
+        res.cookie(cookieName, sid, cookieOptions);
         res.json({ username: row.username, role: row.role, must_change_password: !!row.must_change_password });
       }
     );
   });
 
   app.post('/api/logout', (req, res) => {
-    const sid = req.cookies.sid;
+    const cookieName = getCookieName();
+    let sid = req.cookies[cookieName];
+    
+    // Fallback to 'sid' for backward compatibility in production
+    if (!sid && process.env.NODE_ENV === 'production') {
+      sid = req.cookies.sid;
+    }
+    
     if (sid) sessions.delete(sid);
-    res.clearCookie('sid');
+    
+    // Clear both cookies for safety
+    res.clearCookie(cookieName, { path: '/' });
+    if (process.env.NODE_ENV === 'production') {
+      res.clearCookie('sid', { path: '/' });
+    }
+    
     res.json({ ok: true });
   });
 
