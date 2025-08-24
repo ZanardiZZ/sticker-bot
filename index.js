@@ -43,6 +43,9 @@ const { isNSFW } = require('./services/nsfwFilter');
 const { isVideoNSFW } = require('./services/nsfwVideoFilter');
 const { getAiAnnotations, transcribeAudioBuffer, getAiAnnotationsFromPrompt } = require('./services/ai');
 const { processVideo } = require('./services/videoProcessor');
+const { handleCommand, handleTaggingMode, isValidCommand, taggingMap, forceMap } = require('./commands');
+const { normalizeText } = require('./utils/commandNormalizer');
+const { cleanDescriptionTags, renderInfoMessage } = require('./utils/messageUtils');
 
 // ---- Config
 const ADMIN_NUMBER = process.env.ADMIN_NUMBER; // "5511000000000@c.us"
@@ -51,8 +54,7 @@ const MAX_TAGS_LENGTH = 500;
 const MEDIA_DIR = path.resolve(__dirname, 'media');
 
 // ---- Estado em memória
-const forceMap = new Map(); // chatId -> bool (próxima mídia força inserir)
-const taggingMap = new Map(); // chatId -> mediaId (modo edição de tags)
+// (Using maps from commands.js module)
 
 // ---- Utilitários
 function ensureDirSync(dir) {
@@ -79,44 +81,6 @@ async function isAnimatedWebpFile(filePath) {
   } catch { return false; }
 }
 
-function cleanDescriptionTags(description, tags) {
-  const badPhrases = [
-    'desculpe',
-    'não posso ajudar',
-    'não disponível',
-    'sem descrição',
-    'audio salvo sem descrição ai',
-  ];
-
-  let cleanDesc = description ? String(description) : '';
-  if (badPhrases.some((p) => cleanDesc.toLowerCase().includes(p))) cleanDesc = '';
-
-  let cleanTags = [];
-  if (Array.isArray(tags)) {
-    cleanTags = tags
-      .filter(Boolean)
-      .map((t) => String(t).trim())
-      .filter((t) => t && !t.includes('##') && !badPhrases.some((p) => t.toLowerCase().includes(p)));
-  } else if (typeof tags === 'string') {
-    cleanTags = tags
-      .split(',')
-      .map((t) => t.trim())
-      .filter((t) => t);
-  }
-
-  return { description: cleanDesc, tags: cleanTags };
-}
-
-function renderInfoMessage({ description, tags, id }) {
-  const tagsLine = (tags && tags.length)
-    ? tags.map((t) => (t.startsWith('#') ? t : `#${t}`)).join(' ')
-    : '';
-  return [
-    '📝 ' + (description || ''),
-    '🏷️ ' + tagsLine,
-    '🆔 ' + id,
-  ].join('\n');
-}
 
 async function sendStickerForMediaRecord(client, chatId, media) {
   if (!media) return;
@@ -273,202 +237,8 @@ function scheduleAutoSend(client) {
   console.log(`Agendamento: envios automáticos de 08h às 21h no fuso ${tz}, toda hora cheia.`);
 }
 
-// ---- Comandos
-const VALID_COMMANDS = ['#random', '#editar', '#editar ID', '#top10', '#top5users', '#ID', '#forçar', '#count'];
+// ---- Comandos (delegated to commands.js module)
 
-function isValidCommand(body) {
-  if (!body || !body.startsWith('#')) return false;
-  return VALID_COMMANDS.some((cmd) => (cmd.endsWith('ID') ? body.startsWith(cmd) : body === cmd || body.startsWith(cmd + ' ')));
-}
-
-async function cmdRandom(client, chatId) {
-  const media = await pickRandomMedia();
-  if (!media) {
-    await client.sendText(chatId, 'Nenhuma mídia salva ainda.');
-    return;
-  }
-
-  await incrementRandomCount(media.id);
-  await sendStickerForMediaRecord(client, chatId, media);
-
-  const m = await findById(media.id);
-  const tags = await getTagsForMedia(media.id);
-  const clean = cleanDescriptionTags(m.description, tags);
-  await client.sendText(chatId, renderInfoMessage({ ...clean, id: m.id }));
-}
-
-async function cmdCount(client, chatId) {
-  const total = await countMedia();
-  await client.sendText(chatId, `Existem ${total} mídias salvas no banco de dados.`);
-}
-
-async function cmdTop10(client, chatId) {
-  const top10 = await getTop10Media();
-  if (!top10 || !top10.length) {
-    await client.sendText(chatId, 'Nenhuma figurinha encontrada.');
-    return;
-  }
-  await client.sendText(chatId, 'Top 10 figurinhas mais usadas:');
-  for (const media of top10) {
-    await sendStickerForMediaRecord(client, chatId, media);
-  }
-}
-
-async function cmdTop5Users(client, chatId) {
-  const topUsers = await getTop5UsersByStickerCount();
-  if (!topUsers || !topUsers.length) {
-    await client.sendText(chatId, 'Nenhum usuário encontrado.');
-    return;
-  }
-
-  let reply = 'Top 5 usuários que enviaram figurinhas:\n\n';
-  for (let i = 0; i < topUsers.length; i++) {
-    const u = topUsers[i];
-    let name = (u.display_name && u.display_name.trim()) || null;
-
-    // Fallback: tentar obter via API em runtime, se necessário
-    if (!name && u.sender_id) {
-      try {
-        const contact = await client.getContact(u.sender_id);
-        name =
-          contact?.pushname ||
-          contact?.formattedName ||
-          contact?.notifyName ||
-          contact?.name ||
-          null;
-      } catch {}
-    }
-
-    if (!name) name = u.sender_id ? String(u.sender_id).split('@')[0] : 'Desconhecido';
-    reply += `${i + 1}. ${name} - ${u.sticker_count} figurinhas\n`;
-  }
-  await client.sendText(chatId, reply);
-}
-
-async function cmdID(client, chatId, body) {
-  const parts = body.split(' ');
-  if (parts.length !== 2) return;
-  const mediaId = parts[1];
-  const media = await findById(mediaId);
-  if (!media) {
-    await client.sendText(chatId, 'Mídia não encontrada.');
-    return;
-  }
-  await sendStickerForMediaRecord(client, chatId, media);
-  const tags = await getTagsForMedia(media.id);
-  const clean = cleanDescriptionTags(media.description, tags);
-  await client.sendText(chatId, renderInfoMessage({ ...clean, id: media.id }));
-}
-
-async function cmdForcar(client, chatId, message) {
-  if (message.hasQuotedMsg) {
-    try {
-      const quoted = await client.getQuotedMessage(message.id);
-      const isMedia = quoted.isMedia && ['image', 'video', 'sticker', 'audio'].some((t) => quoted.mimetype?.startsWith(t));
-      if (!isMedia) throw new Error('Mensagem citada sem mídia.');
-      forceMap.set(chatId, true);
-      await client.sendText(chatId, 'Modo #forçar ativado para a próxima mídia.');
-      return;
-    } catch {}
-  }
-  forceMap.set(chatId, true);
-  await client.sendText(chatId, 'Modo #forçar ativado. Envie a mídia que deseja salvar.');
-}
-
-async function cmdEditarStart(client, chatId, body) {
-  const parts = body.split(' ');
-  if (parts.length !== 3) return;
-  const mediaId = parts[2];
-  taggingMap.set(chatId, mediaId);
-  await client.sendText(
-    chatId,
-    `Modo edição ativado para a mídia ID ${mediaId}.\n\n` +
-      'Envie no formato:\n' +
-      'descricao: [sua descrição]; tags: tag1, tag2, tag3\n' +
-      'Você pode enviar apenas tags OU apenas descrição.\n' +
-      `Limite total de ${MAX_TAGS_LENGTH} caracteres.`
-  );
-}
-
-async function handleTaggingText(client, chatId, text) {
-  const mediaId = taggingMap.get(chatId);
-  if (!mediaId) return false;
-
-  const newText = text.trim();
-  if (newText.length > MAX_TAGS_LENGTH) {
-    await client.sendText(chatId, `Texto muito longo. Limite de ${MAX_TAGS_LENGTH} caracteres.`);
-    taggingMap.delete(chatId);
-    return true;
-  }
-
-  try {
-    const media = await findById(mediaId);
-    if (!media) {
-      await client.sendText(chatId, `Mídia com ID ${mediaId} não encontrada.`);
-      taggingMap.delete(chatId);
-      return true;
-    }
-
-    const clearCmds = ['nenhum', 'limpar', 'clear', 'apagar', 'remover'];
-    let newDescription = media.description || '';
-    const tags = await getTagsForMedia(mediaId);
-    let newTags = tags;
-
-const parts = newText.split(';');
-let descriptionChanged = false;
-let tagsChanged = false;
-for (const part of parts) {
-  const [rawKey, ...rest] = part.split(':');
-  if (!rawKey || !rest.length) continue;
-  const key = rawKey.trim().toLowerCase();
-  const value = rest.join(':').trim();
-  if (['descricao', 'descrição', 'description'].includes(key)) {
-    newDescription = ['nenhum', 'limpar', 'clear', 'apagar', 'remover'].includes(value.toLowerCase()) ? '' : value;
-    descriptionChanged = true;
-  } else if (key === 'tags') {
-    newTags = value.split(',').map((t) => t.trim()).filter(Boolean);
-    tagsChanged = true;
-  }
-}
-
-// Se apenas texto livre (sem "descricao:"), considerar só tag atualização
-if (parts.length === 1 && !newText.toLowerCase().startsWith('descricao:') && !newText.toLowerCase().startsWith('descrição:') && !newText.toLowerCase().startsWith('description:')) {
-  newTags = newText.split(',').map((t) => t.trim()).filter(Boolean);
-  tagsChanged = true;
-}
-
-    // Enxugar para o limite total
-    let combinedLength = (newDescription?.length || 0) + (newTags.join(',').length || 0);
-    if (combinedLength > MAX_TAGS_LENGTH) {
-      const allowTagsLen = Math.max(0, MAX_TAGS_LENGTH - (newDescription?.length || 0));
-      let tagsStr = newTags.join(',');
-      if (tagsStr.length > allowTagsLen) {
-        tagsStr = tagsStr.substring(0, allowTagsLen);
-        newTags = tagsStr.split(',').map((t) => t.trim());
-      }
-    }
-
-   // Atualizar conforme flags
-if (descriptionChanged) {
-  await updateMediaDescription(mediaId, newDescription);
-}
-if (tagsChanged) {
-  await updateMediaTags(mediaId, newTags);
-}
-
-    const updated = await findById(mediaId);
-    const updatedTags = await getTagsForMedia(mediaId);
-    const clean = cleanDescriptionTags(updated.description, updatedTags);
-    await client.sendText(chatId, `✅ Figurinha atualizada!\n\n${renderInfoMessage({ ...clean, id: updated.id })}`);
-  } catch (err) {
-    console.error('Erro ao adicionar tags:', err);
-    await client.sendText(chatId, 'Erro ao adicionar tags/descrição.');
-  } finally {
-    taggingMap.delete(chatId);
-  }
-
-  return true; // marcou como tratado
-}
 
 // ---- Pipeline de mídia recebida
 async function handleIncomingMedia(client, message) {
@@ -563,7 +333,8 @@ async function handleIncomingMedia(client, message) {
     // Envia mensagem com texto padrão
     const media = await findById(newMediaId);
     if (media) {
-      const clean = cleanDescriptionTags(media.description, media.tags);
+      const tags = await getTagsForMedia(media.id);
+      const clean = cleanDescriptionTags(media.description, tags);
       await client.sendText(chatId, renderInfoMessage({ ...clean, id: media.id }));
     }
   }
@@ -597,29 +368,18 @@ async function start(client) {
     try {
       const chatId = message.from;
       
-      // 1) Comandos inválidos (que começam com # mas não constam na lista)
-      if (message.body?.startsWith('#') && !isValidCommand(message.body)) {
-          await client.sendText(chatId,'Comando não reconhecido.\nComandos disponíveis:\n' + VALID_COMMANDS.join('\n'));
-          return;
-      }
+      // 1) Try to handle command via commands module (includes validation)
+      const commandHandled = await handleCommand(client, message, chatId);
+      if (commandHandled) return;
 
-      // 2) Modo edição de tags (se já ativado para este chat)
+      // 2) Modo edição de tags (if activated for this chat)
       if (message.type === 'chat' && message.body && taggingMap.has(chatId)) {
-        const handled = await handleTaggingText(client, chatId, message.body);
+        const handled = await handleTaggingMode(client, message, chatId);
         if (handled) return;
       }
 
-      // 3) Disparo por comandos
-      if (message.body === '#random') return void cmdRandom(client, chatId);
-      if (message.body === '#count') return void cmdCount(client, chatId);
-      if (message.body === '#top10') return void cmdTop10(client, chatId);
-      if (message.body === '#top5users') return void cmdTop5Users(client, chatId);
-      if (message.body?.startsWith('#ID ')) return void cmdID(client, chatId, message.body);
-      if (message.body?.trim() === '#forçar') return void cmdForcar(client, chatId, message);
-      if (message.body?.startsWith('#editar ID ')) return void cmdEditarStart(client, chatId, message.body);
-
-      // 4) Modo edição via resposta a uma mídia (#editar como reply)
-      if (message.hasQuotedMsg && message.body && message.body.toLowerCase().startsWith('#editar')) {
+      // 3) Modo edição via resposta a uma mídia (#editar como reply)
+      if (message.hasQuotedMsg && message.body && normalizeText(message.body).startsWith('#editar')) {
         try {
           const quoted = await client.getQuotedMessage(message.id);
           if (quoted.isMedia) {
