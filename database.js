@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const sharp = require('sharp');
 const fs = require('fs');
+const mime = require('mime-types');
 const { getAiAnnotations } = require('./services/ai'); // Importa a função IA
 const axios = require('axios');
 
@@ -187,6 +188,9 @@ async function processOldStickers() {
   }
 
   const insertedMedias = [];
+  
+  // Extensões de arquivos de imagem permitidas
+  const allowedExts = new Set(['.webp', '.png', '.jpg', '.jpeg', '.gif', '.bmp']);
 
   try {
     const files = fs.readdirSync(OLD_STICKERS_PATH);
@@ -195,59 +199,85 @@ async function processOldStickers() {
     const filesToProcess = [];
     for (const file of files) {
       const filePath = path.join(OLD_STICKERS_PATH, file);
-      const stats = fs.statSync(filePath);
-      const lastModified = stats.mtimeMs;
+      
+      try {
+        const stats = fs.statSync(filePath);
+        
+        // Ignora se não é arquivo, é oculto, ou não tem extensão permitida
+        if (!stats.isFile()) continue;
+        if (file.startsWith('.')) continue;
+        
+        const ext = path.extname(file).toLowerCase();
+        if (!allowedExts.has(ext)) continue;
+        
+        const lastModified = stats.mtimeMs;
 
-      const alreadyProcessed = await isFileProcessed(file, lastModified);
-      if (!alreadyProcessed) {
-        filesToProcess.push({ file, filePath, lastModified });
+        const alreadyProcessed = await isFileProcessed(file, lastModified);
+        if (!alreadyProcessed) {
+          filesToProcess.push({ file, filePath, lastModified });
+        }
+        if (filesToProcess.length >= PROCESS_BATCH_SIZE) break;
+      } catch (errStat) {
+        console.warn(`[old-stickers] Erro ao verificar arquivo: ${file} - Motivo: ${errStat?.message || errStat}`);
+        continue;
       }
-      if (filesToProcess.length >= PROCESS_BATCH_SIZE) break;
     }
 
     // Processa o batch limitado
     for (const { file, filePath, lastModified } of filesToProcess) {
-      const bufferOriginal = fs.readFileSync(filePath);
-
-      // Converter para webp antes do hash visual para padronizar
-      const bufferWebp = await sharp(bufferOriginal).webp().toBuffer();
-
-      const hashVisual = await getHashVisual(bufferWebp);
-
-      if (!hashVisual) continue;
-
-      const existing = await findByHashVisual(hashVisual);
-      if (existing) continue; // Já existe no banco
-
-      // Chama IA para gerar descrição e tags
-      let description = null;
-      let tags = null;
       try {
-        const aiResult = await getAiAnnotations(bufferWebp);
-        description = aiResult.description || null;
-        tags = aiResult.tags ? aiResult.tags.join(',') : null;
-      } catch (e) {
-        console.warn('Erro ao chamar IA para figurinha antiga:', e);
+        const bufferOriginal = fs.readFileSync(filePath);
+
+        // Converter para webp antes do hash visual para padronizar, com suporte a animados
+        const bufferWebp = await sharp(bufferOriginal, { animated: true }).webp().toBuffer();
+
+        const hashVisual = await getHashVisual(bufferWebp);
+
+        if (!hashVisual) continue;
+
+        const existing = await findByHashVisual(hashVisual);
+        if (existing) {
+          // Marca como processado mesmo se já existe para evitar retrabalho
+          await upsertProcessedFile(file, lastModified);
+          continue;
+        }
+
+        // Determina o mimetype baseado na extensão original
+        const mimetype = mime.lookup(filePath) || 'application/octet-stream';
+
+        // Chama IA para gerar descrição e tags
+        let description = null;
+        let tags = null;
+        try {
+          const aiResult = await getAiAnnotations(bufferWebp);
+          description = aiResult.description || null;
+          tags = aiResult.tags ? aiResult.tags.join(',') : null;
+        } catch (e) {
+          console.warn('Erro ao chamar IA para figurinha antiga:', e);
+        }
+
+        const mediaId = await saveMedia({
+          chatId: 'old-stickers',
+          groupId: null,
+          filePath,
+          mimetype,
+          timestamp: Date.now(),
+          description,
+          tags,
+          hashVisual,
+          hashMd5: getMD5(bufferWebp),
+          nsfw: 0,
+        });
+
+        await upsertProcessedFile(file, lastModified);
+
+        insertedMedias.push({ id: mediaId, filePath });
+
+        console.log(`Figurinha antiga processada e salva: ${file}`);
+      } catch (errFile) {
+        console.warn(`[old-stickers] Ignorando arquivo inválido/corrompido: ${file} - Motivo: ${errFile?.message || errFile}`);
+        continue;
       }
-
-      const mediaId = await saveMedia({
-        chatId: 'old-stickers',
-        groupId: null,
-        filePath,
-        mimetype: 'image/webp',
-        timestamp: Date.now(),
-        description,
-        tags,
-        hashVisual,
-        hashMd5: getMD5(bufferWebp),
-        nsfw: 0,
-      });
-
-      await upsertProcessedFile(file, lastModified);
-
-      insertedMedias.push({ id: mediaId, filePath });
-
-      console.log(`Figurinha antiga processada e salva: ${file}`);
     }
   } catch (e) {
     console.error('Erro ao processar figurinhas antigas:', e);
