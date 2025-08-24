@@ -1,6 +1,13 @@
 const { decryptMedia } = require('@open-wa/wa-decrypt');
 const path = require('path');
 const sharp = require('sharp');
+const { PACK_NAME, AUTHOR_NAME } = require('./config/stickers');
+let Sticker, StickerTypes;
+try {
+  ({ Sticker, StickerTypes } = require('wa-sticker-formatter'));
+} catch (e) {
+  console.warn('[commands] wa-sticker-formatter não encontrado. Fallback para open-wa. Instale com: npm i wa-sticker-formatter');
+}
 const {
   saveMedia,
   getRandomMedia,
@@ -60,21 +67,51 @@ function cleanDescriptionTags(description, tags) {
 async function sendMediaByType(client, chatId, media) {
   if (!media) return;
 
-  if (media.mimetype === 'image/webp' || media.file_path.endsWith('.webp')) {
-    await client.sendRawWebpAsSticker(chatId, media.file_path, {
-      pack: 'StickerBot',
-      author: 'ZZ-Bot',
-    });
-  } else if (media.mimetype === 'image/gif' || media.file_path.endsWith('.gif')) {
-    await client.sendFile(chatId, media.file_path, 'media', 'Aqui está seu GIF!');
-  } else if (media.mimetype.startsWith('image/')) {
-    await client.sendImageAsSticker(chatId, media.file_path, {
-      pack: 'StickerBot',
-      author: 'ZZ-Bot',
-    });
-  } else {
-    await client.sendFile(chatId, media.file_path, 'media', 'Aqui está sua mídia aleatória!');
+  const filePath = media.file_path;
+  const mimetype = media.mimetype || '';
+
+  const isGif = mimetype === 'image/gif' || filePath.endsWith('.gif');
+  const isVideo = mimetype.startsWith('video/');
+  const isImage = mimetype.startsWith('image/');
+
+  // Animated (gif/mp4)
+  if (isGif || isVideo) {
+    if (typeof client.sendMp4AsSticker === 'function') {
+      try {
+        await client.sendMp4AsSticker(chatId, filePath, { pack: PACK_NAME, author: AUTHOR_NAME });
+        return;
+      } catch (e) {
+        console.warn('sendMp4AsSticker falhou, tentando sendImageAsStickerGif (se existir):', e?.message || e);
+      }
+    }
+    if (isGif && typeof client.sendImageAsStickerGif === 'function') {
+      await client.sendImageAsStickerGif(chatId, filePath, { pack: PACK_NAME, author: AUTHOR_NAME });
+      return;
+    }
+    await client.sendFile(chatId, filePath, 'media', 'Aqui está sua mídia!');
+    return;
   }
+
+  // Static images (includes webp)
+  if (isImage) {
+    if (Sticker && StickerTypes) {
+      const sticker = new Sticker(filePath, {
+        pack: PACK_NAME,
+        author: AUTHOR_NAME,
+        type: StickerTypes.FULL,
+        quality: 70,
+      });
+      const webpBuf = await sticker.build();
+      const dataUrl = `data:image/webp;base64,${webpBuf.toString('base64')}`;
+      await client.sendRawWebpAsSticker(chatId, dataUrl, { pack: PACK_NAME, author: AUTHOR_NAME });
+      return;
+    }
+    await client.sendImageAsSticker(chatId, filePath, { pack: PACK_NAME, author: AUTHOR_NAME });
+    return;
+  }
+
+  // Others
+  await client.sendFile(chatId, filePath, 'media', 'Aqui está sua mídia!');
 }
 
 async function handleRandomCommand(client, message, chatId) {
@@ -134,14 +171,7 @@ async function handleTop10Command(client, chatId) {
 
     await client.sendText(chatId, 'Top 10 figurinhas mais usadas:');
     for (const media of top10) {
-      if (media.mimetype.startsWith('image/')) {
-        await client.sendRawWebpAsSticker(chatId, media.file_path, {
-          pack: 'Top10',
-          author: 'Bot',
-        });
-      } else {
-        await client.sendFile(chatId, media.file_path, 'media', `Mídia usada ${media.count_random} vezes.`);
-      }
+      await sendMediaByType(client, chatId, media);
     }
   } catch (err) {
     console.error('Erro ao enviar top10:', err);

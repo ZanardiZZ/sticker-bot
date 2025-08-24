@@ -19,6 +19,7 @@ try {
 } catch (e) {
   console.warn('[init] wa-sticker-formatter não encontrado, usando fallback do open-wa. Instale com: npm i wa-sticker-formatter');
 }
+const { PACK_NAME, AUTHOR_NAME } = require('./config/stickers');
 
 // ---- Serviços / Banco
 const {
@@ -131,7 +132,10 @@ async function sendStickerForMediaRecord(client, chatId, media) {
   async function sendRawWebp(path) {
     const base64 = (await fsp.readFile(path)).toString('base64');
     const withHeader = `data:image/webp;base64,${base64}`;
-    await client.sendRawWebpAsSticker(chatId, withHeader);
+    await client.sendRawWebpAsSticker(chatId, withHeader, {
+      pack: PACK_NAME,
+      author: AUTHOR_NAME,
+    });
   }
 
   async function convertToMp4ForSticker(inputPath) {
@@ -170,14 +174,14 @@ async function sendStickerForMediaRecord(client, chatId, media) {
 
       if (typeof client.sendMp4AsSticker === 'function') {
         try {
-          await client.sendMp4AsSticker(chatId, mp4Path);
+          await client.sendMp4AsSticker(chatId, mp4Path, { pack: PACK_NAME, author: AUTHOR_NAME });
           return;
         } catch (e) {
           console.warn('sendMp4AsSticker falhou, tentando sendImageAsStickerGif (se existir):', e?.message || e);
         }
       }
       if (isGif && typeof client.sendImageAsStickerGif === 'function') {
-        await client.sendImageAsStickerGif(chatId, filePath, { author: 'ZZ-Bot', pack: 'StickerBot' });
+        await client.sendImageAsStickerGif(chatId, filePath, { author: AUTHOR_NAME, pack: PACK_NAME });
         return;
       }
       // Fallback: envia como arquivo
@@ -189,18 +193,18 @@ async function sendStickerForMediaRecord(client, chatId, media) {
     if (isImage) {
       if (Sticker && StickerTypes) {
         const sticker = new Sticker(filePath, {
-          pack: 'StickerBot',
-          author: 'ZZ-Bot',
+          pack: PACK_NAME,
+          author: AUTHOR_NAME,
           type: StickerTypes.FULL,
           categories: ['😀','🔥','✨'],
           quality: 70,
         });
         const webpBuf = await sticker.build();
         const withHeader = `data:image/webp;base64,${webpBuf.toString('base64')}`;
-        await client.sendRawWebpAsSticker(chatId, withHeader);
+        await client.sendRawWebpAsSticker(chatId, withHeader, { pack: PACK_NAME, author: AUTHOR_NAME });
         return;
       }
-      await client.sendImageAsSticker(chatId, filePath, { pack: 'StickerBot', author: 'ZZ-Bot' });
+      await client.sendImageAsSticker(chatId, filePath, { pack: PACK_NAME, author: AUTHOR_NAME });
       return;
     }
 
