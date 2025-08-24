@@ -43,6 +43,8 @@ const { isNSFW } = require('./services/nsfwFilter');
 const { isVideoNSFW } = require('./services/nsfwVideoFilter');
 const { getAiAnnotations, transcribeAudioBuffer, getAiAnnotationsFromPrompt } = require('./services/ai');
 const { processVideo } = require('./services/videoProcessor');
+const { handleCommand, handleTaggingMode, isValidCommand, taggingMap, forceMap } = require('./commands');
+const { normalizeText } = require('./utils/commandNormalizer');
 
 // ---- Config
 const ADMIN_NUMBER = process.env.ADMIN_NUMBER; // "5511999999999@c.us"
@@ -51,8 +53,7 @@ const MAX_TAGS_LENGTH = 500;
 const MEDIA_DIR = path.resolve(__dirname, 'media');
 
 // ---- Estado em memória
-const forceMap = new Map(); // chatId -> bool (próxima mídia força inserir)
-const taggingMap = new Map(); // chatId -> mediaId (modo edição de tags)
+// (Using maps from commands.js module)
 
 // ---- Utilitários
 function ensureDirSync(dir) {
@@ -273,13 +274,7 @@ function scheduleAutoSend(client) {
   console.log(`Agendamento: envios automáticos de 08h às 21h no fuso ${tz}, toda hora cheia.`);
 }
 
-// ---- Comandos
-const VALID_COMMANDS = ['#random', '#editar', '#editar ID', '#top10', '#top5users', '#ID', '#forçar', '#count'];
-
-function isValidCommand(body) {
-  if (!body || !body.startsWith('#')) return false;
-  return VALID_COMMANDS.some((cmd) => (cmd.endsWith('ID') ? body.startsWith(cmd) : body === cmd || body.startsWith(cmd + ' ')));
-}
+// ---- Comandos (delegated to commands.js module)
 
 async function cmdRandom(client, chatId) {
   const media = await pickRandomMedia();
@@ -563,7 +558,8 @@ async function handleIncomingMedia(client, message) {
     // Envia mensagem com texto padrão
     const media = await findById(newMediaId);
     if (media) {
-      const clean = cleanDescriptionTags(media.description, media.tags);
+      const tags = await getTagsForMedia(media.id);
+      const clean = cleanDescriptionTags(media.description, tags);
       await client.sendText(chatId, renderInfoMessage({ ...clean, id: media.id }));
     }
   }
@@ -597,29 +593,18 @@ async function start(client) {
     try {
       const chatId = message.from;
       
-      // 1) Comandos inválidos (que começam com # mas não constam na lista)
-      if (message.body?.startsWith('#') && !isValidCommand(message.body)) {
-          await client.sendText(chatId,'Comando não reconhecido.\nComandos disponíveis:\n' + VALID_COMMANDS.join('\n'));
-          return;
-      }
+      // 1) Try to handle command via commands module (includes validation)
+      const commandHandled = await handleCommand(client, message, chatId);
+      if (commandHandled) return;
 
-      // 2) Modo edição de tags (se já ativado para este chat)
+      // 2) Modo edição de tags (if activated for this chat)
       if (message.type === 'chat' && message.body && taggingMap.has(chatId)) {
-        const handled = await handleTaggingText(client, chatId, message.body);
+        const handled = await handleTaggingMode(client, message, chatId);
         if (handled) return;
       }
 
-      // 3) Disparo por comandos
-      if (message.body === '#random') return void cmdRandom(client, chatId);
-      if (message.body === '#count') return void cmdCount(client, chatId);
-      if (message.body === '#top10') return void cmdTop10(client, chatId);
-      if (message.body === '#top5users') return void cmdTop5Users(client, chatId);
-      if (message.body?.startsWith('#ID ')) return void cmdID(client, chatId, message.body);
-      if (message.body?.trim() === '#forçar') return void cmdForcar(client, chatId, message);
-      if (message.body?.startsWith('#editar ID ')) return void cmdEditarStart(client, chatId, message.body);
-
-      // 4) Modo edição via resposta a uma mídia (#editar como reply)
-      if (message.hasQuotedMsg && message.body && message.body.toLowerCase().startsWith('#editar')) {
+      // 3) Modo edição via resposta a uma mídia (#editar como reply)
+      if (message.hasQuotedMsg && message.body && normalizeText(message.body).startsWith('#editar')) {
         try {
           const quoted = await client.getQuotedMessage(message.id);
           if (quoted.isMedia) {
