@@ -10,6 +10,7 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const mime = require('mime-types');
+const { logReceivedMessage } = require('./bot/logging');
 const { initContactsTable, upsertContactFromMessage } = require('./bot/contacts');
 // wa-sticker-formatter é opcional. Se não estiver instalado, caímos em fallback do open-wa
 let Sticker, StickerTypes;
@@ -538,7 +539,6 @@ async function handleIncomingMedia(client, message) {
     }
   }
 }
-
 // ---- Inicialização
 create({
   sessionId: 'StickerBotSession',
@@ -554,8 +554,9 @@ create({
 async function start(client) {
   console.log('🤖 Bot iniciado e aguardando mensagens...');
   scheduleAutoSend(client);
-  initContactsTable();
+
   client.onMessage(async (message) => {
+    await logReceivedMessage(client, message);
     try {
       const chatId = message.from;
       try { upsertContactFromMessage(message);

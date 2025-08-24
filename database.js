@@ -68,6 +68,7 @@ db.serialize(() => {
       FOREIGN KEY(tag_id) REFERENCES tags(id) ON DELETE CASCADE
     )
   `);
+
   // Tabela de usuários para login do painel
   db.run(`
     CREATE TABLE IF NOT EXISTS users (
@@ -78,6 +79,16 @@ db.serialize(() => {
       created_at INTEGER NOT NULL
     )
   `);
+
+  // Tabela de contatos (exibição de nome dos usuários no ranking)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS contacts (
+      sender_id TEXT PRIMARY KEY,
+      display_name TEXT,
+      updated_at INTEGER DEFAULT (strftime('%s','now'))
+    )
+  `);
+
   // Índices auxiliares
   db.run(`CREATE INDEX IF NOT EXISTS idx_media_timestamp ON media(timestamp DESC)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_media_sender_id ON media(sender_id)`);
@@ -85,6 +96,7 @@ db.serialize(() => {
   db.run(`CREATE INDEX IF NOT EXISTS idx_media_tags_tag_id ON media_tags(tag_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_media_tags_media_id ON media_tags(media_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_contacts_display_name ON contacts(display_name)`);
  });
 
 // Gera hash MD5 de um buffer
