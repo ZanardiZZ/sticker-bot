@@ -557,12 +557,13 @@ async function start(client) {
 
   client.onMessage(async (message) => {
     await logReceivedMessage(client, message);
-    try {
-      const chatId = message.from;
-      try { upsertContactFromMessage(message);
+    try { upsertContactFromMessage(message);
       } catch (e) {
         console.error('[bot] upsertContactFromMessage error:', e);
       }
+    try {
+      const chatId = message.from;
+      
       // 1) Comandos inválidos (que começam com # mas não constam na lista)
       if (message.body?.startsWith('#') && !isValidCommand(message.body)) {
           await client.sendText(chatId,'Comando não reconhecido.\nComandos disponíveis:\n' + VALID_COMMANDS.join('\n'));
