@@ -105,7 +105,10 @@ async function processIncomingMedia(client, message) {
       tags = '';
     }
 
-    const senderId = (message.sender && message.sender.id) ? message.sender.id : message.from;
+    const senderId =
+      message?.sender?.id ||
+      message?.author ||
+      (message?.from && !String(message.from).endsWith('@g.us') ? message.from : null);
 
     await saveMedia({
       chatId,
