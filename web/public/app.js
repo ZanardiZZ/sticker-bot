@@ -49,8 +49,8 @@ function cardHTML(s) {
   return `
     <div class="card" data-id="${s.id}">
       ${isVideo
-        ? `<video src="${url}" class="card-video" style="max-width:128px;max-height:128px;display:block;margin:auto;" autoplay loop muted playsinline></video>`
-        : `<img src="${url}" alt="sticker" class="card-img" style="max-width:128px;max-height:128px;display:block;margin:auto;" loading="lazy">`
+        ? `<video data-src="${url}" class="card-video lazy-video" style="max-width:128px;max-height:128px;display:block;margin:auto;" muted playsinline preload="none"></video>`
+        : `<img data-src="${url}" alt="sticker" class="card-img lazy-img" style="max-width:128px;max-height:128px;display:block;margin:auto;">`
       }
       <div class="desc clamp-2" data-desc-full="${desc.replace(/"/g, '&quot;')}">${descShort}
         ${longDesc ? `<button class="card-expand-btn">ver mais</button>` : ''}
@@ -113,7 +113,40 @@ const anyTagEl = document.getElementById('anyTag');
 const nsfwEl = document.getElementById('nsfw');
 const sortEl = document.getElementById('sort');
 const reloadBtn = document.getElementById('reload');
-let page = 1, loading = false, done = false, perPage = 30; // Reduced from 60 to 30 for better performance
+let page = 1, loading = false, done = false, perPage = 20; // Reduced from 30 to 20 for faster loading
+
+// Lazy loading implementation
+function initializeLazyLoading() {
+  const lazyImages = document.querySelectorAll('.lazy-img:not([src])');
+  const lazyVideos = document.querySelectorAll('.lazy-video:not([src])');
+  
+  const imageObserver = new IntersectionObserver((entries, observer) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const img = entry.target;
+        img.src = img.dataset.src;
+        img.classList.remove('lazy-img');
+        observer.unobserve(img);
+      }
+    });
+  }, { rootMargin: '50px' });
+  
+  const videoObserver = new IntersectionObserver((entries, observer) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const video = entry.target;
+        video.src = video.dataset.src;
+        video.autoplay = true;
+        video.loop = true;
+        video.classList.remove('lazy-video');
+        observer.unobserve(video);
+      }
+    });
+  }, { rootMargin: '100px' });
+  
+  lazyImages.forEach(img => imageObserver.observe(img));
+  lazyVideos.forEach(video => videoObserver.observe(video));
+}
 
 async function load(reset = false){
   if (loading) return;
@@ -121,23 +154,51 @@ async function load(reset = false){
   if (done) return;
   loading = true;
 
-  const tags = tagEl.value.trim();
-  const anyTag = anyTagEl.value.trim();
-  const params = new URLSearchParams({ page, per_page: perPage, q: qEl.value.trim(), sort: sortEl.value, nsfw: nsfwEl.value });
-  if (tags) params.set('tags', tags.split(/[,\s]+/).join(','));
-  if (anyTag) params.set('any_tag', anyTag.split(/[,\s]+/).join(','));
+  try {
+    const tags = tagEl.value.trim();
+    const anyTag = anyTagEl.value.trim();
+    const params = new URLSearchParams({ 
+      page, 
+      per_page: perPage, 
+      q: qEl.value.trim(), 
+      sort: sortEl.value, 
+      nsfw: nsfwEl.value 
+    });
+    
+    if (tags) params.set('tags', tags.split(/[,\s]+/).join(','));
+    if (anyTag) params.set('any_tag', anyTag.split(/[,\s]+/).join(','));
 
-  const r = await fetch('/api/stickers?' + params.toString());
-  const data = await r.json();
-  countEl.textContent = (data.total ?? 0) + ' itens';
-  if (!data.results || data.results.length === 0) {
-    done = true;
-  } else {
-    data.results.forEach(s => grid.insertAdjacentHTML('beforeend', cardHTML(s)));
-    if (data.results.length < perPage) done = true;
-    page++;
+    const r = await fetch('/api/stickers?' + params.toString());
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    
+    const data = await r.json();
+    
+    countEl.textContent = (data.total ?? 0) + ' itens';
+    
+    if (!data.results || data.results.length === 0) {
+      done = true;
+      if (page === 1) {
+        grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 2rem; color: #666;">Nenhum resultado encontrado</div>';
+      }
+    } else {
+      data.results.forEach(s => {
+        grid.insertAdjacentHTML('beforeend', cardHTML(s));
+      });
+      
+      // Initialize lazy loading for new content
+      initializeLazyLoading();
+      
+      if (data.results.length < perPage) done = true;
+      page++;
+    }
+  } catch (error) {
+    console.error('Erro ao carregar stickers:', error);
+    if (page === 1) {
+      grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 2rem; color: #dc3545;">Erro ao carregar. Tente recarregar a página.</div>';
+    }
+  } finally {
+    loading = false;
   }
-  loading = false;
 }
 
 // Function to refresh current view without resetting to page 1
@@ -230,23 +291,28 @@ document.getElementById('saveEdit').onclick = async () => {
   // Show loading state
   saveBtn.textContent = 'Salvando...';
   saveBtn.disabled = true;
+  saveBtn.classList.add('btn-loading');
   editMsg.textContent = 'Salvando alterações...';
   editMsg.style.color = '#007bff';
   
   try {
+    // Prepare both requests
     const metaBody = { description: editDesc.value, nsfw: editNsfw.checked ? 1 : 0 };
-    const r1 = await fetch('/api/stickers/' + id, { 
-      method:'PATCH', 
-      headers:{'Content-Type':'application/json'}, 
-      body:JSON.stringify(metaBody) 
-    });
-    
     const tags = editTags.value.split(',').map(t => t.trim()).filter(Boolean);
-    const r2 = await fetch('/api/stickers/' + id + '/tags', { 
-      method:'PUT', 
-      headers:{'Content-Type':'application/json'}, 
-      body:JSON.stringify({ tags }) 
-    });
+    
+    // Execute both requests in parallel for better performance
+    const [r1, r2] = await Promise.all([
+      fetch('/api/stickers/' + id, { 
+        method:'PATCH', 
+        headers:{'Content-Type':'application/json'}, 
+        body:JSON.stringify(metaBody) 
+      }),
+      fetch('/api/stickers/' + id + '/tags', { 
+        method:'PUT', 
+        headers:{'Content-Type':'application/json'}, 
+        body:JSON.stringify({ tags }) 
+      })
+    ]);
     
     if (r1.ok && r2.ok) {
       editMsg.textContent = 'Atualizado com sucesso!';
@@ -266,6 +332,7 @@ document.getElementById('saveEdit').onclick = async () => {
     // Restore button state
     saveBtn.textContent = originalText;
     saveBtn.disabled = false;
+    saveBtn.classList.remove('btn-loading');
   }
 };
 

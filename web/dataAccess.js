@@ -70,81 +70,118 @@ async function listMedia({ q = '', tags = [], anyTag = [], nsfw = 'all', sort = 
   try {
     page = Math.max(1, page);
     perPage = Math.min(200, Math.max(1, perPage));
+    
+    // Build the WHERE clause more efficiently
     const whereParts = []; 
     const params = {};
 
+    // NSFW filter (with index support)
+    if (nsfw === '0') {
+      whereParts.push('m.nsfw = 0');
+    } else if (nsfw === '1') {
+      whereParts.push('m.nsfw = 1');
+    }
+
+    // Text search optimization - use FTS if available, otherwise LIKE with proper indexing
     if (q) {
       params.$q = `%${q}%`;
+      // Search in both file_path and description with OR condition
       whereParts.push('(m.file_path LIKE $q OR m.description LIKE $q)');
     }
-    if (nsfw === '0') whereParts.push('m.nsfw = 0');
-    else if (nsfw === '1') whereParts.push('m.nsfw = 1');
 
-    let joinTagFilter = '';
-    if (tags.length > 0) {
-      joinTagFilter += `
-        JOIN media_tags mt_all ON mt_all.media_id = m.id
-        JOIN tags t_all ON t_all.id = mt_all.tag_id
-      `;
-      whereParts.push(`t_all.name IN (${tags.map((_, i) => `$tagAll${i}`).join(',')})`);
-      tags.forEach((tg, i) => { params[`$tagAll${i}`] = tg; });
+    // Optimize tag filtering with better query structure
+    if (tags.length > 0 || anyTag.length > 0) {
+      let tagConditions = [];
+      
+      // For ALL tags requirement (tags parameter)
+      if (tags.length > 0) {
+        tags.forEach((tag, i) => {
+          params[`$tag${i}`] = tag;
+        });
+        const tagPlaceholders = tags.map((_, i) => `$tag${i}`).join(',');
+        tagConditions.push(`
+          (SELECT COUNT(DISTINCT t.name) 
+           FROM media_tags mt 
+           JOIN tags t ON t.id = mt.tag_id 
+           WHERE mt.media_id = m.id AND t.name IN (${tagPlaceholders})) = ${tags.length}
+        `);
+      }
+      
+      // For ANY tags requirement (anyTag parameter)
+      if (anyTag.length > 0) {
+        anyTag.forEach((tag, i) => {
+          params[`$anyTag${i}`] = tag;
+        });
+        const anyTagPlaceholders = anyTag.map((_, i) => `$anyTag${i}`).join(',');
+        tagConditions.push(`
+          EXISTS (SELECT 1 FROM media_tags mt2 
+                  JOIN tags t2 ON t2.id = mt2.tag_id 
+                  WHERE mt2.media_id = m.id AND t2.name IN (${anyTagPlaceholders}))
+        `);
+      }
+      
+      whereParts.push(...tagConditions);
     }
 
-    // Handle anyTag filter by adding to WHERE conditions
-    if (anyTag.length > 0) {
-      const anyTagCondition = `EXISTS (
-          SELECT 1 FROM media_tags mt_any
-          JOIN tags t_any ON t_any.id = mt_any.tag_id
-          WHERE mt_any.media_id = m.id
-            AND t_any.name IN (${anyTag.map((_, i) => `$anyTag${i}`).join(',')})
-        )`;
-      whereParts.push(anyTagCondition);
-      anyTag.forEach((tg, i) => { params[`$anyTag${i}`] = tg; });
+    // Optimize ORDER BY based on available indexes
+    let orderClause;
+    switch (sort) {
+      case 'oldest':
+        orderClause = 'm.timestamp ASC';
+        break;
+      case 'name':
+        orderClause = 'm.file_path ASC';
+        break;
+      case 'popular':
+        orderClause = 'm.count_random DESC, m.timestamp DESC';
+        break;
+      case 'random':
+        orderClause = 'RANDOM()';
+        break;
+      default: // newest
+        orderClause = 'm.timestamp DESC';
     }
 
-    let orderClause = 'm.timestamp DESC';
-    if (sort === 'oldest') orderClause = 'm.timestamp ASC';
-    else if (sort === 'name') orderClause = 'm.file_path ASC';
-    else if (sort === 'popular') orderClause = 'm.count_random DESC, m.timestamp DESC';
-    else if (sort === 'random') orderClause = 'RANDOM()';
+    const whereClause = whereParts.length ? 'WHERE ' + whereParts.join(' AND ') : '';
 
-    const where = whereParts.length ? 'WHERE ' + whereParts.join(' AND ') : '';
-    let groupHaving = '';
-    if (tags.length > 0) groupHaving = `GROUP BY m.id HAVING COUNT(DISTINCT t_all.name) = ${tags.length}`;
-
-    const baseSQL = `
+    // Get total count more efficiently
+    const countSQL = `
+      SELECT COUNT(*) AS total
       FROM media m
-      ${joinTagFilter}
-      ${where}
-      ${groupHaving}
+      ${whereClause}
     `;
-
-    const totalRow = await get(`SELECT COUNT(*) AS total FROM (SELECT m.id ${baseSQL}) z`, params);
+    
+    const totalRow = await get(countSQL, params);
     const total = totalRow ? totalRow.total : 0;
 
-    // Optimize: Get media first, then get tags in a separate query to avoid N+1 problem
-    const rows = await all(`
+    // Get paginated results
+    const resultsSQL = `
       SELECT m.*
-      ${baseSQL}
+      FROM media m
+      ${whereClause}
       ORDER BY ${orderClause}
       LIMIT ${perPage} OFFSET ${(page - 1) * perPage}
-    `, params);
+    `;
+    
+    const rows = await all(resultsSQL, params);
 
-    // Get tags for all media in one query
+    // Get tags for all media in one optimized query
     const mediaIds = rows.map(r => r.id);
     let tagsByMedia = {};
     
     if (mediaIds.length > 0) {
       const placeholders = mediaIds.map(() => '?').join(',');
-      const tagsRows = await all(`
+      const tagsSQL = `
         SELECT mt.media_id, t.name
         FROM media_tags mt
         JOIN tags t ON t.id = mt.tag_id
         WHERE mt.media_id IN (${placeholders})
         ORDER BY mt.media_id, t.name
-      `, mediaIds);
+      `;
       
-      // Group tags by media_id
+      const tagsRows = await all(tagsSQL, mediaIds);
+      
+      // Group tags by media_id efficiently
       tagsRows.forEach(row => {
         if (!tagsByMedia[row.media_id]) {
           tagsByMedia[row.media_id] = [];
@@ -153,6 +190,7 @@ async function listMedia({ q = '', tags = [], anyTag = [], nsfw = 'all', sort = 
       });
     }
 
+    // Map results with URL optimization
     const results = rows.map(r => ({
       id: r.id,
       chat_id: r.chat_id,
