@@ -43,6 +43,17 @@ button { cursor:pointer; }
   margin-left: 2px;
 }
 
+.editBtn {
+  background: var(--accent);
+  border: none;
+  color: #fff;
+  font-size: 0.75rem;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-top: 4px;
+}
+
 .desc,
 .tags-short {
   margin-bottom: 2px;

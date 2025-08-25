@@ -40,6 +40,7 @@ function cardHTML(s) {
       <div class="tags tags-full" style="display:none;">${tagsFullHtml}
         <button class="card-collapse-tags-btn">ver menos</button>
       </div>
+      ${CURRENT_USER ? `<button class="editBtn" style="margin-top:4px;font-size:0.8rem;">✏️ Editar</button>` : ''}
     </div>
   `;
 }

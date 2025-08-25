@@ -480,7 +480,7 @@ app.get('/api/tags', async (req, res) => {
   }
 });
 
-app.post('/api/stickers/:id/tags', requireLogin, requireAdmin, async (req, res) => {
+app.post('/api/stickers/:id/tags', requireLogin, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     const { tags } = req.body;
@@ -492,7 +492,7 @@ app.post('/api/stickers/:id/tags', requireLogin, requireAdmin, async (req, res) 
   }
 });
 
-app.delete('/api/stickers/:id/tags/:tag', requireLogin, requireAdmin, async (req, res) => {
+app.delete('/api/stickers/:id/tags/:tag', requireLogin, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     const tag = req.params.tag;
@@ -504,7 +504,7 @@ app.delete('/api/stickers/:id/tags/:tag', requireLogin, requireAdmin, async (req
   }
 });
 
-app.put('/api/stickers/:id/tags', requireLogin, requireAdmin, async (req, res) => {
+app.put('/api/stickers/:id/tags', requireLogin, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     const { tags } = req.body || {};
@@ -518,7 +518,7 @@ app.put('/api/stickers/:id/tags', requireLogin, requireAdmin, async (req, res) =
   }
 });
 
-app.patch('/api/stickers/:id', requireLogin, requireAdmin, async (req, res) => {
+app.patch('/api/stickers/:id', requireLogin, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     const { description, nsfw } = req.body || {};
