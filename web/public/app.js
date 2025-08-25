@@ -71,12 +71,19 @@ function cardHTML(s) {
           </svg>
           WhatsApp
         </button>
+        ${CURRENT_USER ? `<button class="editBtn" title="Editar sticker">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+          </svg>
+          Editar
+        </button>` : ''}
       </div>
     </div>
   `;
 }
 
 async function fetchMe(){
+  const prevUser = CURRENT_USER;
   try {
     const r = await fetch('/api/me');
     const d = await r.json();
@@ -87,6 +94,11 @@ async function fetchMe(){
       document.getElementById('logoutBtn').onclick = async () => { await fetch('/api/logout',{method:'POST'}); location.reload(); };
     } else {
       ui.innerHTML = '<a href="/login">Login</a>';
+    }
+    
+    // Refresh cards if login status changed
+    if ((!!prevUser) !== (!!CURRENT_USER)) {
+      load(true);
     }
   } catch {}
 }
@@ -178,6 +190,24 @@ async function openEdit(id){
   editNsfw.checked = !!data.nsfw;
   editTags.value = (data.tags || []).join(', ');
   editMsg.textContent = '';
+  
+  // Display additional information
+  const detailsEl = document.getElementById('stickerDetails');
+  const timestamp = data.timestamp ? new Date(data.timestamp * 1000).toLocaleString('pt-BR') : 'N/A';
+  const senderInfo = data.sender_id ? `Usuário: ${data.sender_id}` : 'Usuário: N/A';
+  const hashVisual = data.hash_visual ? `Hash Visual: ${data.hash_visual.slice(0, 12)}...` : '';
+  const hashMd5 = data.hash_md5 ? `MD5: ${data.hash_md5.slice(0, 12)}...` : '';
+  const nsfwStatus = data.nsfw ? 'NSFW: Sim' : 'NSFW: Não';
+  const randomCount = data.count_random || 0;
+  
+  detailsEl.innerHTML = `
+    <strong>Detalhes do Sticker:</strong><br>
+    ${senderInfo} • ${timestamp}<br>
+    ${nsfwStatus} • Enviado ${randomCount} vezes<br>
+    ${hashVisual ? hashVisual + '<br>' : ''}
+    ${hashMd5 ? hashMd5 : ''}
+  `;
+  
   modal.style.display = 'flex';
 }
 
