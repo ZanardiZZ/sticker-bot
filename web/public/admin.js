@@ -139,11 +139,15 @@ function renderUsersTable(users) {
     const phone = user.phone_number ? maskPhone(user.phone_number) : '—';
     const contactName = user.contact_display_name || '—';
     const canEdit = user.can_edit ? '✓' : '✗';
+    const email = user.email || '—';
+    const emailStatus = getEmailStatusBadge(user.email_confirmed);
     
     return `
       <tr data-user-id="${user.id}">
         <td>${user.id}</td>
         <td>${user.username}</td>
+        <td>${email}</td>
+        <td>${emailStatus}</td>
         <td>${phone}</td>
         <td>${contactName}</td>
         <td>${statusBadge}</td>
@@ -169,6 +173,14 @@ function getStatusBadge(status) {
   };
   
   return `<span style="${styles[status] || ''}">${labels[status] || status}</span>`;
+}
+
+function getEmailStatusBadge(emailConfirmed) {
+  if (emailConfirmed) {
+    return '<span style="background: #003a1a; color: #4a9; padding: 2px 6px; border-radius: 3px; font-size: 0.8rem;">✓ Confirmado</span>';
+  } else {
+    return '<span style="background: #5a3a00; color: #ffd700; padding: 2px 6px; border-radius: 3px; font-size: 0.8rem;">⚠ Pendente</span>';
+  }
 }
 
 function getActionButtons(user) {
