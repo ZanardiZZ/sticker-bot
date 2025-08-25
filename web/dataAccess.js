@@ -122,16 +122,36 @@ async function listMedia({ q = '', tags = [], anyTag = [], nsfw = 'all', sort = 
     const totalRow = await get(`SELECT COUNT(*) AS total FROM (SELECT m.id ${baseSQL}) z`, params);
     const total = totalRow ? totalRow.total : 0;
 
+    // Optimize: Get media first, then get tags in a separate query to avoid N+1 problem
     const rows = await all(`
-  SELECT m.*,
-    (SELECT GROUP_CONCAT(t.name, ',')
-       FROM media_tags mt
-       JOIN tags t ON t.id = mt.tag_id
-       WHERE mt.media_id = m.id) AS tags_csv
-  ${baseSQL}
-  ORDER BY ${orderClause}
-  LIMIT ${perPage} OFFSET ${(page - 1) * perPage}
-`, params);
+      SELECT m.*
+      ${baseSQL}
+      ORDER BY ${orderClause}
+      LIMIT ${perPage} OFFSET ${(page - 1) * perPage}
+    `, params);
+
+    // Get tags for all media in one query
+    const mediaIds = rows.map(r => r.id);
+    let tagsByMedia = {};
+    
+    if (mediaIds.length > 0) {
+      const placeholders = mediaIds.map(() => '?').join(',');
+      const tagsRows = await all(`
+        SELECT mt.media_id, t.name
+        FROM media_tags mt
+        JOIN tags t ON t.id = mt.tag_id
+        WHERE mt.media_id IN (${placeholders})
+        ORDER BY mt.media_id, t.name
+      `, mediaIds);
+      
+      // Group tags by media_id
+      tagsRows.forEach(row => {
+        if (!tagsByMedia[row.media_id]) {
+          tagsByMedia[row.media_id] = [];
+        }
+        tagsByMedia[row.media_id].push(row.name);
+      });
+    }
 
     const results = rows.map(r => ({
       id: r.id,
@@ -147,7 +167,7 @@ async function listMedia({ q = '', tags = [], anyTag = [], nsfw = 'all', sort = 
       hash_md5: r.hash_md5,
       nsfw: !!r.nsfw,
       count_random: r.count_random,
-      tags: r.tags_csv ? r.tags_csv.split(',').filter(Boolean) : []
+      tags: tagsByMedia[r.id] || []
     }));
 
     return { total, page, per_page: perPage, results };
@@ -298,17 +318,49 @@ async function updateMediaMeta(id, { description, nsfw } = {}) {
 
 async function setMediaTagsExact(mediaId, tagNames = []) {
   const normalized = [...new Set(tagNames.map(t => t.trim().toLowerCase()).filter(Boolean))];
+  
+  // Get current tags for this media
   const currentRows = await all(`
     SELECT t.id, t.name
     FROM media_tags mt
     JOIN tags t ON t.id = mt.tag_id
     WHERE mt.media_id = $m
   `, { $m: mediaId });
+  
   const currentNames = new Set(currentRows.map(r => r.name));
   const toAdd = normalized.filter(n => !currentNames.has(n));
   const toRemove = [...currentNames].filter(n => !normalized.includes(n));
-  if (toAdd.length) await addTagsToMedia(mediaId, toAdd);
-  for (const r of toRemove) await removeTagFromMedia(mediaId, r);
+  
+  // Batch operations for better performance
+  if (toRemove.length > 0) {
+    // Remove multiple tags in one operation
+    const tagIdsToRemove = currentRows
+      .filter(r => toRemove.includes(r.name))
+      .map(r => r.id);
+    
+    if (tagIdsToRemove.length > 0) {
+      const placeholders = tagIdsToRemove.map(() => '?').join(',');
+      await run(`DELETE FROM media_tags WHERE media_id = ? AND tag_id IN (${placeholders})`, 
+        [mediaId, ...tagIdsToRemove]);
+      
+      // Update usage counts for removed tags in batch
+      for (const tagId of tagIdsToRemove) {
+        const usage = await get(`SELECT COUNT(*) AS c FROM media_tags WHERE tag_id = ?`, [tagId]);
+        await run(`UPDATE tags SET usage_count = ? WHERE id = ?`, [usage.c, tagId]);
+      }
+    }
+  }
+  
+  // Add new tags
+  if (toAdd.length > 0) {
+    await addTagsToMedia(mediaId, toAdd);
+  }
+  
+  // Emit single event for all changes
+  if (toAdd.length > 0 || toRemove.length > 0) {
+    bus.emit('media:tagsUpdated', { media_id: mediaId, added: toAdd, removed: toRemove });
+  }
+  
   return { added: toAdd, removed: toRemove };
 }
 
