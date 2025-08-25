@@ -90,16 +90,15 @@ async function listMedia({ q = '', tags = [], anyTag = [], nsfw = 'all', sort = 
       tags.forEach((tg, i) => { params[`tagAll${i}`] = tg; });
     }
 
-    let subAnyTagFilter = '';
+    // Handle anyTag filter by adding to WHERE conditions
     if (anyTag.length > 0) {
-      subAnyTagFilter = `
-        AND EXISTS (
+      const anyTagCondition = `EXISTS (
           SELECT 1 FROM media_tags mt_any
           JOIN tags t_any ON t_any.id = mt_any.tag_id
           WHERE mt_any.media_id = m.id
             AND t_any.name IN (${anyTag.map((_, i) => `$anyTag${i}`).join(',')})
-        )
-      `;
+        )`;
+      whereParts.push(anyTagCondition);
       anyTag.forEach((tg, i) => { params[`anyTag${i}`] = tg; });
     }
 
@@ -117,7 +116,6 @@ async function listMedia({ q = '', tags = [], anyTag = [], nsfw = 'all', sort = 
       FROM media m
       ${joinTagFilter}
       ${where}
-      ${subAnyTagFilter}
       ${groupHaving}
     `;
 
