@@ -81,7 +81,19 @@ document.addEventListener('DOMContentLoaded', function() {
       this.setCustomValidity('');
     }
   });
+    const value = this.value;
+    // Do not modify this.value here to avoid interfering with user typing
+    if (value && (!/^\d+$/.test(value) || value.length < 10 || value.length > 15)) {
+      this.setCustomValidity('Número deve ter entre 10 e 15 dígitos e conter apenas números');
+    } else {
+      this.setCustomValidity('');
+    }
+  });
 
+  // Optionally, clean up the value on blur to enforce digit-only input
+  phoneNumberInput.addEventListener('blur', function() {
+    this.value = this.value.replace(/\D/g, '');
+  });
   // Password confirmation validation
   function checkPasswordConfirmation() {
     if (confirmPasswordInput.value && passwordInput.value !== confirmPasswordInput.value) {
