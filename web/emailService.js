@@ -12,7 +12,10 @@ class EmailService {
     const emailConfig = {
       host: process.env.SMTP_HOST || 'localhost',
       port: parseInt(process.env.SMTP_PORT) || 587,
-      secure: process.env.SMTP_SECURE === 'true', // true for 465, false for other ports
+      // Automatically set secure to true for port 465 unless explicitly overridden
+      secure: (typeof process.env.SMTP_SECURE !== 'undefined')
+        ? process.env.SMTP_SECURE === 'true'
+        : (parseInt(process.env.SMTP_PORT) === 465),
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
