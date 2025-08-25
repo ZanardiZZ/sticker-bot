@@ -45,3 +45,4 @@ StickerBotSession.data.json
 # Development test files
 add-test-data.js
 data.db
+.env

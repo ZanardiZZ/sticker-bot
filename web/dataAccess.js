@@ -74,7 +74,7 @@ async function listMedia({ q = '', tags = [], anyTag = [], nsfw = 'all', sort = 
     const params = {};
 
     if (q) {
-      params.q = `%${q}%`;
+      params.$q = `%${q}%`;
       whereParts.push('(m.file_path LIKE $q OR m.description LIKE $q)');
     }
     if (nsfw === '0') whereParts.push('m.nsfw = 0');
@@ -87,7 +87,7 @@ async function listMedia({ q = '', tags = [], anyTag = [], nsfw = 'all', sort = 
         JOIN tags t_all ON t_all.id = mt_all.tag_id
       `;
       whereParts.push(`t_all.name IN (${tags.map((_, i) => `$tagAll${i}`).join(',')})`);
-      tags.forEach((tg, i) => { params[`tagAll${i}`] = tg; });
+      tags.forEach((tg, i) => { params[`$tagAll${i}`] = tg; });
     }
 
     // Handle anyTag filter by adding to WHERE conditions
@@ -99,7 +99,7 @@ async function listMedia({ q = '', tags = [], anyTag = [], nsfw = 'all', sort = 
             AND t_any.name IN (${anyTag.map((_, i) => `$anyTag${i}`).join(',')})
         )`;
       whereParts.push(anyTagCondition);
-      anyTag.forEach((tg, i) => { params[`anyTag${i}`] = tg; });
+      anyTag.forEach((tg, i) => { params[`$anyTag${i}`] = tg; });
     }
 
     let orderClause = 'm.timestamp DESC';
@@ -180,7 +180,7 @@ async function getRandomMedia({ q = '', tag = null, nsfw = 'all' } = {}) {
   const whereParts = [];
   const params = {};
   if (q) {
-    params.q = `%${q}%`;
+    params.$q = `%${q}%`;
     whereParts.push('(m.file_path LIKE $q OR m.description LIKE $q)');
   }
   if (nsfw === '0') whereParts.push('m.nsfw = 0');
@@ -192,7 +192,7 @@ async function getRandomMedia({ q = '', tag = null, nsfw = 'all' } = {}) {
       JOIN media_tags mt_r ON mt_r.media_id = m.id
       JOIN tags t_r ON t_r.id = mt_r.tag_id AND t_r.name = $tagName
     `;
-    params.tagName = tag;
+    params.$tagName = tag;
   }
   const where = whereParts.length ? 'WHERE ' + whereParts.join(' AND ') : '';
   const totalRow = await get(`
@@ -231,10 +231,10 @@ async function getRandomMedia({ q = '', tag = null, nsfw = 'all' } = {}) {
 }
 
 async function listTags({ q = '', order = 'usage', limit = 200 } = {}) {
-  const params = { limit };
+  const params = { $limit: limit };
   let where = '';
   if (q) {
-    params.q = `%${q}%`;
+    params.$q = `%${q}%`;
     where = 'WHERE name LIKE $q';
   }
   let orderClause = 'usage_count DESC, name ASC';
@@ -254,15 +254,15 @@ async function addTagsToMedia(mediaId, tagNames = []) {
   for (const rawTag of tagNames) {
     const tag = rawTag.trim().toLowerCase();
     if (!tag) continue;
-    let tagRow = await get(`SELECT id, usage_count FROM tags WHERE name = $n`, { n: tag });
+    let tagRow = await get(`SELECT id, usage_count FROM tags WHERE name = $n`, { $n: tag });
     if (!tagRow) {
-      const ins = await run(`INSERT INTO tags (name, usage_count) VALUES ($n, 0)`, { n: tag });
+      const ins = await run(`INSERT INTO tags (name, usage_count) VALUES ($n, 0)`, { $n: tag });
       tagRow = { id: ins.lastID, usage_count: 0 };
     }
     try {
-      await run(`INSERT OR IGNORE INTO media_tags (media_id, tag_id) VALUES ($m, $t)`, { m: mediaId, t: tagRow.id });
-      const usage = await get(`SELECT COUNT(*) AS c FROM media_tags WHERE tag_id = $t`, { t: tagRow.id });
-      await run(`UPDATE tags SET usage_count = $c WHERE id = $t`, { c: usage.c, t: tagRow.id });
+      await run(`INSERT OR IGNORE INTO media_tags (media_id, tag_id) VALUES ($m, $t)`, { $m: mediaId, $t: tagRow.id });
+      const usage = await get(`SELECT COUNT(*) AS c FROM media_tags WHERE tag_id = $t`, { $t: tagRow.id });
+      await run(`UPDATE tags SET usage_count = $c WHERE id = $t`, { $c: usage.c, $t: tagRow.id });
       added.push(tag);
     } catch {}
   }
@@ -271,25 +271,25 @@ async function addTagsToMedia(mediaId, tagNames = []) {
 }
 
 async function removeTagFromMedia(mediaId, tagName) {
-  const row = await get(`SELECT id FROM tags WHERE name = $n`, { n: tagName });
+  const row = await get(`SELECT id FROM tags WHERE name = $n`, { $n: tagName });
   if (!row) return false;
-  await run(`DELETE FROM media_tags WHERE media_id = $m AND tag_id = $t`, { m: mediaId, t: row.id });
-  const usage = await get(`SELECT COUNT(*) AS c FROM media_tags WHERE tag_id = $t`, { t: row.id });
-  await run(`UPDATE tags SET usage_count = $c WHERE id = $t`, { c: usage.c, t: row.id });
+  await run(`DELETE FROM media_tags WHERE media_id = $m AND tag_id = $t`, { $m: mediaId, $t: row.id });
+  const usage = await get(`SELECT COUNT(*) AS c FROM media_tags WHERE tag_id = $t`, { $t: row.id });
+  await run(`UPDATE tags SET usage_count = $c WHERE id = $t`, { $c: usage.c, $t: row.id });
   bus.emit('media:tagsUpdated', { media_id: mediaId, removed: tagName });
   return true;
 }
 
 async function updateMediaMeta(id, { description, nsfw } = {}) {
   const sets = [];
-  const params = { id };
+  const params = { $id: id };
   if (typeof description === 'string') {
     sets.push('description = $description');
-    params.description = description;
+    params.$description = description;
   }
   if (nsfw === 0 || nsfw === 1) {
     sets.push('nsfw = $nsfw');
-    params.nsfw = nsfw;
+    params.$nsfw = nsfw;
   }
   if (!sets.length) return { updated: false };
   await run(`UPDATE media SET ${sets.join(', ')} WHERE id = $id`, params);
@@ -303,7 +303,7 @@ async function setMediaTagsExact(mediaId, tagNames = []) {
     FROM media_tags mt
     JOIN tags t ON t.id = mt.tag_id
     WHERE mt.media_id = $m
-  `, { m: mediaId });
+  `, { $m: mediaId });
   const currentNames = new Set(currentRows.map(r => r.name));
   const toAdd = normalized.filter(n => !currentNames.has(n));
   const toRemove = [...currentNames].filter(n => !normalized.includes(n));
@@ -314,12 +314,12 @@ async function setMediaTagsExact(mediaId, tagNames = []) {
 
 async function rankTags({ metric = 'media', nsfw = 'all', since = null, until = null, limit = 50 } = {}) {
   limit = Math.min(500, Math.max(1, limit));
-  const params = { limit };
+  const params = { $limit: limit };
   const whereParts = [];
   if (nsfw === '0') whereParts.push('m.nsfw = 0');
   else if (nsfw === '1') whereParts.push('m.nsfw = 1');
-  if (since) { params.since = since; whereParts.push('m.timestamp >= $since'); }
-  if (until) { params.until = until; whereParts.push('m.timestamp <= $until'); }
+  if (since) { params.$since = since; whereParts.push('m.timestamp >= $since'); }
+  if (until) { params.$until = until; whereParts.push('m.timestamp <= $until'); }
   const where = whereParts.length ? 'WHERE ' + whereParts.join(' AND ') : '';
   if (metric === 'usage') {
     return all(`
@@ -343,12 +343,12 @@ async function rankTags({ metric = 'media', nsfw = 'all', since = null, until = 
 
 async function rankUsers({ metric = 'count', nsfw = 'all', since = null, until = null, limit = 50 } = {}) {
   limit = Math.min(500, Math.max(1, limit));
-  const params = { limit };
+  const params = { $limit: limit };
   const whereParts = ['m.sender_id IS NOT NULL'];
   if (nsfw === '0') whereParts.push('m.nsfw = 0');
   else if (nsfw === '1') whereParts.push('m.nsfw = 1');
-  if (since) { params.since = since; whereParts.push('m.timestamp >= $since'); }
-  if (until) { params.until = until; whereParts.push('m.timestamp <= $until'); }
+  if (since) { params.$since = since; whereParts.push('m.timestamp >= $since'); }
+  if (until) { params.$until = until; whereParts.push('m.timestamp <= $until'); }
   const where = 'WHERE ' + whereParts.join(' AND ');
   const aggSelect = metric === 'popular'
     ? 'SUM(m.count_random) AS score'
