@@ -415,6 +415,13 @@ app.get('/healthz', (_req, res) => {
   res.json({ ok: true, ts: Date.now() });
 });
 
+// Bot Configuration
+app.get('/api/bot-config', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const whatsappNumber = process.env.BOT_WHATSAPP_NUMBER || process.env.ADMIN_NUMBER?.replace('@c.us', '') || '5511999999999';
+  res.json({ whatsappNumber });
+});
+
 // ====================== APIs ======================
 app.get('/api/stickers', async (req, res) => {
   try {
