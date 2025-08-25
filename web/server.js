@@ -510,6 +510,27 @@ app.get('/api/stickers/:id', async (req, res) => {
     const row = await getMediaById(parseInt(req.params.id, 10));
     if (!row) return res.status(404).json({ error: 'not_found' });
     fixMediaUrl(row);
+    
+    // Fetch tags for this sticker using db directly
+    try {
+      const tagsRows = await new Promise((resolve, reject) => {
+        db.all(`
+          SELECT t.name 
+          FROM media_tags mt
+          JOIN tags t ON t.id = mt.tag_id
+          WHERE mt.media_id = ?
+          ORDER BY t.name
+        `, [row.id], (err, rows) => {
+          if (err) return reject(err);
+          resolve(rows || []);
+        });
+      });
+      row.tags = tagsRows.map(r => r.name);
+    } catch (tagsError) {
+      console.warn('[API] Error fetching tags for sticker', row.id, ':', tagsError);
+      row.tags = [];
+    }
+    
     res.json(row);
   } catch (e) {
     console.error('[API] /api/stickers/:id ERRO:', e);
