@@ -675,10 +675,12 @@ app.get('/api/admin/users', requireAdmin, (req, res) => {
     SELECT 
       u.id,
       u.username,
+      u.email,
       u.phone_number,
       u.role,
       u.status,
       u.can_edit,
+      u.email_confirmed,
       u.created_at,
       u.approved_at,
       u.approved_by,
