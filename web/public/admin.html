@@ -63,6 +63,43 @@
       </table>
     </div>
 
+    <div class="panel">
+      <h3>Gerenciamento de Usuários</h3>
+      <div class="row" style="margin-bottom: 1rem;">
+        <select id="userStatusFilter">
+          <option value="">Todos os usuários</option>
+          <option value="pending">Aguardando aprovação</option>
+          <option value="approved">Aprovados</option>
+          <option value="rejected">Rejeitados</option>
+        </select>
+        <button id="refreshUsers" class="btn-primary">Atualizar Lista</button>
+      </div>
+      <div id="usersContainer">
+        <table id="tblUsers">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Usuário</th>
+              <th>Telefone</th>
+              <th>Nome Contato</th>
+              <th>Status</th>
+              <th>Pode Editar</th>
+              <th>Criado em</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div id="usersPagination" class="row" style="margin-top: 1rem; display: none;">
+        <span id="usersInfo" class="muted"></span>
+        <div>
+          <button id="prevPage" class="btn-primary" disabled>Anterior</button>
+          <button id="nextPage" class="btn-primary" disabled>Próxima</button>
+        </div>
+      </div>
+    </div>
+
     <p class="muted">Métricas de acesso agora estão no Umami.</p>
   </div>
 
