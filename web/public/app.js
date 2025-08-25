@@ -50,7 +50,7 @@ function cardHTML(s) {
     <div class="card" data-id="${s.id}">
       ${isVideo
         ? `<video src="${url}" class="card-video" style="max-width:128px;max-height:128px;display:block;margin:auto;" autoplay loop muted playsinline></video>`
-        : `<img src="${url}" alt="sticker" class="card-img" style="max-width:128px;max-height:128px;display:block;margin:auto;">`
+        : `<img src="${url}" alt="sticker" class="card-img" style="max-width:128px;max-height:128px;display:block;margin:auto;" loading="lazy">`
       }
       <div class="desc clamp-2" data-desc-full="${desc.replace(/"/g, '&quot;')}">${descShort}
         ${longDesc ? `<button class="card-expand-btn">ver mais</button>` : ''}
@@ -113,7 +113,7 @@ const anyTagEl = document.getElementById('anyTag');
 const nsfwEl = document.getElementById('nsfw');
 const sortEl = document.getElementById('sort');
 const reloadBtn = document.getElementById('reload');
-let page = 1, loading = false, done = false, perPage = 60;
+let page = 1, loading = false, done = false, perPage = 30; // Reduced from 60 to 30 for better performance
 
 async function load(reset = false){
   if (loading) return;
@@ -138,6 +138,17 @@ async function load(reset = false){
     page++;
   }
   loading = false;
+}
+
+// Function to refresh current view without resetting to page 1
+function refreshCurrentView() {
+  // Find the updated sticker in current view and update it
+  const currentCards = grid.querySelectorAll('.card');
+  if (currentCards.length > 0) {
+    // For now, just reload the first page to ensure consistency
+    // In a more complex implementation, we could update individual cards
+    load(true);
+  }
 }
 
 [qEl, tagEl, anyTagEl, nsfwEl, sortEl].forEach(el => {
@@ -213,16 +224,48 @@ async function openEdit(id){
 
 document.getElementById('saveEdit').onclick = async () => {
   const id = editIdEl.textContent;
-  editMsg.textContent = 'Salvando...';
-  const metaBody = { description: editDesc.value, nsfw: editNsfw.checked ? 1 : 0 };
-  const r1 = await fetch('/api/stickers/' + id, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(metaBody) });
-  const tags = editTags.value.split(',').map(t => t.trim()).filter(Boolean);
-  const r2 = await fetch('/api/stickers/' + id + '/tags', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ tags }) });
-  if (r1.ok && r2.ok) {
-    editMsg.textContent = 'Atualizado!';
-    setTimeout(() => { modal.style.display = 'none'; load(true); }, 600);
-  } else {
-    editMsg.textContent = 'Erro ao salvar.';
+  const saveBtn = document.getElementById('saveEdit');
+  const originalText = saveBtn.textContent;
+  
+  // Show loading state
+  saveBtn.textContent = 'Salvando...';
+  saveBtn.disabled = true;
+  editMsg.textContent = 'Salvando alterações...';
+  editMsg.style.color = '#007bff';
+  
+  try {
+    const metaBody = { description: editDesc.value, nsfw: editNsfw.checked ? 1 : 0 };
+    const r1 = await fetch('/api/stickers/' + id, { 
+      method:'PATCH', 
+      headers:{'Content-Type':'application/json'}, 
+      body:JSON.stringify(metaBody) 
+    });
+    
+    const tags = editTags.value.split(',').map(t => t.trim()).filter(Boolean);
+    const r2 = await fetch('/api/stickers/' + id + '/tags', { 
+      method:'PUT', 
+      headers:{'Content-Type':'application/json'}, 
+      body:JSON.stringify({ tags }) 
+    });
+    
+    if (r1.ok && r2.ok) {
+      editMsg.textContent = 'Atualizado com sucesso!';
+      editMsg.style.color = '#28a745';
+      setTimeout(() => { 
+        modal.style.display = 'none'; 
+        // Only reload the current view instead of forcing page 1
+        refreshCurrentView();
+      }, 800);
+    } else {
+      throw new Error('Erro ao salvar');
+    }
+  } catch (error) {
+    editMsg.textContent = 'Erro ao salvar. Tente novamente.';
+    editMsg.style.color = '#dc3545';
+  } finally {
+    // Restore button state
+    saveBtn.textContent = originalText;
+    saveBtn.disabled = false;
   }
 };
 

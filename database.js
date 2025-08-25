@@ -98,6 +98,13 @@ db.serialize(() => {
   db.run(`CREATE INDEX IF NOT EXISTS idx_media_tags_media_id ON media_tags(media_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_contacts_display_name ON contacts(display_name)`);
+  
+  // Additional performance indexes
+  db.run(`CREATE INDEX IF NOT EXISTS idx_media_count_random ON media(count_random DESC)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_media_file_path ON media(file_path)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_media_description ON media(description)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_media_nsfw_timestamp ON media(nsfw, timestamp DESC)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_tags_usage_count ON tags(usage_count DESC)`);
  });
 
 // Gera hash MD5 de um buffer
