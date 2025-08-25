@@ -158,4 +158,103 @@ a { color:#6fa8ff; text-decoration:none; font-size:.9rem; }
     font-size: .6rem;
     padding: 2px 4px;
   }
+
+/* Loading states and performance improvements */
+.card-img, .card-video {
+  transition: opacity 0.2s ease;
+}
+
+.card-img[loading="lazy"] {
+  background: linear-gradient(45deg, #333, #444);
+  animation: skeleton 1.5s infinite ease-in-out;
+}
+
+@keyframes skeleton {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; }
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.loading-indicator {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #444;
+  border-top: 2px solid var(--accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-right: 4px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Improve performance with will-change */
+.grid {
+  will-change: scroll-position;
+}
+
+.card {
+  will-change: transform;
+}
+
+/* Error/success message styling */
+.success-message {
+  color: #28a745;
+}
+
+.error-message {
+  color: #dc3545;
+}
+
+.loading-message {
+  color: #007bff;
+}
+
+/* Lazy loading placeholders */
+.lazy-img:not([src]), .lazy-video:not([src]) {
+  background: linear-gradient(90deg, #333 0%, #444 50%, #333 100%);
+  background-size: 200% 100%;
+  animation: loading 1.5s infinite;
+  min-height: 128px;
+  min-width: 128px;
+  border-radius: 4px;
+}
+
+@keyframes loading {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Loading states for buttons */
+.btn-loading {
+  position: relative;
+  color: transparent !important;
+}
+
+.btn-loading::after {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  top: 50%;
+  left: 50%;
+  margin-left: -8px;
+  margin-top: -8px;
+  border: 2px solid transparent;
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
 }

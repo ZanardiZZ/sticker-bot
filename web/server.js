@@ -99,10 +99,10 @@ async function ensureInitialAdmin() {
       const initialPass = process.env.ADMIN_INITIAL_PASSWORD || Math.random().toString(36).slice(-12);
       const hash = await bcrypt.hash(initialPass, 12);
       db.run(
-        `INSERT INTO users (username, password_hash, role, must_change_password, password_updated_at)
-         VALUES (?, ?, 'admin', 1, NULL)
+        `INSERT INTO users (username, password_hash, role, must_change_password, created_at, password_updated_at)
+         VALUES (?, ?, 'admin', 1, ?, NULL)
          ON CONFLICT(username) DO UPDATE SET role='admin', must_change_password=1`,
-        [username, hash],
+        [username, hash, Date.now()],
         (e2) => {
           if (e2) {
             console.error('[INIT] erro ao criar admin inicial:', e2.message);
@@ -424,9 +424,56 @@ app.get('/api/bot-config', (_req, res) => {
   res.json({ whatsappNumber });
 });
 
+// Simple in-memory cache for API responses
+const apiCache = new Map();
+const CACHE_DURATION = 30000; // 30 seconds
+
+function getCacheKey(req) {
+  const { q = '', page = '1', per_page = '60', tags = '', any_tag = '', nsfw = 'all', sort = 'newest' } = req.query;
+  return `stickers:${q}:${page}:${per_page}:${tags}:${any_tag}:${nsfw}:${sort}`;
+}
+
+function getFromCache(key) {
+  const cached = apiCache.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    return cached.data;
+  }
+  apiCache.delete(key);
+  return null;
+}
+
+function setCache(key, data) {
+  apiCache.set(key, { data, timestamp: Date.now() });
+  
+  // Cleanup old cache entries to prevent memory leaks
+  if (apiCache.size > 100) {
+    const oldestKey = apiCache.keys().next().value;
+    apiCache.delete(oldestKey);
+  }
+}
+
+// Clear cache on media updates
+bus.on('media:updated', () => {
+  apiCache.clear();
+});
+
+bus.on('media:new', () => {
+  apiCache.clear();
+});
+
 // ====================== APIs ======================
 app.get('/api/stickers', async (req, res) => {
   try {
+    const cacheKey = getCacheKey(req);
+    
+    // Check cache first for non-random sorts
+    if (req.query.sort !== 'random') {
+      const cached = getFromCache(cacheKey);
+      if (cached) {
+        return res.json(cached);
+      }
+    }
+    
     const {
       q = '', page = '1', per_page = '60',
       tags = '', any_tag = '', nsfw = 'all', sort = 'newest'
@@ -444,6 +491,11 @@ app.get('/api/stickers', async (req, res) => {
 
     if (Array.isArray(result?.results)) {
       result.results = result.results.map(fixMediaUrl);
+    }
+
+    // Cache the result for non-random sorts
+    if (sort !== 'random') {
+      setCache(cacheKey, result);
     }
 
     res.json(result);
