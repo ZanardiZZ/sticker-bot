@@ -9,6 +9,7 @@ f.addEventListener('submit', async (e) => {
   else { 
     const d = await r.json().catch(() => ({})); 
     const errorMsg = d.error === 'account_not_approved' ? d.message : 
+                     d.error === 'email_not_confirmed' ? d.message :
                      d.error === 'invalid_credentials' ? 'Usuário ou senha inválidos' :
                      d.error || 'Erro';
     err.textContent = errorMsg; 

@@ -58,7 +58,7 @@ function registerAuthRoutes(app) {
     const { username, password } = req.body || {};
     if (!username || !password) return res.status(400).json({ error: 'missing_credentials' });
     db.get(
-      `SELECT id, username, password_hash, role, status, COALESCE(must_change_password, 0) AS must_change_password
+      `SELECT id, username, password_hash, role, status, email_confirmed, COALESCE(must_change_password, 0) AS must_change_password
        FROM users WHERE username = ?`,
       [username],
       async (err, row) => {
@@ -73,6 +73,14 @@ function registerAuthRoutes(app) {
           return res.status(403).json({ 
             error: 'account_not_approved', 
             message: row.status === 'pending' ? 'Sua conta está aguardando aprovação.' : 'Sua conta foi rejeitada.'
+          });
+        }
+        
+        // Check if email is confirmed (only for non-admin users)
+        if (row.role !== 'admin' && !row.email_confirmed) {
+          return res.status(403).json({ 
+            error: 'email_not_confirmed', 
+            message: 'Confirme seu email antes de fazer login.'
           });
         }
         
