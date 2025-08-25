@@ -52,7 +52,7 @@
     table.style.width = '100%';
     table.style.borderCollapse = 'collapse';
     const thead = document.createElement('thead');
-    thead.innerHTML = '<tr><th style="text-align:left;padding:.4rem .5rem;border-bottom:1px solid #333;">#</th><th style="text-align:left;padding:.4rem .5rem;border-bottom:1px solid #333;">Tag</th><th style="text-align:left;padding:.4rem .5rem;border-bottom:1px solid #333;">Qtd</th></tr>';
+    thead.innerHTML = '<tr><th style="text-align:left;padding:.4rem .5rem;border-bottom:1px solid var(--border);">#</th><th style="text-align:left;padding:.4rem .5rem;border-bottom:1px solid var(--border);">Tag</th><th style="text-align:left;padding:.4rem .5rem;border-bottom:1px solid var(--border);">Qtd</th></tr>';
     const tb = document.createElement('tbody');
     table.appendChild(thead);
     table.appendChild(tb);
@@ -91,7 +91,7 @@
         const html = rows.map((r, i) => {
           const name = r.name || r.tag || r.id || '(sem nome)';
           const count = r.count ?? r.total ?? r.value ?? 0;
-          return `<tr><td style="padding:.4rem .5rem;border-bottom:1px solid #333;">${i + 1}</td><td style="padding:.4rem .5rem;border-bottom:1px solid #333;">${name}</td><td style="padding:.4rem .5rem;border-bottom:1px solid #333;">${count}</td></tr>`;
+          return `<tr><td style="padding:.4rem .5rem;border-bottom:1px solid var(--border);">${i + 1}</td><td style="padding:.4rem .5rem;border-bottom:1px solid var(--border);">${name}</td><td style="padding:.4rem .5rem;border-bottom:1px solid var(--border);">${count}</td></tr>`;
         }).join('');
         tbody.innerHTML = html;
       } else {
