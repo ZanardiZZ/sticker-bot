@@ -1,12 +1,12 @@
-# .github/workflows/copilot-setup-steps.yml
 name: Copilot Setup Steps
-
 on:
   workflow_dispatch:
 
 jobs:
-  setup:
+  copilot-setup-steps:
     runs-on: ubuntu-latest
+      permissions:
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -26,10 +26,5 @@ jobs:
       - name: Install Node.js dependencies
         run: |
           npm ci --ignore-scripts
-          # Executa os scripts de pós-install manualmente (baixam binários)
           npm rebuild
 
-      # Opcional: build do projeto
-      - name: Build project
-        if: exists('tsconfig.json')
-        run: npm run build
