@@ -100,9 +100,14 @@
           const rawId = pick(r.sender_id, r.chat_id, r.user_id, r.id, '');
           const display = pick(r.display_name, r.name, r.username) || maskJid(rawId);
           const count = pick(r.count, r.sticker_count, r.total, r.value, 0);
+          
+          // Adiciona indicador de grupo
+          const groupIcon = r.is_group ? ' 👥' : '';
+          const displayWithIcon = display + groupIcon;
+          
           return `<tr>
             <td style="padding:.4rem .5rem;border-bottom:1px solid #333;">${i + 1}</td>
-            <td style="padding:.4rem .5rem;border-bottom:1px solid #333;">${display}</td>
+            <td style="padding:.4rem .5rem;border-bottom:1px solid #333;">${displayWithIcon}</td>
             <td style="padding:.4rem .5rem;border-bottom:1px solid #333;">${count}</td>
           </tr>`;
         }).join('');
@@ -112,7 +117,12 @@
           const rawId = pick(r.sender_id, r.chat_id, r.user_id, r.id, '');
           const display = pick(r.display_name, r.name, r.username) || maskJid(rawId);
           const count = pick(r.count, r.sticker_count, r.total, r.value, 0);
-          return `<div class="row"><span>${i + 1}.</span> <strong>${display}</strong> <span>${count}</span></div>`;
+          
+          // Adiciona indicador de grupo
+          const groupIcon = r.is_group ? ' 👥' : '';
+          const displayWithIcon = display + groupIcon;
+          
+          return `<div class="row"><span>${i + 1}.</span> <strong>${displayWithIcon}</strong> <span>${count}</span></div>`;
         }).join('');
       }
       showMessage(parent, '');
