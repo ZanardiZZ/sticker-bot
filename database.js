@@ -683,9 +683,9 @@ function getHistoricalContactsStats() {
 
 // Migra entradas históricas da tabela media para a tabela contacts
 // Para que os envios históricos sejam contabilizados no ranking de usuários
-async function migrateHistoricalContacts() {
+async function migrateHistoricalContacts(logger = console) {
   return new Promise((resolve, reject) => {
-    console.log('[migrate] Iniciando migração de contatos históricos...');
+    logger.log('[migrate] Iniciando migração de contatos históricos...');
     
     // Busca todos os sender_ids únicos da tabela media que não existem na tabela contacts
     const sql = `
