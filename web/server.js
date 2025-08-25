@@ -611,16 +611,25 @@ app.get('/api/rank/users', async (req, res) => {
 
     const sql = `
       SELECT
-        m.sender_id AS sender_id,
+        COALESCE(m.sender_id, m.chat_id, m.group_id) AS sender_id,
+        m.group_id,
         COALESCE(NULLIF(TRIM(c.display_name), ''), '') AS display_name,
-        COUNT(*) AS sticker_count
+        COUNT(*) AS sticker_count,
+        -- Identifica se é grupo
+        CASE WHEN m.group_id IS NOT NULL AND m.sender_id IS NULL THEN 1 ELSE 0 END as is_group
       FROM media m
       LEFT JOIN contacts c
         ON replace(replace(lower(trim(c.sender_id)), '@s.whatsapp.net',''),'@c.us','')
-         = replace(replace(lower(trim(m.sender_id)), '@s.whatsapp.net',''),'@c.us','')
+         = replace(replace(lower(trim(COALESCE(m.sender_id, m.chat_id, m.group_id))), '@s.whatsapp.net',''),'@c.us','')
       ${whereSql}
-      GROUP BY m.sender_id
-      HAVING m.sender_id IS NOT NULL AND m.sender_id <> ''
+      GROUP BY COALESCE(m.sender_id, m.chat_id, m.group_id)
+      HAVING COALESCE(m.sender_id, m.chat_id, m.group_id) IS NOT NULL 
+        AND COALESCE(m.sender_id, m.chat_id, m.group_id) <> ''
+        -- Exclui envios do bot das contagens de ranking
+        AND NOT (
+          COALESCE(m.sender_id, m.chat_id) LIKE '%bot%' OR
+          (m.sender_id = m.chat_id AND m.group_id IS NULL)
+        )
       ORDER BY sticker_count DESC
       LIMIT ?
     `;
@@ -631,13 +640,23 @@ app.get('/api/rank/users', async (req, res) => {
         console.error('[rank/users] db error:', err);
         return res.status(500).json({ error: 'db_error', message: err.message });
       }
-      const normalized = (rows || []).map(r => ({
-        sender_id: r.sender_id,
-        chat_id: r.sender_id,
-        display_name: r.display_name || null,
-        count: r.sticker_count,
-        sticker_count: r.sticker_count
-      }));
+      const normalized = (rows || []).map(r => {
+        let displayName = r.display_name || null;
+        
+        // Se é um grupo e não tem display_name, gera um nome de grupo
+        if (r.is_group && !displayName && r.group_id) {
+          displayName = `Grupo ${r.group_id.replace('@g.us', '').substring(0, 10)}...`;
+        }
+        
+        return {
+          sender_id: r.sender_id,
+          chat_id: r.sender_id,
+          display_name: displayName,
+          count: r.sticker_count,
+          sticker_count: r.sticker_count,
+          is_group: r.is_group || 0
+        };
+      });
       res.json(normalized);
     });
   } catch (err) {
