@@ -603,16 +603,30 @@ async function updateMediaDescription(mediaId, newDescriptionToAdd) {
 }
 
 // Atualiza a função para retornar display_name via JOIN com contacts
+// Inclui fallback para chat_id/group_id quando sender_id é nulo
+// Exclui envios do bot (identificados por padrões específicos)
 function getTop5UsersByStickerCount(groupId = null) {
   return new Promise((resolve, reject) => {
     let sql = `
       SELECT
+        -- Prioriza sender_id, depois chat_id, depois group_id
+        COALESCE(m.sender_id, m.chat_id, m.group_id) as effective_sender,
         m.sender_id,
+        m.chat_id, 
+        m.group_id,
         COUNT(*) AS sticker_count,
-        COALESCE(c.display_name, '') AS display_name
+        COALESCE(c.display_name, '') AS display_name,
+        -- Identifica se é grupo
+        CASE WHEN m.group_id IS NOT NULL AND m.sender_id IS NULL THEN 1 ELSE 0 END as is_group
       FROM media m
-      LEFT JOIN contacts c ON c.sender_id = m.sender_id
-      WHERE m.sender_id IS NOT NULL
+      LEFT JOIN contacts c ON c.sender_id = COALESCE(m.sender_id, m.chat_id)
+      WHERE COALESCE(m.sender_id, m.chat_id, m.group_id) IS NOT NULL
+        -- Exclui envios do próprio bot (envios programados/automáticos)
+        AND NOT (
+          m.sender_id LIKE '%bot%' OR 
+          m.chat_id LIKE '%bot%' OR
+          m.sender_id = m.chat_id AND m.group_id IS NULL -- Possível padrão de bot
+        )
     `;
     const params = [];
     if (groupId) {
@@ -620,7 +634,7 @@ function getTop5UsersByStickerCount(groupId = null) {
       params.push(groupId);
     }
     sql += `
-      GROUP BY m.sender_id
+      GROUP BY effective_sender
       ORDER BY sticker_count DESC
       LIMIT 5
     `;
@@ -753,6 +767,102 @@ async function migrateHistoricalContacts(logger = console) {
   });
 }
 
+// Nova função para obter nome de grupo (placeholder - seria preenchido por integração com WhatsApp)
+function getGroupName(groupId) {
+  // Por enquanto, extrai um nome "amigável" do ID do grupo
+  if (!groupId || !groupId.includes('@g.us')) {
+    return null;
+  }
+  
+  // Remove @g.us e pega primeiros caracteres como nome temporário
+  const cleanId = groupId.replace('@g.us', '');
+  return `Grupo ${cleanId.substring(0, 10)}...`;
+}
+
+// Função aprimorada de migração que inclui chat_id/group_id quando sender_id é nulo
+async function migrateMediaWithMissingSenderId(logger = console) {
+  return new Promise((resolve, reject) => {
+    logger.log('[migrate] Iniciando migração de mídias com sender_id faltante...');
+    
+    // Busca mídias que não têm sender_id mas têm chat_id ou group_id
+    const sql = `
+      SELECT DISTINCT 
+        COALESCE(m.chat_id, m.group_id) as effective_id,
+        m.group_id,
+        m.chat_id,
+        COUNT(*) as media_count
+      FROM media m
+      LEFT JOIN contacts c ON c.sender_id = COALESCE(m.chat_id, m.group_id)
+      WHERE (m.sender_id IS NULL OR m.sender_id = '') 
+        AND COALESCE(m.chat_id, m.group_id) IS NOT NULL
+        AND COALESCE(m.chat_id, m.group_id) != ''
+        AND c.sender_id IS NULL  -- Ainda não existe na tabela contacts
+      GROUP BY effective_id
+    `;
+    
+    db.all(sql, [], (err, rows) => {
+      if (err) {
+        logger.error('[migrate] Erro ao buscar mídias com sender_id faltante:', err);
+        reject(err);
+        return;
+      }
+      
+      if (!rows || rows.length === 0) {
+        logger.log('[migrate] Nenhuma mídia com sender_id faltante para migrar.');
+        resolve(0);
+        return;
+      }
+      
+      logger.log(`[migrate] Encontradas ${rows.length} IDs únicos para migrar (${rows.reduce((sum, r) => sum + r.media_count, 0)} mídias total).`);
+      
+      let processedCount = 0;
+      let errorCount = 0;
+      
+      // Processa cada effective_id único
+      const processNext = () => {
+        if (processedCount + errorCount >= rows.length) {
+          const successCount = processedCount;
+          logger.log(`[migrate] Migração de IDs faltantes concluída. Sucessos: ${successCount}, Erros: ${errorCount}`);
+          resolve(successCount);
+          return;
+        }
+        
+        const row = rows[processedCount + errorCount];
+        const effectiveId = row.effective_id;
+        const isGroup = row.group_id === effectiveId;
+        
+        // Para grupos, usar nome de grupo; para usuários, nome vazio será preenchido depois
+        let displayName = '';
+        if (isGroup) {
+          displayName = getGroupName(effectiveId);
+        }
+        
+        // Insere contato usando effective_id
+        db.run(`
+          INSERT INTO contacts(sender_id, display_name, updated_at)
+          VALUES (?, ?, strftime('%s','now'))
+        `, [effectiveId, displayName], (insertErr) => {
+          if (insertErr) {
+            logger.error(`[migrate] Erro ao inserir contato para ${effectiveId}:`, insertErr);
+            errorCount++;
+          } else {
+            processedCount++;
+            if (processedCount % 50 === 0) {
+              logger.log(`[migrate] Processados ${processedCount} IDs faltantes...`);
+            }
+          }
+          
+          // Continua processamento
+          setImmediate(processNext);
+        });
+      };
+      
+      // Inicia processamento
+      processNext();
+    });
+  });
+}
+
 module.exports = {
   db,
   saveMedia,
@@ -771,7 +881,9 @@ module.exports = {
   getTop5UsersByStickerCount,
   countMedia,
   getHistoricalContactsStats,
-  migrateHistoricalContacts
+  migrateHistoricalContacts,
+  migrateMediaWithMissingSenderId,
+  getGroupName
 };
 
 // Admin bootstrap is handled by the web server's safer initialization path
