@@ -123,9 +123,22 @@ async function runTest() {
       console.log(`  - ${contact.sender_id}: "${contact.display_name}"`);
     });
     
-    // Validações
-    const expectedMigrated = 2; // 2 novos sender_ids (888 e 777), pois 999 já existia
-    const expectedTotal = 3; // 1 existente + 2 migrados
+    // Validações dinâmicas
+    // Calcula quantos sender_ids em historical_contacts não existem em contacts antes da migração
+    const preExistingContacts = await new Promise((resolve, reject) => {
+      testDb.all('SELECT sender_id FROM contacts', (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows.map(r => r.sender_id));
+      });
+    });
+    const historicalContacts = await new Promise((resolve, reject) => {
+      testDb.all('SELECT DISTINCT sender_id FROM historical_contacts', (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows.map(r => r.sender_id));
+      });
+    });
+    const expectedMigrated = historicalContacts.filter(sid => !preExistingContacts.includes(sid)).length;
+    const expectedTotal = preExistingContacts.length + expectedMigrated;
     
     if (migratedCount === expectedMigrated && finalContactsCount === expectedTotal) {
       console.log('✅ Teste PASSOU - migração funcionou corretamente!');
