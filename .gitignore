@@ -1,29 +1,23 @@
 # Node modules
 node_modules/
-
 # Logs
 *.log
 logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-
 # Environment variables
 .env
-
 # Build outputs / Whisper build artifacts
 whisper.cpp/
-
 # OS files
 .DS_Store
 Thumbs.db
-
 # Editor directories and files
 .vscode/
 .idea/
 *.sublime-project
 *.sublime-workspace
-
 # Temporary files
 *.tmp
 *.temp
@@ -32,10 +26,8 @@ _IGNORE_StickerBotSession/
 # Misc
 *.pid
 *.seed
-
 # Ignore coverage reports if any
 coverage/
-
 # If you have any other local config files add here
 media/
 media.db
@@ -43,3 +35,13 @@ StickerBotSession.data.json
 /temp
 *.bak
 *.old
+
+# managed by open-wa
+**.data.json
+**.node-persist**
+**_IGNORE_**
+# end managed by open-wa
+
+# Development test files
+add-test-data.js
+data.db
