@@ -41,3 +41,7 @@ StickerBotSession.data.json
 **.node-persist**
 **_IGNORE_**
 # end managed by open-wa
+
+# Development test files
+add-test-data.js
+data.db
