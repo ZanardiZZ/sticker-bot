@@ -630,6 +630,129 @@ function getTop5UsersByStickerCount(groupId = null) {
     });
   });
 }
+
+// Retorna estatísticas sobre contatos que precisam ser migrados
+function getHistoricalContactsStats() {
+  return new Promise((resolve, reject) => {
+    const statsQueries = {
+      totalMediaWithSender: `
+        SELECT COUNT(*) as count 
+        FROM media 
+        WHERE sender_id IS NOT NULL AND sender_id != ''
+      `,
+      existingContacts: `
+        SELECT COUNT(*) as count 
+        FROM contacts
+      `,
+      uniqueSendersInMedia: `
+        SELECT COUNT(DISTINCT sender_id) as count 
+        FROM media 
+        WHERE sender_id IS NOT NULL AND sender_id != ''
+      `,
+      sendersNeedingMigration: `
+        SELECT COUNT(DISTINCT m.sender_id) as count
+        FROM media m
+        LEFT JOIN contacts c ON c.sender_id = m.sender_id
+        WHERE m.sender_id IS NOT NULL 
+          AND m.sender_id != '' 
+          AND c.sender_id IS NULL
+      `
+    };
+    
+    const results = {};
+    const queryKeys = Object.keys(statsQueries);
+    let completed = 0;
+    
+    queryKeys.forEach(key => {
+      db.get(statsQueries[key], [], (err, row) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        
+        results[key] = row.count;
+        completed++;
+        
+        if (completed === queryKeys.length) {
+          resolve(results);
+        }
+      });
+    });
+  });
+}
+
+// Migra entradas históricas da tabela media para a tabela contacts
+// Para que os envios históricos sejam contabilizados no ranking de usuários
+async function migrateHistoricalContacts(logger = console) {
+  return new Promise((resolve, reject) => {
+    logger.log('[migrate] Iniciando migração de contatos históricos...');
+    
+    // Busca todos os sender_ids únicos da tabela media que não existem na tabela contacts
+    const sql = `
+      SELECT DISTINCT m.sender_id 
+      FROM media m
+      LEFT JOIN contacts c ON c.sender_id = m.sender_id
+      WHERE m.sender_id IS NOT NULL 
+        AND m.sender_id != '' 
+        AND c.sender_id IS NULL
+    `;
+    
+    db.all(sql, [], (err, rows) => {
+      if (err) {
+        console.error('[migrate] Erro ao buscar sender_ids históricos:', err);
+        reject(err);
+        return;
+      }
+      
+      if (!rows || rows.length === 0) {
+        console.log('[migrate] Nenhum contato histórico para migrar.');
+        resolve(0);
+        return;
+      }
+      
+      console.log(`[migrate] Encontrados ${rows.length} contatos históricos para migrar.`);
+      
+      let processedCount = 0;
+      let errorCount = 0;
+      
+      // Processa cada sender_id único
+      const processNext = () => {
+        if (processedCount + errorCount >= rows.length) {
+          const successCount = processedCount;
+          console.log(`[migrate] Migração concluída. Sucessos: ${successCount}, Erros: ${errorCount}`);
+          resolve(successCount);
+          return;
+        }
+        
+        const row = rows[processedCount + errorCount];
+        const senderId = row.sender_id;
+        
+        // Insere contato com display_name vazio (será preenchido quando o usuário interagir novamente)
+        db.run(`
+          INSERT INTO contacts(sender_id, display_name, updated_at)
+          VALUES (?, '', strftime('%s','now'))
+        `, [senderId], (insertErr) => {
+          if (insertErr) {
+            console.error(`[migrate] Erro ao inserir contato para ${senderId}:`, insertErr);
+            errorCount++;
+          } else {
+            processedCount++;
+            if (processedCount % 50 === 0) {
+              console.log(`[migrate] Processados ${processedCount} contatos...`);
+            }
+          }
+          
+          // Continua processamento
+          setImmediate(processNext);
+        });
+      };
+      
+      // Inicia processamento
+      processNext();
+    });
+  });
+}
+
 module.exports = {
   db,
   saveMedia,
@@ -646,7 +769,9 @@ module.exports = {
   getMediaWithLowestRandomCount,
   getTop10Media,
   getTop5UsersByStickerCount,
-  countMedia
+  countMedia,
+  getHistoricalContactsStats,
+  migrateHistoricalContacts
 };
 
 // Admin bootstrap is handled by the web server's safer initialization path
