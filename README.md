@@ -42,3 +42,18 @@ Available commands when messaging the bot:
 - `#editar` - Enter tag editing mode
 - `#ID` - Get specific sticker by ID
 - `#forçar` - Force send (admin only)
+
+## Database Migration
+
+If you have an existing database with stickers but the user rankings are not showing historical submissions correctly, you may need to run the historical contacts migration:
+
+```bash
+node scripts/migrate-historical-contacts.js
+```
+
+This script will:
+- Analyze your existing media entries
+- Create contact entries for all sender IDs that don't have corresponding contacts
+- Enable historical submissions to be counted in user rankings
+
+The migration is safe to run multiple times - it will only process entries that haven't been migrated yet.
