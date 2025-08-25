@@ -52,6 +52,7 @@ function cardHTML(s) {
         ? `<video data-src="${url}" class="card-video lazy-video" style="max-width:128px;max-height:128px;display:block;margin:auto;" muted playsinline preload="none"></video>`
         : `<img data-src="${url}" alt="sticker" class="card-img lazy-img" style="max-width:128px;max-height:128px;display:block;margin:auto;">`
       }
+      <div class="sticker-id">#${s.id}</div>
       <div class="desc clamp-2" data-desc-full="${desc.replace(/"/g, '&quot;')}">${descShort}
         ${longDesc ? `<button class="card-expand-btn">ver mais</button>` : ''}
       </div>
@@ -246,12 +247,61 @@ const editMsg = document.getElementById('editMsg');
 
 document.getElementById('cancelEdit').onclick = () => { modal.style.display = 'none'; };
 modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
-document.addEventListener('click', e => {
-  if (e.target.classList && e.target.classList.contains('editBtn')) {
-    const card = e.target.closest('.card');
-    openEdit(card.dataset.id);
+
+async function openStickerDetails(id){
+  const r = await fetch('/api/stickers/' + id);
+  if (!r.ok) return;
+  const data = await r.json();
+  
+  // Show appropriate modal based on user login status
+  if (CURRENT_USER) {
+    // For logged users, show edit modal
+    openEdit(id);
+  } else {
+    // For non-logged users, show read-only details modal
+    showReadOnlyDetails(data);
   }
-});
+}
+
+function showReadOnlyDetails(data) {
+  editIdEl.textContent = data.id;
+  
+  // Display additional information
+  const detailsEl = document.getElementById('stickerDetails');
+  const timestamp = data.timestamp ? new Date(data.timestamp).toLocaleString('pt-BR') : 'N/A';
+  const senderInfo = data.sender_id ? `Usuário: ${data.sender_id}` : 'Usuário: N/A';
+  const hashVisual = data.hash_visual ? `Hash Visual: ${data.hash_visual.slice(0, 12)}...` : '';
+  const hashMd5 = data.hash_md5 ? `MD5: ${data.hash_md5.slice(0, 12)}...` : '';
+  const nsfwStatus = data.nsfw ? 'NSFW: Sim' : 'NSFW: Não';
+  const randomCount = data.count_random || 0;
+  const tags = data.tags || [];
+  
+  detailsEl.innerHTML = `
+    <strong>Detalhes do Sticker #${data.id}:</strong><br>
+    ${senderInfo} • ${timestamp}<br>
+    ${nsfwStatus} • Enviado ${randomCount} vezes<br>
+    ${hashVisual ? hashVisual + '<br>' : ''}
+    ${hashMd5 ? hashMd5 : ''}<br><br>
+    <strong>Descrição completa:</strong><br>
+    <div style="background:#fff; padding:8px; border-radius:4px; margin:4px 0; border: 1px solid #ddd;">
+      ${data.description || 'Sem descrição'}
+    </div><br>
+    <strong>Tags:</strong><br>
+    <div style="margin-top:4px;">
+      ${tags.length > 0 ? tags.map(t => `<span class="tag">${t.startsWith('#') ? t : '#' + t}</span>`).join(' ') : '<em>Nenhuma tag</em>'}
+    </div>
+  `;
+  
+  // Hide edit form elements and show read-only view
+  editDesc.style.display = 'none';
+  editNsfw.parentElement.style.display = 'none';
+  editTags.style.display = 'none';
+  document.getElementById('saveEdit').style.display = 'none';
+  document.getElementById('cancelEdit').textContent = 'Fechar';
+  editMsg.textContent = '';
+  
+  modal.style.display = 'flex';
+}
 
 async function openEdit(id){
   const r = await fetch('/api/stickers/' + id);
@@ -263,9 +313,16 @@ async function openEdit(id){
   editTags.value = (data.tags || []).join(', ');
   editMsg.textContent = '';
   
+  // Show edit form elements for logged users
+  editDesc.style.display = '';
+  editNsfw.parentElement.style.display = '';
+  editTags.style.display = '';
+  document.getElementById('saveEdit').style.display = '';
+  document.getElementById('cancelEdit').textContent = 'Cancelar';
+  
   // Display additional information
   const detailsEl = document.getElementById('stickerDetails');
-  const timestamp = data.timestamp ? new Date(data.timestamp * 1000).toLocaleString('pt-BR') : 'N/A';
+  const timestamp = data.timestamp ? new Date(data.timestamp).toLocaleString('pt-BR') : 'N/A';
   const senderInfo = data.sender_id ? `Usuário: ${data.sender_id}` : 'Usuário: N/A';
   const hashVisual = data.hash_visual ? `Hash Visual: ${data.hash_visual.slice(0, 12)}...` : '';
   const hashMd5 = data.hash_md5 ? `MD5: ${data.hash_md5.slice(0, 12)}...` : '';
@@ -368,6 +425,18 @@ document.addEventListener('click', function(e) {
     const btn = e.target.closest('.whatsapp-btn');
     const stickerId = btn.dataset.stickerId;
     openWhatsApp(stickerId);
+  }
+  // Edit button for logged users
+  if (e.target.classList.contains('editBtn') || e.target.closest('.editBtn')) {
+    const card = e.target.closest('.card');
+    openEdit(card.dataset.id);
+  }
+  // Click on card to view details (for all users)
+  if (e.target.closest('.card') && !e.target.closest('.card-expand-btn') && !e.target.closest('.card-collapse-btn') && 
+      !e.target.closest('.card-expand-tags-btn') && !e.target.closest('.card-collapse-tags-btn') &&
+      !e.target.closest('.whatsapp-btn') && !e.target.closest('.editBtn')) {
+    const card = e.target.closest('.card');
+    openStickerDetails(card.dataset.id);
   }
 });
 load(true);
