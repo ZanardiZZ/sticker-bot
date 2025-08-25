@@ -52,24 +52,7 @@ async function changePassword() {
 }
 
 async function load() {
-  const range = document.getElementById('range').value;
-  const { from, to } = rangeToFromTo(range);
-  const q = new URLSearchParams({ from, to }).toString();
-  const data = await fetchJSON('/api/admin/metrics/summary?' + q);
-
-  document.getElementById('k_total').textContent = data.totals?.total ?? 0;
-  document.getElementById('k_ips').textContent = data.totals?.unique_ips ?? 0;
-
-  fillTable(document.querySelector('#tblStatus tbody'), data.status || [], ['status','c']);
-  fillTable(document.querySelector('#tblPaths tbody'), data.top_paths || [], ['path','c']);
-  fillTable(document.querySelector('#tblRef tbody'), data.top_referrers || [], ['referrer','c']);
-
-  const recent = (data.recent || []).map(r => ({
-    quando: new Date(r.ts).toLocaleString(),
-    ip: r.ip, method: r.method, path: r.path, status: r.status, ms: r.duration_ms
-  }));
-  fillTable(document.querySelector('#tblRecent tbody'), recent, ['quando','ip','method','path','status','ms']);
-
+  // Analytics functionality removed - only load rules
   await loadRules();
 }
 
@@ -88,7 +71,7 @@ async function loadRules(){
     </tr>`).join('');
 }
 
-document.getElementById('range').addEventListener('change', load);
+// Event listeners - removed range listener as element doesn't exist
 document.getElementById('addRule').addEventListener('click', async () => {
   const ip = document.getElementById('ip').value.trim();
   const action = document.getElementById('action').value;
@@ -113,8 +96,229 @@ document.addEventListener('click', async (e) => {
   await loadRules();
 });
 document.getElementById('btnChangePass').addEventListener('click', changePassword);
+
+// ========= User Management Functions =========
+let currentUsersPage = 0;
+const usersPerPage = 20;
+
+async function loadUsers() {
+  const statusFilter = document.getElementById('userStatusFilter').value;
+  const offset = currentUsersPage * usersPerPage;
+  
+  try {
+    const params = new URLSearchParams({
+      limit: usersPerPage,
+      offset: offset
+    });
+    
+    if (statusFilter) {
+      params.set('status', statusFilter);
+    }
+    
+    const data = await fetchJSON('/api/admin/users?' + params.toString());
+    renderUsersTable(data.users);
+    updateUsersPagination(data.total, data.offset, data.limit);
+  } catch (error) {
+    console.error('Error loading users:', error);
+    document.querySelector('#tblUsers tbody').innerHTML = 
+      '<tr><td colspan="8">Erro ao carregar usuários</td></tr>';
+  }
+}
+
+function renderUsersTable(users) {
+  const tbody = document.querySelector('#tblUsers tbody');
+  if (!users || users.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #999;">Nenhum usuário encontrado</td></tr>';
+    return;
+  }
+  
+  tbody.innerHTML = users.map(user => {
+    const createdAt = new Date(user.created_at).toLocaleString('pt-BR');
+    const statusBadge = getStatusBadge(user.status);
+    const actions = getActionButtons(user);
+    const phone = user.phone_number ? maskPhone(user.phone_number) : '—';
+    const contactName = user.contact_display_name || '—';
+    const canEdit = user.can_edit ? '✓' : '✗';
+    
+    return `
+      <tr data-user-id="${user.id}">
+        <td>${user.id}</td>
+        <td>${user.username}</td>
+        <td>${phone}</td>
+        <td>${contactName}</td>
+        <td>${statusBadge}</td>
+        <td>${canEdit}</td>
+        <td>${createdAt}</td>
+        <td>${actions}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function getStatusBadge(status) {
+  const styles = {
+    pending: 'background: #5a3a00; color: #ffd700; padding: 2px 6px; border-radius: 3px; font-size: 0.8rem;',
+    approved: 'background: #003a1a; color: #4a9; padding: 2px 6px; border-radius: 3px; font-size: 0.8rem;',
+    rejected: 'background: #3a1a1a; color: #f88; padding: 2px 6px; border-radius: 3px; font-size: 0.8rem;'
+  };
+  
+  const labels = {
+    pending: 'Pendente',
+    approved: 'Aprovado', 
+    rejected: 'Rejeitado'
+  };
+  
+  return `<span style="${styles[status] || ''}">${labels[status] || status}</span>`;
+}
+
+function getActionButtons(user) {
+  let buttons = [];
+  
+  if (user.status === 'pending') {
+    buttons.push(`<button class="btn-user-approve" data-id="${user.id}" style="background: #28a745; color: white; border: 0; padding: 0.2rem 0.4rem; border-radius: 3px; font-size: 0.8rem; margin-right: 0.2rem; cursor: pointer;">Aprovar</button>`);
+    buttons.push(`<button class="btn-user-reject" data-id="${user.id}" style="background: #dc3545; color: white; border: 0; padding: 0.2rem 0.4rem; border-radius: 3px; font-size: 0.8rem; margin-right: 0.2rem; cursor: pointer;">Rejeitar</button>`);
+  }
+  
+  if (user.status === 'approved' && user.role !== 'admin') {
+    const editText = user.can_edit ? 'Remover Edição' : 'Dar Edição';
+    const editClass = user.can_edit ? 'btn-user-remove-edit' : 'btn-user-give-edit';
+    const editColor = user.can_edit ? '#ffc107' : '#17a2b8';
+    buttons.push(`<button class="${editClass}" data-id="${user.id}" style="background: ${editColor}; color: white; border: 0; padding: 0.2rem 0.4rem; border-radius: 3px; font-size: 0.8rem; cursor: pointer;">${editText}</button>`);
+  }
+  
+  return buttons.join('');
+}
+
+function maskPhone(phone) {
+  if (phone.length >= 13) {
+    return phone.slice(0, 2) + '••••••' + phone.slice(-4);
+  }
+  return phone.slice(0, 2) + '••••' + phone.slice(-2);
+}
+
+function updateUsersPagination(total, offset, limit) {
+  const pagination = document.getElementById('usersPagination');
+  const info = document.getElementById('usersInfo');
+  const prevBtn = document.getElementById('prevPage');
+  const nextBtn = document.getElementById('nextPage');
+  
+  if (total > limit) {
+    pagination.style.display = 'flex';
+    const start = offset + 1;
+    const end = Math.min(offset + limit, total);
+    info.textContent = `Exibindo ${start}-${end} de ${total} usuários`;
+    
+    prevBtn.disabled = offset === 0;
+    nextBtn.disabled = end >= total;
+  } else {
+    pagination.style.display = 'none';
+  }
+}
+
+async function approveUser(userId) {
+  try {
+    const response = await fetch(`/api/admin/users/${userId}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'approved' })
+    });
+    
+    if (response.ok) {
+      await loadUsers();
+    } else {
+      const data = await response.json();
+      alert('Erro ao aprovar usuário: ' + (data.error || 'Erro desconhecido'));
+    }
+  } catch (error) {
+    console.error('Error approving user:', error);
+    alert('Erro ao aprovar usuário');
+  }
+}
+
+async function rejectUser(userId) {
+  if (!confirm('Tem certeza que deseja rejeitar este usuário?')) return;
+  
+  try {
+    const response = await fetch(`/api/admin/users/${userId}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'rejected' })
+    });
+    
+    if (response.ok) {
+      await loadUsers();
+    } else {
+      const data = await response.json();
+      alert('Erro ao rejeitar usuário: ' + (data.error || 'Erro desconhecido'));
+    }
+  } catch (error) {
+    console.error('Error rejecting user:', error);
+    alert('Erro ao rejeitar usuário');
+  }
+}
+
+async function toggleEditPermission(userId, canEdit) {
+  const action = canEdit ? 'remover' : 'dar';
+  if (!confirm(`Tem certeza que deseja ${action} permissão de edição para este usuário?`)) return;
+  
+  try {
+    const response = await fetch(`/api/admin/users/${userId}/permissions`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ can_edit: !canEdit })
+    });
+    
+    if (response.ok) {
+      await loadUsers();
+    } else {
+      const data = await response.json();
+      alert('Erro ao alterar permissões: ' + (data.error || 'Erro desconhecido'));
+    }
+  } catch (error) {
+    console.error('Error updating permissions:', error);
+    alert('Erro ao alterar permissões');
+  }
+}
+
+// Event listeners for user management
+document.getElementById('userStatusFilter').addEventListener('change', () => {
+  currentUsersPage = 0;
+  loadUsers();
+});
+
+document.getElementById('refreshUsers').addEventListener('click', loadUsers);
+
+document.getElementById('prevPage').addEventListener('click', () => {
+  if (currentUsersPage > 0) {
+    currentUsersPage--;
+    loadUsers();
+  }
+});
+
+document.getElementById('nextPage').addEventListener('click', () => {
+  currentUsersPage++;
+  loadUsers();
+});
+
+// Handle user action buttons
+document.addEventListener('click', async (e) => {
+  const userId = e.target.dataset.id;
+  if (!userId) return;
+  
+  if (e.target.classList.contains('btn-user-approve')) {
+    await approveUser(userId);
+  } else if (e.target.classList.contains('btn-user-reject')) {
+    await rejectUser(userId);
+  } else if (e.target.classList.contains('btn-user-give-edit')) {
+    await toggleEditPermission(userId, false);
+  } else if (e.target.classList.contains('btn-user-remove-edit')) {
+    await toggleEditPermission(userId, true);
+  }
+});
+
 (async function boot(){
   await loadAccount();
   await load();
   await loadRules();
+  await loadUsers(); // Load users on page init
 })();
