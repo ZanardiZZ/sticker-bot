@@ -35,11 +35,11 @@ function cardHTML(s) {
   if (longDesc) descShort = desc.slice(0, descMaxLen - 1) + '…';
 
   const tags = s.tags || [];
-  let tagsShortHtml = tags.slice(0, maxTags).map(t => `<span class="tag">#${t}</span>`).join(' ');
+  let tagsShortHtml = tags.slice(0, maxTags).map(t => `<span class="tag">${t.startsWith('#') ? t : '#' + t}</span>`).join(' ');
   if (tags.length > maxTags) {
     tagsShortHtml += ` <span class="tag tag-more">+${tags.length - maxTags}</span>`;
   }
-  let tagsFullHtml = tags.map(t => `<span class="tag">#${t}</span>`).join(' ');
+  let tagsFullHtml = tags.map(t => `<span class="tag">${t.startsWith('#') ? t : '#' + t}</span>`).join(' ');
 
   const mime = s.mimetype || '';
   const url = s.url || '';
