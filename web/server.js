@@ -11,6 +11,7 @@ try {
 }
 const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcryptjs');
+const session = require('express-session');
 const UMAMI_ORIGIN = process.env.UMAMI_ORIGIN || 'https://analytics.zanardizz.uk';
 const ALLOW_CF_INSIGHTS = process.env.ALLOW_CF_INSIGHTS === '1';
 process.on('unhandledRejection', (err) => {
@@ -83,6 +84,11 @@ function ensureUsersSchema(db) {
       if (!names.has('can_edit')) stmts.push(`ALTER TABLE users ADD COLUMN can_edit INTEGER DEFAULT 0`);
       if (!names.has('approved_at')) stmts.push(`ALTER TABLE users ADD COLUMN approved_at INTEGER`);
       if (!names.has('approved_by')) stmts.push(`ALTER TABLE users ADD COLUMN approved_by INTEGER`);
+      // Email confirmation fields
+      if (!names.has('email')) stmts.push(`ALTER TABLE users ADD COLUMN email TEXT`);
+      if (!names.has('email_confirmed')) stmts.push(`ALTER TABLE users ADD COLUMN email_confirmed INTEGER DEFAULT 0`);
+      if (!names.has('email_confirmation_token')) stmts.push(`ALTER TABLE users ADD COLUMN email_confirmation_token TEXT`);
+      if (!names.has('email_confirmation_expires')) stmts.push(`ALTER TABLE users ADD COLUMN email_confirmation_expires INTEGER`);
       if (!stmts.length) return resolve();
       db.serialize(() => {
         stmts.forEach(sql => db.run(sql));
@@ -150,6 +156,7 @@ const {
 } = require('./dataAccess.js');
 const { bus } = require('./eventBus.js');
 const { authMiddleware, registerAuthRoutes, requireLogin, requireAdmin } = require('./auth.js');
+const emailService = require('./emailService.js');
 console.timeEnd('[BOOT] requires');
 
 const PORT = process.env.PORT || 3000;
@@ -161,6 +168,18 @@ const PUBLIC_DIR = process.env.PUBLIC_DIR || path.resolve(__dirname, 'public');
 console.log('[WEB] PUBLIC_DIR:', PUBLIC_DIR, 'exists:', fs.existsSync(PUBLIC_DIR));
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
+
+// Session middleware for CAPTCHA
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 10 * 60 * 1000, // 10 minutes
+    httpOnly: true
+  }
+}));
 
 console.time('[BOOT] auth');
 authMiddleware(app);
@@ -321,14 +340,160 @@ app.post('/api/account/change-password', requireLogin, async (req, res) => {
   });
 });
 
+// ========= CAPTCHA API =========
+app.get('/api/captcha', (req, res) => {
+  const num1 = Math.floor(Math.random() * 10) + 1;
+  const num2 = Math.floor(Math.random() * 10) + 1;
+  const operation = Math.random() < 0.5 ? 'add' : 'subtract';
+  
+  let question, answer;
+  if (operation === 'add') {
+    question = `${num1} + ${num2}`;
+    answer = num1 + num2;
+  } else {
+    // Make sure we don't get negative results
+    const bigger = Math.max(num1, num2);
+    const smaller = Math.min(num1, num2);
+    question = `${bigger} - ${smaller}`;
+    answer = bigger - smaller;
+  }
+  
+  const sessionId = require('crypto').randomBytes(16).toString('hex');
+  
+  // Store CAPTCHA answer in session
+  req.session.captcha = {
+    answer: answer,
+    session: sessionId,
+    created: Date.now()
+  };
+  
+  res.json({
+    question: question,
+    session: sessionId
+  });
+});
+
+// ========= Email Confirmation API =========
+app.get('/confirm-email', async (req, res) => {
+  const { token } = req.query;
+  
+  if (!token) {
+    return res.status(400).send(`
+      <html><body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+        <h2>Token inválido</h2>
+        <p>Link de confirmação inválido.</p>
+        <a href="/login">Voltar ao login</a>
+      </body></html>
+    `);
+  }
+  
+  try {
+    db.get(`
+      SELECT id, username, email, email_confirmation_expires 
+      FROM users 
+      WHERE email_confirmation_token = ? AND email_confirmed = 0
+    `, [token], (err, user) => {
+      if (err) {
+        console.error('[EMAIL-CONFIRM] DB error:', err);
+        return res.status(500).send(`
+          <html><body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+            <h2>Erro interno</h2>
+            <p>Ocorreu um erro ao confirmar seu email. Tente novamente.</p>
+            <a href="/login">Voltar ao login</a>
+          </body></html>
+        `);
+      }
+      
+      if (!user) {
+        return res.status(400).send(`
+          <html><body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+            <h2>Token inválido</h2>
+            <p>Link de confirmação inválido ou já utilizado.</p>
+            <a href="/login">Voltar ao login</a>
+          </body></html>
+        `);
+      }
+      
+      // Check if token is expired
+      if (user.email_confirmation_expires < Date.now()) {
+        return res.status(400).send(`
+          <html><body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+            <h2>Link expirado</h2>
+            <p>Este link de confirmação expirou. Solicite um novo cadastro.</p>
+            <a href="/register">Novo cadastro</a>
+          </body></html>
+        `);
+      }
+      
+      // Confirm email
+      db.run(`
+        UPDATE users 
+        SET email_confirmed = 1, email_confirmation_token = NULL, email_confirmation_expires = NULL
+        WHERE id = ?
+      `, [user.id], (updateErr) => {
+        if (updateErr) {
+          console.error('[EMAIL-CONFIRM] Error updating user:', updateErr);
+          return res.status(500).send(`
+            <html><body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+              <h2>Erro interno</h2>
+              <p>Ocorreu um erro ao confirmar seu email. Tente novamente.</p>
+              <a href="/login">Voltar ao login</a>
+            </body></html>
+          `);
+        }
+        
+        console.log(`[EMAIL-CONFIRM] Email confirmed for user: ${user.username}`);
+        res.send(`
+          <html><body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+            <h2 style="color: #28a745;">Email confirmado!</h2>
+            <p>Seu email foi confirmado com sucesso, <strong>${user.username}</strong>!</p>
+            <p>Agora você pode fazer login assim que um administrador aprovar sua conta.</p>
+            <a href="/login" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Fazer Login</a>
+          </body></html>
+        `);
+      });
+    });
+  } catch (error) {
+    console.error('[EMAIL-CONFIRM] Unexpected error:', error);
+    res.status(500).send(`
+      <html><body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+        <h2>Erro interno</h2>
+        <p>Ocorreu um erro ao confirmar seu email. Tente novamente.</p>
+        <a href="/login">Voltar ao login</a>
+      </body></html>
+    `);
+  }
+});
+
+// Rate limiter for registration endpoint 
+const registerRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 3, // 3 registration attempts per window
+  message: { error: 'too_many_registration_attempts' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // ========= User Registration API =========
-app.post('/api/register', async (req, res) => {
-  const { username, password, phoneNumber } = req.body || {};
+app.post('/api/register', registerRateLimit, async (req, res) => {
+  const { username, password, phoneNumber, email, captchaAnswer, captchaSession } = req.body || {};
   
   // Validation
-  if (!username || !password || !phoneNumber) {
+  if (!username || !password || !phoneNumber || !email || !captchaAnswer || !captchaSession) {
     return res.status(400).json({ error: 'missing_fields' });
   }
+  
+  // Validate CAPTCHA first
+  if (!req.session || !req.session.captcha || req.session.captcha.session !== captchaSession) {
+    return res.status(400).json({ error: 'invalid_captcha_session' });
+  }
+  
+  if (parseInt(captchaAnswer) !== req.session.captcha.answer) {
+    return res.status(400).json({ error: 'invalid_captcha' });
+  }
+  
+  // Clear CAPTCHA after validation
+  delete req.session.captcha;
   
   if (typeof username !== 'string' || username.length < 3) {
     return res.status(400).json({ error: 'invalid_username' });
@@ -346,6 +511,12 @@ app.post('/api/register', async (req, res) => {
     return res.status(400).json({ error: 'invalid_phone' });
   }
   
+  // Email validation
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (typeof email !== 'string' || !emailRegex.test(email)) {
+    return res.status(400).json({ error: 'invalid_email' });
+  }
+  
   try {
     // Check if username already exists
     db.get(`SELECT id FROM users WHERE username = ?`, [username.toLowerCase()], async (err, existingUser) => {
@@ -358,42 +529,65 @@ app.post('/api/register', async (req, res) => {
         return res.status(409).json({ error: 'username_taken' });
       }
       
-      // Check if phone number already exists
-      db.get(`SELECT id FROM users WHERE phone_number = ?`, [phoneNumber], async (err2, existingPhone) => {
-        if (err2) {
-          console.error('[REGISTER] DB error checking phone:', err2);
+      // Check if email already exists
+      db.get(`SELECT id FROM users WHERE email = ?`, [email.toLowerCase()], async (errEmail, existingEmail) => {
+        if (errEmail) {
+          console.error('[REGISTER] DB error checking email:', errEmail);
           return res.status(500).json({ error: 'db_error' });
         }
         
-        if (existingPhone) {
-          return res.status(409).json({ error: 'phone_taken' });
+        if (existingEmail) {
+          return res.status(409).json({ error: 'email_taken' });
         }
-        
-        // Hash password and create user
-        try {
-          const passwordHash = await bcrypt.hash(password, 12);
-          const now = Date.now();
+      
+        // Check if phone number already exists
+        db.get(`SELECT id FROM users WHERE phone_number = ?`, [phoneNumber], async (err2, existingPhone) => {
+          if (err2) {
+            console.error('[REGISTER] DB error checking phone:', err2);
+            return res.status(500).json({ error: 'db_error' });
+          }
           
-          db.run(`
-            INSERT INTO users (username, password_hash, phone_number, role, status, can_edit, must_change_password, created_at)
-            VALUES (?, ?, ?, 'user', 'pending', 0, 0, ?)
-          `, [username.toLowerCase(), passwordHash, phoneNumber, now], function(err3) {
-            if (err3) {
-              console.error('[REGISTER] DB error creating user:', err3);
-              return res.status(500).json({ error: 'db_error' });
-            }
+          if (existingPhone) {
+            return res.status(409).json({ error: 'phone_taken' });
+          }
+          
+          // Generate email confirmation token
+          const confirmationToken = emailService.generateConfirmationToken();
+          const confirmationExpires = Date.now() + (24 * 60 * 60 * 1000); // 24 hours
+          
+          // Hash password and create user
+          try {
+            const passwordHash = await bcrypt.hash(password, 12);
+            const now = Date.now();
             
-            console.log(`[REGISTER] New user registered: ${username} (phone: ${phoneNumber})`);
-            res.status(201).json({ 
-              success: true,
-              message: 'User registered successfully. Awaiting approval.',
-              userId: this.lastID
+            db.run(`
+              INSERT INTO users (username, password_hash, phone_number, email, role, status, can_edit, must_change_password, created_at, email_confirmed, email_confirmation_token, email_confirmation_expires)
+              VALUES (?, ?, ?, ?, 'user', 'pending', 0, 0, ?, 0, ?, ?)
+            `, [username.toLowerCase(), passwordHash, phoneNumber, email.toLowerCase(), now, confirmationToken, confirmationExpires], async function(err3) {
+              if (err3) {
+                console.error('[REGISTER] DB error creating user:', err3);
+                return res.status(500).json({ error: 'db_error' });
+              }
+              
+              console.log(`[REGISTER] New user registered: ${username} (email: ${email}, phone: ${phoneNumber})`);
+              
+              // Send confirmation email
+              const emailSent = await emailService.sendConfirmationEmail(email, username, confirmationToken);
+              
+              res.status(201).json({ 
+                success: true,
+                message: emailSent ? 
+                  'Cadastro realizado com sucesso! Verifique seu email para confirmar sua conta.' :
+                  'Cadastro realizado com sucesso! Aguarde aprovação (email de confirmação não pôde ser enviado).',
+                userId: this.lastID,
+                emailSent: emailSent
+              });
             });
-          });
-        } catch (hashErr) {
-          console.error('[REGISTER] Error hashing password:', hashErr);
-          res.status(500).json({ error: 'db_error' });
-        }
+          } catch (hashErr) {
+            console.error('[REGISTER] Error hashing password:', hashErr);
+            res.status(500).json({ error: 'db_error' });
+          }
+        });
       });
     });
   } catch (error) {

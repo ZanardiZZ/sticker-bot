@@ -25,6 +25,18 @@
       <div id="message" class="hidden"></div>
       
       <div class="form-group">
+        <label for="email">Email:</label>
+        <input 
+          type="email" 
+          id="email" 
+          name="email" 
+          required 
+          placeholder="Digite seu email"
+        />
+        <div class="help-text">Um link de confirmação será enviado para este email</div>
+      </div>
+      
+      <div class="form-group">
         <label for="username">Nome de usuário:</label>
         <input 
           type="text" 
@@ -76,6 +88,23 @@
           Formato: código do país + DDD + número (exemplo: 5511999999999)
           <br>Este número será usado para vincular sua conta aos contatos do bot.
         </div>
+      </div>
+      
+      <div class="form-group">
+        <label for="captcha">Verificação (resolva a operação):</label>
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span id="captchaQuestion" style="color: #ccc; font-weight: bold;">Carregando...</span>
+          <input 
+            type="number" 
+            id="captcha" 
+            name="captcha" 
+            required 
+            placeholder="?"
+            style="width: 80px;"
+          />
+          <button type="button" id="refreshCaptcha" style="background: #555; border: 1px solid #777; color: #ccc; padding: 0.3rem 0.5rem; border-radius: 3px; cursor: pointer;">🔄</button>
+        </div>
+        <div class="help-text">Digite o resultado da operação matemática</div>
       </div>
       
       <div class="form-actions">
