@@ -4,9 +4,15 @@ const os = require('os');
 const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+
+let openai = null;
+if (process.env.OPENAI_API_KEY) {
+  openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+} else {
+  console.warn('[AI] OpenAI API key not configured. AI features will be disabled.');
+}
 
 /**
  * Chama a OpenAI com prompt textual customizado, retorna descrição e tags.
@@ -73,8 +79,13 @@ async function transcribeAudioBuffer(buffer) {
 
 async function getTagsFromTextPrompt(prompt) {
   try {
+    if (!openai) {
+      console.warn('[AI] OpenAI not configured, skipping tag generation');
+      return { description: null, tags: null };
+    }
+    
     const response = await openai.chat.completions.create({
-  model: 'gpt-4.1-mini',
+  model: 'gpt-4o-mini',
   messages: [{ role: 'user', content: prompt }],
   temperature: 0.3,
   max_tokens: 200,
@@ -105,6 +116,11 @@ async function getTagsFromTextPrompt(prompt) {
  */
 async function getAiAnnotations(buffer) {
   try {
+    if (!openai) {
+      console.warn('[AI] OpenAI not configured, skipping annotation generation');
+      return { description: null, tags: null };
+    }
+    
     const sharp = require('sharp');
     const DESC_MAX = 200;
     const VISION_MODEL = 'gpt-4o-mini';
@@ -182,6 +198,11 @@ async function getAiAnnotations(buffer) {
 
 async function getAiAnnotationsFromPrompt(prompt) {
   try {
+    if (!openai) {
+      console.warn('[AI] OpenAI not configured, skipping prompt annotation generation');
+      return { description: null, tags: null };
+    }
+    
     const response = await openai.chat.completions.create({
   model: 'gpt-4o-mini',
   messages: [{ role: 'user', content: prompt }],
