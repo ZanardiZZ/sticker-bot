@@ -243,6 +243,7 @@ async function handleSendMediaById(client, message, chatId) {
       return;
     }
 
+    await incrementRandomCount(media.id);
     await sendMediaByType(client, chatId, media);
 
     const tags = await getTagsForMedia(media.id);
