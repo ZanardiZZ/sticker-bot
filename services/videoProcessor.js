@@ -8,7 +8,7 @@ const { getAiAnnotationsFromPrompt, getAiAnnotations } = require('./ai');
 const sharp = require('sharp');
 // (Removed unused constants whisperPath and modelPath)
 
-// Initialize OpenAI client (same as in ai.js)
+// Initialize OpenAI client for video transcription
 let openai = null;
 if (process.env.OPENAI_API_KEY) {
   openai = new OpenAI({
