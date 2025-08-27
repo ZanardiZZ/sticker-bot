@@ -55,8 +55,29 @@ function requireAdmin(req, res, next) {
 
 function registerAuthRoutes(app) {
   app.post('/api/login', loginRateLimit, (req, res) => {
-    const { username, password } = req.body || {};
+    const { username, password, captchaAnswer, captchaSession } = req.body || {};
     if (!username || !password) return res.status(400).json({ error: 'missing_credentials' });
+    
+    // Validate CAPTCHA if provided (for backward compatibility, make it optional for now)
+    if (captchaAnswer !== undefined || captchaSession !== undefined) {
+      if (!captchaAnswer || !captchaSession) {
+        return res.status(400).json({ error: 'missing_captcha' });
+      }
+      
+      // Validate CAPTCHA session
+      if (!req.session || !req.session.captcha || req.session.captcha.session !== captchaSession) {
+        return res.status(400).json({ error: 'invalid_captcha_session' });
+      }
+      
+      // Validate CAPTCHA answer
+      if (parseInt(captchaAnswer) !== req.session.captcha.answer) {
+        return res.status(400).json({ error: 'invalid_captcha' });
+      }
+      
+      // Clear CAPTCHA after validation
+      delete req.session.captcha;
+    }
+    
     db.get(
       `SELECT id, username, password_hash, role, status, email_confirmed, COALESCE(must_change_password, 0) AS must_change_password
        FROM users WHERE username = ?`,
