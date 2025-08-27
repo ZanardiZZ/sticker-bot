@@ -2,6 +2,34 @@
 
 **Always reference these instructions first and fallback to search or bash commands only when you encounter unexpected information that does not match the info here.**
 
+## Network and Firewall Restrictions
+
+**CRITICAL**: This repository has known network dependencies that are commonly blocked by firewalls. Always use the workaround commands below:
+
+### Blocked Domains and Services
+- `esm.ubuntu.com` - Ubuntu package repository (DNS block, affects apt commands)  
+- `googlechromelabs.github.io` - Chrome browser downloads (HTTP block, affects puppeteer installation)
+- `storage.googleapis.com` - Chrome binaries and TensorFlow models (HTTP block, affects AI features)
+
+### Required Workaround Commands
+- **Installation**: `PUPPETEER_SKIP_DOWNLOAD=true npm install --ignore-scripts`
+- **NEVER use**: Regular `npm install` (will fail with network blocks)
+- **NEVER use**: `npm run postinstall` (triggers setup-whisper.sh which downloads blocked content)
+
+### What Works vs. What Doesn't
+✅ **Works without network access**:
+- Basic bot functionality (WhatsApp integration)
+- Web administration interface 
+- Database operations and migrations
+- Local sticker processing
+- Command handling
+
+❌ **Requires network access (may fail)**:
+- Chrome/Chromium installation for puppeteer
+- Whisper.cpp model downloads
+- TensorFlow binary downloads
+- Ubuntu package updates
+
 ## Working Effectively
 
 ### Bootstrap and Setup Process
@@ -10,10 +38,14 @@
 - Set up environment variables:
   - `cp .env.example .env`
   - Edit `.env` with required WhatsApp configuration (AUTO_SEND_GROUP_ID, ADMIN_NUMBER)
-- Install dependencies: `PUPPETEER_SKIP_DOWNLOAD=true npm install --ignore-scripts`
-  - **CRITICAL**: Normal `npm install` fails due to network restrictions downloading Chrome for puppeteer
-  - **CRITICAL**: Postinstall script (setup-whisper.sh) fails due to system dependency requirements
-  - Use the above command to bypass these issues for basic functionality
+- **CRITICAL FIREWALL WORKAROUNDS**: Install dependencies with network restrictions bypass:
+  - `PUPPETEER_SKIP_DOWNLOAD=true npm install --ignore-scripts`
+  - **NEVER use regular `npm install`** - fails due to multiple network blocks:
+    - `esm.ubuntu.com` (Ubuntu packages) - blocked by DNS/firewall
+    - `googlechromelabs.github.io` (Chrome binaries) - blocked by firewall  
+    - `storage.googleapis.com` (Chrome + TensorFlow binaries) - blocked by firewall
+  - The `--ignore-scripts` flag prevents postinstall script execution that triggers network calls
+  - The `PUPPETEER_SKIP_DOWNLOAD=true` prevents Chrome download attempts
 - Database initialization: Happens automatically on first run
 - NEVER CANCEL: Installation takes 2-5 minutes. Set timeout to 10+ minutes.
 
@@ -38,10 +70,18 @@
 
 ### Optional Whisper.cpp Setup (Advanced Audio Processing)
 - **ONLY attempt if audio transcription features are needed**
-- Requires system dependencies: cmake, make, git, wget, Chrome dependencies
-- Run: `bash scripts/setup-whisper.sh`
-- NEVER CANCEL: Takes 10-30 minutes (compilation + model download). Set timeout to 45+ minutes.
-- **Note**: Most bot functionality works without Whisper setup
+- **FIREWALL WARNING**: This process downloads from blocked domains:
+  - `storage.googleapis.com` - TensorFlow binaries (will be blocked)
+  - Various model download URLs (may be blocked)
+- **Workaround Options**:
+  - Skip entirely - most bot functionality works without Whisper
+  - Use pre-built Docker environment if available  
+  - Configure domain allowlists in repository settings (admin required)
+- **If attempting setup**:
+  - Requires system dependencies: cmake, make, git, wget, Chrome dependencies
+  - Run: `bash scripts/setup-whisper.sh`
+  - NEVER CANCEL: Takes 10-30 minutes (compilation + model download). Set timeout to 45+ minutes.
+  - **Expected to fail in restricted environments** - this is normal
 
 ## Validation Scenarios
 
@@ -127,6 +167,13 @@ After making changes, always validate through these scenarios:
 - **puppeteer Chrome download fails**: Use `PUPPETEER_SKIP_DOWNLOAD=true npm install --ignore-scripts`
 - **setup-whisper.sh fails**: Skip for basic functionality, only needed for audio features
 - **System dependency errors**: Install cmake, make, git, wget manually if whisper needed
+- **Network/Firewall Blocks**: If you encounter blocked domains during installation:
+  - `esm.ubuntu.com` - Ubuntu package repository (affects apt commands)
+  - `googlechromelabs.github.io` - Chrome browser downloads (affects puppeteer)
+  - `storage.googleapis.com` - Chrome binaries and TensorFlow models (affects AI features)
+  - **Solution**: Always use `PUPPETEER_SKIP_DOWNLOAD=true npm install --ignore-scripts`
+  - **For CI/CD**: Configure allowlists in repository settings or use pre-built environments
+  - **Alternative**: Use Docker containers with pre-installed dependencies
 
 ### Runtime Issues
 - **Database errors**: Ensure write permissions in project directory
@@ -296,17 +343,34 @@ $ node index.js
 
 ## Exact Command Timing Reference
 
-**CRITICAL**: Always use these exact timeout values to prevent premature cancellation:
+**CRITICAL**: Always use these exact timeout values and commands to prevent premature cancellation:
 
 - `PUPPETEER_SKIP_DOWNLOAD=true npm install --ignore-scripts` - 2-5 minutes, use 10-minute timeout
-- `npm run web` - 1-2 seconds startup, immediate availability
+  - **ONLY safe installation command** - bypasses all network blocks
+  - Regular `npm install` will fail due to firewall restrictions
+- `npm run web` - 1-2 seconds startup, immediate availability  
 - `node index.js` - 3-5 seconds to WhatsApp connection screen
 - `node scripts/test-migration.js` - 0.17 seconds
 - `node scripts/verify-contacts-migration.js` - 0.17 seconds
 - `node scripts/migrate-historical-contacts.js` - 0.17 seconds
-- `bash scripts/setup-whisper.sh` - 10-30 minutes compilation + download, use 45-minute timeout
+- `bash scripts/setup-whisper.sh` - **WILL FAIL due to network blocks**
+  - If attempted: 10-30 minutes compilation + download, use 45-minute timeout
+  - Expected to fail accessing `storage.googleapis.com` for TensorFlow binaries
 
 **NEVER CANCEL any of these commands - always wait for completion.**
+
+## Firewall Block Examples
+
+If you see errors like these, it confirms the network restrictions are active:
+
+```
+Error: Failed to download Chrome from https://storage.googleapis.com/...
+Error: getaddrinfo ENOTFOUND esm.ubuntu.com
+Error: connect ETIMEDOUT googlechromelabs.github.io:443
+Error: Failed to fetch https://storage.googleapis.com/tf-builds/...
+```
+
+These are expected in restricted environments. Use the workaround commands above.
 
 ## Web Interface Screenshot
 
