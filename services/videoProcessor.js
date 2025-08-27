@@ -1,11 +1,20 @@
+require('dotenv').config();
+const OpenAI = require('openai');
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('ffmpeg-static');
 const fs = require('fs');
 const path = require('path');
 const { getAiAnnotationsFromPrompt, getAiAnnotations } = require('./ai');
-const { spawn } = require('child_process');
 const sharp = require('sharp');
 // (Removed unused constants whisperPath and modelPath)
+
+// Initialize OpenAI client (same as in ai.js)
+let openai = null;
+if (process.env.OPENAI_API_KEY) {
+  openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+}
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
@@ -84,72 +93,31 @@ async function extractAudio(filePath) {
 }
 
 async function transcribeAudioLocal(audioPath) {
-  return new Promise((resolve, reject) => {
-    // Use consistent paths with ai.js
-    const whisperPath = path.resolve(__dirname, '../whisper.cpp/build/whisper');
-    const modelPath = path.resolve(__dirname, '../whisper.cpp/build/models/ggml-small.bin');
-    
-    // Verifica se whisper existe antes de tentar executar
-    if (!fs.existsSync(whisperPath)) {
-      console.warn('[VideoProcessor] whisper.cpp não encontrado, retornando transcrição vazia');
-      return resolve('');
+  try {
+    if (!openai) {
+      console.warn('[VideoProcessor] OpenAI API key not configured, returning empty transcription');
+      return '';
     }
-    
-    // Verifica se model existe antes de tentar executar
-    if (!fs.existsSync(modelPath)) {
-      console.warn('[VideoProcessor] Modelo whisper não encontrado, retornando transcrição vazia');
-      return resolve('');
+
+    if (!fs.existsSync(audioPath)) {
+      console.warn('[VideoProcessor] Audio file not found:', audioPath);
+      return '';
     }
-    
-    const args = [
-      '-m', modelPath,
-      '-f', audioPath,
-      '--language', 'pt',
-      '--task', 'transcribe',
-      '--threads', '2',
-      '--no-translate',
-      '--output-txt',
-      '--no-timestamps'
-    ];
 
-    const whisper = spawn(whisperPath, args);
-
-    let stdout = '';
-    let stderr = '';
-
-    whisper.stdout.on('data', data => {
-      stdout += data.toString();
+    // Use OpenAI Whisper API for transcription
+    const transcription = await openai.audio.transcriptions.create({
+      file: fs.createReadStream(audioPath),
+      model: 'whisper-1',
+      language: 'pt', // Portuguese
+      response_format: 'text'
     });
 
-    whisper.stderr.on('data', data => {
-      stderr += data.toString();
-    });
+    return transcription.trim() || '';
 
-    whisper.on('error', (error) => {
-      console.warn('[VideoProcessor] Erro ao executar whisper:', error.message);
-      resolve(''); // Retorna string vazia em vez de rejeitar
-    });
-
-    whisper.on('close', code => {
-      if (code === 0) {
-        // Assumindo saída txt em mesmo diretório com outro nome (audioPath.txt)
-        const txtPath = audioPath.replace(path.extname(audioPath), '.txt');
-        try {
-          const transcription = fs.readFileSync(txtPath, 'utf-8').trim();
-          // Limpa arquivo txt
-          try { fs.unlinkSync(txtPath); } catch (err) { console.warn('[VideoProcessor] Erro ao remover arquivo de transcrição:', err.message); }
-          resolve(transcription);
-        } catch (err) {
-          // fallback: resolve empty string caso não encontre txt
-          console.warn('[VideoProcessor] Arquivo de transcrição não encontrado');
-          resolve('');
-        }
-      } else {
-        console.warn(`[VideoProcessor] whisper process exited with code ${code}: ${stderr}`);
-        resolve(''); // Retorna string vazia em vez de rejeitar
-      }
-    });
-  });
+  } catch (error) {
+    console.warn('[VideoProcessor] Error transcribing audio with OpenAI:', error.message);
+    return ''; // Return empty string on error (consistent with original behavior)
+  }
 }
 
 // Analisa um frame individual e retorna descrição e tags
