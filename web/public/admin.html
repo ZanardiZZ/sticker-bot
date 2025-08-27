@@ -53,6 +53,11 @@
     .admin-only.visible { display: block; }
     .main-tab-button.admin-only { display: none; }
     .main-tab-button.admin-only.visible { display: inline-block; }
+    
+    /* Main tab content visibility - higher specificity */
+    .main-tab-content.admin-only { display: none; }
+    .main-tab-content.admin-only.visible { display: none; } /* Still hidden by default */
+    .main-tab-content.active { display: block !important; } /* Only active tab shows */
   </style>
 
   
