@@ -37,6 +37,38 @@ function cleanDescriptionTags(description, tags) {
 }
 
 /**
+ * Get top N most frequent tags from an array of tags
+ * @param {Array} allTags - Array of tags to analyze
+ * @param {number} count - Number of top tags to return
+ * @returns {Array} Array of top tags, sorted by frequency
+ */
+function getTopTags(allTags, count = 5) {
+  if (!Array.isArray(allTags) || allTags.length === 0) {
+    return [];
+  }
+
+  // Filter out falsy and empty tags
+  const validTags = allTags.filter(tag => tag && tag.trim());
+
+  if (validTags.length === 0) {
+    return [];
+  }
+
+  // Count occurrences of each tag (normalized by removing # prefix and lowercasing)
+  const tagCounts = {};
+  validTags.forEach(tag => {
+    const cleanTag = tag.replace(/^#/, '').toLowerCase();
+    tagCounts[cleanTag] = (tagCounts[cleanTag] || 0) + 1;
+  });
+
+  // Return top N tags sorted by frequency (descending)
+  return Object.entries(tagCounts)
+    .sort(([,a], [,b]) => b - a)
+    .slice(0, count)
+    .map(([tag]) => tag);
+}
+
+/**
  * Render info message for media with description, tags and ID
  * @param {object} param0 {description, tags, id}
  * @returns {string}
@@ -54,5 +86,6 @@ function renderInfoMessage({ description, tags, id }) {
 
 module.exports = {
   cleanDescriptionTags,
-  renderInfoMessage
+  renderInfoMessage,
+  getTopTags
 };
