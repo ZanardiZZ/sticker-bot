@@ -82,10 +82,12 @@ async function processIncomingMedia(client, message) {
       } else if (message.mimetype === 'image/gif') {
         // For GIFs, use video processing logic to analyze multiple frames
         try {
+          console.log('🎬 Processing GIF using multi-frame video analysis...');
           const aiResult = await processVideo(filePath);
           const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
           description = clean.description;
           tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
+          console.log(`✅ GIF processed successfully: ${description ? description.slice(0, 50) : 'no description'}...`);
         } catch (err) {
           console.warn('Erro ao processar GIF com lógica de vídeo, usando fallback de imagem:', err);
           // Fallback to single frame analysis if video processing fails
@@ -94,6 +96,7 @@ async function processIncomingMedia(client, message) {
             const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
             description = clean.description;
             tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
+            console.log('⚠️ GIF processed using fallback single-frame analysis');
           } catch (fallbackErr) {
             console.warn('Erro também no fallback de imagem para GIF:', fallbackErr);
           }
