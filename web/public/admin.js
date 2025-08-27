@@ -547,24 +547,7 @@ const refreshDuplicatesBtn = document.getElementById('refreshDuplicates');
 const selectAllCheckbox = document.getElementById('selectAllDuplicates');
 const deleteSelectedBtn = document.getElementById('deleteSelectedDuplicates');
 
-if (refreshDuplicatesBtn) {
-  refreshDuplicatesBtn.addEventListener('click', loadDuplicateStats);
-}
-
-if (selectAllCheckbox) {
-  selectAllCheckbox.addEventListener('change', function() {
-    const checkboxes = document.querySelectorAll('.group-checkbox');
-    checkboxes.forEach(cb => cb.checked = this.checked);
-    updateSelectionButtons();
-  });
-}
-
-if (deleteSelectedBtn) {
-  deleteSelectedBtn.addEventListener('click', deleteSelectedDuplicates);
-}
-
-document.addEventListener('change', function(e) {
-  if (e.target.classList.contains('group-checkbox')) {
+  if (e.target instanceof Element && e.target.classList.contains('group-checkbox')) {
     updateSelectionButtons();
   }
 });
