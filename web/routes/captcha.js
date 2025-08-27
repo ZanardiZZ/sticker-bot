@@ -32,7 +32,7 @@ function createCaptchaRoutes() {
     
     res.json({
       question,
-      sessionId: req.session.id
+      session: req.session.id
     });
   });
 
