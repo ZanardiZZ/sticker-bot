@@ -280,7 +280,7 @@ async function processWebpWithRepair(buffer, fileName) {
       
       // Third attempt: Try to repair using ffmpeg conversion
       try {
-        const tempDir = path.join(__dirname, 'temp');
+        const tempDir = path.join(os.tmpdir(), 'myapp-temp');
         if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
         
         const tempInput = path.join(tempDir, `repair_input_${Date.now()}.webp`);
