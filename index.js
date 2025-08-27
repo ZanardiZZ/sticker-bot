@@ -268,7 +268,12 @@ async function handleIncomingMedia(client, message) {
   // Verifica se é NSFW
   let nsfwFlag = 0;
   try {
-    nsfwFlag = (await isNSFW(bufferToSave)) ? 1 : 0;
+    // For GIFs, convert to PNG first before NSFW processing
+    let bufferForNsfw = bufferToSave;
+    if (mimetype === 'image/gif') {
+      bufferForNsfw = await sharp(bufferToSave).png().toBuffer();
+    }
+    nsfwFlag = (await isNSFW(bufferForNsfw)) ? 1 : 0;
   } catch (err) {
     console.error('Erro ao executar filtro NSFW:', err);
     nsfwFlag = 0;
@@ -297,9 +302,52 @@ async function handleIncomingMedia(client, message) {
     let tags = '';
     if (nsfwFlag === 0) {
       try {
-        const aiResult = await getAiAnnotations(bufferToSave);
-        description = aiResult.description || '';
-        tags = aiResult.tags ? aiResult.tags.join(',') : '';
+        if (mimetype.startsWith('video/')) {
+          // Process videos using multi-frame analysis
+          const aiResult = await processVideo(filePath);
+          description = aiResult.description || '';
+          tags = aiResult.tags ? aiResult.tags.join(',') : '';
+        } else if (mimetype === 'image/gif') {
+          // For GIFs, use video processing logic to analyze multiple frames
+          try {
+            console.log('🎬 Processing GIF using multi-frame video analysis...');
+            const aiResult = await processVideo(filePath);
+            description = aiResult.description || '';
+            tags = aiResult.tags ? aiResult.tags.join(',') : '';
+            console.log(`✅ GIF processed successfully: ${description ? description.slice(0, 50) : 'no description'}...`);
+          } catch (err) {
+            console.warn('Erro ao processar GIF com lógica de vídeo, usando fallback de imagem:', err);
+            // Fallback to single frame analysis if video processing fails
+            try {
+              const pngBuffer = await sharp(bufferToSave).png().toBuffer();
+              const aiResult = await getAiAnnotations(pngBuffer);
+              description = aiResult.description || '';
+              tags = aiResult.tags ? aiResult.tags.join(',') : '';
+              console.log('⚠️ GIF processed using fallback single-frame analysis');
+            } catch (fallbackErr) {
+              console.warn('Erro também no fallback de imagem para GIF:', fallbackErr);
+            }
+          }
+        } else if (mimetype.startsWith('audio/')) {
+          // Process audio files
+          try {
+            description = await transcribeAudioBuffer(bufferToSave);
+            if (description) {
+              const prompt = `\nVocê é um assistente que recebe a transcrição de um áudio em português e deve gerar até 5 tags relevantes, separadas por vírgula, relacionadas ao conteúdo dessa transcrição.\n\nTranscrição:\n${description}\n\nResposta (tags separadas por vírgula):\n              `.trim();
+              const tagResult = await getAiAnnotationsFromPrompt(prompt);
+              tags = tagResult.tags ? tagResult.tags.join(',') : '';
+            }
+          } catch (err) {
+            console.warn('Erro ao processar áudio:', err);
+            description = '';
+            tags = '';
+          }
+        } else {
+          // Process regular images
+          const aiResult = await getAiAnnotations(bufferToSave);
+          description = aiResult.description || '';
+          tags = aiResult.tags ? aiResult.tags.join(',') : '';
+        }
       } catch (err) {
         console.error('Erro ao obter anotações AI:', err);
       }
