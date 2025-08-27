@@ -50,3 +50,5 @@ data.db
 # Test files (temporary)
 test-*.js
 test-*.db
+media.db-wal
+media.db-shm
