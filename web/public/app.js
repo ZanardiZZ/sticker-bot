@@ -401,7 +401,7 @@ document.getElementById('saveEdit').onclick = async () => {
 
 async function deleteSticker(id) {
   // Confirm deletion
-  const confirmMsg = `Tem certeza que deseja deletar o sticker #${id}?\n\nEsta ação é IRREVERSÍVEL e irá remover tanto o registro do banco de dados quanto o arquivo correspondente.`;
+  const confirmMsg = `Tem certeza que deseja deletar o sticker #${id}?\n\nEsta ação é irreversível e irá remover tanto o registro do banco de dados quanto o arquivo correspondente.`;
   
   if (!confirm(confirmMsg)) {
     return;
