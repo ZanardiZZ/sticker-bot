@@ -87,8 +87,8 @@ document.addEventListener('DOMContentLoaded', function() {
     this.value = this.value.replace(/\D/g, '');
     // Re-validate after cleaning to clear any stale validation errors
     const value = this.value;
-    if (value && (!/^\d+$/.test(value) || value.length < 10 || value.length > 15)) {
-      this.setCustomValidity('Número deve ter entre 10 e 15 dígitos e conter apenas números');
+    if (value && (value.length < 10 || value.length > 15)) {
+      this.setCustomValidity('Número deve ter entre 10 e 15 dígitos');
     } else {
       this.setCustomValidity('');
     }
