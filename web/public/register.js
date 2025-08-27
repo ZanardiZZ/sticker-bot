@@ -73,14 +73,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Phone number validation
   phoneNumberInput.addEventListener('input', function() {
-    const value = this.value.replace(/\D/g, ''); // Remove non-digits
-    this.value = value;
-    if (value && (value.length < 10 || value.length > 15)) {
-      this.setCustomValidity('Número deve ter entre 10 e 15 dígitos');
-    } else {
-      this.setCustomValidity('');
-    }
-  });
     const value = this.value;
     // Do not modify this.value here to avoid interfering with user typing
     if (value && (!/^\d+$/.test(value) || value.length < 10 || value.length > 15)) {

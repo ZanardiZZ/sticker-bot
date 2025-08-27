@@ -1,78 +1,26 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html>
 <head>
   <meta charset="utf-8" />
   <title>Login</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="/styles.css">
-  <style>
-    .form-container { padding: 1rem; max-width: 400px; margin: 2rem auto; }
-    .panel { background:#1c1c1c; border-radius:8px; padding:1.5rem; }
-    .form-group { margin-bottom: 1rem; }
-    .form-group label { display: block; margin-bottom: 0.3rem; color: #ccc; font-size: 0.9rem; }
-    .help-text { font-size: 0.8rem; color: #999; margin-top: 0.2rem; }
-    .success { color: #4a9; background: #1a3a2a; padding: 0.8rem; border-radius: 4px; margin-bottom: 1rem; }
-    .error { color: #f88; background: #3a1a1a; padding: 0.8rem; border-radius: 4px; margin-bottom: 1rem; }
-    .form-actions { display: flex; gap: 0.5rem; justify-content: space-between; align-items: center; margin-top: 1.5rem; }
-  </style>
 
+  
   <script async defer src="https://analytics.zanardizz.uk/script.js" data-website-id="1ae7469e-7785-4f09-9956-8afdd8efa316"></script>
 </head>
-<body>
-  <div class="form-container">
-    <form id="form" class="panel">
-      <h2 style="margin-top: 0;">Login</h2>
-      
-      <div id="err" class="error" style="display: none;"></div>
-      
-      <div class="form-group">
-        <label for="username">Usuário:</label>
-        <input 
-          type="text" 
-          id="username" 
-          name="username" 
-          required 
-          placeholder="Digite seu usuário"
-        />
-      </div>
-      
-      <div class="form-group">
-        <label for="password">Senha:</label>
-        <input 
-          type="password" 
-          id="password" 
-          name="password" 
-          required 
-          placeholder="Digite sua senha"
-        />
-      </div>
-      
-      <div class="form-group">
-        <label for="captcha">Verificação (resolva a operação):</label>
-        <div style="display: flex; align-items: center; gap: 0.5rem;">
-          <span id="captchaQuestion" style="color: #ccc; font-weight: bold;">Carregando...</span>
-          <input 
-            type="number" 
-            id="captcha" 
-            name="captcha" 
-            required 
-            placeholder="?"
-            style="width: 80px;"
-          />
-          <button type="button" id="refreshCaptcha" style="background: #555; border: 1px solid #777; color: #ccc; padding: 0.3rem 0.5rem; border-radius: 3px; cursor: pointer;">🔄</button>
-        </div>
-        <div class="help-text">Digite o resultado da operação matemática</div>
-      </div>
-      
-      <button type="submit" class="btn-primary" id="submitBtn">Entrar</button>
-      
-      <div style="text-align: center; margin-top: 1rem; color: #999;">
-        <a href="/register">Não tem conta? Cadastre-se aqui</a>
-        <br>
-        <a href="/">Voltar</a>
-      </div>
-    </form>
+<body class="centered">
+<form id="form" class="panel">
+  <h2>Login</h2>
+  <input name="username" placeholder="Usuário" required />
+  <input name="password" type="password" placeholder="Senha" required />
+  <button class="btn-primary">Entrar</button>
+  <div id="err" class="error"></div>
+  <div style="text-align: center; margin-top: 1rem; color: #999;">
+    <a href="/register">Não tem conta? Cadastre-se aqui</a>
+    <br>
+    <a href="/">Voltar</a>
   </div>
+</form>
 <script src="/login.js" defer></script>
 </body>
 </html>
