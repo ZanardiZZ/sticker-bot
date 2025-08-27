@@ -2,6 +2,7 @@ const { decryptMedia } = require('@open-wa/wa-decrypt');
 const path = require('path');
 const sharp = require('sharp');
 const { PACK_NAME, AUTHOR_NAME } = require('./config/stickers');
+const { renderInfoMessage } = require('./utils/messageUtils');
 let Sticker, StickerTypes;
 try {
   ({ Sticker, StickerTypes } = require('wa-sticker-formatter'));
@@ -180,11 +181,14 @@ async function handleRandomCommand(client, message, chatId) {
     const tags = await getTagsForMedia(media.id);
     const cleanRandom = cleanDescriptionTags(media.description, tags);
 
-    let responseMessageRandom = `\n📝 ${cleanRandom.description || ''}\n` +
-      `🏷️ ${cleanRandom.tags.length > 0 ? cleanRandom.tags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ') : ''}\n` +
-      `🆔 ${media.id}`;
+    // Use consistent formatting with renderInfoMessage
+    const responseMessage = renderInfoMessage({
+      description: cleanRandom.description,
+      tags: cleanRandom.tags,
+      id: media.id
+    });
 
-    await client.reply(chatId, responseMessageRandom, message.id);
+    await client.reply(chatId, responseMessage, message.id);
   } catch (err) {
     console.error('Erro no comando #random:', err);
     await client.sendText(chatId, 'Erro ao buscar mídia.');
@@ -291,8 +295,7 @@ async function handleSendMediaById(client, message, chatId) {
     const tags = await getTagsForMedia(media.id);
     const cleanMediaInfo = cleanDescriptionTags(media.description, tags);
     
-    // Import renderInfoMessage from utils
-    const { renderInfoMessage } = require('./utils/messageUtils');
+    // Use imported renderInfoMessage function
     const responseMessage = renderInfoMessage({ 
       description: cleanMediaInfo.description, 
       tags: cleanMediaInfo.tags, 
