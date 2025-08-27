@@ -14,7 +14,7 @@
 ### Required Workaround Commands
 - **Installation**: `PUPPETEER_SKIP_DOWNLOAD=true npm install --ignore-scripts`
 - **NEVER use**: Regular `npm install` (will fail with network blocks)
-- **NEVER use**: `npm run postinstall` (triggers setup-whisper.sh which downloads blocked content)
+- **NOTE**: `npm run postinstall` is no longer used (postinstall script removed)
 
 ### What Works vs. What Doesn't
 ✅ **Works without network access**:
@@ -26,9 +26,10 @@
 
 ❌ **Requires network access (may fail)**:
 - Chrome/Chromium installation for puppeteer
-- Whisper.cpp model downloads
 - TensorFlow binary downloads
 - Ubuntu package updates
+
+**NOTE**: Audio transcription now uses OpenAI Whisper API (cloud-based) instead of local Whisper.cpp installation
 
 ## Working Effectively
 
@@ -68,20 +69,16 @@
   - Provides user management, sticker browsing, and analytics
   - Default admin: username "admin" (password from ADMIN_INITIAL_PASSWORD or auto-generated)
 
-### Optional Whisper.cpp Setup (Advanced Audio Processing)
-- **ONLY attempt if audio transcription features are needed**
-- **FIREWALL WARNING**: This process downloads from blocked domains:
-  - `storage.googleapis.com` - TensorFlow binaries (will be blocked)
-  - Various model download URLs (may be blocked)
-- **Workaround Options**:
-  - Skip entirely - most bot functionality works without Whisper
-  - Use pre-built Docker environment if available  
-  - Configure domain allowlists in repository settings (admin required)
-- **If attempting setup**:
-  - Requires system dependencies: cmake, make, git, wget, Chrome dependencies
-  - Run: `bash scripts/setup-whisper.sh`
-  - NEVER CANCEL: Takes 10-30 minutes (compilation + model download). Set timeout to 45+ minutes.
-  - **Expected to fail in restricted environments** - this is normal
+### Audio Transcription Setup (OpenAI Whisper API)
+- **AUDIO TRANSCRIPTION**: Now uses OpenAI's cloud-based Whisper API instead of local installation
+- **Setup**: Add `OPENAI_API_KEY=sk-your-key-here` to your `.env` file
+- **Benefits**: More reliable, no local dependencies, no complex installation
+- **Fallback**: Gracefully handles missing API key (transcription unavailable but app works)
+
+### Legacy Whisper.cpp Setup (DEPRECATED)
+- **DEPRECATED**: Local Whisper.cpp installation is no longer needed
+- **Old script available**: `bash scripts/setup-whisper.sh` (now only installs Chromium dependencies)
+- **Migration**: Remove any existing `whisper.cpp/` directory - no longer used
 
 ## Validation Scenarios
 
@@ -165,8 +162,8 @@ After making changes, always validate through these scenarios:
 
 ### Installation Problems
 - **puppeteer Chrome download fails**: Use `PUPPETEER_SKIP_DOWNLOAD=true npm install --ignore-scripts`
-- **setup-whisper.sh fails**: Skip for basic functionality, only needed for audio features
-- **System dependency errors**: Install cmake, make, git, wget manually if whisper needed
+- **Audio transcription not working**: Add `OPENAI_API_KEY` to your `.env` file 
+- **System dependency errors**: Only Chrome/Chromium dependencies may be needed for puppeteer
 - **Network/Firewall Blocks**: If you encounter blocked domains during installation:
   - `esm.ubuntu.com` - Ubuntu package repository (affects apt commands)
   - `googlechromelabs.github.io` - Chrome browser downloads (affects puppeteer)
@@ -279,12 +276,13 @@ server.js           # Express web server
 ```json
 {
   "scripts": {
-    "postinstall": "bash scripts/setup-whisper.sh",
     "test": "echo \"Error: no test specified\" && exit 1",
     "web": "node web/server.js"
   }
 }
 ```
+
+**Note**: The `postinstall` script has been removed as Whisper.cpp is no longer needed.
 
 ### Expected Migration Test Output
 ```
@@ -353,9 +351,7 @@ $ node index.js
 - `node scripts/test-migration.js` - 0.17 seconds
 - `node scripts/verify-contacts-migration.js` - 0.17 seconds
 - `node scripts/migrate-historical-contacts.js` - 0.17 seconds
-- `bash scripts/setup-whisper.sh` - **WILL FAIL due to network blocks**
-  - If attempted: 10-30 minutes compilation + download, use 45-minute timeout
-  - Expected to fail accessing `storage.googleapis.com` for TensorFlow binaries
+- `bash scripts/setup-whisper.sh` - **DEPRECATED** (now only installs Chromium deps, ~1-2 minutes)
 
 **NEVER CANCEL any of these commands - always wait for completion.**
 
