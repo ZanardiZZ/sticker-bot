@@ -283,8 +283,9 @@ async function processWebpWithRepair(buffer, fileName) {
         const tempDir = path.join(os.tmpdir(), 'myapp-temp');
         if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
         
-        const tempInput = path.join(tempDir, `repair_input_${Date.now()}.webp`);
-        const tempOutput = path.join(tempDir, `repair_output_${Date.now()}.webp`);
+        const uniqueId = crypto.randomBytes(16).toString('hex');
+        const tempInput = path.join(tempDir, `repair_input_${uniqueId}.webp`);
+        const tempOutput = path.join(tempDir, `repair_output_${uniqueId}.webp`);
         
         try {
           // Write corrupted file to temp location
