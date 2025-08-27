@@ -26,55 +26,73 @@ async function transcribeAudioBuffer(buffer) {
   if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
 
   const tmpFile = path.join(tmpDir, `audio-${Date.now()}.wav`);
-  fs.writeFileSync(tmpFile, buffer);
+  
+  try {
+    fs.writeFileSync(tmpFile, buffer);
 
-  return new Promise((resolve, reject) => {
-    const whisperPath = path.resolve(__dirname, '../whisper.cpp/build/whisper');
-    const modelPath = path.resolve(__dirname, '../whisper.cpp/build/models/ggml-base.bin');
+    return new Promise((resolve, reject) => {
+      const whisperPath = path.resolve(__dirname, '../whisper.cpp/build/whisper');
+      const modelPath = path.resolve(__dirname, '../whisper.cpp/build/models/ggml-base.bin');
 
-    if (!fs.existsSync(whisperPath)) {
-      return reject(new Error('whisper.cpp não encontrado. Execute setup-whisper.sh para compilar.'));
+      if (!fs.existsSync(whisperPath)) {
+        console.warn('[AI] whisper.cpp não encontrado. Transcrição não disponível.');
+        return resolve('Áudio não transcrito - whisper.cpp não instalado.');
+      }
+      if (!fs.existsSync(modelPath)) {
+        console.warn('[AI] Modelo whisper não encontrado. Transcrição não disponível.');
+        return resolve('Áudio não transcrito - modelo não encontrado.');
+      }
+
+      // Executa o comando whisper para transcrever
+      const result = spawnSync(whisperPath, [
+        '-m', modelPath,
+        '-f', tmpFile,
+        '--language', 'pt',
+        '--task', 'transcribe',
+        '--threads', '2',
+        '--no-translate',
+        '--output-txt',
+        '--output-dir', tmpDir
+      ], { encoding: 'utf-8', timeout: 30000 }); // 30 second timeout
+
+      if (result.error) {
+        console.warn('[AI] Erro ao executar whisper:', result.error.message);
+        return resolve('Áudio não transcrito - erro na execução.');
+      }
+      if (result.status !== 0) {
+        console.warn('[AI] Whisper retornou erro:', result.stderr);
+        return resolve('Áudio não transcrito - falha na transcrição.');
+      }
+
+      // Lê o txt gerado (mesmo nome do arquivo só extensão txt)
+      const txtFile = tmpFile.replace('.wav', '.txt');
+      try {
+        if (fs.existsSync(txtFile)) {
+          const transcript = fs.readFileSync(txtFile, 'utf-8').trim();
+          // Limpa arquivo txt
+          fs.unlinkSync(txtFile);
+          resolve(transcript || 'Áudio sem conteúdo transcrito.');
+        } else {
+          resolve('Áudio não transcrito - arquivo de saída não encontrado.');
+        }
+      } catch (readErr) {
+        console.warn('[AI] Erro ao ler transcrição:', readErr.message);
+        resolve('Áudio não transcrito - erro na leitura.');
+      }
+    });
+  } catch (writeErr) {
+    console.warn('[AI] Erro ao escrever arquivo temporário:', writeErr.message);
+    return 'Áudio não transcrito - erro ao salvar arquivo.';
+  } finally {
+    // Limpa arquivo temporário
+    try {
+      if (fs.existsSync(tmpFile)) {
+        fs.unlinkSync(tmpFile);
+      }
+    } catch (cleanupErr) {
+      console.warn('[AI] Erro ao limpar arquivo temporário:', cleanupErr.message);
     }
-    if (!fs.existsSync(modelPath)) {
-      return reject(new Error('Modelo whisper não encontrado. Execute setup-whisper.sh para baixar.'));
-    }
-
-    // Executa o comando whisper para transcrever
-    const result = spawnSync(whisperPath, [
-      '-m', modelPath,
-      '-f', tmpFile,
-      '--language', 'pt',
-      '--task', 'transcribe',
-      '--threads', '2',
-      '--no-translate',
-      '--output-txt',
-      '--output-dir', tmpDir
-    ], { encoding: 'utf-8' });
-
-    if (result.error) {
-      fs.unlinkSync(tmpFile);
-      return reject(result.error);
-    }
-    if (result.status !== 0) {
-      fs.unlinkSync(tmpFile);
-      return reject(new Error(`Erro na transcrição whisper: ${result.stderr}`));
-    }
-
-    // Lê o txt gerado (mesmo nome do arquivo só extensão txt)
-    const txtFile = tmpFile.replace('.wav', '.txt');
-    if (!fs.existsSync(txtFile)) {
-      fs.unlinkSync(tmpFile);
-      return reject(new Error('Arquivo txt da transcrição não encontrado.'));
-    }
-    const transcript = fs.readFileSync(txtFile, 'utf-8').trim();
-
-    // Apaga arquivos temporários
-    fs.unlinkSync(tmpFile);
-    fs.unlinkSync(txtFile);
-
-    // Retorna o texto da transcrição
-    resolve(transcript || 'Áudio sem conteúdo transcrito.');
-  });
+  }
 }
 
 async function getTagsFromTextPrompt(prompt) {
