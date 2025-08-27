@@ -145,7 +145,7 @@ async function handleRandomCommand(client, message, chatId) {
       `🏷️ ${cleanRandom.tags.length > 0 ? cleanRandom.tags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ') : ''}\n` +
       `🆔 ${media.id}`;
 
-    await client.sendText(chatId, responseMessageRandom);
+    await client.reply(chatId, responseMessageRandom, message.id);
   } catch (err) {
     console.error('Erro no comando #random:', err);
     await client.sendText(chatId, 'Erro ao buscar mídia.');
@@ -252,7 +252,7 @@ async function handleSendMediaById(client, message, chatId) {
       `🏷️ ${cleanMediaInfo.tags.length > 0 ? cleanMediaInfo.tags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ') : ''}\n` +
       `🆔 ${media.id}`;
 
-    await client.sendText(chatId, responseMessageID);
+    await client.reply(chatId, responseMessageID, message.id);
   } catch (err) {
     console.error('Erro ao buscar mídia pelo ID:', err);
     await client.sendText(chatId, 'Erro ao buscar essa mídia.');
