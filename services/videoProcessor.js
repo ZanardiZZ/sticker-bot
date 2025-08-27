@@ -1,14 +1,28 @@
 require('dotenv').config();
 const crypto = require('crypto');
 const OpenAI = require('openai');
-const ffmpeg = require('fluent-ffmpeg');
-const ffmpegPath = require('ffmpeg-static');
 const fs = require('fs');
 const path = require('path');
 const { getAiAnnotationsFromPrompt, getAiAnnotations } = require('./ai');
 const sharp = require('sharp');
 const { getTopTags } = require('../utils/messageUtils');
 // (Removed unused constants whisperPath and modelPath)
+
+// Conditional loading for FFmpeg - these may fail in some environments due to network restrictions
+let ffmpeg = null;
+let ffmpegPath = null;
+
+try {
+  ffmpeg = require('fluent-ffmpeg');
+  ffmpegPath = require('ffmpeg-static');
+  
+  if (ffmpegPath) {
+    ffmpeg.setFfmpegPath(ffmpegPath);
+  }
+} catch (error) {
+  console.warn('[VideoProcessor] FFmpeg não disponível:', error.message);
+  console.warn('[VideoProcessor] Funcionalidades de processamento de vídeo serão desabilitadas');
+}
 
 // Initialize OpenAI client for video transcription
 let openai = null;
@@ -18,13 +32,16 @@ if (process.env.OPENAI_API_KEY) {
   });
 }
 
-ffmpeg.setFfmpegPath(ffmpegPath);
-
 // Extrai frames (timestamps em segundos)
 async function extractFrames(filePath, timestamps) {
+// Check if FFmpeg is available
+  if (!ffmpeg || !ffmpegPath) {
+    console.warn('[VideoProcessor] FFmpeg não disponível, não é possível extrair frames');
+    throw new Error('FFmpeg não disponível - funcionalidade de extração de frames desabilitada');
+  }
   const uniqueId = crypto.randomBytes(16).toString('hex');
   const tempDir = path.resolve(__dirname, '../temp', `frames_${uniqueId}`);
-  
+
   try {
     fs.mkdirSync(tempDir, { recursive: true });
   } catch (mkdirErr) {
@@ -71,6 +88,12 @@ async function extractFrames(filePath, timestamps) {
 
 // Verifica se vídeo tem faixa de áudio
 async function hasAudioTrack(filePath) {
+  // Check if FFmpeg is available
+  if (!ffmpeg) {
+    console.warn('[VideoProcessor] FFmpeg não disponível, assumindo que vídeo não tem áudio');
+    return false;
+  }
+  
   return new Promise((resolve, reject) => {
     ffmpeg.ffprobe(filePath, (err, metadata) => {
       if (err) return reject(err);
@@ -83,6 +106,11 @@ async function hasAudioTrack(filePath) {
 
 // Extrai áudio para wav (usado para transcrição futura, aqui só prévia)
 async function extractAudio(filePath) {
+  // Check if FFmpeg is available
+  if (!ffmpeg) {
+    console.warn('[VideoProcessor] FFmpeg não disponível, não é possível extrair áudio');
+    throw new Error('FFmpeg não disponível - funcionalidade de extração de áudio desabilitada');
+  }
   const uniqueId = crypto.randomBytes(16).toString('hex');
   const output = path.resolve(__dirname, '../temp', `audio_${uniqueId}.wav`);
   return new Promise((resolve, reject) => {
@@ -150,6 +178,15 @@ async function analyzeFrame(framePath, frameIndex) {
 // Função principal: processa vídeo, gera prompt com imagens + transcrição e solicita IA
 async function processVideo(filePath) {
   console.log(`[VideoProcessor] Processando arquivo: ${path.basename(filePath)}`);
+  
+  // Check if FFmpeg is available
+  if (!ffmpeg) {
+    console.warn('[VideoProcessor] FFmpeg não disponível, retornando análise básica');
+    return {
+      description: 'Vídeo não processado - FFmpeg não disponível',
+      tags: ['video', 'nao-processado']
+    };
+  }
   
   try {
     // Duração vídeo
@@ -303,6 +340,15 @@ Responda no formato JSON:
 // Função simplificada para GIFs - apenas análise visual de 3 frames
 async function processGif(filePath) {
   console.log(`[VideoProcessor] Processando GIF: ${path.basename(filePath)}`);
+  
+  // Check if FFmpeg is available
+  if (!ffmpeg) {
+    console.warn('[VideoProcessor] FFmpeg não disponível, retornando análise básica para GIF');
+    return {
+      description: 'GIF não processado - FFmpeg não disponível',
+      tags: ['gif', 'nao-processado']
+    };
+  }
   
   try {
     // Para GIFs, usa timestamps fixos mais próximos

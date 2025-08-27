@@ -3,16 +3,28 @@ const path = require('path');
 const crypto = require('crypto');
 const sharp = require('sharp');
 const fs = require('fs');
+const os = require('os');
 const mime = require('mime-types');
 const { getAiAnnotations } = require('./services/ai'); // Importa a função IA
 const axios = require('axios');
 const MediaQueue = require('./services/mediaQueue');
 const DatabaseHandler = require('./services/databaseHandler');
-const ffmpeg = require('fluent-ffmpeg');
-const ffmpegPath = require('ffmpeg-static');
 
-// Configure ffmpeg path
-ffmpeg.setFfmpegPath(ffmpegPath);
+// Conditional loading for FFmpeg - these may fail in some environments due to network restrictions
+let ffmpeg = null;
+let ffmpegPath = null;
+
+try {
+  ffmpeg = require('fluent-ffmpeg');
+  ffmpegPath = require('ffmpeg-static');
+  
+  if (ffmpegPath) {
+    ffmpeg.setFfmpegPath(ffmpegPath);
+  }
+} catch (error) {
+  console.warn('[Database] FFmpeg não disponível:', error.message);
+  console.warn('[Database] Funcionalidades de reparo de WebP serão desabilitadas');
+}
 
 // Variável para caminho da pasta de figurinhas antigas será lida do .env
 const OLD_STICKERS_PATH = process.env.OLD_STICKERS_PATH || null;
@@ -279,54 +291,57 @@ async function processWebpWithRepair(buffer, fileName) {
       console.warn(`[old-stickers] Sharp non-animated failed for ${fileName}: ${secondError.message}`);
       
       // Third attempt: Try to repair using ffmpeg conversion
+      if (ffmpeg && ffmpegPath) {
       try {
         const tempDir = path.join(os.tmpdir(), 'myapp-temp');
         if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
-        
         const uniqueId = crypto.randomBytes(16).toString('hex');
         const tempInput = path.join(tempDir, `repair_input_${uniqueId}.webp`);
         const tempOutput = path.join(tempDir, `repair_output_${uniqueId}.webp`);
-        
         try {
-          // Write corrupted file to temp location
-          fs.writeFileSync(tempInput, buffer);
-          
-          // Use ffmpeg to repair/re-encode the WebP
-          await new Promise((resolve, reject) => {
-            ffmpeg(tempInput)
-              .outputOptions(['-c:v libwebp', '-q:v 80', '-preset default', '-an'])
-              .output(tempOutput)
-              .on('end', resolve)
-              .on('error', reject)
-              .run();
-          });
-          
-          // Read the repaired file
-          const repairedBuffer = fs.readFileSync(tempOutput);
-          
-          // Process with Sharp again
-          const webpBuffer = await sharp(repairedBuffer, { animated: true }).webp().toBuffer();
-          console.log(`[old-stickers] ✅ Recovered ${fileName} using ffmpeg repair`);
-          return webpBuffer;
-          
-        } finally {
-          // Always clean up temp files
-          try { fs.unlinkSync(tempInput); } catch (err) {
-            if (err.code !== 'ENOENT') {
-              console.warn(`[old-stickers] Failed to delete tempInput (${tempInput}): ${err.message}`);
+            // Write corrupted file to temp location
+            fs.writeFileSync(tempInput, buffer);
+            
+            // Use ffmpeg to repair/re-encode the WebP
+            await new Promise((resolve, reject) => {
+              ffmpeg(tempInput)
+                .outputOptions(['-c:v libwebp', '-q:v 80', '-preset default', '-an'])
+                .output(tempOutput)
+                .on('end', resolve)
+                .on('error', reject)
+                .run();
+            });
+            
+            // Read the repaired file
+            const repairedBuffer = fs.readFileSync(tempOutput);
+            
+            // Process with Sharp again
+            const webpBuffer = await sharp(repairedBuffer, { animated: true }).webp().toBuffer();
+            console.log(`[old-stickers] ✅ Recovered ${fileName} using ffmpeg repair`);
+            return webpBuffer;
+            
+          } finally {
+            // Always clean up temp files
+            try { fs.unlinkSync(tempInput); } catch (err) {
+              if (err.code !== 'ENOENT') {
+                console.warn(`[old-stickers] Failed to delete tempInput (${tempInput}): ${err.message}`);
+              }
+            }
+            try { fs.unlinkSync(tempOutput); } catch (err) {
+              if (err.code !== 'ENOENT') {
+                console.warn(`[old-stickers] Failed to delete tempOutput (${tempOutput}): ${err.message}`);
+              }
             }
           }
-          try { fs.unlinkSync(tempOutput); } catch (err) {
-            if (err.code !== 'ENOENT') {
-              console.warn(`[old-stickers] Failed to delete tempOutput (${tempOutput}): ${err.message}`);
-            }
-          }
+          
+        } catch (ffmpegError) {
+          console.warn(`[old-stickers] ffmpeg repair failed for ${fileName}: ${ffmpegError.message}`);
         }
-        
-      } catch (ffmpegError) {
-        console.warn(`[old-stickers] ffmpeg repair failed for ${fileName}: ${ffmpegError.message}`);
-        
-        // Fourth attempt: Try to extract first frame only if it's a WebP
+      } else {
+        console.warn(`[old-stickers] FFmpeg não disponível, pulando tentativa de reparo para ${fileName}`);
+      }
+      
+      // Fourth attempt: Try to extract first frame only if it's a WebP
         try {
           // For WebP files, try to extract just the first frame
           const metadata = await sharp(buffer).metadata();
@@ -352,7 +367,6 @@ async function processWebpWithRepair(buffer, fileName) {
       }
     }
   }
-}
 
 // Processa figurinhas antigas da pasta para inserir no banco as que ainda não existem ou modificadas
 async function processOldStickers() {
