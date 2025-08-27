@@ -333,4 +333,217 @@ document.addEventListener('click', async (e) => {
   await load();
   await loadRules();
   await loadUsers(); // Load users on page init
+  await loadDuplicateStats(); // Load duplicate statistics
 })();
+
+// ---- Duplicate Media Management Functions ----
+
+let currentDuplicates = [];
+let selectedDuplicateGroups = new Set();
+
+async function loadDuplicateStats() {
+  try {
+    const stats = await fetchJSON('/api/admin/duplicates/stats');
+    const statsElement = document.getElementById('duplicateStats');
+    
+    if (stats.duplicate_groups > 0) {
+      statsElement.innerHTML = `
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-value">${stats.duplicate_groups}</div>
+            <div class="stat-label">Grupos Duplicados</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${stats.total_duplicates}</div>
+            <div class="stat-label">Total de Duplicatas</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${stats.potential_savings}</div>
+            <div class="stat-label">Arquivos Excluíveis</div>
+          </div>
+        </div>
+      `;
+      document.getElementById('duplicatesContainer').style.display = 'block';
+      await loadDuplicates();
+    } else {
+      statsElement.textContent = 'Nenhuma mídia duplicada encontrada 🎉';
+      document.getElementById('duplicatesContainer').style.display = 'none';
+    }
+  } catch (error) {
+    console.error('Error loading duplicate stats:', error);
+    document.getElementById('duplicateStats').textContent = 'Erro ao carregar estatísticas';
+  }
+}
+
+async function loadDuplicates() {
+  try {
+    const duplicates = await fetchJSON('/api/admin/duplicates?limit=50');
+    currentDuplicates = duplicates;
+    renderDuplicates(duplicates);
+  } catch (error) {
+    console.error('Error loading duplicates:', error);
+    document.getElementById('duplicatesList').innerHTML = '<p class="muted">Erro ao carregar duplicatas</p>';
+  }
+}
+
+function renderDuplicates(duplicates) {
+  const container = document.getElementById('duplicatesList');
+  
+  if (!duplicates || duplicates.length === 0) {
+    container.innerHTML = '<p class="muted">Nenhuma duplicata encontrada</p>';
+    return;
+  }
+  
+  container.innerHTML = duplicates.map(group => {
+    const firstCreated = new Date(group.first_created).toLocaleDateString('pt-BR');
+    const lastCreated = new Date(group.last_created).toLocaleDateString('pt-BR');
+    
+    return `
+      <div class="duplicate-group">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: .5rem;">
+          <h4>Grupo com ${group.duplicate_count} duplicatas</h4>
+          <label>
+            <input type="checkbox" class="group-checkbox" data-hash="${group.hash_visual}">
+            Selecionar grupo
+          </label>
+        </div>
+        <div class="muted" style="margin-bottom: .5rem;">
+          Hash: ${group.hash_visual.substring(0, 16)}... | 
+          Primeiro: ${firstCreated} | Último: ${lastCreated}
+        </div>
+        <div id="details-${group.hash_visual}" style="display: none;">
+          <div class="muted">Carregando detalhes...</div>
+        </div>
+        <button class="btn-primary btn-small" onclick="toggleGroupDetails('${group.hash_visual}')">
+          Ver Detalhes
+        </button>
+      </div>
+    `;
+  }).join('');
+  
+  updateSelectionButtons();
+}
+
+async function toggleGroupDetails(hashVisual) {
+  const detailsDiv = document.getElementById(`details-${hashVisual}`);
+  
+  if (detailsDiv.style.display === 'none') {
+    // Load and show details
+    try {
+      const details = await fetchJSON(`/api/admin/duplicates/${encodeURIComponent(hashVisual)}`);
+      
+      detailsDiv.innerHTML = details.map((media, index) => {
+        const date = new Date(media.timestamp).toLocaleDateString('pt-BR');
+        const isOldest = index === 0; // Details are returned sorted by timestamp ASC
+        
+        return `
+          <div class="duplicate-item ${isOldest ? 'oldest' : ''}">
+            <div class="media-info">
+              <strong>ID: ${media.id}</strong> ${isOldest ? '(Mais antiga - será mantida)' : ''}<br>
+              <span class="muted">
+                ${date} | ${media.mimetype} | 
+                ${media.display_name || 'Usuário desconhecido'}
+                ${media.description ? ` | ${media.description.substring(0, 50)}...` : ''}
+              </span>
+            </div>
+            <div class="media-actions">
+              <img class="media-preview" src="${media.url || '/media/' + media.file_path.split('/').pop()}" 
+                   onerror="this.style.display='none'" alt="Preview">
+            </div>
+          </div>
+        `;
+      }).join('');
+      
+      detailsDiv.style.display = 'block';
+    } catch (error) {
+      console.error('Error loading group details:', error);
+      detailsDiv.innerHTML = '<div class="muted">Erro ao carregar detalhes</div>';
+      detailsDiv.style.display = 'block';
+    }
+  } else {
+    // Hide details
+    detailsDiv.style.display = 'none';
+  }
+}
+
+function updateSelectionButtons() {
+  const checkboxes = document.querySelectorAll('.group-checkbox');
+  const selectAllCheckbox = document.getElementById('selectAllDuplicates');
+  const deleteButton = document.getElementById('deleteSelectedDuplicates');
+  
+  // Update select all checkbox
+  const checkedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
+  selectAllCheckbox.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
+  selectAllCheckbox.checked = checkedCount === checkboxes.length && checkboxes.length > 0;
+  
+  // Update delete button
+  deleteButton.disabled = checkedCount === 0;
+  deleteButton.textContent = checkedCount > 0 
+    ? `Deletar ${checkedCount} Grupo(s) Selecionado(s)` 
+    : 'Deletar Selecionados';
+}
+
+async function deleteSelectedDuplicates() {
+  const checkboxes = document.querySelectorAll('.group-checkbox:checked');
+  const selectedHashes = Array.from(checkboxes).map(cb => cb.dataset.hash);
+  
+  if (selectedHashes.length === 0) {
+    alert('Selecione pelo menos um grupo de duplicatas para deletar.');
+    return;
+  }
+  
+  const confirmMsg = `Tem certeza que deseja deletar ${selectedHashes.length} grupo(s) de duplicatas?\n\n` +
+                     `Isso irá manter apenas a mídia mais antiga de cada grupo e deletar as demais.\n` +
+                     `Esta ação é IRREVERSÍVEL.`;
+  
+  if (!confirm(confirmMsg)) {
+    return;
+  }
+  
+  const deleteButton = document.getElementById('deleteSelectedDuplicates');
+  const originalText = deleteButton.textContent;
+  deleteButton.disabled = true;
+  deleteButton.textContent = 'Deletando...';
+  
+  let successCount = 0;
+  let errorCount = 0;
+  
+  for (const hashVisual of selectedHashes) {
+    try {
+      const result = await fetch(`/api/admin/duplicates/${encodeURIComponent(hashVisual)}`, {
+        method: 'DELETE'
+      });
+      
+      if (result.ok) {
+        successCount++;
+      } else {
+        errorCount++;
+      }
+    } catch (error) {
+      console.error('Error deleting duplicate group:', error);
+      errorCount++;
+    }
+  }
+  
+  alert(`Exclusão concluída!\n\nGrupos deletados: ${successCount}\nErros: ${errorCount}`);
+  
+  // Reload the duplicates list
+  await loadDuplicateStats();
+  
+  deleteButton.disabled = false;
+  deleteButton.textContent = originalText;
+}
+
+// Event listeners for duplicate management
+document.getElementById('refreshDuplicates').addEventListener('click', loadDuplicateStats);
+document.getElementById('selectAllDuplicates').addEventListener('change', function() {
+  const checkboxes = document.querySelectorAll('.group-checkbox');
+  checkboxes.forEach(cb => cb.checked = this.checked);
+  updateSelectionButtons();
+});
+document.getElementById('deleteSelectedDuplicates').addEventListener('click', deleteSelectedDuplicates);
+document.addEventListener('change', function(e) {
+  if (e.target.classList.contains('group-checkbox')) {
+    updateSelectionButtons();
+  }
+});

@@ -11,8 +11,16 @@ const {
 const { isNSFW } = require('./services/nsfwFilter');
 const { getAiAnnotations, transcribeAudioBuffer, getAiAnnotationsFromPrompt } = require('./services/ai');
 const { processVideo } = require('./services/videoProcessor');
-const { updateMediaDescription, updateMediaTags } = require('./db');
+const { updateMediaDescription, updateMediaTags } = require('./database');
 const { forceMap, MAX_TAGS_LENGTH, clearDescriptionCmds } = require('./commands');
+const { cleanDescriptionTags } = require('./utils/messageUtils');
+
+// Helper function if cleanDescriptionTags is not available
+function fallbackCleanDescriptionTags(description, tags) {
+  const cleanDesc = description ? description.trim() : '';
+  const cleanTags = tags ? (Array.isArray(tags) ? tags : tags.split(',').map(t => t.trim()).filter(Boolean)) : [];
+  return { description: cleanDesc, tags: cleanTags };
+}
 
 async function processIncomingMedia(client, message) {
   const chatId = message.from;
@@ -72,7 +80,7 @@ async function processIncomingMedia(client, message) {
       if (message.mimetype.startsWith('video/')) {
         try {
           const aiResult = await processVideo(filePath);
-          const clean = cleanDescriptionTags(aiResult.description, aiResult.tags);
+          const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
           description = clean.description;
           tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
         } catch (err) {
@@ -80,7 +88,7 @@ async function processIncomingMedia(client, message) {
         }
       } else if (mimetypeToSave.startsWith('image/')) {
         const aiResult = await getAiAnnotations(pngBuffer);
-        const clean = cleanDescriptionTags(aiResult.description, aiResult.tags);
+        const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
         description = clean.description;
         tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
       } else if (message.mimetype.startsWith('audio/')) {
@@ -89,7 +97,7 @@ async function processIncomingMedia(client, message) {
           if (description) {
             const prompt = `\nVocê é um assistente que recebe a transcrição de um áudio em português e deve gerar até 5 tags relevantes, separadas por vírgula, relacionadas ao conteúdo dessa transcrição.\n\nTranscrição:\n${description}\n\nResposta (tags separadas por vírgula):\n              `.trim();
             const tagResult = await getAiAnnotationsFromPrompt(prompt);
-            const clean = cleanDescriptionTags(null, tagResult.tags);
+            const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(null, tagResult.tags);
             tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
           } else {
             tags = '';
@@ -126,7 +134,7 @@ async function processIncomingMedia(client, message) {
 
     const savedMedia = await findByHashVisual(hashVisual);
 
-    const clean = cleanDescriptionTags(savedMedia.description, savedMedia.tags ? (typeof savedMedia.tags === 'string' ? savedMedia.tags.split(',') : savedMedia.tags) : []);
+    const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(savedMedia.description, savedMedia.tags ? (typeof savedMedia.tags === 'string' ? savedMedia.tags.split(',') : savedMedia.tags) : []);
 
     let responseMessage = `✅ Figurinha adicionada!\n\n`;
     responseMessage += `📝 ${clean.description || ''}\n`;
