@@ -25,6 +25,24 @@ const mediaQueue = new MediaQueue({
   retryDelay: 1000 
 });
 
+// Handle WAL recovery on startup
+const walPath = path.resolve(__dirname, 'media.db-wal');
+const dbExists = fs.existsSync(dbPath);
+const walExists = fs.existsSync(walPath);
+
+if (walExists && (!dbExists || fs.statSync(walPath).size > 0)) {
+  console.log('[DB] WAL file detected, performing recovery checkpoint...');
+  // Ensure WAL data is committed to main database
+  setTimeout(async () => {
+    try {
+      await dbHandler.checkpointWAL();
+      console.log('[DB] WAL checkpoint completed successfully');
+    } catch (error) {
+      console.error('[DB] WAL checkpoint failed:', error);
+    }
+  }, 100); // Small delay to ensure DB is ready
+}
+
 // Queue event listeners for monitoring
 mediaQueue.on('jobAdded', (jobId) => {
   console.log(`[Queue] Job ${jobId} added to queue`);
@@ -44,14 +62,6 @@ mediaQueue.on('jobRetry', (jobId, attempt, error) => {
 
 mediaQueue.on('jobFailed', (jobId, error) => {
   console.error(`[Queue] Job ${jobId} failed permanently: ${error.message}`);
-});
-
-db.get('SELECT COUNT(*) as total FROM media', (err, row) => {
-  if (err) {
-    console.error("[DB] ERRO ao acessar tabela 'media':", err);
-  } else {
-    console.log(`[DB] Tabela 'media' tem ${row.total} registros.`);
-  }
 });
 
 db.serialize(() => {
@@ -140,7 +150,26 @@ db.serialize(() => {
   // Critical index for duplicate detection - hash_visual is heavily used
   db.run(`CREATE INDEX IF NOT EXISTS idx_media_hash_visual ON media(hash_visual)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_media_hash_md5 ON media(hash_md5)`);
+
+  // Check media count after tables are created
+  db.get('SELECT COUNT(*) as total FROM media', (err, row) => {
+    if (err) {
+      console.error("[DB] ERRO ao acessar tabela 'media':", err);
+    } else {
+      console.log(`[DB] Tabela 'media' tem ${row.total} registros.`);
+    }
+  });
  });
+
+// Set up periodic WAL checkpoints to prevent data loss
+setInterval(async () => {
+  try {
+    await dbHandler.checkpointWAL();
+    console.log('[DB] Periodic WAL checkpoint completed');
+  } catch (error) {
+    console.warn('[DB] Periodic WAL checkpoint warning:', error.message);
+  }
+}, 5 * 60 * 1000); // Every 5 minutes
 
 // Gera hash MD5 de um buffer
 function getMD5(buffer) {
