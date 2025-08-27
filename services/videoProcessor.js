@@ -42,7 +42,6 @@ async function extractFrames(filePath, timestamps) {
   const uniqueId = crypto.randomBytes(16).toString('hex');
   const tempDir = path.resolve(__dirname, '../temp', `frames_${uniqueId}`);
 
-  
   try {
     fs.mkdirSync(tempDir, { recursive: true });
   } catch (mkdirErr) {
