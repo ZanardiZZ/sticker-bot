@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { getAiAnnotationsFromPrompt, getAiAnnotations } = require('./ai');
 const sharp = require('sharp');
+const { getTopTags } = require('../utils/messageUtils');
 // (Removed unused constants whisperPath and modelPath)
 
 // Initialize OpenAI client for video transcription
@@ -210,17 +211,7 @@ async function processVideo(filePath) {
       .flatMap(analysis => analysis.tags)
       .filter(tag => tag && tag.trim());
 
-    // Remove duplicatas e pega as 5 mais comuns
-    const tagCounts = {};
-    allTags.forEach(tag => {
-      const cleanTag = tag.replace(/^#/, '').toLowerCase();
-      tagCounts[cleanTag] = (tagCounts[cleanTag] || 0) + 1;
-    });
-
-    const topTags = Object.entries(tagCounts)
-      .sort(([,a], [,b]) => b - a)
-      .slice(0, 5)
-      .map(([tag]) => tag);
+    const topTags = getTopTags(allTags, 5);
 
     // Monta descrição final integrando frames e áudio
     const fileId = path.basename(filePath).replace(/\W+/g, '_');
@@ -356,17 +347,7 @@ async function processGif(filePath) {
       .flatMap(analysis => analysis.tags)
       .filter(tag => tag && tag.trim());
 
-    // Remove duplicatas e pega as 5 mais comuns
-    const tagCounts = {};
-    allTags.forEach(tag => {
-      const cleanTag = tag.replace(/^#/, '').toLowerCase();
-      tagCounts[cleanTag] = (tagCounts[cleanTag] || 0) + 1;
-    });
-
-    const topTags = Object.entries(tagCounts)
-      .sort(([,a], [,b]) => b - a)
-      .slice(0, 5)
-      .map(([tag]) => tag);
+    const topTags = getTopTags(allTags, 5);
 
     const fileId = path.basename(filePath).replace(/\W+/g, '_');
     
