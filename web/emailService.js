@@ -4,10 +4,10 @@ const crypto = require('crypto');
 class EmailService {
   constructor() {
     this.transporter = null;
-    this.setupTransporter();
+    this.setupTransport();
   }
 
-  setupTransporter() {
+  setupTransport() {
     // Email configuration from environment variables
     const emailConfig = {
       host: process.env.SMTP_HOST || 'localhost',
@@ -24,7 +24,7 @@ class EmailService {
 
     // Create transporter only if SMTP credentials are provided
     if (emailConfig.auth.user && emailConfig.auth.pass) {
-      this.transporter = nodemailer.createTransporter(emailConfig);
+      this.transport = nodemailer.createTransport(emailConfig);
       console.log('[EMAIL] Email service configured');
     } else {
       console.warn('[EMAIL] Email service not configured - missing SMTP credentials');
@@ -32,7 +32,7 @@ class EmailService {
   }
 
   async sendConfirmationEmail(to, username, confirmationToken) {
-    if (!this.transporter) {
+    if (!this.transport) {
       console.warn('[EMAIL] Cannot send email - service not configured');
       return false;
     }
@@ -73,7 +73,7 @@ Este link expira em 24 horas. Se você não criou esta conta, ignore este email.
     };
 
     try {
-      const info = await this.transporter.sendMail(mailOptions);
+      const info = await this.transport.sendMail(mailOptions);
       console.log('[EMAIL] Confirmation email sent to:', to, 'Message ID:', info.messageId);
       return true;
     } catch (error) {
@@ -87,12 +87,12 @@ Este link expira em 24 horas. Se você não criou esta conta, ignore este email.
   }
 
   async testConnection() {
-    if (!this.transporter) {
+    if (!this.transport) {
       return false;
     }
     
     try {
-      await this.transporter.verify();
+      await this.transport.verify();
       console.log('[EMAIL] SMTP connection test successful');
       return true;
     } catch (error) {
