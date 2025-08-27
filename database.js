@@ -6,6 +6,8 @@ const fs = require('fs');
 const mime = require('mime-types');
 const { getAiAnnotations } = require('./services/ai'); // Importa a função IA
 const axios = require('axios');
+const MediaQueue = require('./services/mediaQueue');
+const DatabaseHandler = require('./services/databaseHandler');
 
 // Variável para caminho da pasta de figurinhas antigas será lida do .env
 const OLD_STICKERS_PATH = process.env.OLD_STICKERS_PATH || null;
@@ -14,6 +16,35 @@ const PROCESS_BATCH_SIZE = 5;
 
 const dbPath = path.resolve(__dirname, 'media.db');
 const db = new sqlite3.Database(dbPath);
+
+// Initialize enhanced database handler and media queue
+const dbHandler = new DatabaseHandler(db);
+const mediaQueue = new MediaQueue({ 
+  concurrency: 3, 
+  retryAttempts: 5, 
+  retryDelay: 1000 
+});
+
+// Queue event listeners for monitoring
+mediaQueue.on('jobAdded', (jobId) => {
+  console.log(`[Queue] Job ${jobId} added to queue`);
+});
+
+mediaQueue.on('jobStarted', (jobId, attempt) => {
+  console.log(`[Queue] Job ${jobId} started (attempt ${attempt})`);
+});
+
+mediaQueue.on('jobCompleted', (jobId) => {
+  console.log(`[Queue] Job ${jobId} completed successfully`);
+});
+
+mediaQueue.on('jobRetry', (jobId, attempt, error) => {
+  console.warn(`[Queue] Job ${jobId} retry attempt ${attempt}: ${error.message}`);
+});
+
+mediaQueue.on('jobFailed', (jobId, error) => {
+  console.error(`[Queue] Job ${jobId} failed permanently: ${error.message}`);
+});
 
 db.get('SELECT COUNT(*) as total FROM media', (err, row) => {
   if (err) {
@@ -105,6 +136,10 @@ db.serialize(() => {
   db.run(`CREATE INDEX IF NOT EXISTS idx_media_description ON media(description)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_media_nsfw_timestamp ON media(nsfw, timestamp DESC)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_tags_usage_count ON tags(usage_count DESC)`);
+  
+  // Critical index for duplicate detection - hash_visual is heavily used
+  db.run(`CREATE INDEX IF NOT EXISTS idx_media_hash_visual ON media(hash_visual)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_media_hash_md5 ON media(hash_md5)`);
  });
 
 // Gera hash MD5 de um buffer
@@ -331,50 +366,53 @@ async function findSimilarTags(tagCandidates) {
 // Adiciona tags que não existem e atualiza uso_count para existentes
 async function addOrUpdateTags(tags) {
   const tagIds = [];
+  
+  // Use the queue to process tags sequentially to avoid race conditions
   for (const tag of tags) {
     const tagTrim = tag.trim();
     if (!tagTrim) continue;
 
-    const existingTag = await new Promise((resolve, reject) =>
-      db.get(`SELECT id, usage_count FROM tags WHERE LOWER(name) = LOWER(?)`, [tagTrim], (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      })
-    );
+    const tagId = await mediaQueue.add(async () => {
+      // Check if tag exists
+      const existingTag = await dbHandler.get(
+        `SELECT id, usage_count FROM tags WHERE LOWER(name) = LOWER(?)`, 
+        [tagTrim]
+      );
 
-    if (existingTag) {
-      await new Promise((resolve, reject) =>
-        db.run(`UPDATE tags SET usage_count = usage_count + 1 WHERE id = ?`, [existingTag.id], function (e) {
-          if (e) reject(e);
-          else resolve();
-        })
-      );
-      tagIds.push(existingTag.id);
-    } else {
-      const newTagId = await new Promise((resolve, reject) =>
-        db.run(`INSERT INTO tags(name, usage_count) VALUES (?, 1)`, [tagTrim], function (e) {
-          if (e) reject(e);
-          else resolve(this.lastID);
-        })
-      );
-      tagIds.push(newTagId);
-    }
+      if (existingTag) {
+        // Update usage count
+        await dbHandler.run(
+          `UPDATE tags SET usage_count = usage_count + 1 WHERE id = ?`, 
+          [existingTag.id]
+        );
+        return existingTag.id;
+      } else {
+        // Insert new tag
+        const result = await dbHandler.run(
+          `INSERT INTO tags(name, usage_count) VALUES (?, 1)`, 
+          [tagTrim]
+        );
+        return result.lastID;
+      }
+    });
+    
+    tagIds.push(tagId);
   }
+  
   return tagIds;
 }
 
 // Associa tags de tagIds a uma mídia mediaId na tabela media_tags
 function associateTagsToMedia(mediaId, tagIds) {
-  return new Promise((resolve, reject) => {
-    if (!tagIds.length) return resolve();
+  if (!tagIds.length) return Promise.resolve();
+  
+  return mediaQueue.add(async () => {
     const placeholders = tagIds.map(() => '(?, ?)').join(',');
     const params = [];
     tagIds.forEach(tagId => { params.push(mediaId, tagId) });
     const sql = `INSERT OR IGNORE INTO media_tags(media_id, tag_id) VALUES ${placeholders}`;
-    db.run(sql, params, function (err) {
-      if (err) reject(err);
-      else resolve();
-    });
+    
+    return dbHandler.run(sql, params);
   });
 }
 
@@ -442,14 +480,14 @@ async function saveMedia({
   hashMd5 = null,
   nsfw = 0,
 }) {
-  return new Promise((resolve, reject) => {
-    const stmt = db.prepare(
-      `
+  // Queue the media saving operation to prevent SQLITE_BUSY errors
+  return mediaQueue.add(async () => {
+    const sql = `
       INSERT INTO media (chat_id, group_id, sender_id, file_path, mimetype, timestamp, description, hash_visual, hash_md5, nsfw, count_random)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-    `
-    );
-    stmt.run(
+    `;
+    
+    const result = await dbHandler.run(sql, [
       chatId,
       groupId,
       senderId,
@@ -459,31 +497,25 @@ async function saveMedia({
       description,
       hashVisual,
       hashMd5,
-      nsfw,
-      async function (err) {
-        if (err) return reject(err);
-        const mediaId = this.lastID;
-        try {
-          await processAndAssociateTags(mediaId, tags);
-          resolve(mediaId);
-        } catch (e) {
-          reject(e);
-        }
-      }
-    );
-    stmt.finalize();
+      nsfw
+    ]);
+    
+    const mediaId = result.lastID;
+    
+    // Process and associate tags if provided
+    if (tags) {
+      await processAndAssociateTags(mediaId, tags);
+    }
+    
+    return mediaId;
   });
 }
 
 function incrementRandomCount(id) {
-  return new Promise((resolve, reject) => {
-    db.run(
+  return mediaQueue.add(async () => {
+    return dbHandler.run(
       `UPDATE media SET count_random = count_random + 1 WHERE id = ?`,
-      id,
-      function (err) {
-        if (err) reject(err);
-        else resolve(this.changes);
-      }
+      [id]
     );
   });
 }
@@ -870,8 +902,203 @@ async function migrateMediaWithMissingSenderId(logger = console) {
   });
 }
 
+// ---- Duplicate Media Detection and Management Functions ----
+
+/**
+ * Find duplicate media based on visual hash
+ * Returns groups of duplicated media
+ */
+async function findDuplicateMedia(limit = 50) {
+  const sql = `
+    SELECT 
+      hash_visual,
+      COUNT(*) as duplicate_count,
+      GROUP_CONCAT(id) as media_ids,
+      MIN(timestamp) as first_created,
+      MAX(timestamp) as last_created
+    FROM media 
+    WHERE hash_visual IS NOT NULL 
+    GROUP BY hash_visual 
+    HAVING COUNT(*) > 1
+    ORDER BY duplicate_count DESC, first_created DESC
+    LIMIT ?
+  `;
+  
+  const rows = await dbHandler.all(sql, [limit]);
+  
+  // Parse the grouped results
+  return rows.map(row => ({
+    hash_visual: row.hash_visual,
+    duplicate_count: row.duplicate_count,
+    media_ids: row.media_ids.split(',').map(id => parseInt(id)),
+    first_created: row.first_created,
+    last_created: row.last_created
+  }));
+}
+
+/**
+ * Get detailed information about duplicate media group
+ */
+async function getDuplicateMediaDetails(hashVisual) {
+  const sql = `
+    SELECT 
+      m.id,
+      m.chat_id,
+      m.group_id,
+      m.sender_id,
+      m.file_path,
+      m.mimetype,
+      m.timestamp,
+      m.description,
+      m.nsfw,
+      m.count_random,
+      c.display_name
+    FROM media m
+    LEFT JOIN contacts c ON c.sender_id = m.sender_id
+    WHERE m.hash_visual = ?
+    ORDER BY m.timestamp ASC
+  `;
+  
+  return dbHandler.all(sql, [hashVisual]);
+}
+
+/**
+ * Delete duplicate media (keeps the oldest one)
+ * Returns count of deleted records
+ */
+async function deleteDuplicateMedia(hashVisual, keepOldest = true) {
+  return mediaQueue.add(async () => {
+    // Get all media with this hash
+    const duplicates = await getDuplicateMediaDetails(hashVisual);
+    
+    if (duplicates.length <= 1) {
+      return 0; // No duplicates to delete
+    }
+    
+    // Determine which ones to delete
+    const sorted = duplicates.sort((a, b) => 
+      keepOldest ? a.timestamp - b.timestamp : b.timestamp - a.timestamp
+    );
+    
+    const toKeep = sorted[0];
+    const toDelete = sorted.slice(1);
+    
+    let deletedCount = 0;
+    
+    // Use transaction for atomicity
+    const operations = [];
+    
+    for (const media of toDelete) {
+      // Delete media_tags associations
+      operations.push({
+        sql: `DELETE FROM media_tags WHERE media_id = ?`,
+        params: [media.id]
+      });
+      
+      // Delete media record
+      operations.push({
+        sql: `DELETE FROM media WHERE id = ?`,
+        params: [media.id]
+      });
+      
+      // Delete file from filesystem if it exists
+      if (media.file_path && fs.existsSync(media.file_path)) {
+        try {
+          fs.unlinkSync(media.file_path);
+        } catch (err) {
+          console.warn(`Failed to delete file ${media.file_path}:`, err.message);
+        }
+      }
+      
+      deletedCount++;
+    }
+    
+    if (operations.length > 0) {
+      await dbHandler.transaction(operations);
+    }
+    
+    console.log(`Deleted ${deletedCount} duplicate media files, kept media ID ${toKeep.id}`);
+    return deletedCount;
+  });
+}
+
+/**
+ * Delete specific media by IDs (for manual selection)
+ */
+async function deleteMediaByIds(mediaIds) {
+  if (!Array.isArray(mediaIds) || mediaIds.length === 0) {
+    return 0;
+  }
+  
+  return mediaQueue.add(async () => {
+    let deletedCount = 0;
+    const operations = [];
+    
+    for (const mediaId of mediaIds) {
+      // Get file path before deletion
+      const media = await dbHandler.get(`SELECT file_path FROM media WHERE id = ?`, [mediaId]);
+      
+      if (media) {
+        // Delete media_tags associations
+        operations.push({
+          sql: `DELETE FROM media_tags WHERE media_id = ?`,
+          params: [mediaId]
+        });
+        
+        // Delete media record
+        operations.push({
+          sql: `DELETE FROM media WHERE id = ?`,
+          params: [mediaId]
+        });
+        
+        // Delete file from filesystem if it exists
+        if (media.file_path && fs.existsSync(media.file_path)) {
+          try {
+            fs.unlinkSync(media.file_path);
+          } catch (err) {
+            console.warn(`Failed to delete file ${media.file_path}:`, err.message);
+          }
+        }
+        
+        deletedCount++;
+      }
+    }
+    
+    if (operations.length > 0) {
+      await dbHandler.transaction(operations);
+    }
+    
+    console.log(`Deleted ${deletedCount} media files by ID selection`);
+    return deletedCount;
+  });
+}
+
+/**
+ * Get duplicate statistics
+ */
+async function getDuplicateStats() {
+  const sql = `
+    SELECT 
+      COUNT(DISTINCT hash_visual) as duplicate_groups,
+      COUNT(*) as total_duplicates,
+      SUM(CASE WHEN duplicate_count > 2 THEN duplicate_count - 1 ELSE 1 END) as potential_savings
+    FROM (
+      SELECT hash_visual, COUNT(*) as duplicate_count
+      FROM media 
+      WHERE hash_visual IS NOT NULL 
+      GROUP BY hash_visual 
+      HAVING COUNT(*) > 1
+    ) as duplicates
+  `;
+  
+  const result = await dbHandler.get(sql);
+  return result || { duplicate_groups: 0, total_duplicates: 0, potential_savings: 0 };
+}
+
 module.exports = {
   db,
+  dbHandler,
+  mediaQueue,
   saveMedia,
   getRandomMedia,
   incrementRandomCount,
@@ -890,7 +1117,13 @@ module.exports = {
   getHistoricalContactsStats,
   migrateHistoricalContacts,
   migrateMediaWithMissingSenderId,
-  getGroupName
+  getGroupName,
+  // New duplicate management functions
+  findDuplicateMedia,
+  getDuplicateMediaDetails,
+  deleteDuplicateMedia,
+  deleteMediaByIds,
+  getDuplicateStats
 };
 
 // Admin bootstrap is handled by the web server's safer initialization path

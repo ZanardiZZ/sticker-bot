@@ -16,6 +16,19 @@
     table { width:100%; border-collapse:collapse; }
     th, td { text-align:left; padding:.4rem .5rem; border-bottom:1px solid #333; font-size:.9rem; }
     .btn-primary { background:#2f6fed; color:#fff; border:0; padding:.5rem .8rem; border-radius:6px; cursor:pointer; }
+    .btn-danger { background:#dc3545; color:#fff; border:0; padding:.5rem .8rem; border-radius:6px; cursor:pointer; }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .duplicate-group { background:#2a2a2a; border-radius:6px; padding:1rem; margin-bottom:1rem; }
+    .duplicate-group h4 { margin:0 0 .5rem 0; font-size:1rem; color:#fff; }
+    .duplicate-item { background:#1a1a1a; border-radius:4px; padding:.5rem; margin:.3rem 0; display:flex; justify-content:space-between; align-items:center; }
+    .duplicate-item.oldest { border-left: 3px solid #28a745; }
+    .media-info { flex-grow: 1; }
+    .media-actions { display: flex; gap: .5rem; align-items: center; }
+    .media-preview { width: 40px; height: 40px; object-fit: cover; border-radius: 4px; }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+    .stat-card { background:#2a2a2a; padding:.8rem; border-radius:6px; text-align:center; }
+    .stat-value { font-size:1.5rem; font-weight:bold; color:#2f6fed; }
+    .stat-label { font-size:.8rem; color:#bbb; margin-top:.2rem; }
   </style>
 
   
@@ -98,6 +111,42 @@
         <div>
           <button id="prevPage" class="btn-primary" disabled>Anterior</button>
           <button id="nextPage" class="btn-primary" disabled>Próxima</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Gerenciamento de Mídias Duplicadas</h3>
+      <div class="warn">
+        <strong>Atenção:</strong> Esta função permite detectar e remover mídias duplicadas baseadas em hash visual. 
+        Use com cuidado, pois a exclusão é permanente.
+      </div>
+      
+      <div class="row" style="margin-bottom: 1rem;">
+        <div>
+          <strong>Estatísticas:</strong>
+          <span id="duplicateStats" class="muted">Carregando...</span>
+        </div>
+        <button id="refreshDuplicates" class="btn-primary">Atualizar</button>
+      </div>
+      
+      <div id="duplicatesContainer" style="display: none;">
+        <div class="row" style="margin-bottom: 1rem; align-items: center; gap: 1rem;">
+          <label>
+            <input type="checkbox" id="selectAllDuplicates"> Selecionar todos
+          </label>
+          <button id="deleteSelectedDuplicates" class="btn-danger" disabled>Deletar Selecionados</button>
+          <span class="muted">Manterá sempre a mídia mais antiga de cada grupo</span>
+        </div>
+        
+        <div id="duplicatesList"></div>
+        
+        <div id="duplicatesPagination" class="row" style="margin-top: 1rem; justify-content: space-between;">
+          <span id="duplicatesInfo" class="muted"></span>
+          <div>
+            <button id="prevDuplicates" class="btn-primary" disabled>Anterior</button>
+            <button id="nextDuplicates" class="btn-primary" disabled>Próxima</button>
+          </div>
         </div>
       </div>
     </div>
