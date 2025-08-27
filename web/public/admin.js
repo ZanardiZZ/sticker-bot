@@ -341,20 +341,77 @@ document.addEventListener('click', async (e) => {
   }
 });
 
-(async function boot(){
-  await loadAccount();
-  await load();
-  await loadRules();
-  await loadUsers(); // Load users on page init
+// ---- Tab Management Functions ----
+
+let duplicatesLoaded = false;
+
+function initializeTabs() {
+  const tabButtons = document.querySelectorAll('.tab-button');
+  const tabContents = document.querySelectorAll('.tab-content');
   
-  // Load duplicate statistics if UI elements exist
+  tabButtons.forEach(button => {
+    button.addEventListener('click', () => {
+      const tabId = button.dataset.tab;
+      
+      // Remove active class from all buttons and contents
+      tabButtons.forEach(btn => btn.classList.remove('active'));
+      tabContents.forEach(content => content.classList.remove('active'));
+      
+      // Add active class to clicked button and corresponding content
+      button.classList.add('active');
+      document.getElementById(`tab-${tabId}`).classList.add('active');
+      
+      // Load duplicates only when duplicates tab is clicked for the first time
+      if (tabId === 'duplicates' && !duplicatesLoaded) {
+        loadDuplicatesTab();
+      }
+    });
+  });
+}
+
+async function loadDuplicatesTab() {
   try {
+    duplicatesLoaded = true;
     if (document.getElementById('duplicateStats')) {
-      await loadDuplicateStats(); // Load duplicate statistics
+      await loadDuplicateStats();
     }
-  } catch (error) {
-    console.warn('Duplicate management not available:', error.message);
+    const duplicateStatsElem = document.getElementById('duplicateStats');
+    if (duplicateStatsElem) {
+      duplicateStatsElem.textContent = 'Erro ao carregar estatísticas';
+    }
   }
+}
+
+(async function boot(){
+  try {
+    await loadAccount();
+  } catch (error) {
+    console.warn('Failed to load account:', error.message);
+  }
+  
+  try {
+    await load();
+  } catch (error) {
+    console.warn('Failed to load basic data:', error.message);
+  }
+  
+  try {
+    await loadRules();
+  } catch (error) {
+    console.warn('Failed to load rules:', error.message);
+  }
+  
+  try {
+    await loadUsers();
+  } catch (error) {
+    console.warn('Failed to load users:', error.message);
+  }
+  
+  // Initialize tab functionality - always call this regardless of API errors
+  initializeTabs();
+  
+  // Do NOT load duplicates automatically anymore
+  // They will be loaded only when the duplicates tab is clicked
 })();
 
 // ---- Duplicate Media Management Functions ----
