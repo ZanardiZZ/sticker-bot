@@ -46,3 +46,7 @@ StickerBotSession.data.json
 add-test-data.js
 data.db
 .env
+
+# Test files (temporary)
+test-*.js
+test-*.db
