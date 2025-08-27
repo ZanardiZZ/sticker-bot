@@ -42,7 +42,7 @@ const {
 const { isNSFW } = require('./services/nsfwFilter');
 const { isVideoNSFW } = require('./services/nsfwVideoFilter');
 const { getAiAnnotations, transcribeAudioBuffer, getAiAnnotationsFromPrompt } = require('./services/ai');
-const { processVideo } = require('./services/videoProcessor');
+const { processVideo, processGif } = require('./services/videoProcessor');
 const { handleCommand, handleTaggingMode, isValidCommand, taggingMap, forceMap } = require('./commands');
 const { normalizeText } = require('./utils/commandNormalizer');
 const { cleanDescriptionTags, renderInfoMessage } = require('./utils/messageUtils');
@@ -265,26 +265,19 @@ async function handleIncomingMedia(client, message) {
     }
   }
 
-  // Verifica se é NSFW
+  // Verifica se é NSFW - different approaches for different media types
   let nsfwFlag = 0;
   try {
-    // Only run NSFW check on image formats
-    if (mimetype.startsWith('image/')) {
-      // For GIFs, convert to PNG first before NSFW processing
-      let bufferForNsfw = bufferToSave;
-      if (mimetype === 'image/gif') {
-        try {
-          bufferForNsfw = await sharp(bufferToSave).png().toBuffer();
-        } catch (sharpErr) {
-          console.warn('Erro ao converter GIF para NSFW check, pulando:', sharpErr.message);
-          nsfwFlag = 0; // Skip NSFW check if conversion fails
-        }
-      }
-      if (nsfwFlag === 0) { // Only check if not already skipped
-        nsfwFlag = (await isNSFW(bufferForNsfw)) ? 1 : 0;
-      }
+    if (mimetype.startsWith('image/') && mimetype !== 'image/gif') {
+      // Regular image NSFW checking
+      nsfwFlag = (await isNSFW(bufferToSave)) ? 1 : 0;
+    } else if (mimetype === 'image/gif' || mimetype.startsWith('video/')) {
+      // Video/GIF NSFW checking using frame analysis
+      // Note: filePath doesn't exist yet, so we'll check after saving
+      console.log('[NSFW] Video/GIF NSFW check will be performed after file save');
+      nsfwFlag = 0; // Will be updated after file save
     }
-    // Skip NSFW check for videos and other non-image formats
+    // Skip NSFW check for audio and other non-visual formats
   } catch (err) {
     console.error('Erro ao executar filtro NSFW:', err);
     nsfwFlag = 0;
@@ -319,6 +312,18 @@ async function handleIncomingMedia(client, message) {
     const filePath = path.join(MEDIA_DIR, filename);
     await fsp.writeFile(filePath, bufferToSave);
 
+    // Perform NSFW check for videos/GIFs now that file is saved
+    if ((mimetype === 'image/gif' || mimetype.startsWith('video/')) && nsfwFlag === 0) {
+      try {
+        console.log(`[NSFW] Checking ${mimetype} for NSFW content...`);
+        nsfwFlag = (await isVideoNSFW(filePath)) ? 1 : 0;
+        console.log(`[NSFW] Result for ${mimetype}: ${nsfwFlag ? 'NSFW detected' : 'safe'}`);
+      } catch (nsfwErr) {
+        console.warn('[NSFW] Erro na verificação NSFW de vídeo/GIF:', nsfwErr.message);
+        nsfwFlag = 0; // Assume safe if error occurs
+      }
+    }
+
     // Tentar obter descrição e tags via IA somente se não for NSFW
     let description = '';
     let tags = '';
@@ -330,15 +335,15 @@ async function handleIncomingMedia(client, message) {
           description = aiResult.description || '';
           tags = aiResult.tags ? aiResult.tags.join(',') : '';
         } else if (mimetype === 'image/gif') {
-          // For GIFs, use video processing logic to analyze multiple frames
+          // For GIFs, use specialized GIF processing logic to analyze multiple frames
           try {
-            console.log('🎬 Processing GIF using multi-frame video analysis...');
-            const aiResult = await processVideo(filePath);
+            console.log('🎞️ Processing GIF using multi-frame analysis...');
+            const aiResult = await processGif(filePath);
             description = aiResult.description || '';
             tags = aiResult.tags ? aiResult.tags.join(',') : '';
             console.log(`✅ GIF processed successfully: ${description ? description.slice(0, 50) : 'no description'}...`);
           } catch (err) {
-            console.warn('Erro ao processar GIF com lógica de vídeo, usando fallback de imagem:', err);
+            console.warn('Erro ao processar GIF com lógica de frames múltiplos, usando fallback de imagem:', err);
             // Fallback to single frame analysis if video processing fails
             try {
               // Only try Sharp conversion for GIF files, not video files

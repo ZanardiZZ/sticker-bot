@@ -7,6 +7,11 @@ let nsfwjs = null;
 let tf = null;
 let model = null;
 
+// Model input constants
+const MODEL_INPUT_WIDTH = 224;
+const MODEL_INPUT_HEIGHT = 224;
+const MODEL_INPUT_QUALITY = 80;
+
 try {
   nsfwjs = require('nsfwjs');
   tf = require('@tensorflow/tfjs-node');

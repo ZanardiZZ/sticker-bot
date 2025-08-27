@@ -2,8 +2,9 @@ const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('ffmpeg-static');
 const fs = require('fs');
 const path = require('path');
-const { getAiAnnotationsFromPrompt } = require('./ai');
+const { getAiAnnotationsFromPrompt, getAiAnnotations } = require('./ai');
 const { spawn } = require('child_process');
+const sharp = require('sharp');
 // (Removed unused constants whisperPath and modelPath)
 
 ffmpeg.setFfmpegPath(ffmpegPath);
@@ -150,6 +151,30 @@ async function transcribeAudioLocal(audioPath) {
     });
   });
 }
+
+// Analisa um frame individual e retorna descrição e tags
+async function analyzeFrame(framePath, frameIndex) {
+  try {
+    if (!fs.existsSync(framePath)) {
+      console.warn(`[VideoProcessor] Frame ${frameIndex} não encontrado: ${framePath}`);
+      return { description: '', tags: [] };
+    }
+    
+    const buffer = fs.readFileSync(framePath);
+    const result = await getAiAnnotations(buffer);
+    
+    console.log(`[VideoProcessor] Frame ${frameIndex} analisado: ${result.description?.slice(0, 30) || 'sem descrição'}...`);
+    
+    return {
+      description: result.description || '',
+      tags: result.tags || []
+    };
+  } catch (error) {
+    console.warn(`[VideoProcessor] Erro ao analisar frame ${frameIndex}:`, error.message);
+    return { description: '', tags: [] };
+  }
+}
+
 // Função principal: processa vídeo, gera prompt com imagens + transcrição e solicita IA
 async function processVideo(filePath) {
   console.log(`[VideoProcessor] Processando arquivo: ${path.basename(filePath)}`);
@@ -168,6 +193,15 @@ async function processVideo(filePath) {
 
     // Extrai frames
     const framesPaths = await extractFrames(filePath, timestamps);
+
+    // Analisa cada frame individualmente
+    console.log('[VideoProcessor] Analisando frames individuais...');
+    const frameAnalyses = [];
+    
+    for (let i = 0; i < framesPaths.length; i++) {
+      const analysis = await analyzeFrame(framesPaths[i], i + 1);
+      frameAnalyses.push(analysis);
+    }
 
     // Verifica áudio
     const audioExists = await hasAudioTrack(filePath);
@@ -188,55 +222,113 @@ async function processVideo(filePath) {
       }
     }
     
-    // Ler frames + codificar base64
-    const base64Frames = framesPaths.map(fp => {
-      try {
-        const b = fs.readFileSync(fp);
-        return b.toString('base64');
-      } catch (err) {
-        console.warn('[VideoProcessor] Erro ao ler frame:', fp);
-        return null;
-      }
-    }).filter(frame => frame !== null);
-
     // Limpar arquivos temporários frames
     for (const fp of framesPaths) {
       try { fs.unlinkSync(fp); } catch {}
     }
 
-    if (base64Frames.length === 0) {
-      console.warn('[VideoProcessor] Nenhum frame válido extraído');
-      return { description: 'Erro na extração de frames do vídeo', tags: ['video', 'erro'] };
+    if (frameAnalyses.length === 0) {
+      console.warn('[VideoProcessor] Nenhum frame analisado');
+      return { description: 'Erro na análise de frames do vídeo', tags: ['video', 'erro'] };
     }
 
-    // Monta prompt para IA com identificador único
+    // Combinar análises dos frames
+    const frameDescriptions = frameAnalyses
+      .map((analysis, i) => `Frame ${i + 1}: ${analysis.description}`)
+      .filter(desc => desc.includes(':') && desc.split(':')[1].trim())
+      .join('\n');
+
+    const allTags = frameAnalyses
+      .flatMap(analysis => analysis.tags)
+      .filter(tag => tag && tag.trim());
+
+    // Remove duplicatas e pega as 5 mais comuns
+    const tagCounts = {};
+    allTags.forEach(tag => {
+      const cleanTag = tag.replace(/^#/, '').toLowerCase();
+      tagCounts[cleanTag] = (tagCounts[cleanTag] || 0) + 1;
+    });
+
+    const topTags = Object.entries(tagCounts)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 5)
+      .map(([tag]) => tag);
+
+    // Monta descrição final integrando frames e áudio
     const fileId = path.basename(filePath).replace(/\W+/g, '_');
-    let prompt = `
-Você é um assistente que irá analisar um vídeo enviado (ID: ${fileId}) representado por ${base64Frames.length} imagens na sequência e uma transcrição de áudio (se disponível).
+    let finalDescription = '';
+    let finalTags = topTags;
 
-Imagens base64 separadas por "---imagem---":
-${base64Frames.join('\n---imagem---\n')}
+    if (transcription && transcription !== '[sem áudio]' && !transcription.includes('não transcrito')) {
+      // Se tem áudio válido, integra com análise visual
+      const prompt = `
+Você está analisando um vídeo (ID: ${fileId}) que contém tanto conteúdo visual quanto áudio.
 
-Transcrição do áudio (se não há áudio, esta parte está vazia):
-${transcription || '[sem áudio]'}
+ANÁLISE VISUAL DOS FRAMES:
+${frameDescriptions}
 
-Por favor, forneça uma análise específica deste vídeo (ID: ${fileId}):
-1) Uma breve descrição do vídeo, em até 50 palavras.
-2) Uma lista de 5 tags relevantes, separadas por vírgula, relacionadas ao conteúdo específico do vídeo.
+TRANSCRIÇÃO DO ÁUDIO:
+${transcription}
+
+TAGS VISUAIS IDENTIFICADAS:
+${topTags.join(', ')}
+
+Por favor, forneça uma análise integrada que combine o conteúdo visual e auditivo:
+1) Uma descrição concisa do vídeo (máximo 50 palavras) que integre ambos os aspectos
+2) Uma lista de 5 tags relevantes que representem tanto o conteúdo visual quanto auditivo
 
 Responda no formato JSON:
 {
-  "description": "texto curto da descrição específica",
+  "description": "descrição integrada do vídeo",
   "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"]
 }
 `.trim();
 
-    // Chama OpenAI com o prompt
-    console.log(`[VideoProcessor] Enviando ${base64Frames.length} frames para análise de IA`);
-    const result = await getAiAnnotationsFromPrompt(prompt);
-    console.log(`[VideoProcessor] Análise concluída para ${fileId}:`, result.description?.slice(0, 30) || 'sem descrição');
+      console.log('[VideoProcessor] Integrando análise visual e auditiva...');
+      const integratedResult = await getAiAnnotationsFromPrompt(prompt);
+      
+      finalDescription = integratedResult.description || frameDescriptions.split('\n')[0]?.split(': ')[1] || 'Vídeo analisado';
+      finalTags = integratedResult.tags && integratedResult.tags.length > 0 ? integratedResult.tags : topTags;
+      
+    } else {
+      // Só análise visual, combina descrições dos frames
+      if (frameAnalyses.length === 1) {
+        finalDescription = frameAnalyses[0].description || 'Vídeo processado';
+      } else {
+        // Sumariza múltiplos frames
+        const prompt = `
+Você está analisando um vídeo (ID: ${fileId}) através de múltiplos frames.
+
+ANÁLISE DE CADA FRAME:
+${frameDescriptions}
+
+TAGS IDENTIFICADAS:
+${topTags.join(', ')}
+
+Por favor, forneça uma descrição única e concisa (máximo 50 palavras) que sumarize o conteúdo visual geral do vídeo e 5 tags representativas.
+
+Responda no formato JSON:
+{
+  "description": "descrição sumarizada do vídeo",
+  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"]
+}
+`.trim();
+
+        console.log('[VideoProcessor] Sumarizando análise visual de múltiplos frames...');
+        const summaryResult = await getAiAnnotationsFromPrompt(prompt);
+        
+        finalDescription = summaryResult.description || frameAnalyses[0].description || 'Vídeo processado';
+        finalTags = summaryResult.tags && summaryResult.tags.length > 0 ? summaryResult.tags : topTags;
+      }
+    }
+
+    console.log(`[VideoProcessor] Análise concluída para ${fileId}:`, finalDescription?.slice(0, 30) || 'sem descrição');
     
-    return result;
+    return {
+      description: finalDescription,
+      tags: finalTags
+    };
+    
   } catch (error) {
     console.error('[VideoProcessor] Erro geral no processamento:', error.message);
     return { 
@@ -246,5 +338,113 @@ Responda no formato JSON:
   }
 }
 
+// Função simplificada para GIFs - apenas análise visual de 3 frames
+async function processGif(filePath) {
+  console.log(`[VideoProcessor] Processando GIF: ${path.basename(filePath)}`);
+  
+  try {
+    // Para GIFs, usa timestamps fixos mais próximos
+    const duration = await new Promise((res, rej) => {
+      ffmpeg.ffprobe(filePath, (err, meta) => {
+        if (err) rej(err);
+        else res(meta.format.duration || 2); // fallback para 2s se não detectar duração
+      });
+    });
 
-module.exports = { processVideo, extractFrames };
+    // Para GIFs curtos, usa timestamps mais próximos
+    const timestamps = duration > 3 
+      ? [duration * 0.1, duration * 0.5, duration * 0.9]
+      : [0.1, Math.max(0.5, duration * 0.3), Math.max(1, duration * 0.8)];
+
+    // Extrai frames
+    const framesPaths = await extractFrames(filePath, timestamps);
+
+    // Analisa cada frame individualmente
+    console.log('[VideoProcessor] Analisando frames do GIF...');
+    const frameAnalyses = [];
+    
+    for (let i = 0; i < framesPaths.length; i++) {
+      const analysis = await analyzeFrame(framesPaths[i], i + 1);
+      frameAnalyses.push(analysis);
+    }
+    
+    // Limpar arquivos temporários frames
+    for (const fp of framesPaths) {
+      try { fs.unlinkSync(fp); } catch {}
+    }
+
+    if (frameAnalyses.length === 0) {
+      console.warn('[VideoProcessor] Nenhum frame analisado no GIF');
+      return { description: 'Erro na análise de frames do GIF', tags: ['gif', 'erro'] };
+    }
+
+    // Combinar análises dos frames para GIF
+    const frameDescriptions = frameAnalyses
+      .map((analysis, i) => `Frame ${i + 1}: ${analysis.description}`)
+      .filter(desc => desc.includes(':') && desc.split(':')[1].trim())
+      .join('\n');
+
+    const allTags = frameAnalyses
+      .flatMap(analysis => analysis.tags)
+      .filter(tag => tag && tag.trim());
+
+    // Remove duplicatas e pega as 5 mais comuns
+    const tagCounts = {};
+    allTags.forEach(tag => {
+      const cleanTag = tag.replace(/^#/, '').toLowerCase();
+      tagCounts[cleanTag] = (tagCounts[cleanTag] || 0) + 1;
+    });
+
+    const topTags = Object.entries(tagCounts)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 5)
+      .map(([tag]) => tag);
+
+    const fileId = path.basename(filePath).replace(/\W+/g, '_');
+    
+    if (frameAnalyses.length === 1) {
+      // Apenas um frame analisado
+      return {
+        description: frameAnalyses[0].description || 'GIF processado',
+        tags: frameAnalyses[0].tags || ['gif']
+      };
+    } else {
+      // Múltiplos frames - sumariza
+      const prompt = `
+Você está analisando um GIF animado (ID: ${fileId}) através de múltiplos frames.
+
+ANÁLISE DE CADA FRAME:
+${frameDescriptions}
+
+TAGS IDENTIFICADAS:
+${topTags.join(', ')}
+
+Por favor, forneça uma descrição única e concisa (máximo 50 palavras) que capture a essência da animação/movimento do GIF e 5 tags representativas.
+
+Responda no formato JSON:
+{
+  "description": "descrição da animação/GIF",
+  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"]
+}
+`.trim();
+
+      console.log('[VideoProcessor] Sumarizando análise do GIF...');
+      const summaryResult = await getAiAnnotationsFromPrompt(prompt);
+      
+      return {
+        description: summaryResult.description || frameAnalyses[0].description || 'GIF processado',
+        tags: summaryResult.tags && summaryResult.tags.length > 0 ? summaryResult.tags : topTags
+      };
+    }
+    
+  } catch (error) {
+    console.error('[VideoProcessor] Erro no processamento do GIF:', error.message);
+    return { 
+      description: `Erro no processamento do GIF: ${error.message}`, 
+      tags: ['gif', 'erro', 'processamento'] 
+    };
+  }
+}
+
+
+module.exports = { processVideo, processGif, extractFrames };
