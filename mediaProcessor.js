@@ -15,13 +15,6 @@ const { updateMediaDescription, updateMediaTags } = require('./database');
 const { forceMap, MAX_TAGS_LENGTH, clearDescriptionCmds } = require('./commands');
 const { cleanDescriptionTags } = require('./utils/messageUtils');
 
-// Helper function if cleanDescriptionTags is not available
-function fallbackCleanDescriptionTags(description, tags) {
-  const cleanDesc = description ? description.trim() : '';
-  const cleanTags = tags ? (Array.isArray(tags) ? tags : tags.split(',').map(t => t.trim()).filter(Boolean)) : [];
-  return { description: cleanDesc, tags: cleanTags };
-}
-
 async function processIncomingMedia(client, message) {
   const chatId = message.from;
 
