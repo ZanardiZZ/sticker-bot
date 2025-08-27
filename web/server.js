@@ -9,9 +9,20 @@ try {
 } catch (e) {
   console.warn('[ENV] dotenv não carregado:', e.message);
 }
-const rateLimit = require('express-rate-limit');
-const bcrypt = require('bcryptjs');
 const session = require('express-session');
+const bcrypt = require('bcryptjs');
+const rateLimit = require('express-rate-limit');
+
+// Import modularized middlewares and routes
+const {
+  createCSPMiddleware,
+  createMainRateLimiter,
+  createLoginRateLimiter,
+  createRegistrationRateLimiter,
+  createRequestLogger,
+  createIPRulesMiddleware
+} = require('./middlewares');
+const { registerRoutes } = require('./routes');
 const UMAMI_ORIGIN = process.env.UMAMI_ORIGIN || 'https://analytics.zanardizz.uk';
 const ALLOW_CF_INSIGHTS = process.env.ALLOW_CF_INSIGHTS === '1';
 process.on('unhandledRejection', (err) => {
@@ -199,28 +210,11 @@ console.timeEnd('[BOOT] static');
 app.use('/figurinhas', express.static('/mnt/nas/Media/Figurinhas'));
 
 //Compatibilidade com CSP
-app.use((req, res, next) => {
-  const scriptSrc = ["'self'", UMAMI_ORIGIN];
-  const connectSrc = ["'self'", UMAMI_ORIGIN];
-
-  if (ALLOW_CF_INSIGHTS) {
-    scriptSrc.push('https://static.cloudflareinsights.com');
-    // o beacon do CF usa cloudflareinsights.com (sem "static.")
-    connectSrc.push('https://cloudflareinsights.com', 'https://*.cloudflareinsights.com');
-  }
-
-  // Estilos inline já usados na UI
-  const csp = [
-    `default-src 'self'`,
-    `img-src 'self' data:`,
-    `style-src 'self' 'unsafe-inline'`,
-    `script-src ${scriptSrc.join(' ')}`,
-    `connect-src ${connectSrc.join(' ')}`
-  ].join('; ');
-
-  res.setHeader('Content-Security-Policy', csp);
-  next();
+const cspMiddleware = createCSPMiddleware({
+  umamiOrigin: UMAMI_ORIGIN,
+  allowCfInsights: ALLOW_CF_INSIGHTS
 });
+app.use(cspMiddleware);
 
 
 // Diretório de mídia novo (alias /stickers e /media)
@@ -233,147 +227,26 @@ const staticOpts = {
 app.use('/stickers', express.static(STICKERS_DIR, staticOpts));
 app.use('/media', express.static(STICKERS_DIR, staticOpts));
 
-// Helpers
-function now() { return Date.now(); }
-function clientIp(req) {
-  return (req.ip || '').replace(/^::ffff:/, '');
-}
-function isRuleActive(rule) {
-  return !rule.expires_at || rule.expires_at > Date.now();
-}
+// Setup middlewares using modularized components
+const ipRulesMiddleware = createIPRulesMiddleware(db, { enableAnalytics: ENABLE_INTERNAL_ANALYTICS });
+app.use(ipRulesMiddleware);
 
-// Middleware de blocklist/allowlist
-async function ipRulesMiddleware(req, res, next) {
-  try {
-    const ip = clientIp(req);
-    db.all(`SELECT * FROM ip_rules WHERE ip = ?`, [ip], (err, rules) => {
-      if (err) return next(err);
-      const active = (rules || []).filter(isRuleActive);
-      const hasAllow = active.some(r => r.action === 'allow');
-      const hasDeny = active.some(r => r.action === 'deny');
-      if (hasAllow) return next();
-      if (hasDeny) return res.status(403).send('Forbidden');
-      return next();
-    });
-  } catch (e) {
-    next(e);
-  }
-}
-if (ENABLE_INTERNAL_ANALYTICS) {
-  app.use(ipRulesMiddleware);
-}
-
-// Rate limit
-const limiter = rateLimit({
+const limiter = createMainRateLimiter({
   windowMs: 60 * 1000,
   max: 120,
-  keyGenerator: (req) => clientIp(req),
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: (req) => req.path.startsWith('/api/admin') || req.path.startsWith('/admin')
+  skipPaths: ['/api/admin', '/admin']
 });
 app.use(limiter);
 
-// Logger de requisições
-function requestLogger(req, res, next) {
-  const start = process.hrtime.bigint();
-  const ip = clientIp(req);
-  const ua = req.headers['user-agent'] || '';
-  const ref = req.headers['referer'] || req.headers['referrer'] || '';
-  const userId = req.user?.id || null;
-
-  res.on('finish', () => {
-    const end = process.hrtime.bigint();
-    const durationMs = Number(end - start) / 1e6;
-    const row = {
-      ts: now(),
-      ip,
-      path: req.path,
-      method: req.method,
-      status: res.statusCode,
-      duration_ms: Math.round(durationMs),
-      referrer: ref?.slice(0, 500) || null,
-      user_agent: ua?.slice(0, 500) || null,
-      user_id: userId
-    };
-    if (req.path.startsWith('/media') || req.path.startsWith('/figurinhas')) return;
-    db.run(
-      `INSERT INTO request_log (ts, ip, path, method, status, duration_ms, referrer, user_agent, user_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [row.ts, row.ip, row.path, row.method, row.status, row.duration_ms, row.referrer, row.user_agent, row.user_id]
-    );
-  });
-  next();
-}
-if (ENABLE_INTERNAL_ANALYTICS) {app.use(requestLogger);}
-
-// ========= Endpoints de Conta (troca de senha) =========
-app.get('/api/account', requireLogin, (req, res) => {
-  db.get(`SELECT id, username, role, COALESCE(must_change_password,0) AS must_change_password, password_updated_at
-          FROM users WHERE id = ?`, [req.user.id], (err, row) => {
-    if (err) return res.status(500).json({ error: 'db_error' });
-    if (!row) return res.status(404).json({ error: 'not_found' });
-    res.json(row);
-  });
+const requestLogger = createRequestLogger(db, { 
+  enableAnalytics: ENABLE_INTERNAL_ANALYTICS,
+  skipPaths: ['/media', '/figurinhas']
 });
+app.use(requestLogger);
 
-app.post('/api/account/change-password', requireLogin, async (req, res) => {
-  const { current_password, new_password } = req.body || {};
-  if (!current_password || !new_password) {
-    return res.status(400).json({ error: 'missing_fields' });
-  }
-  if (new_password.length < 8) {
-    return res.status(400).json({ error: 'weak_password', msg: 'A senha deve ter pelo menos 8 caracteres.' });
-  }
-  db.get(`SELECT password_hash FROM users WHERE id = ?`, [req.user.id], async (err, row) => {
-    if (err) return res.status(500).json({ error: 'db_error' });
-    if (!row) return res.status(404).json({ error: 'not_found' });
-    const ok = await bcrypt.compare(current_password, row.password_hash);
-    if (!ok) return res.status(401).json({ error: 'invalid_password' });
-    const hash = await bcrypt.hash(new_password, 12);
-    db.run(`UPDATE users SET password_hash = ?, must_change_password = 0, password_updated_at = ? WHERE id = ?`,
-      [hash, Date.now(), req.user.id],
-      function (e2) {
-        if (e2) return res.status(500).json({ error: 'db_error' });
-        res.json({ ok: true });
-      });
-  });
-});
-
-// ========= CAPTCHA API =========
-app.get('/api/captcha', (req, res) => {
-  const num1 = Math.floor(Math.random() * 10) + 1;
-  const num2 = Math.floor(Math.random() * 10) + 1;
-  const operation = Math.random() < 0.5 ? 'add' : 'subtract';
-  
-  let question, answer;
-  if (operation === 'add') {
-    question = `${num1} + ${num2}`;
-    answer = num1 + num2;
-  } else {
-    // Make sure we don't get negative results
-    const bigger = Math.max(num1, num2);
-    const smaller = Math.min(num1, num2);
-    question = `${bigger} - ${smaller}`;
-    answer = bigger - smaller;
-  }
-  
-  const sessionId = require('crypto').randomBytes(16).toString('hex');
-  
-  // Store CAPTCHA answer in session
-  req.session.captcha = {
-    answer: answer,
-    session: sessionId,
-    created: Date.now()
-  };
-  
-  res.json({
-    question: question,
-    session: sessionId
-  });
-});
-
-// ========= Email Confirmation API =========
+// Register modularized routes
+registerRoutes(app, db);
+  // ========= Email Confirmation API =========
 app.get('/confirm-email', async (req, res) => {
   const { token } = req.query;
   
