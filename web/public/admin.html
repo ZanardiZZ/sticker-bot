@@ -30,7 +30,16 @@
     .stat-value { font-size:1.5rem; font-weight:bold; color:#2f6fed; }
     .stat-label { font-size:.8rem; color:#bbb; margin-top:.2rem; }
     
-    /* Tab styles */
+    /* Main Tab styles */
+    .main-tab-container { margin-bottom: 1rem; }
+    .main-tab-nav { display: flex; border-bottom: 3px solid #333; margin-bottom: 1.5rem; background: #1a1a1a; border-radius: 8px 8px 0 0; }
+    .main-tab-button { background: none; border: none; color: #bbb; padding: 1rem 2rem; cursor: pointer; font-size: 1.1rem; border-bottom: 3px solid transparent; transition: all 0.3s; font-weight: 500; }
+    .main-tab-button:hover { color: #fff; background: #2a2a2a; }
+    .main-tab-button.active { color: #2f6fed; border-bottom-color: #2f6fed; background: #0a0a0a; }
+    .main-tab-content { display: none; }
+    .main-tab-content.active { display: block; }
+    
+    /* Legacy tab styles for backwards compatibility */
     .tab-container { margin-bottom: 1rem; }
     .tab-nav { display: flex; border-bottom: 2px solid #333; margin-bottom: 1rem; }
     .tab-button { background: none; border: none; color: #bbb; padding: 0.75rem 1.5rem; cursor: pointer; font-size: 1rem; border-bottom: 2px solid transparent; transition: all 0.3s; }
@@ -38,6 +47,12 @@
     .tab-button.active { color: #2f6fed; border-bottom-color: #2f6fed; background: #1a1a1a; }
     .tab-content { display: none; }
     .tab-content.active { display: block; }
+    
+    /* Admin-only elements */
+    .admin-only { display: none; }
+    .admin-only.visible { display: block; }
+    .main-tab-button.admin-only { display: none; }
+    .main-tab-button.admin-only.visible { display: inline-block; }
   </style>
 
   
@@ -54,122 +69,130 @@
       Por segurança, altere sua senha inicial agora.
     </div>
 
-    <div class="panel">
-      <h3>Minha conta</h3>
-      <div class="row">
-        <input id="cp_current" type="password" placeholder="Senha atual">
-        <input id="cp_new" type="password" placeholder="Nova senha (mín. 8)">
-        <input id="cp_new2" type="password" placeholder="Confirmar nova senha">
-      </div>
-      <div style="display:flex; gap:.5rem; justify-content:flex-end; margin-top:.6rem;">
-        <button id="btnChangePass" class="btn-primary">Alterar senha</button>
-      </div>
-      <div id="cp_msg" class="muted"></div>
-    </div>
-
-    <div class="panel">
-      <h3>Regras de IP</h3>
-      <div class="row">
-        <input id="ip" placeholder="IP para regra" />
-        <select id="action">
-          <option value="deny">Bloquear</option>
-          <option value="allow">Permitir</option>
-        </select>
-        <input id="ttl" type="number" min="0" placeholder="TTL (minutos, opcional)" style="max-width:160px;">
-        <input id="reason" placeholder="Motivo (opcional)" style="max-width:220px;">
-        <button id="addRule" class="btn-primary">Adicionar Regra</button>
-      </div>
-      <table id="tblRules">
-        <thead><tr><th>ID</th><th>IP</th><th>Ação</th><th>Expira</th><th>Criada por</th><th></th></tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-
-    <div class="panel">
-      <h3>Gerenciamento</h3>
-      
-      <!-- Tab Navigation -->
-      <div class="tab-container">
-        <div class="tab-nav">
-          <button class="tab-button active" data-tab="users">Usuários</button>
-          <button class="tab-button" data-tab="duplicates">Mídias Duplicadas</button>
-        </div>
-        
-        <!-- Users Tab Content -->
-        <div class="tab-content active" id="tab-users">
-          <h4>Gerenciamento de Usuários</h4>
-      <div class="row" style="margin-bottom: 1rem;">
-        <select id="userStatusFilter">
-          <option value="">Todos os usuários</option>
-          <option value="pending">Aguardando aprovação</option>
-          <option value="approved">Aprovados</option>
-          <option value="rejected">Rejeitados</option>
-        </select>
-        <button id="refreshUsers" class="btn-primary">Atualizar Lista</button>
-      </div>
-      <div id="usersContainer">
-        <table id="tblUsers">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Usuário</th>
-              <th>Email</th>
-              <th>Status Email</th>
-              <th>Telefone</th>
-              <th>Nome Contato</th>
-              <th>Status</th>
-              <th>Pode Editar</th>
-              <th>Criado em</th>
-              <th>Ações</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <div id="usersPagination" class="row" style="margin-top: 1rem; display: none;">
-        <span id="usersInfo" class="muted"></span>
-        <div>
-          <button id="prevPage" class="btn-primary" disabled>Anterior</button>
-          <button id="nextPage" class="btn-primary" disabled>Próxima</button>
-        </div>
-      </div>
-        </div>
-        
-        <!-- Duplicates Tab Content -->
-        <div class="tab-content" id="tab-duplicates">
-          <h4>Gerenciamento de Mídias Duplicadas</h4>
-      <div class="warn">
-        <strong>Atenção:</strong> Esta função permite detectar e remover mídias duplicadas baseadas em hash visual. 
-        Use com cuidado, pois a exclusão é permanente.
+    <!-- Main Tab Navigation -->
+    <div class="main-tab-container">
+      <div class="main-tab-nav">
+        <button class="main-tab-button active" data-tab="settings">Configurações</button>
+        <button class="main-tab-button admin-only" data-tab="network">Rede</button>
+        <button class="main-tab-button admin-only" data-tab="users">Usuários</button>
+        <button class="main-tab-button admin-only" data-tab="duplicates">Mídias Duplicadas</button>
       </div>
       
-      <div class="row" style="margin-bottom: 1rem;">
-        <div>
-          <strong>Estatísticas:</strong>
-          <span id="duplicateStats" class="muted">Carregando...</span>
+      <!-- Settings Tab Content -->
+      <div class="main-tab-content active" id="main-tab-settings">
+        <div class="panel">
+          <h3>Minha conta</h3>
+          <div class="row">
+            <input id="cp_current" type="password" placeholder="Senha atual">
+            <input id="cp_new" type="password" placeholder="Nova senha (mín. 8)">
+            <input id="cp_new2" type="password" placeholder="Confirmar nova senha">
+          </div>
+          <div style="display:flex; gap:.5rem; justify-content:flex-end; margin-top:.6rem;">
+            <button id="btnChangePass" class="btn-primary">Alterar senha</button>
+          </div>
+          <div id="cp_msg" class="muted"></div>
         </div>
-        <button id="refreshDuplicates" class="btn-primary">Atualizar</button>
       </div>
       
-      <div id="duplicatesContainer" style="display: none;">
-        <div class="row" style="margin-bottom: 1rem; align-items: center; gap: 1rem;">
-          <label>
-            <input type="checkbox" id="selectAllDuplicates"> Selecionar todos
-          </label>
-          <button id="deleteSelectedDuplicates" class="btn-danger" disabled>Deletar Selecionados</button>
-          <span class="muted">Manterá sempre a mídia mais antiga de cada grupo</span>
+      <!-- Network Tab Content -->
+      <div class="main-tab-content admin-only" id="main-tab-network">
+        <div class="panel">
+          <h3>Regras de IP</h3>
+          <div class="row">
+            <input id="ip" placeholder="IP para regra" />
+            <select id="action">
+              <option value="deny">Bloquear</option>
+              <option value="allow">Permitir</option>
+            </select>
+            <input id="ttl" type="number" min="0" placeholder="TTL (minutos, opcional)" style="max-width:160px;">
+            <input id="reason" placeholder="Motivo (opcional)" style="max-width:220px;">
+            <button id="addRule" class="btn-primary">Adicionar Regra</button>
+          </div>
+          <table id="tblRules">
+            <thead><tr><th>ID</th><th>IP</th><th>Ação</th><th>Expira</th><th>Criada por</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
         </div>
-        
-        <div id="duplicatesList"></div>
-        
-        <div id="duplicatesPagination" class="row" style="margin-top: 1rem; justify-content: space-between;">
-          <span id="duplicatesInfo" class="muted"></span>
-          <div>
-            <button id="prevDuplicates" class="btn-primary" disabled>Anterior</button>
-            <button id="nextDuplicates" class="btn-primary" disabled>Próxima</button>
+      </div>
+      
+      <!-- Users Tab Content -->
+      <div class="main-tab-content admin-only" id="main-tab-users">
+        <div class="panel">
+          <h3>Gerenciamento de Usuários</h3>
+          <div class="row" style="margin-bottom: 1rem;">
+            <select id="userStatusFilter">
+              <option value="">Todos os usuários</option>
+              <option value="pending">Aguardando aprovação</option>
+              <option value="approved">Aprovados</option>
+              <option value="rejected">Rejeitados</option>
+            </select>
+            <button id="refreshUsers" class="btn-primary">Atualizar Lista</button>
+          </div>
+          <div id="usersContainer">
+            <table id="tblUsers">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Usuário</th>
+                  <th>Email</th>
+                  <th>Status Email</th>
+                  <th>Telefone</th>
+                  <th>Nome Contato</th>
+                  <th>Status</th>
+                  <th>Pode Editar</th>
+                  <th>Criado em</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div id="usersPagination" class="row" style="margin-top: 1rem; display: none;">
+            <span id="usersInfo" class="muted"></span>
+            <div>
+              <button id="prevPage" class="btn-primary" disabled>Anterior</button>
+              <button id="nextPage" class="btn-primary" disabled>Próxima</button>
+            </div>
           </div>
         </div>
       </div>
+      
+      <!-- Duplicates Tab Content -->
+      <div class="main-tab-content admin-only" id="main-tab-duplicates">
+        <div class="panel">
+          <h3>Gerenciamento de Mídias Duplicadas</h3>
+          <div class="warn">
+            <strong>Atenção:</strong> Esta função permite detectar e remover mídias duplicadas baseadas em hash visual. 
+            Use com cuidado, pois a exclusão é permanente.
+          </div>
+          
+          <div class="row" style="margin-bottom: 1rem;">
+            <div>
+              <strong>Estatísticas:</strong>
+              <span id="duplicateStats" class="muted">Carregando...</span>
+            </div>
+            <button id="refreshDuplicates" class="btn-primary">Atualizar</button>
+          </div>
+          
+          <div id="duplicatesContainer" style="display: none;">
+            <div class="row" style="margin-bottom: 1rem; align-items: center; gap: 1rem;">
+              <label>
+                <input type="checkbox" id="selectAllDuplicates"> Selecionar todos
+              </label>
+              <button id="deleteSelectedDuplicates" class="btn-danger" disabled>Deletar Selecionados</button>
+              <span class="muted">Manterá sempre a mídia mais antiga de cada grupo</span>
+            </div>
+            
+            <div id="duplicatesList"></div>
+            
+            <div id="duplicatesPagination" class="row" style="margin-top: 1rem; justify-content: space-between;">
+              <span id="duplicatesInfo" class="muted"></span>
+              <div>
+                <button id="prevDuplicates" class="btn-primary" disabled>Anterior</button>
+                <button id="nextDuplicates" class="btn-primary" disabled>Próxima</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -344,7 +344,34 @@ document.addEventListener('click', async (e) => {
 // ---- Tab Management Functions ----
 
 let duplicatesLoaded = false;
+let currentUserRole = null;
 
+// Initialize main tab navigation
+function initializeMainTabs() {
+  const mainTabButtons = document.querySelectorAll('.main-tab-button');
+  const mainTabContents = document.querySelectorAll('.main-tab-content');
+  
+  mainTabButtons.forEach(button => {
+    button.addEventListener('click', () => {
+      const tabId = button.dataset.tab;
+      
+      // Remove active class from all buttons and contents
+      mainTabButtons.forEach(btn => btn.classList.remove('active'));
+      mainTabContents.forEach(content => content.classList.remove('active'));
+      
+      // Add active class to clicked button and corresponding content
+      button.classList.add('active');
+      document.getElementById(`main-tab-${tabId}`).classList.add('active');
+      
+      // Load duplicates only when duplicates tab is clicked for the first time
+      if (tabId === 'duplicates' && !duplicatesLoaded) {
+        loadDuplicatesTab();
+      }
+    });
+  });
+}
+
+// Legacy tab function for backwards compatibility
 function initializeTabs() {
   const tabButtons = document.querySelectorAll('.tab-button');
   const tabContents = document.querySelectorAll('.tab-content');
@@ -369,12 +396,34 @@ function initializeTabs() {
   });
 }
 
+// Check and update UI based on user role
+async function checkUserRole() {
+  try {
+    const response = await fetch('/api/me');
+    if (response.ok) {
+      const data = await response.json();
+      currentUserRole = data.user?.role;
+      
+      if (currentUserRole === 'admin') {
+        // Show admin-only elements
+        document.querySelectorAll('.admin-only').forEach(el => {
+          el.classList.add('visible');
+        });
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to check user role:', error);
+  }
+}
+
 async function loadDuplicatesTab() {
   try {
     duplicatesLoaded = true;
     if (document.getElementById('duplicateStats')) {
       await loadDuplicateStats();
     }
+  } catch (error) {
+    console.error('Error loading duplicates tab:', error);
     const duplicateStatsElem = document.getElementById('duplicateStats');
     if (duplicateStatsElem) {
       duplicateStatsElem.textContent = 'Erro ao carregar estatísticas';
@@ -383,6 +432,12 @@ async function loadDuplicatesTab() {
 }
 
 (async function boot(){
+  try {
+    await checkUserRole();
+  } catch (error) {
+    console.warn('Failed to check user role:', error.message);
+  }
+  
   try {
     await loadAccount();
   } catch (error) {
@@ -407,7 +462,10 @@ async function loadDuplicatesTab() {
     console.warn('Failed to load users:', error.message);
   }
   
-  // Initialize tab functionality - always call this regardless of API errors
+  // Initialize main tab functionality
+  initializeMainTabs();
+  
+  // Initialize legacy tab functionality - always call this regardless of API errors
   initializeTabs();
   
   // Do NOT load duplicates automatically anymore
