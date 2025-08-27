@@ -153,6 +153,20 @@ class DatabaseHandler {
   }
 
   /**
+   * Perform WAL checkpoint to commit WAL data to main database
+   */
+  async checkpointWAL() {
+    return this.executeWithRetry(() => {
+      return new Promise((resolve, reject) => {
+        this.db.run('PRAGMA wal_checkpoint(TRUNCATE)', (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+    });
+  }
+
+  /**
    * Get database statistics
    */
   async getStats() {
