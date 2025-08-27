@@ -54,3 +54,4 @@ test-*.js
 test-*.db
 *.db-shm
 *.db-wal
+media.db-wal
