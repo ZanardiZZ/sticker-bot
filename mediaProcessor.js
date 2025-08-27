@@ -92,6 +92,7 @@ async function processIncomingMedia(client, message) {
           console.warn('Erro ao processar GIF com lógica de vídeo, usando fallback de imagem:', err);
           // Fallback to single frame analysis if video processing fails
           try {
+            const pngBuffer = await sharp(buffer).png().toBuffer();
             const aiResult = await getAiAnnotations(pngBuffer);
             const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
             description = clean.description;
