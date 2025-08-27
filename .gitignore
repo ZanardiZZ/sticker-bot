@@ -31,6 +31,8 @@ coverage/
 # If you have any other local config files add here
 media/
 media.db
+media.db-shm
+media.db-wal
 StickerBotSession.data.json
 /temp
 *.bak
