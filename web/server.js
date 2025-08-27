@@ -26,7 +26,7 @@ console.time('[BOOT] total');
 const app = express();
 app.set('trust proxy', true);
 
-const { db } = require('../database.js');
+const { db, findDuplicateMedia, getDuplicateMediaDetails, deleteDuplicateMedia, deleteMediaByIds, getDuplicateStats } = require('../database.js');
 
 function initAnalyticsTables(db) {
   db.run(`CREATE TABLE IF NOT EXISTS request_log (
@@ -782,6 +782,90 @@ app.patch('/api/admin/users/:id/permissions', requireAdmin, (req, res) => {
     console.log(`[ADMIN] User ${id} edit permission set to ${can_edit} by ${req.user.username}`);
     res.json({ success: true, can_edit });
   });
+});
+
+// ---- Duplicate Media Management API Endpoints ----
+
+// Get duplicate media statistics
+app.get('/api/admin/duplicates/stats', requireAdmin, async (req, res) => {
+  try {
+    const stats = await getDuplicateStats();
+    res.json(stats);
+  } catch (error) {
+    console.error('[ADMIN] Error getting duplicate stats:', error);
+    res.status(500).json({ error: 'Failed to get duplicate statistics' });
+  }
+});
+
+// Get list of duplicate media groups
+app.get('/api/admin/duplicates', requireAdmin, async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+    const duplicates = await findDuplicateMedia(limit);
+    res.json(duplicates);
+  } catch (error) {
+    console.error('[ADMIN] Error getting duplicates:', error);
+    res.status(500).json({ error: 'Failed to get duplicate media' });
+  }
+});
+
+// Get detailed information about a specific duplicate group
+app.get('/api/admin/duplicates/:hashVisual', requireAdmin, async (req, res) => {
+  try {
+    const { hashVisual } = req.params;
+    const details = await getDuplicateMediaDetails(hashVisual);
+    res.json(details);
+  } catch (error) {
+    console.error('[ADMIN] Error getting duplicate details:', error);
+    res.status(500).json({ error: 'Failed to get duplicate details' });
+  }
+});
+
+// Delete duplicate media (auto-keep oldest)
+app.delete('/api/admin/duplicates/:hashVisual', requireAdmin, async (req, res) => {
+  try {
+    const { hashVisual } = req.params;
+    const keepOldest = req.query.keepOldest !== 'false'; // Default to true
+    
+    console.log(`[ADMIN] User ${req.user.username} is deleting duplicates for hash ${hashVisual}`);
+    
+    const deletedCount = await deleteDuplicateMedia(hashVisual, keepOldest);
+    
+    console.log(`[ADMIN] Deleted ${deletedCount} duplicate media for hash ${hashVisual}`);
+    res.json({ deleted_count: deletedCount, hash_visual: hashVisual });
+    
+  } catch (error) {
+    console.error('[ADMIN] Error deleting duplicates:', error);
+    res.status(500).json({ error: 'Failed to delete duplicate media' });
+  }
+});
+
+// Delete specific media by IDs (manual selection)
+app.delete('/api/admin/media/bulk', requireAdmin, express.json(), async (req, res) => {
+  try {
+    const { mediaIds } = req.body;
+    
+    if (!Array.isArray(mediaIds) || mediaIds.length === 0) {
+      return res.status(400).json({ error: 'Invalid media IDs provided' });
+    }
+    
+    // Validate IDs are numbers
+    const validIds = mediaIds.filter(id => Number.isInteger(id) && id > 0);
+    if (validIds.length !== mediaIds.length) {
+      return res.status(400).json({ error: 'All media IDs must be positive integers' });
+    }
+    
+    console.log(`[ADMIN] User ${req.user.username} is deleting media IDs: ${validIds.join(', ')}`);
+    
+    const deletedCount = await deleteMediaByIds(validIds);
+    
+    console.log(`[ADMIN] Deleted ${deletedCount} media files`);
+    res.json({ deleted_count: deletedCount, media_ids: validIds });
+    
+  } catch (error) {
+    console.error('[ADMIN] Error deleting media by IDs:', error);
+    res.status(500).json({ error: 'Failed to delete media' });
+  }
 });
 
 // Security headers

@@ -283,8 +283,8 @@ async function handleIncomingMedia(client, message) {
   if (existing && !forceMap.get(chatId)) {
     // Já existe - enviar mensagem padrão com descrição, tags e id e msg aviso
     const clean = cleanDescriptionTags(existing.description, existing.tags);
-    await client.sendText(chatId, 'Mídia já está salva no banco de dados. Aqui estão os dados:');
-    await client.sendText(chatId, renderInfoMessage({ ...clean, id: existing.id }));
+    await client.reply(chatId, 'Mídia já está salva no banco de dados. Aqui estão os dados:', message.id);
+    await client.reply(chatId, renderInfoMessage({ ...clean, id: existing.id }), message.id);
   } else {
     // Salvar arquivo na pasta local
     ensureDirSync(MEDIA_DIR);
@@ -335,7 +335,7 @@ async function handleIncomingMedia(client, message) {
     if (media) {
       const tags = await getTagsForMedia(media.id);
       const clean = cleanDescriptionTags(media.description, tags);
-      await client.sendText(chatId, renderInfoMessage({ ...clean, id: media.id }));
+      await client.reply(chatId, renderInfoMessage({ ...clean, id: media.id }), message.id);
     }
   }
 }
