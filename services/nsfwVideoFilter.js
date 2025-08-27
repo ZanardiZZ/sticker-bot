@@ -94,9 +94,17 @@ async function isImageNSFW(buffer) {
 
 async function isVideoNSFW(filePath) {
   try {
+    // Check if FFmpeg is available by trying to require it
+    let ffmpeg;
+    try {
+      ffmpeg = require('fluent-ffmpeg');
+    } catch (ffmpegErr) {
+      console.warn('[NSFW Video] FFmpeg não disponível, assumindo vídeo como seguro:', ffmpegErr.message);
+      return false;
+    }
+    
     // Extrair frames 10%, 50%, 90%
     const duration = await new Promise((res, rej) => {
-      const ffmpeg = require('fluent-ffmpeg');
       ffmpeg.ffprobe(filePath, (err, meta) => {
         if (err) return rej(err);
         else return res(meta.format.duration);

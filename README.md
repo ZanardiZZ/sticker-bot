@@ -45,6 +45,16 @@ A comprehensive WhatsApp bot for managing, automatically sending, and administer
 - **SMTP server** - For email functionality
 - **FFmpeg** - For advanced video processing
 
+### 🚨 Network Restrictions
+The application gracefully handles environments where FFmpeg binaries cannot be downloaded due to firewall restrictions (common with `storage.googleapis.com` blocks). When FFmpeg is unavailable:
+
+- **Video processing**: Returns basic fallback descriptions instead of frame analysis
+- **GIF conversion**: Uses original files instead of optimized MP4 conversion  
+- **WebP repair**: Skips FFmpeg-based repair attempts
+- **NSFW video filtering**: Falls back to safe assumptions
+
+The bot continues to function normally with reduced video processing capabilities.
+
 ## ⚡ Quick Start
 
 ### 1. Installation
