@@ -53,7 +53,7 @@ async function transcribeAudioBuffer(buffer) {
         '--no-translate',
         '--output-txt',
         '--output-dir', tmpDir
-      ], { encoding: 'utf-8', timeout: 30000 }); // 30 second timeout
+      ], { timeout: 30000, encoding: 'utf-8' }); // 30 second timeout
 
       if (result.error) {
         console.warn('[AI] Erro ao executar whisper:', result.error.message);
