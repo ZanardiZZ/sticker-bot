@@ -11,6 +11,13 @@ async function fetchJSON(url){
   return r.json();
 }
 
+function getAdminErrorMessage(errorData, defaultMessage) {
+  if (errorData.error === 'forbidden') {
+    return 'Você não tem permissão de administrador para realizar esta ação.';
+  }
+  return defaultMessage + ': ' + (errorData.error || 'Erro desconhecido');
+}
+
 function fillTable(tbody, rows, cols) {
   tbody.innerHTML = rows.map(r => `<tr>${cols.map(c => `<td>${(r[c] ?? '').toString().slice(0,200)}</td>`).join('')}</tr>`).join('');
 }
@@ -82,7 +89,10 @@ document.getElementById('addRule').addEventListener('click', async () => {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ ip, action, ttl_minutes: ttl, reason })
   });
-  if (!r.ok) return alert('Falha ao adicionar regra');
+  if (!r.ok) {
+    const data = await r.json().catch(() => ({}));
+    return alert(getAdminErrorMessage(data, 'Falha ao adicionar regra'));
+  }
   document.getElementById('ip').value = ''; document.getElementById('ttl').value = ''; document.getElementById('reason').value = '';
   await loadRules();
 });
@@ -92,7 +102,10 @@ document.addEventListener('click', async (e) => {
   if (!id) return;
   if (!confirm('Remover a regra #' + id + '?')) return;
   const r = await fetch('/api/admin/ip-rules/' + id, { method:'DELETE' });
-  if (!r.ok) return alert('Falha ao remover');
+  if (!r.ok) {
+    const data = await r.json().catch(() => ({}));
+    return alert(getAdminErrorMessage(data, 'Falha ao remover'));
+  }
   await loadRules();
 });
 document.getElementById('btnChangePass').addEventListener('click', changePassword);
@@ -239,7 +252,7 @@ async function approveUser(userId) {
       await loadUsers();
     } else {
       const data = await response.json();
-      alert('Erro ao aprovar usuário: ' + (data.error || 'Erro desconhecido'));
+      alert(getAdminErrorMessage(data, 'Erro ao aprovar usuário'));
     }
   } catch (error) {
     console.error('Error approving user:', error);
@@ -261,7 +274,7 @@ async function rejectUser(userId) {
       await loadUsers();
     } else {
       const data = await response.json();
-      alert('Erro ao rejeitar usuário: ' + (data.error || 'Erro desconhecido'));
+      alert(getAdminErrorMessage(data, 'Erro ao rejeitar usuário'));
     }
   } catch (error) {
     console.error('Error rejecting user:', error);
@@ -284,7 +297,7 @@ async function toggleEditPermission(userId, canEdit) {
       await loadUsers();
     } else {
       const data = await response.json();
-      alert('Erro ao alterar permissões: ' + (data.error || 'Erro desconhecido'));
+      alert(getAdminErrorMessage(data, 'Erro ao alterar permissões'));
     }
   } catch (error) {
     console.error('Error updating permissions:', error);
@@ -525,6 +538,11 @@ async function deleteSelectedDuplicates() {
       if (result.ok) {
         successCount++;
       } else {
+        const data = await result.json().catch(() => ({}));
+        if (data.error === 'forbidden') {
+          alert('Você não tem permissão de administrador para deletar duplicatas.');
+          break; // Stop processing if user lacks permissions
+        }
         errorCount++;
       }
     } catch (error) {
@@ -547,6 +565,24 @@ const refreshDuplicatesBtn = document.getElementById('refreshDuplicates');
 const selectAllCheckbox = document.getElementById('selectAllDuplicates');
 const deleteSelectedBtn = document.getElementById('deleteSelectedDuplicates');
 
+if (refreshDuplicatesBtn) {
+  refreshDuplicatesBtn.addEventListener('click', loadDuplicateStats);
+}
+
+if (selectAllCheckbox) {
+  selectAllCheckbox.addEventListener('change', (e) => {
+    const checkboxes = document.querySelectorAll('.group-checkbox');
+    checkboxes.forEach(cb => cb.checked = e.target.checked);
+    updateSelectionButtons();
+  });
+}
+
+if (deleteSelectedBtn) {
+  deleteSelectedBtn.addEventListener('click', deleteSelectedDuplicates);
+}
+
+// Handle group checkbox changes
+document.addEventListener('change', (e) => {
   if (e.target instanceof Element && e.target.classList.contains('group-checkbox')) {
     updateSelectionButtons();
   }
