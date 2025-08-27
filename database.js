@@ -310,8 +310,16 @@ async function processWebpWithRepair(buffer, fileName) {
           
         } finally {
           // Always clean up temp files
-          try { fs.unlinkSync(tempInput); } catch {}
-          try { fs.unlinkSync(tempOutput); } catch {}
+          try { fs.unlinkSync(tempInput); } catch (err) {
+            if (err.code !== 'ENOENT') {
+              console.warn(`[old-stickers] Failed to delete tempInput (${tempInput}): ${err.message}`);
+            }
+          }
+          try { fs.unlinkSync(tempOutput); } catch (err) {
+            if (err.code !== 'ENOENT') {
+              console.warn(`[old-stickers] Failed to delete tempOutput (${tempOutput}): ${err.message}`);
+            }
+          }
         }
         
       } catch (ffmpegError) {
