@@ -106,16 +106,13 @@ async function hasAudioTrack(filePath) {
 
 // Extrai áudio para wav (usado para transcrição futura, aqui só prévia)
 async function extractAudio(filePath) {
-
   // Check if FFmpeg is available
   if (!ffmpeg) {
     console.warn('[VideoProcessor] FFmpeg não disponível, não é possível extrair áudio');
     throw new Error('FFmpeg não disponível - funcionalidade de extração de áudio desabilitada');
   }
-
   const uniqueId = crypto.randomBytes(16).toString('hex');
   const output = path.resolve(__dirname, '../temp', `audio_${uniqueId}.wav`);
-
   return new Promise((resolve, reject) => {
     ffmpeg(filePath)
       .noVideo()
