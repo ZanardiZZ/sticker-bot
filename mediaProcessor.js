@@ -79,6 +79,25 @@ async function processIncomingMedia(client, message) {
         } catch (err) {
           console.warn('Erro ao processar vídeo:', err);
         }
+      } else if (message.mimetype === 'image/gif') {
+        // For GIFs, use video processing logic to analyze multiple frames
+        try {
+          const aiResult = await processVideo(filePath);
+          const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
+          description = clean.description;
+          tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
+        } catch (err) {
+          console.warn('Erro ao processar GIF com lógica de vídeo, usando fallback de imagem:', err);
+          // Fallback to single frame analysis if video processing fails
+          try {
+            const aiResult = await getAiAnnotations(pngBuffer);
+            const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
+            description = clean.description;
+            tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
+          } catch (fallbackErr) {
+            console.warn('Erro também no fallback de imagem para GIF:', fallbackErr);
+          }
+        }
       } else if (mimetypeToSave.startsWith('image/')) {
         const aiResult = await getAiAnnotations(pngBuffer);
         const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
