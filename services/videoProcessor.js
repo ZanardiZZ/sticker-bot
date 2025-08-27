@@ -11,7 +11,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 
 // Extrai frames (timestamps em segundos)
 async function extractFrames(filePath, timestamps) {
-  const tempDir = path.resolve(__dirname, '../temp', `frames_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
+  const tempDir = path.resolve(__dirname, '../temp', `frames_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`);
   
   try {
     fs.mkdirSync(tempDir, { recursive: true });
