@@ -124,7 +124,7 @@ async function transcribeAudioLocal(audioPath) {
         try {
           const transcription = fs.readFileSync(txtPath, 'utf-8').trim();
           // Limpa arquivo txt
-          try { fs.unlinkSync(txtPath); } catch {}
+          try { fs.unlinkSync(txtPath); } catch (err) { console.warn('[VideoProcessor] Erro ao remover arquivo de transcrição:', err.message); }
           resolve(transcription);
         } catch (err) {
           // fallback: resolve empty string caso não encontre txt
