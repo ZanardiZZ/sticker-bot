@@ -333,7 +333,15 @@ document.addEventListener('click', async (e) => {
   await load();
   await loadRules();
   await loadUsers(); // Load users on page init
-  await loadDuplicateStats(); // Load duplicate statistics
+  
+  // Load duplicate statistics if UI elements exist
+  try {
+    if (document.getElementById('duplicateStats')) {
+      await loadDuplicateStats(); // Load duplicate statistics
+    }
+  } catch (error) {
+    console.warn('Duplicate management not available:', error.message);
+  }
 })();
 
 // ---- Duplicate Media Management Functions ----
@@ -535,13 +543,26 @@ async function deleteSelectedDuplicates() {
 }
 
 // Event listeners for duplicate management
-document.getElementById('refreshDuplicates').addEventListener('click', loadDuplicateStats);
-document.getElementById('selectAllDuplicates').addEventListener('change', function() {
-  const checkboxes = document.querySelectorAll('.group-checkbox');
-  checkboxes.forEach(cb => cb.checked = this.checked);
-  updateSelectionButtons();
-});
-document.getElementById('deleteSelectedDuplicates').addEventListener('click', deleteSelectedDuplicates);
+const refreshDuplicatesBtn = document.getElementById('refreshDuplicates');
+const selectAllCheckbox = document.getElementById('selectAllDuplicates');
+const deleteSelectedBtn = document.getElementById('deleteSelectedDuplicates');
+
+if (refreshDuplicatesBtn) {
+  refreshDuplicatesBtn.addEventListener('click', loadDuplicateStats);
+}
+
+if (selectAllCheckbox) {
+  selectAllCheckbox.addEventListener('change', function() {
+    const checkboxes = document.querySelectorAll('.group-checkbox');
+    checkboxes.forEach(cb => cb.checked = this.checked);
+    updateSelectionButtons();
+  });
+}
+
+if (deleteSelectedBtn) {
+  deleteSelectedBtn.addEventListener('click', deleteSelectedDuplicates);
+}
+
 document.addEventListener('change', function(e) {
   if (e.target.classList.contains('group-checkbox')) {
     updateSelectionButtons();
