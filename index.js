@@ -5,13 +5,22 @@ const { create } = require('@open-wa/wa-automate');
 const { decryptMedia } = require('@open-wa/wa-decrypt');
 const cron = require('node-cron');
 const sharp = require('sharp');
-const ffmpeg = require('fluent-ffmpeg');
 const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const mime = require('mime-types');
 const { logReceivedMessage } = require('./bot/logging');
 const { initContactsTable, upsertContactFromMessage } = require('./bot/contacts');
+
+// Conditional loading for FFmpeg - may fail in some environments due to network restrictions
+let ffmpeg = null;
+try {
+  ffmpeg = require('fluent-ffmpeg');
+} catch (error) {
+  console.warn('[init] FFmpeg não disponível:', error.message);
+  console.warn('[init] Funcionalidades de conversão de vídeo serão desabilitadas');
+}
+
 // wa-sticker-formatter é opcional. Se não estiver instalado, caímos em fallback do open-wa
 let Sticker, StickerTypes;
 try {
@@ -103,6 +112,12 @@ async function sendStickerForMediaRecord(client, chatId, media) {
   }
 
   async function convertToMp4ForSticker(inputPath) {
+    // Check if FFmpeg is available
+    if (!ffmpeg) {
+      console.warn('[Sticker] FFmpeg não disponível, não é possível converter vídeo para sticker');
+      throw new Error('FFmpeg não disponível - conversão de vídeo para sticker desabilitada');
+    }
+    
     const outDir = path.join(MEDIA_DIR, 'tmp');
     ensureDirSync(outDir);
     const outPath = path.join(outDir, `stk-${Date.now()}.mp4`);
@@ -133,7 +148,13 @@ async function sendStickerForMediaRecord(client, chatId, media) {
       let mp4Path = filePath;
       if (!isVideo) {
         // Converter GIF para MP4 otimizado
-        mp4Path = await convertToMp4ForSticker(filePath);
+        try {
+          mp4Path = await convertToMp4ForSticker(filePath);
+        } catch (conversionError) {
+          console.warn('[Sticker] Erro na conversão para MP4:', conversionError.message);
+          console.warn('[Sticker] Enviando GIF original como fallback');
+          // Use o arquivo original se a conversão falhar
+        }
       }
 
       if (typeof client.sendMp4AsSticker === 'function') {
