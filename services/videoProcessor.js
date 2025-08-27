@@ -1,4 +1,5 @@
 require('dotenv').config();
+const crypto = require('crypto');
 const OpenAI = require('openai');
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('ffmpeg-static');
@@ -20,7 +21,8 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 
 // Extrai frames (timestamps em segundos)
 async function extractFrames(filePath, timestamps) {
-  const tempDir = path.resolve(__dirname, '../temp', `frames_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`);
+  const uniqueId = crypto.randomBytes(16).toString('hex');
+  const tempDir = path.resolve(__dirname, '../temp', `frames_${uniqueId}`);
   
   try {
     fs.mkdirSync(tempDir, { recursive: true });
@@ -80,7 +82,8 @@ async function hasAudioTrack(filePath) {
 
 // Extrai áudio para wav (usado para transcrição futura, aqui só prévia)
 async function extractAudio(filePath) {
-  const output = path.resolve(__dirname, '../temp', `audio_${Date.now()}.wav`);
+  const uniqueId = crypto.randomBytes(16).toString('hex');
+  const output = path.resolve(__dirname, '../temp', `audio_${uniqueId}.wav`);
   return new Promise((resolve, reject) => {
     ffmpeg(filePath)
       .noVideo()
