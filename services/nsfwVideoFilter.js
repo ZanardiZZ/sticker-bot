@@ -60,8 +60,8 @@ async function isImageNSFW(buffer) {
       
       // Convert to standard format and resize
       processedBuffer = await sharp(buffer)
-        .resize(224, 224, { fit: 'cover', position: 'center' })
-        .jpeg({ quality: 80 })
+        .resize(MODEL_INPUT_WIDTH, MODEL_INPUT_HEIGHT, { fit: 'cover', position: 'center' })
+        .jpeg({ quality: MODEL_INPUT_QUALITY })
         .toBuffer();
         
     } catch (sharpErr) {
