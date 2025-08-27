@@ -298,9 +298,7 @@ async function processWebpWithRepair(buffer, fileName) {
         const uniqueId = crypto.randomBytes(16).toString('hex');
         const tempInput = path.join(tempDir, `repair_input_${uniqueId}.webp`);
         const tempOutput = path.join(tempDir, `repair_output_${uniqueId}.webp`);
-
-      
-          try {
+        try {
             // Write corrupted file to temp location
             fs.writeFileSync(tempInput, buffer);
             
