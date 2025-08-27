@@ -4,9 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { getAiAnnotationsFromPrompt } = require('./ai');
 const { spawn } = require('child_process');
-// These constants are for reference - actual paths are used locally in functions
-const whisperPath = path.resolve(__dirname, '../whisper.cpp/build/whisper');
-const modelPath = path.resolve(__dirname, '../whisper.cpp/build/models/ggml-small.bin');
+// (Removed unused constants whisperPath and modelPath)
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
