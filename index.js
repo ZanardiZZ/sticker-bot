@@ -268,22 +268,44 @@ async function handleIncomingMedia(client, message) {
   // Verifica se é NSFW
   let nsfwFlag = 0;
   try {
-    // For GIFs, convert to PNG first before NSFW processing
-    let bufferForNsfw = bufferToSave;
-    if (mimetype === 'image/gif') {
-      bufferForNsfw = await sharp(bufferToSave).png().toBuffer();
+    // Only run NSFW check on image formats
+    if (mimetype.startsWith('image/')) {
+      // For GIFs, convert to PNG first before NSFW processing
+      let bufferForNsfw = bufferToSave;
+      if (mimetype === 'image/gif') {
+        try {
+          bufferForNsfw = await sharp(bufferToSave).png().toBuffer();
+        } catch (sharpErr) {
+          console.warn('Erro ao converter GIF para NSFW check, pulando:', sharpErr.message);
+          nsfwFlag = 0; // Skip NSFW check if conversion fails
+        }
+      }
+      if (nsfwFlag === 0) { // Only check if not already skipped
+        nsfwFlag = (await isNSFW(bufferForNsfw)) ? 1 : 0;
+      }
     }
-    nsfwFlag = (await isNSFW(bufferForNsfw)) ? 1 : 0;
+    // Skip NSFW check for videos and other non-image formats
   } catch (err) {
     console.error('Erro ao executar filtro NSFW:', err);
     nsfwFlag = 0;
   }
 
-  // Gera hash visual para identificar mídia
-  const hv = await getHashVisual(bufferToSave);
+  // Gera hash visual para identificar mídia (somente para imagens)
+  let hv = null;
+  if (mimetype.startsWith('image/')) {
+    try {
+      hv = await getHashVisual(bufferToSave);
+    } catch (err) {
+      console.warn('Erro ao gerar hash visual:', err.message);
+      hv = null;
+    }
+  }
 
-  // Verifica se mídia já existe (por hash)
-  let existing = await findByHashVisual(hv);
+  // Verifica se mídia já existe (por hash) - somente se hash foi gerado
+  let existing = null;
+  if (hv) {
+    existing = await findByHashVisual(hv);
+  }
 
   if (existing && !forceMap.get(chatId)) {
     // Já existe - enviar mensagem padrão com descrição, tags e id e msg aviso
@@ -319,11 +341,16 @@ async function handleIncomingMedia(client, message) {
             console.warn('Erro ao processar GIF com lógica de vídeo, usando fallback de imagem:', err);
             // Fallback to single frame analysis if video processing fails
             try {
-              const pngBuffer = await sharp(bufferToSave).png().toBuffer();
-              const aiResult = await getAiAnnotations(pngBuffer);
-              description = aiResult.description || '';
-              tags = aiResult.tags ? aiResult.tags.join(',') : '';
-              console.log('⚠️ GIF processed using fallback single-frame analysis');
+              // Only try Sharp conversion for GIF files, not video files
+              if (mimetype === 'image/gif') {
+                const pngBuffer = await sharp(bufferToSave).png().toBuffer();
+                const aiResult = await getAiAnnotations(pngBuffer);
+                description = aiResult.description || '';
+                tags = aiResult.tags ? aiResult.tags.join(',') : '';
+                console.log('⚠️ GIF processed using fallback single-frame analysis');
+              } else {
+                console.warn('⚠️ Fallback não aplicável para vídeos - formato não suportado pelo Sharp');
+              }
             } catch (fallbackErr) {
               console.warn('Erro também no fallback de imagem para GIF:', fallbackErr);
             }

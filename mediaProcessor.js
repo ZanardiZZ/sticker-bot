@@ -36,13 +36,28 @@ async function processIncomingMedia(client, message) {
       mimetypeToSave = 'image/gif';
     }
 
-    const pngBuffer = await sharp(bufferWebp).png().toBuffer();
+    // Only convert to PNG and generate visual hash for image formats that Sharp supports
+    let pngBuffer = null;
+    let hashVisual = null;
+    
+    if (mimetypeToSave.startsWith('image/')) {
+      try {
+        pngBuffer = await sharp(bufferWebp).png().toBuffer();
+        hashVisual = await getHashVisual(bufferWebp);
+      } catch (err) {
+        console.warn('Erro ao processar mídia com sharp (formato não suportado):', err.message);
+        // For unsupported image formats, skip PNG conversion and visual hash
+        pngBuffer = null;
+        hashVisual = null;
+      }
+    }
+    // For videos and other non-image formats, skip Sharp processing entirely
+    
     const hashMd5 = getMD5(bufferWebp);
-    const hashVisual = await getHashVisual(bufferWebp);
 
     const forceInsert = !!forceMap[chatId];
 
-    if (!forceInsert) {
+    if (!forceInsert && hashVisual) {
       const existing = await findByHashVisual(hashVisual);
       if (existing) {
         await client.sendText(
@@ -64,7 +79,11 @@ async function processIncomingMedia(client, message) {
 
     const groupId = message.from.endsWith('@g.us') ? message.from : null;
 
-    const nsfw = await isNSFW(pngBuffer);
+    // Only run NSFW filter on images with valid PNG buffer
+    let nsfw = false;
+    if (pngBuffer) {
+      nsfw = await isNSFW(pngBuffer);
+    }
 
     let description = null;
     let tags = null;
@@ -92,17 +111,22 @@ async function processIncomingMedia(client, message) {
           console.warn('Erro ao processar GIF com lógica de vídeo, usando fallback de imagem:', err);
           // Fallback to single frame analysis if video processing fails
           try {
-            const pngBuffer = await sharp(buffer).png().toBuffer();
-            const aiResult = await getAiAnnotations(pngBuffer);
-            const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
-            description = clean.description;
-            tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
-            console.log('⚠️ GIF processed using fallback single-frame analysis');
+            // Only try Sharp conversion for GIF files, not video files
+            if (message.mimetype === 'image/gif') {
+              const pngBuffer = await sharp(buffer).png().toBuffer();
+              const aiResult = await getAiAnnotations(pngBuffer);
+              const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
+              description = clean.description;
+              tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
+              console.log('⚠️ GIF processed using fallback single-frame analysis');
+            } else {
+              console.warn('⚠️ Fallback não aplicável para vídeos - formato não suportado pelo Sharp');
+            }
           } catch (fallbackErr) {
             console.warn('Erro também no fallback de imagem para GIF:', fallbackErr);
           }
         }
-      } else if (mimetypeToSave.startsWith('image/')) {
+      } else if (mimetypeToSave.startsWith('image/') && pngBuffer) {
         const aiResult = await getAiAnnotations(pngBuffer);
         const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
         description = clean.description;
