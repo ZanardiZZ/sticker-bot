@@ -50,7 +50,9 @@ async function extractFrames(filePath, timestamps) {
       if (fs.existsSync(tempDir)) {
         fs.rmSync(tempDir, { recursive: true, force: true });
       }
-    } catch {}
+    } catch (cleanupErr) {
+      console.warn('[VideoProcessor] Erro ao limpar diretório temporário:', cleanupErr.message);
+    }
     throw error;
   }
 }
