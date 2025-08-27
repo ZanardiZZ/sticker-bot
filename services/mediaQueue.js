@@ -84,8 +84,8 @@ class MediaQueue extends EventEmitter {
         resolve(result);
         
       } catch (error) {
-        const isSqlBusy = error.message && error.message.includes('SQLITE_BUSY');
-        const shouldRetry = attempt < this.retryAttempts && (isSqlBusy || error.code === 'SQLITE_BUSY');
+        const isSqlBusy = error.code === 'SQLITE_BUSY' || (error.message && error.message.includes('SQLITE_BUSY'));
+        const shouldRetry = attempt < this.retryAttempts && isSqlBusy;
         
         if (shouldRetry) {
           const delay = this.retryDelay * Math.pow(2, attempt - 1); // Exponential backoff
