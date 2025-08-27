@@ -125,9 +125,28 @@ async function sendMediaAsOriginal(client, chatId, media) {
   const filePath = media.file_path;
   const mimetype = media.mimetype || '';
 
+  const isGif = mimetype === 'image/gif' || filePath.endsWith('.gif');
   const isVideo = mimetype.startsWith('video/');
   const isImage = mimetype.startsWith('image/');
   const isAudio = mimetype.startsWith('audio/');
+
+  // GIFs should be sent as animated stickers
+  if (isGif) {
+    if (typeof client.sendMp4AsSticker === 'function') {
+      try {
+        await client.sendMp4AsSticker(chatId, filePath, { pack: PACK_NAME, author: AUTHOR_NAME });
+        return;
+      } catch (e) {
+        console.warn('sendMp4AsSticker falhou, tentando sendImageAsStickerGif (se existir):', e?.message || e);
+      }
+    }
+    if (typeof client.sendImageAsStickerGif === 'function') {
+      await client.sendImageAsStickerGif(chatId, filePath, { pack: PACK_NAME, author: AUTHOR_NAME });
+      return;
+    }
+    await client.sendFile(chatId, filePath, 'media', 'Aqui está sua mídia!');
+    return;
+  }
 
   // Videos should be sent as videos (not stickers)
   if (isVideo) {
