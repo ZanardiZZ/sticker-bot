@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { getAiAnnotationsFromPrompt } = require('./ai');
 const { spawn } = require('child_process');
-const whisperPath = path.resolve(__dirname, '../whisper.cpp/build/whisper');
+const whisperPath = path.resolve(__dirname, '../whisper.cpp/build/bin/whisper-cli');
 const modelPath = path.resolve(__dirname, '../whisper.cpp/build/ggml-base.bin');
 
 ffmpeg.setFfmpegPath(ffmpegPath);
@@ -86,7 +86,7 @@ async function extractAudio(filePath) {
 async function transcribeAudioLocal(audioPath) {
   return new Promise((resolve, reject) => {
     // Ajuste o caminho do executável whisper.cpp e dos parâmetros conforme sua instalação local
-    const whisperPath = path.resolve(__dirname, '../whisper.cpp/build/whisper');
+    const whisperPath = path.resolve(__dirname, '../whisper.cpp/build/bin/whisper-cli');
     
     // Verifica se whisper existe antes de tentar executar
     if (!fs.existsSync(whisperPath)) {

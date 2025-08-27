@@ -1099,6 +1099,30 @@ app.patch('/api/stickers/:id', requireLogin, async (req, res) => {
   }
 });
 
+app.delete('/api/stickers/:id', requireAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!id || id <= 0) {
+      return res.status(400).json({ error: 'invalid_id' });
+    }
+
+    console.log(`[ADMIN] User ${req.user.username} is deleting sticker ID: ${id}`);
+
+    // Use the existing deleteMediaByIds function
+    const deletedCount = await deleteMediaByIds([id]);
+    
+    if (deletedCount === 0) {
+      return res.status(404).json({ error: 'sticker_not_found' });
+    }
+
+    console.log(`[ADMIN] Successfully deleted sticker ID ${id}`);
+    res.json({ success: true, deleted_count: deletedCount, sticker_id: id });
+  } catch (error) {
+    console.error('[ADMIN] Error deleting sticker:', error);
+    res.status(500).json({ error: 'internal_error' });
+  }
+});
+
 // Ranking de tags
 app.get('/api/rank/tags', (req, res) => {
   const metric = (req.query.metric || 'media').toLowerCase(); // 'media' ou 'usage'
