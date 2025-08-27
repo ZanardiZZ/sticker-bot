@@ -375,9 +375,10 @@ async function loadDuplicatesTab() {
     if (document.getElementById('duplicateStats')) {
       await loadDuplicateStats();
     }
-  } catch (error) {
-    console.warn('Duplicate management not available:', error.message);
-    document.getElementById('duplicateStats').textContent = 'Erro ao carregar estatísticas';
+    const duplicateStatsElem = document.getElementById('duplicateStats');
+    if (duplicateStatsElem) {
+      duplicateStatsElem.textContent = 'Erro ao carregar estatísticas';
+    }
   }
 }
 
