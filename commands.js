@@ -66,7 +66,7 @@ function cleanDescriptionTags(description, tags) {
   return { description: cleanDesc, tags: cleanTags };
 }
 
-// Função para envio da mídia conforme tipo
+// Função para envio da mídia conforme tipo (para stickers)
 async function sendMediaByType(client, chatId, media) {
   if (!media) return;
 
@@ -114,6 +114,45 @@ async function sendMediaByType(client, chatId, media) {
   }
 
   // Others
+  await client.sendFile(chatId, filePath, 'media', 'Aqui está sua mídia!');
+}
+
+// Função para envio da mídia no formato original (para comando #ID)
+async function sendMediaAsOriginal(client, chatId, media) {
+  if (!media) return;
+
+  const filePath = media.file_path;
+  const mimetype = media.mimetype || '';
+
+  const isVideo = mimetype.startsWith('video/');
+  const isImage = mimetype.startsWith('image/');
+  const isAudio = mimetype.startsWith('audio/');
+
+  // Videos should be sent as videos (not stickers)
+  if (isVideo) {
+    await client.sendFile(chatId, filePath, 'video', 'Aqui está seu vídeo!');
+    return;
+  }
+
+  // Images can still be sent as stickers since that's expected behavior
+  if (isImage) {
+    if (Sticker && StickerTypes) {
+      const sticker = new Sticker(filePath, {
+        pack: PACK_NAME,
+        author: AUTHOR_NAME,
+        type: StickerTypes.FULL,
+        quality: 70,
+      });
+      const webpBuf = await sticker.build();
+      const dataUrl = `data:image/webp;base64,${webpBuf.toString('base64')}`;
+      await client.sendRawWebpAsSticker(chatId, dataUrl, { pack: PACK_NAME, author: AUTHOR_NAME });
+      return;
+    }
+    await client.sendImageAsSticker(chatId, filePath, { pack: PACK_NAME, author: AUTHOR_NAME });
+    return;
+  }
+
+  // Audio and others
   await client.sendFile(chatId, filePath, 'media', 'Aqui está sua mídia!');
 }
 
@@ -244,15 +283,23 @@ async function handleSendMediaById(client, message, chatId) {
     }
 
     await incrementRandomCount(media.id);
-    await sendMediaByType(client, chatId, media);
+    
+    // Use the new function that sends videos as videos, not stickers
+    await sendMediaAsOriginal(client, chatId, media);
 
+    // Get tags and prepare response message
     const tags = await getTagsForMedia(media.id);
     const cleanMediaInfo = cleanDescriptionTags(media.description, tags);
-    let responseMessageID = `\n📝 ${cleanMediaInfo.description || ''}\n` +
-      `🏷️ ${cleanMediaInfo.tags.length > 0 ? cleanMediaInfo.tags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ') : ''}\n` +
-      `🆔 ${media.id}`;
+    
+    // Import renderInfoMessage from utils
+    const { renderInfoMessage } = require('./utils/messageUtils');
+    const responseMessage = renderInfoMessage({ 
+      description: cleanMediaInfo.description, 
+      tags: cleanMediaInfo.tags, 
+      id: media.id 
+    });
 
-    await client.reply(chatId, responseMessageID, message.id);
+    await client.reply(chatId, responseMessage, message.id);
   } catch (err) {
     console.error('Erro ao buscar mídia pelo ID:', err);
     await client.sendText(chatId, 'Erro ao buscar essa mídia.');
@@ -491,6 +538,7 @@ module.exports = {
   clearDescriptionCmds,
   cleanDescriptionTags,
   sendMediaByType,
+  sendMediaAsOriginal,
   handleRandomCommand,
   handleCountCommand,
   handleTop10Command,
