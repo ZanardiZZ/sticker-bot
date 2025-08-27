@@ -21,8 +21,28 @@ async function isNSFW(buffer) {
   try {
     const model = await loadModel();
 
-    // Converte imagem webp para png (ou qualquer formato suportado) antes de carregar
-    const pngBuffer = await sharp(buffer).png().toBuffer();
+    // Validação básica do buffer
+    if (!buffer || buffer.length < 10) {
+      console.warn('Buffer muito pequeno ou inválido para análise NSFW');
+      return false;
+    }
+
+    // Converte imagem para png de forma mais robusta
+    let pngBuffer;
+    try {
+      // Primeiro tenta detectar o formato e converter
+      const metadata = await sharp(buffer).metadata();
+      if (!metadata.format) {
+        console.warn('Formato de imagem não detectado, assumindo como segura');
+        return false;
+      }
+      
+      pngBuffer = await sharp(buffer).png().toBuffer();
+    } catch (sharpErr) {
+      console.warn('Erro ao processar imagem com sharp:', sharpErr.message);
+      return false;
+    }
+
     const img = await loadImage(`data:image/png;base64,${pngBuffer.toString('base64')}`);
 
     const canvas = createCanvas(img.width, img.height);
@@ -42,8 +62,8 @@ async function isNSFW(buffer) {
 
     return isNSFW;
   } catch (err) {
-    console.error('Erro no filtro NSFW local:', err);
-    // Caso erro, retorna false para não bloquear
+    console.error('Erro no filtro NSFW local:', err.message);
+    // Caso erro, retorna false para não bloquear o processamento
     return false;
   }
 }
