@@ -78,6 +78,12 @@ function cardHTML(s) {
           </svg>
           Editar
         </button>` : ''}
+        ${CURRENT_USER && CURRENT_USER.role === 'admin' ? `<button class="deleteBtn" title="Deletar sticker" style="background-color: #dc3545; border-color: #dc3545;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+          </svg>
+          Deletar
+        </button>` : ''}
       </div>
     </div>
   `;
@@ -393,6 +399,53 @@ document.getElementById('saveEdit').onclick = async () => {
   }
 };
 
+async function deleteSticker(id) {
+  // Confirm deletion
+  const confirmMsg = `Tem certeza que deseja deletar o sticker #${id}?\n\nEsta ação é IRREVERSÍVEL e irá remover tanto o registro do banco de dados quanto o arquivo correspondente.`;
+  
+  if (!confirm(confirmMsg)) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/stickers/${id}`, {
+      method: 'DELETE'
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      alert(`Sticker #${id} deletado com sucesso!`);
+      
+      // Remove the card from the current view
+      const card = document.querySelector(`[data-id="${id}"]`);
+      if (card) {
+        card.remove();
+      }
+      
+      // Update the count if visible
+      const countEl = document.getElementById('count');
+      if (countEl && countEl.textContent) {
+        const currentText = countEl.textContent;
+        const match = currentText.match(/(\d+)/);
+        if (match) {
+          const currentCount = parseInt(match[1]);
+          const newCount = Math.max(0, currentCount - 1);
+          countEl.textContent = currentText.replace(/\d+/, newCount.toString());
+        }
+      }
+    } else {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMsg = errorData.error === 'forbidden' 
+        ? 'Você não tem permissão para deletar stickers.'
+        : 'Erro ao deletar sticker. Tente novamente.';
+      alert(errorMsg);
+    }
+  } catch (error) {
+    console.error('Error deleting sticker:', error);
+    alert('Erro ao deletar sticker. Verifique sua conexão e tente novamente.');
+  }
+}
+
 
 // Adicione no final do seu JS (após montar os cards)
 document.addEventListener('click', function(e) {
@@ -431,10 +484,15 @@ document.addEventListener('click', function(e) {
     const card = e.target.closest('.card');
     openEdit(card.dataset.id);
   }
+  // Delete button for admin users
+  if (e.target.classList.contains('deleteBtn') || e.target.closest('.deleteBtn')) {
+    const card = e.target.closest('.card');
+    deleteSticker(card.dataset.id);
+  }
   // Click on card to view details (for all users)
   if (e.target.closest('.card') && !e.target.closest('.card-expand-btn') && !e.target.closest('.card-collapse-btn') && 
       !e.target.closest('.card-expand-tags-btn') && !e.target.closest('.card-collapse-tags-btn') &&
-      !e.target.closest('.whatsapp-btn') && !e.target.closest('.editBtn')) {
+      !e.target.closest('.whatsapp-btn') && !e.target.closest('.editBtn') && !e.target.closest('.deleteBtn')) {
     const card = e.target.closest('.card');
     openStickerDetails(card.dataset.id);
   }
