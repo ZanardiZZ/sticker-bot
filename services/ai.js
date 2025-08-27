@@ -25,7 +25,7 @@ async function transcribeAudioBuffer(buffer) {
       return 'Áudio não transcrito - OpenAI API key não configurada.';
     }
 
-    // Create a temporary file for the audio buffer (OpenAI API requires a file)
+    // Create a temporary file for the audio buffer (OpenAI API requires a file stream, not just a file)
     const tmpDir = path.resolve(__dirname, '../tmp');
     if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
 
