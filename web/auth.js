@@ -57,6 +57,7 @@ function registerAuthRoutes(app) {
   app.post('/api/login', loginRateLimit, (req, res) => {
     const { username, password } = req.body || {};
     if (!username || !password) return res.status(400).json({ error: 'missing_credentials' });
+    
     db.get(
       `SELECT id, username, password_hash, role, status, email_confirmed, COALESCE(must_change_password, 0) AS must_change_password
        FROM users WHERE username = ?`,

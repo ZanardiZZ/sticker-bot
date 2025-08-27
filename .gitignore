@@ -52,3 +52,5 @@ data.db
 # Test files (temporary)
 test-*.js
 test-*.db
+*.db-shm
+*.db-wal
