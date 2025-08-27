@@ -1,9 +1,11 @@
 require('dotenv').config();
+const crypto = require('crypto');
 const OpenAI = require('openai');
 const fs = require('fs');
 const path = require('path');
 const { getAiAnnotationsFromPrompt, getAiAnnotations } = require('./ai');
 const sharp = require('sharp');
+const { getTopTags } = require('../utils/messageUtils');
 // (Removed unused constants whisperPath and modelPath)
 
 // Conditional loading for FFmpeg - these may fail in some environments due to network restrictions
@@ -32,13 +34,14 @@ if (process.env.OPENAI_API_KEY) {
 
 // Extrai frames (timestamps em segundos)
 async function extractFrames(filePath, timestamps) {
-  // Check if FFmpeg is available
+// Check if FFmpeg is available
   if (!ffmpeg || !ffmpegPath) {
     console.warn('[VideoProcessor] FFmpeg não disponível, não é possível extrair frames');
     throw new Error('FFmpeg não disponível - funcionalidade de extração de frames desabilitada');
   }
-  
-  const tempDir = path.resolve(__dirname, '../temp', `frames_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`);
+  const uniqueId = crypto.randomBytes(16).toString('hex');
+  const tempDir = path.resolve(__dirname, '../temp', `frames_${uniqueId}`);
+
   
   try {
     fs.mkdirSync(tempDir, { recursive: true });
@@ -104,13 +107,16 @@ async function hasAudioTrack(filePath) {
 
 // Extrai áudio para wav (usado para transcrição futura, aqui só prévia)
 async function extractAudio(filePath) {
+
   // Check if FFmpeg is available
   if (!ffmpeg) {
     console.warn('[VideoProcessor] FFmpeg não disponível, não é possível extrair áudio');
     throw new Error('FFmpeg não disponível - funcionalidade de extração de áudio desabilitada');
   }
-  
-  const output = path.resolve(__dirname, '../temp', `audio_${Date.now()}.wav`);
+
+  const uniqueId = crypto.randomBytes(16).toString('hex');
+  const output = path.resolve(__dirname, '../temp', `audio_${uniqueId}.wav`);
+
   return new Promise((resolve, reject) => {
     ffmpeg(filePath)
       .noVideo()
@@ -249,17 +255,7 @@ async function processVideo(filePath) {
       .flatMap(analysis => analysis.tags)
       .filter(tag => tag && tag.trim());
 
-    // Remove duplicatas e pega as 5 mais comuns
-    const tagCounts = {};
-    allTags.forEach(tag => {
-      const cleanTag = tag.replace(/^#/, '').toLowerCase();
-      tagCounts[cleanTag] = (tagCounts[cleanTag] || 0) + 1;
-    });
-
-    const topTags = Object.entries(tagCounts)
-      .sort(([,a], [,b]) => b - a)
-      .slice(0, 5)
-      .map(([tag]) => tag);
+    const topTags = getTopTags(allTags, 5);
 
     // Monta descrição final integrando frames e áudio
     const fileId = path.basename(filePath).replace(/\W+/g, '_');
@@ -404,17 +400,7 @@ async function processGif(filePath) {
       .flatMap(analysis => analysis.tags)
       .filter(tag => tag && tag.trim());
 
-    // Remove duplicatas e pega as 5 mais comuns
-    const tagCounts = {};
-    allTags.forEach(tag => {
-      const cleanTag = tag.replace(/^#/, '').toLowerCase();
-      tagCounts[cleanTag] = (tagCounts[cleanTag] || 0) + 1;
-    });
-
-    const topTags = Object.entries(tagCounts)
-      .sort(([,a], [,b]) => b - a)
-      .slice(0, 5)
-      .map(([tag]) => tag);
+    const topTags = getTopTags(allTags, 5);
 
     const fileId = path.basename(filePath).replace(/\W+/g, '_');
     

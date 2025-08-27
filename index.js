@@ -170,7 +170,7 @@ async function sendStickerForMediaRecord(client, chatId, media) {
         return;
       }
       // Fallback: envia como arquivo
-      await client.sendFile(chatId, filePath, 'media', 'Aqui está sua mídia!');
+      await client.sendFile(chatId, filePath, 'media');
       return;
     }
 
@@ -194,11 +194,11 @@ async function sendStickerForMediaRecord(client, chatId, media) {
     }
 
     // 4) Fallback final
-    await client.sendFile(chatId, filePath, 'media', 'Aqui está sua mídia!');
+    await client.sendFile(chatId, filePath, 'media');
   } catch (err) {
     console.error('Falha ao enviar mídia como figurinha. Fallback para arquivo. Motivo:', err?.message || err);
     try {
-      await client.sendFile(chatId, filePath, 'media', 'Aqui está sua mídia!');
+      await client.sendFile(chatId, filePath, 'media');
     } catch {}
   }
 }

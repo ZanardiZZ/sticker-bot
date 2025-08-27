@@ -92,7 +92,7 @@ async function sendMediaByType(client, chatId, media) {
       await client.sendImageAsStickerGif(chatId, filePath, { pack: PACK_NAME, author: AUTHOR_NAME });
       return;
     }
-    await client.sendFile(chatId, filePath, 'media', 'Aqui está sua mídia!');
+    await client.sendFile(chatId, filePath, 'media');
     return;
   }
 
@@ -115,7 +115,7 @@ async function sendMediaByType(client, chatId, media) {
   }
 
   // Others
-  await client.sendFile(chatId, filePath, 'media', 'Aqui está sua mídia!');
+  await client.sendFile(chatId, filePath, 'media');
 }
 
 // Função para envio da mídia no formato original (para comando #ID)
@@ -144,13 +144,13 @@ async function sendMediaAsOriginal(client, chatId, media) {
       await client.sendImageAsStickerGif(chatId, filePath, { pack: PACK_NAME, author: AUTHOR_NAME });
       return;
     }
-    await client.sendFile(chatId, filePath, 'media', 'Aqui está sua mídia!');
+    await client.sendFile(chatId, filePath, 'media');
     return;
   }
 
   // Videos should be sent as videos (not stickers)
   if (isVideo) {
-    await client.sendFile(chatId, filePath, 'video', 'Aqui está seu vídeo!');
+    await client.sendFile(chatId, filePath, 'video');
     return;
   }
 
@@ -173,7 +173,7 @@ async function sendMediaAsOriginal(client, chatId, media) {
   }
 
   // Audio and others
-  await client.sendFile(chatId, filePath, 'media', 'Aqui está sua mídia!');
+  await client.sendFile(chatId, filePath, 'media');
 }
 
 async function handleRandomCommand(client, message, chatId) {
