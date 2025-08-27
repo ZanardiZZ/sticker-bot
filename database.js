@@ -8,6 +8,11 @@ const { getAiAnnotations } = require('./services/ai'); // Importa a função IA
 const axios = require('axios');
 const MediaQueue = require('./services/mediaQueue');
 const DatabaseHandler = require('./services/databaseHandler');
+const ffmpeg = require('fluent-ffmpeg');
+const ffmpegPath = require('ffmpeg-static');
+
+// Configure ffmpeg path
+ffmpeg.setFfmpegPath(ffmpegPath);
 
 // Variável para caminho da pasta de figurinhas antigas será lida do .env
 const OLD_STICKERS_PATH = process.env.OLD_STICKERS_PATH || null;
@@ -251,6 +256,95 @@ function upsertProcessedFile(fileName, lastModified) {
   });
 }
 
+/**
+ * Robustly processes WebP files with corruption handling and repair attempts
+ * @param {Buffer} buffer - Original file buffer
+ * @param {string} fileName - File name for logging
+ * @returns {Promise<Buffer>} - Processed WebP buffer
+ */
+async function processWebpWithRepair(buffer, fileName) {
+  // First attempt: Try standard Sharp processing
+  try {
+    const webpBuffer = await sharp(buffer, { animated: true }).webp().toBuffer();
+    return webpBuffer;
+  } catch (sharpError) {
+    console.warn(`[old-stickers] Sharp failed for ${fileName}: ${sharpError.message}`);
+    
+    // Second attempt: Try without animated flag (may help with some corrupted animated WebPs)
+    try {
+      const webpBuffer = await sharp(buffer).webp().toBuffer();
+      console.log(`[old-stickers] ✅ Recovered ${fileName} by disabling animated flag`);
+      return webpBuffer;
+    } catch (secondError) {
+      console.warn(`[old-stickers] Sharp non-animated failed for ${fileName}: ${secondError.message}`);
+      
+      // Third attempt: Try to repair using ffmpeg conversion
+      try {
+        const tempDir = path.join(__dirname, 'temp');
+        if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+        
+        const tempInput = path.join(tempDir, `repair_input_${Date.now()}.webp`);
+        const tempOutput = path.join(tempDir, `repair_output_${Date.now()}.webp`);
+        
+        try {
+          // Write corrupted file to temp location
+          fs.writeFileSync(tempInput, buffer);
+          
+          // Use ffmpeg to repair/re-encode the WebP
+          await new Promise((resolve, reject) => {
+            ffmpeg(tempInput)
+              .outputOptions(['-c:v libwebp', '-q:v 80', '-preset default', '-an'])
+              .output(tempOutput)
+              .on('end', resolve)
+              .on('error', reject)
+              .run();
+          });
+          
+          // Read the repaired file
+          const repairedBuffer = fs.readFileSync(tempOutput);
+          
+          // Process with Sharp again
+          const webpBuffer = await sharp(repairedBuffer, { animated: true }).webp().toBuffer();
+          console.log(`[old-stickers] ✅ Recovered ${fileName} using ffmpeg repair`);
+          return webpBuffer;
+          
+        } finally {
+          // Always clean up temp files
+          try { fs.unlinkSync(tempInput); } catch {}
+          try { fs.unlinkSync(tempOutput); } catch {}
+        }
+        
+      } catch (ffmpegError) {
+        console.warn(`[old-stickers] ffmpeg repair failed for ${fileName}: ${ffmpegError.message}`);
+        
+        // Fourth attempt: Try to extract first frame only if it's a WebP
+        try {
+          // For WebP files, try to extract just the first frame
+          const metadata = await sharp(buffer).metadata();
+          if (metadata.pages && metadata.pages > 1) {
+            // This is animated, try to get first frame
+            const webpBuffer = await sharp(buffer, { animated: false, page: 0 }).webp().toBuffer();
+            console.log(`[old-stickers] ⚠️ Recovered ${fileName} by extracting first frame only (animation lost)`);
+            return webpBuffer;
+          }
+        } catch (frameError) {
+          console.warn(`[old-stickers] Frame extraction failed for ${fileName}: ${frameError.message}`);
+        }
+        
+        // Final fallback: If it's not a WebP originally, try to convert from original format
+        try {
+          const webpBuffer = await sharp(buffer).webp().toBuffer();
+          console.log(`[old-stickers] ⚠️ Recovered ${fileName} by treating as non-WebP format`);
+          return webpBuffer;
+        } catch (finalError) {
+          // All recovery attempts failed
+          throw new Error(`All repair attempts failed. Last error: ${finalError.message}`);
+        }
+      }
+    }
+  }
+}
+
 // Processa figurinhas antigas da pasta para inserir no banco as que ainda não existem ou modificadas
 async function processOldStickers() {
   if (!OLD_STICKERS_PATH) {
@@ -300,7 +394,8 @@ async function processOldStickers() {
         const bufferOriginal = fs.readFileSync(filePath);
 
         // Converter para webp antes do hash visual para padronizar, com suporte a animados
-        const bufferWebp = await sharp(bufferOriginal, { animated: true }).webp().toBuffer();
+        // Usa função robusta para lidar com arquivos corrompidos
+        const bufferWebp = await processWebpWithRepair(bufferOriginal, file);
 
         const hashVisual = await getHashVisual(bufferWebp);
 
@@ -1139,6 +1234,7 @@ module.exports = {
   getTagsForMedia,
   updateMediaDescription,
   processOldStickers,
+  processWebpWithRepair, // Export for testing
   getMediaWithLowestRandomCount,
   getTop10Media,
   getTop5UsersByStickerCount,
