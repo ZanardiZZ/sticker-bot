@@ -15,7 +15,7 @@ try {
   // Ignora se dotenv não estiver disponível
 }
 
-const { getTop5UsersByStickerCount, getHistoricalContactsStats, db } = require('../database.js');
+const { getTop5UsersByStickerCount, getHistoricalContactsStats, db } = require('../database');
 
 async function verifyMigration() {
   try {

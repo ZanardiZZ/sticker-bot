@@ -3,6 +3,7 @@
  */
 
 const { db } = require('../connection');
+const { expandTagsWithSynonyms } = require('../utils');
 
 /**
  * Updates media tags, replacing existing ones
@@ -228,8 +229,35 @@ function setMediaTagsExact(mediaId, tagNames) {
   });
 }
 
+/**
+ * Searches for similar tags for certain terms (simplified with LIKE)
+ * @param {string[]} tagCandidates - Array of tag candidates to search for
+ * @returns {Promise<object[]>} Array of similar tags with id and name
+ */
+async function findSimilarTags(tagCandidates) {
+  if (!tagCandidates.length) return [];
+
+  // Expand tags with their synonyms
+  const expandedTags = await expandTagsWithSynonyms(tagCandidates);
+
+  return new Promise((resolve, reject) => {
+    const placeholders = expandedTags.map(() => 'LOWER(name) LIKE ?').join(' OR ');
+    const params = expandedTags.map(t => `%${t}%`);
+
+    db.all(
+      `SELECT id, name FROM tags WHERE ${placeholders} LIMIT 10`,
+      params,
+      (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows);
+      }
+    );
+  });
+}
+
 module.exports = {
   updateMediaTags,
   getTagsForMedia,
-  setMediaTagsExact
+  setMediaTagsExact,
+  findSimilarTags
 };
