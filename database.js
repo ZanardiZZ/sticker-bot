@@ -621,6 +621,43 @@ async function replaceTagsForMedia(mediaId, newTags) {
     });
   });
 }
+
+/**
+ * Get the next available media ID, reusing deleted IDs if available
+ * Falls back to auto-increment behavior if no gaps exist
+ */
+async function getNextAvailableMediaId() {
+  // First check if ID 1 is available (most common case for first gap)
+  const firstIdQuery = `SELECT COUNT(*) as count FROM media WHERE id = 1`;
+  const firstResult = await dbHandler.get(firstIdQuery);
+  
+  if (firstResult.count === 0) {
+    return 1;
+  }
+  
+  // Find the first gap in the sequence starting from 1
+  // We'll check for the smallest missing positive integer
+  const gapQuery = `
+    SELECT MIN(t1.id + 1) as gap_start
+    FROM media t1
+    LEFT JOIN media t2 ON t1.id + 1 = t2.id
+    WHERE t2.id IS NULL
+    AND t1.id + 1 <= (SELECT MAX(id) FROM media)
+  `;
+  
+  const gapResult = await dbHandler.get(gapQuery);
+  
+  if (gapResult && gapResult.gap_start) {
+    return gapResult.gap_start;
+  }
+  
+  // No gaps found - find next sequential ID after the maximum
+  const nextIdQuery = `SELECT COALESCE(MAX(id), 0) + 1 as next_id FROM media`;
+  const nextResult = await dbHandler.get(nextIdQuery);
+  
+  return nextResult ? nextResult.next_id : 1;
+}
+
 async function saveMedia({
   chatId,
   groupId,
@@ -636,12 +673,16 @@ async function saveMedia({
 }) {
   // Queue the media saving operation to prevent SQLITE_BUSY errors
   return mediaQueue.add(async () => {
+    // Get the next available ID (reusing deleted IDs if possible)
+    const mediaId = await getNextAvailableMediaId();
+    
     const sql = `
-      INSERT INTO media (chat_id, group_id, sender_id, file_path, mimetype, timestamp, description, hash_visual, hash_md5, nsfw, count_random)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+      INSERT INTO media (id, chat_id, group_id, sender_id, file_path, mimetype, timestamp, description, hash_visual, hash_md5, nsfw, count_random)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     `;
     
-    const result = await dbHandler.run(sql, [
+    await dbHandler.run(sql, [
+      mediaId,
       chatId,
       groupId,
       senderId,
@@ -653,8 +694,6 @@ async function saveMedia({
       hashMd5,
       nsfw
     ]);
-    
-    const mediaId = result.lastID;
     
     // Process and associate tags if provided
     if (tags) {
@@ -1266,7 +1305,9 @@ module.exports = {
   getDuplicateMediaDetails,
   deleteDuplicateMedia,
   deleteMediaByIds,
-  getDuplicateStats
+  getDuplicateStats,
+  // ID reuse functionality
+  getNextAvailableMediaId
 };
 
 // Admin bootstrap is handled by the web server's safer initialization path
