@@ -155,6 +155,7 @@ The `testUtils.js` module provides:
 - `assert(condition, message)` - Basic assertion
 - `assertEqual(actual, expected, message)` - Equality assertion
 - `assertLength(array, length, message)` - Array length assertion
+- `assertArrayEquals(actual, expected, message)` - Array equality with detailed error messages
 
 ### Test Runners
 - `runTest(name, function)` - Runs single test with error handling
