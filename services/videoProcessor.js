@@ -286,8 +286,14 @@ Responda no formato JSON:
       console.log('[VideoProcessor] Integrando análise visual e auditiva...');
       const integratedResult = await getAiAnnotationsFromPrompt(prompt);
       
-      finalDescription = integratedResult.description || frameDescriptions.split('\n')[0]?.split(': ')[1] || 'Vídeo analisado';
-      finalTags = integratedResult.tags && integratedResult.tags.length > 0 ? integratedResult.tags : topTags;
+      if (integratedResult && typeof integratedResult === 'object') {
+        finalDescription = integratedResult.description || frameDescriptions.split('\n')[0]?.split(': ')[1] || 'Vídeo analisado';
+        finalTags = integratedResult.tags && integratedResult.tags.length > 0 ? integratedResult.tags : topTags;
+      } else {
+        console.warn('[VideoProcessor] Resultado inválido da integração audiovisual:', integratedResult);
+        finalDescription = frameDescriptions.split('\n')[0]?.split(': ')[1] || 'Vídeo analisado';
+        finalTags = topTags;
+      }
       
     } else {
       // Só análise visual, combina descrições dos frames
