@@ -37,6 +37,7 @@ StickerBotSession.data.json
 /temp
 *.bak
 *.old
+/Backup_*
 
 # managed by open-wa
 **.data.json
