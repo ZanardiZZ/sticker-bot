@@ -16,6 +16,34 @@ const { updateMediaDescription, updateMediaTags } = require('./database');
 const { forceMap, MAX_TAGS_LENGTH, clearDescriptionCmds } = require('./commands');
 const { cleanDescriptionTags } = require('./utils/messageUtils');
 
+// Fallback function if cleanDescriptionTags is not available
+function fallbackCleanDescriptionTags(description, tags) {
+  const badPhrases = [
+    'desculpe', 'não posso ajudar', 'não disponível', 'sem descrição',
+    'erro', 'falha', 'não foi possível'
+  ];
+  
+  let cleanDesc = description ? String(description) : '';
+  if (badPhrases.some((p) => cleanDesc.toLowerCase().includes(p))) {
+    cleanDesc = '';
+  }
+
+  let cleanTags = [];
+  if (Array.isArray(tags)) {
+    cleanTags = tags
+      .filter(Boolean)
+      .map((t) => String(t).trim())
+      .filter((t) => t && !t.includes('##') && !badPhrases.some((p) => t.toLowerCase().includes(p)));
+  } else if (typeof tags === 'string') {
+    cleanTags = tags
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => t);
+  }
+
+  return { description: cleanDesc, tags: cleanTags };
+}
+
 async function processIncomingMedia(client, message) {
   const chatId = message.from;
 
@@ -120,39 +148,60 @@ async function processIncomingMedia(client, message) {
         try {
           console.log('🎞️ Processing GIF using multi-frame analysis...');
           const aiResult = await processGif(filePath);
-          if (aiResult && typeof aiResult === 'object') {
+          
+          if (aiResult && typeof aiResult === 'object' && aiResult.description) {
             const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
             description = clean.description;
             tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
             console.log(`✅ GIF processed successfully: ${description ? description.slice(0, 50) : 'no description'}...`);
           } else {
             console.warn('Resultado inválido do processamento de GIF:', aiResult);
-            description = '';
-            tags = '';
+            // Still use fallback even if result format is invalid
+            throw new Error('Formato de resultado inválido do processamento de GIF');
           }
+          
         } catch (err) {
-          console.warn('Erro ao processar GIF com lógica de frames múltiplos, usando fallback de imagem:', err);
-          // Fallback to single frame analysis if video processing fails
+          console.warn('Erro ao processar GIF com lógica de frames múltiplos:', err.message);
+          console.log('🔄 Tentando fallback para análise de frame único...');
+          
+          // Enhanced fallback to single frame analysis if video processing fails
           try {
             // Only try Sharp conversion for GIF files, not video files
-            if (message.mimetype === 'image/gif') {
-              const pngBuffer = await sharp(buffer).png().toBuffer();
-              const aiResult = await getAiAnnotations(pngBuffer);
-              if (aiResult && typeof aiResult === 'object') {
-                const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
-                description = clean.description;
-                tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
-                console.log('⚠️ GIF processed using fallback single-frame analysis');
-              } else {
-                console.warn('Resultado inválido do fallback para GIF:', aiResult);
-                description = '';
-                tags = '';
-              }
+            console.log('🖼️ Convertendo GIF para PNG para análise estática...');
+            const pngBuffer = await sharp(buffer).png().toBuffer();
+            
+            if (!pngBuffer || pngBuffer.length === 0) {
+              throw new Error('Falha na conversão do GIF para PNG');
+            }
+            
+            console.log('🧠 Analisando GIF como imagem estática...');
+            const aiResult = await getAiAnnotations(pngBuffer);
+            
+            if (aiResult && typeof aiResult === 'object' && aiResult.description) {
+              const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
+              description = clean.description;
+              tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
+              console.log('⚠️ GIF processed using fallback single-frame analysis');
             } else {
-              console.warn('⚠️ Fallback não aplicável para vídeos - formato não suportado pelo Sharp');
+              console.warn('Resultado inválido do fallback para GIF:', aiResult);
+              description = 'GIF detectado - análise de conteúdo não disponível';
+              tags = 'gif,sem-analise';
             }
           } catch (fallbackErr) {
-            console.warn('Erro também no fallback de imagem para GIF:', fallbackErr);
+            console.error('Erro também no fallback de imagem para GIF:', fallbackErr.message);
+            
+            // Check if this is a Sharp-specific error
+            if (fallbackErr.message.includes('corrupt') || fallbackErr.message.includes('gifload') || fallbackErr.message.includes('Invalid frame')) {
+              console.warn('⚠️ GIF possui formato que não pode ser processado pelo Sharp');
+              description = 'GIF detectado - formato não suportado para análise';
+              tags = 'gif,formato-nao-suportado';
+            } else {
+              // Last resort - basic GIF tagging
+              description = 'GIF detectado - processamento não disponível';
+              tags = 'gif,erro-processamento';
+            }
+            
+            console.log('🏷️ Usando tags básicas para GIF após falhas de processamento');
           }
         }
       } else if (mimetypeToSave.startsWith('image/') && pngBuffer) {
