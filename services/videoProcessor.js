@@ -34,27 +34,47 @@ if (process.env.OPENAI_API_KEY) {
 
 // Extrai frames (timestamps em segundos)
 async function extractFrames(filePath, timestamps) {
-// Check if FFmpeg is available
+  // Check if FFmpeg is available
   if (!ffmpeg || !ffmpegPath) {
     console.warn('[VideoProcessor] FFmpeg não disponível, não é possível extrair frames');
     throw new Error('FFmpeg não disponível - funcionalidade de extração de frames desabilitada');
   }
+  
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Arquivo não encontrado: ${filePath}`);
+  }
+  
   const uniqueId = crypto.randomBytes(16).toString('hex');
   const tempDir = path.resolve(__dirname, '../temp', `frames_${uniqueId}`);
 
   try {
     fs.mkdirSync(tempDir, { recursive: true });
+    console.log(`[VideoProcessor] Diretório temporário criado: ${tempDir}`);
   } catch (mkdirErr) {
     console.warn('[VideoProcessor] Erro ao criar diretório temp:', mkdirErr.message);
-    throw new Error('Falha ao criar diretório temporário para frames');
+    throw new Error(`Falha ao criar diretório temporário para frames: ${mkdirErr.message}`);
   }
 
   const promises = timestamps.map((timeSec, i) => new Promise((resolve, reject) => {
     const output = path.join(tempDir, `frame_${i}.jpg`);
+    
+    console.log(`[VideoProcessor] Extraindo frame ${i + 1} no timestamp ${timeSec}s...`);
+    
+    const timeoutId = setTimeout(() => {
+      reject(new Error(`Timeout ao extrair frame ${i} após 30 segundos`));
+    }, 30000); // 30 second timeout per frame
+    
     ffmpeg(filePath)
       .on('error', (err) => {
-        console.warn(`[VideoProcessor] Erro ao extrair frame ${i}:`, err.message);
-        reject(err);
+        clearTimeout(timeoutId);
+        console.warn(`[VideoProcessor] Erro ao extrair frame ${i + 1}:`, err.message);
+        
+        // Check for specific error types
+        if (err.message.includes('ffprobe') || err.message.includes('No such file')) {
+          reject(new Error(`FFmpeg não pode processar o arquivo: ${err.message}`));
+        } else {
+          reject(err);
+        }
       })
       .screenshots({
         timestamps: [timeSec],
@@ -63,18 +83,47 @@ async function extractFrames(filePath, timestamps) {
         size: '512x512'
       })
       .on('end', () => {
+        clearTimeout(timeoutId);
         if (fs.existsSync(output)) {
+          console.log(`[VideoProcessor] Frame ${i + 1} extraído com sucesso: ${output}`);
           resolve(output);
         } else {
-          reject(new Error(`Frame ${i} não foi criado`));
+          reject(new Error(`Frame ${i + 1} não foi criado em ${output}`));
         }
       });
   }));
 
+  let extractedFrames = [];
+  const errors = [];
+  
   try {
-    return await Promise.all(promises);
+    // Use Promise.allSettled to get partial success instead of all-or-nothing
+    const results = await Promise.allSettled(promises);
+    
+    results.forEach((result, i) => {
+      if (result.status === 'fulfilled') {
+        extractedFrames.push(result.value);
+      } else {
+        errors.push(`Frame ${i + 1}: ${result.reason.message}`);
+      }
+    });
+    
+    if (extractedFrames.length === 0) {
+      console.error('[VideoProcessor] Nenhum frame foi extraído com sucesso');
+      console.error('[VideoProcessor] Erros encontrados:', errors);
+      throw new Error(`Falha ao extrair qualquer frame. Erros: ${errors.join('; ')}`);
+    }
+    
+    if (errors.length > 0) {
+      console.warn(`[VideoProcessor] ${errors.length} frames falharam na extração:`, errors);
+    }
+    
+    console.log(`[VideoProcessor] ${extractedFrames.length}/${timestamps.length} frames extraídos com sucesso`);
+    return extractedFrames;
+    
   } catch (error) {
     // Limpa diretório em caso de erro
+    console.log(`[VideoProcessor] Limpando diretório temporário após erro: ${tempDir}`);
     try {
       if (fs.existsSync(tempDir)) {
         fs.rmSync(tempDir, { recursive: true, force: true });
@@ -353,8 +402,17 @@ Responda no formato JSON:
 async function processGif(filePath) {
   console.log(`[VideoProcessor] Processando GIF: ${path.basename(filePath)}`);
   
+  // Check if file exists
+  if (!fs.existsSync(filePath)) {
+    console.error(`[VideoProcessor] Arquivo GIF não encontrado: ${filePath}`);
+    return {
+      description: 'Erro: arquivo GIF não encontrado',
+      tags: ['gif', 'erro', 'arquivo-nao-encontrado']
+    };
+  }
+  
   // Check if FFmpeg is available
-  if (!ffmpeg) {
+  if (!ffmpeg || !ffmpegPath) {
     console.warn('[VideoProcessor] FFmpeg não disponível, retornando análise básica para GIF');
     return {
       description: 'GIF não processado - FFmpeg não disponível',
@@ -362,12 +420,20 @@ async function processGif(filePath) {
     };
   }
   
+  let tempFramePaths = [];
+  
   try {
     // Para GIFs, usa timestamps fixos mais próximos
     const duration = await new Promise((res, rej) => {
       ffmpeg.ffprobe(filePath, (err, meta) => {
-        if (err) rej(err);
-        else res(meta.format.duration || 2); // fallback para 2s se não detectar duração
+        if (err) {
+          console.warn(`[VideoProcessor] Erro ao obter metadados do GIF: ${err.message}`);
+          rej(err);
+        } else {
+          const fileDuration = meta.format?.duration || 2; // fallback para 2s se não detectar duração
+          console.log(`[VideoProcessor] Duração do GIF detectada: ${fileDuration}s`);
+          res(fileDuration);
+        }
       });
     });
 
@@ -376,26 +442,34 @@ async function processGif(filePath) {
       ? [duration * 0.1, duration * 0.5, duration * 0.9]
       : [0.1, Math.max(0.5, duration * 0.3), Math.max(1, duration * 0.8)];
 
+    console.log(`[VideoProcessor] Extraindo frames do GIF nos timestamps: ${timestamps.join(', ')}s`);
+
     // Extrai frames
-    const framesPaths = await extractFrames(filePath, timestamps);
+    tempFramePaths = await extractFrames(filePath, timestamps);
+    console.log(`[VideoProcessor] ${tempFramePaths.length} frames extraídos com sucesso`);
 
     // Analisa cada frame individualmente
     console.log('[VideoProcessor] Analisando frames do GIF...');
     const frameAnalyses = [];
     
-    for (let i = 0; i < framesPaths.length; i++) {
-      const analysis = await analyzeFrame(framesPaths[i], i + 1);
-      frameAnalyses.push(analysis);
-    }
-    
-    // Limpar arquivos temporários frames
-    for (const fp of framesPaths) {
-      try { fs.unlinkSync(fp); } catch {}
+    for (let i = 0; i < tempFramePaths.length; i++) {
+      try {
+        const analysis = await analyzeFrame(tempFramePaths[i], i + 1);
+        if (analysis && (analysis.description || analysis.tags.length > 0)) {
+          frameAnalyses.push(analysis);
+        }
+      } catch (frameError) {
+        console.warn(`[VideoProcessor] Erro ao analisar frame ${i + 1}: ${frameError.message}`);
+        // Continue com os outros frames
+      }
     }
 
     if (frameAnalyses.length === 0) {
-      console.warn('[VideoProcessor] Nenhum frame analisado no GIF');
-      return { description: 'Erro na análise de frames do GIF', tags: ['gif', 'erro'] };
+      console.warn('[VideoProcessor] Nenhum frame analisado com sucesso no GIF');
+      return { 
+        description: 'GIF processado mas sem análise de conteúdo disponível', 
+        tags: ['gif', 'sem-analise'] 
+      };
     }
 
     // Combinar análises dos frames para GIF
@@ -416,7 +490,7 @@ async function processGif(filePath) {
       // Apenas um frame analisado
       return {
         description: frameAnalyses[0].description || 'GIF processado',
-        tags: frameAnalyses[0].tags || ['gif']
+        tags: frameAnalyses[0].tags && frameAnalyses[0].tags.length > 0 ? frameAnalyses[0].tags : ['gif']
       };
     } else {
       // Múltiplos frames - sumariza
@@ -441,7 +515,7 @@ Responda no formato JSON:
       console.log('[VideoProcessor] Sumarizando análise do GIF...');
       const summaryResult = await getAiAnnotationsFromPrompt(prompt);
       
-      if (summaryResult && typeof summaryResult === 'object') {
+      if (summaryResult && typeof summaryResult === 'object' && summaryResult.description) {
         return {
           description: summaryResult.description || frameAnalyses[0].description || 'GIF processado',
           tags: summaryResult.tags && summaryResult.tags.length > 0 ? summaryResult.tags : topTags
@@ -450,17 +524,48 @@ Responda no formato JSON:
         console.warn('[VideoProcessor] Resultado inválido da sumarização de GIF:', summaryResult);
         return {
           description: frameAnalyses[0].description || 'GIF processado',
-          tags: topTags
+          tags: topTags.length > 0 ? topTags : ['gif']
         };
       }
     }
     
   } catch (error) {
     console.error('[VideoProcessor] Erro no processamento do GIF:', error.message);
-    return { 
-      description: `Erro no processamento do GIF: ${error.message}`, 
-      tags: ['gif', 'erro', 'processamento'] 
-    };
+    console.error('[VideoProcessor] Stack trace:', error.stack);
+    
+    // Specific error handling for common issues
+    if (error.message.includes('ffprobe') || error.message.includes('FFmpeg')) {
+      console.warn('[VideoProcessor] Erro relacionado ao FFmpeg, tentando fallback...');
+      return { 
+        description: 'GIF detectado mas não foi possível processar com FFmpeg', 
+        tags: ['gif', 'ffmpeg-erro', 'nao-processado'] 
+      };
+    } else if (error.message.includes('OpenAI') || error.message.includes('API')) {
+      console.warn('[VideoProcessor] Erro relacionado à API de IA, retornando resultado básico...');
+      return { 
+        description: 'GIF detectado mas análise de conteúdo não disponível', 
+        tags: ['gif', 'ia-erro', 'sem-analise'] 
+      };
+    } else {
+      return { 
+        description: `Erro no processamento do GIF: ${error.message}`, 
+        tags: ['gif', 'erro', 'processamento'] 
+      };
+    }
+  } finally {
+    // Sempre limpar arquivos temporários
+    if (tempFramePaths.length > 0) {
+      console.log(`[VideoProcessor] Limpando ${tempFramePaths.length} arquivos temporários de frames...`);
+      for (const fp of tempFramePaths) {
+        try { 
+          if (fs.existsSync(fp)) {
+            fs.unlinkSync(fp);
+          }
+        } catch (cleanupErr) {
+          console.warn(`[VideoProcessor] Erro ao limpar arquivo temporário ${fp}: ${cleanupErr.message}`);
+        }
+      }
+    }
   }
 }
 
