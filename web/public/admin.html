@@ -23,14 +23,6 @@
     th, td { text-align:left; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     th { color: #1e293b; background: #f8fafc; font-weight: 600; }
     
-    /* Full page spanning user management card - optimize for maximum space utilization */
-    #main-tab-users .panel { 
-      width: 100%; 
-      max-width: none; 
-      margin: 0; 
-      padding: 1.5rem;
-    }
-    
     /* Optimize column widths for better space usage on full page spanning panel */
     #tblUsers th:nth-child(1) { width: 2.73%; }    /* ID */
     #tblUsers th:nth-child(2) { width: 10.91%; }   /* Usuário */
@@ -180,7 +172,7 @@
       
       <!-- Users Tab Content -->
       <div class="main-tab-content admin-only" id="main-tab-users">
-        <div class="panel">
+        <div class="panel panel-full-width">
           <h3>Gerenciamento de Usuários</h3>
           <div class="row" style="margin-bottom: 1.5rem; gap: 1rem;">
             <select id="userStatusFilter">

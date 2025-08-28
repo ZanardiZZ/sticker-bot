@@ -107,6 +107,7 @@ button { cursor:pointer; }
 #editModal .box { background:#ffffff; border: 1px solid var(--border); padding:1rem; width:360px; border-radius:8px; display:flex; flex-direction:column; gap:.6rem; }
 .centered { display:flex; justify-content:center; align-items:center; height:100vh; }
 .panel { background:#ffffff; border: 1px solid var(--border); padding:2rem; border-radius:8px; width:320px; display:flex; flex-direction:column; gap:1rem; }
+.panel-full-width { width: 100%; max-width: none; margin: 0; padding: 1.5rem; }
 .error { color:#dc3545; font-size:.85rem; min-height:1em; }
 a { color:#6fa8ff; text-decoration:none; font-size:.9rem; }
 .container { padding:1rem 1.2rem; max-width:1000px; margin:auto; }
