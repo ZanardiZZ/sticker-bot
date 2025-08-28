@@ -27,7 +27,7 @@ class MediaQueue extends EventEmitter {
   async add(job) {
     return new Promise((resolve, reject) => {
       const queueItem = {
-        id: `job-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        id: `job-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
         job,
         resolve,
         reject,
