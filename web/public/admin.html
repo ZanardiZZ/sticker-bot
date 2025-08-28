@@ -9,26 +9,30 @@
     /* Light Dark Mode - Softer and more pleasant colors */
     body { background: #f1f5f9 !important; }
     .dash { padding: 1rem; max-width: 95%; width: 95%; margin: auto; color: #334155; }
-    .panel { background:#ffffff; border: 1px solid #e2e8f0; border-radius:8px; padding:1rem; margin-bottom:12px; color: #334155; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1); }
+    .panel { background:#ffffff; border: 1px solid #e2e8f0; border-radius:8px; padding:1.5rem; margin-bottom:12px; color: #334155; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1); }
     .panel h3 { margin:.2rem 0 .6rem 0; font-size:1rem; color: #1e293b; }
     .muted { color:#64748b; font-size:.9rem; }
     .warn { background:#fef3c7; color:#92400e; padding:.6rem; border:1px solid #fde68a; border-radius:6px; margin-bottom:10px; }
     .row { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; }
     .row > * { flex: 1 1 220px; }
-    table { width:100%; border-collapse:collapse; color: #334155; table-layout: auto; }
-    th, td { text-align:left; padding:.4rem .5rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; }
+    
+    /* Better space utilization for user management controls */
+    .panel .row select { flex: 2 1 300px; max-width: 400px; }
+    .panel .row button { flex: 0 0 auto; min-width: 140px; }
+    table { width:100%; border-collapse:collapse; color: #334155; table-layout: fixed; }
+    th, td { text-align:left; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     th { color: #1e293b; background: #f8fafc; font-weight: 600; }
     
-    /* Optimize column widths for better space usage */
-    #tblUsers th:nth-child(1) { width: 5%; }    /* ID */
-    #tblUsers th:nth-child(2) { width: 12%; }   /* Usuário */
-    #tblUsers th:nth-child(3) { width: 18%; }   /* Email */
-    #tblUsers th:nth-child(4) { width: 10%; }   /* Status Email */
-    #tblUsers th:nth-child(5) { width: 12%; }   /* Telefone */
-    #tblUsers th:nth-child(6) { width: 15%; }   /* Nome Contato */
+    /* Optimize column widths for better space usage on expanded panel */
+    #tblUsers th:nth-child(1) { width: 4%; }    /* ID */
+    #tblUsers th:nth-child(2) { width: 14%; }   /* Usuário */
+    #tblUsers th:nth-child(3) { width: 20%; }   /* Email */
+    #tblUsers th:nth-child(4) { width: 9%; }    /* Status Email */
+    #tblUsers th:nth-child(5) { width: 14%; }   /* Telefone */
+    #tblUsers th:nth-child(6) { width: 16%; }   /* Nome Contato */
     #tblUsers th:nth-child(7) { width: 8%; }    /* Status */
-    #tblUsers th:nth-child(8) { width: 8%; }    /* Pode Editar */
-    #tblUsers th:nth-child(9) { width: 12%; }   /* Criado em */
+    #tblUsers th:nth-child(8) { width: 7%; }    /* Pode Editar */
+    #tblUsers th:nth-child(9) { width: 8%; }    /* Criado em */
     
     /* Fix table overflow issue - responsive table sizing */
     #usersContainer { margin-top: 1rem; }
@@ -169,7 +173,7 @@
       <div class="main-tab-content admin-only" id="main-tab-users">
         <div class="panel">
           <h3>Gerenciamento de Usuários</h3>
-          <div class="row" style="margin-bottom: 1rem;">
+          <div class="row" style="margin-bottom: 1.5rem; gap: 1rem;">
             <select id="userStatusFilter">
               <option value="">Todos os usuários</option>
               <option value="pending">Aguardando aprovação</option>
