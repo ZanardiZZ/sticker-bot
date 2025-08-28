@@ -2,7 +2,7 @@ const { decryptMedia } = require('@open-wa/wa-decrypt');
 const path = require('path');
 const sharp = require('sharp');
 const { PACK_NAME, AUTHOR_NAME } = require('./config/stickers');
-const { renderInfoMessage } = require('./utils/messageUtils');
+const { renderInfoMessage, cleanDescriptionTags } = require('./utils/messageUtils');
 let Sticker, StickerTypes;
 try {
   ({ Sticker, StickerTypes } = require('wa-sticker-formatter'));
@@ -36,36 +36,7 @@ const taggingMap = new Map();
 const MAX_TAGS_LENGTH = 500;
 const clearDescriptionCmds = ['nenhum', 'limpar', 'clear', 'apagar', 'remover'];
 
-function cleanDescriptionTags(description, tags) {
-  const badPhrases = [
-    'desculpe',
-    'não posso ajudar',
-    'não disponível',
-    'sem descrição',
-    'audio salvo sem descrição IA'
-  ];
-  let cleanDesc = description ? description.toLowerCase() : '';
-  if (badPhrases.some(phrase => cleanDesc.includes(phrase))) {
-    cleanDesc = '';
-  } else {
-    cleanDesc = description;
-  }
 
-  let cleanTags = [];
-  if (tags && Array.isArray(tags)) {
-    cleanTags = tags.filter(t => {
-      if (!t) return false;
-      if (t.includes('##')) return false;
-      const low = t.toLowerCase();
-      if (badPhrases.some(phrase => low.includes(phrase))) return false;
-      return true;
-    });
-  } else if (typeof tags === 'string') {
-    cleanTags = tags.split(',').map(t => t.trim()).filter(t => t.length > 0);
-  }
-
-  return { description: cleanDesc, tags: cleanTags };
-}
 
 // Função para envio da mídia conforme tipo (para stickers)
 async function sendMediaByType(client, chatId, media) {
@@ -529,7 +500,7 @@ async function handleCommand(client, message, chatId) {
     default:
       // Handle ID-based commands
       if (command === '#id' && params.length > 0) {
-        await handleSendMediaById(client, { body: `#ID ${params.join(' ')}` }, chatId);
+        await handleSendMediaById(client, { body: `#ID ${params.join(' ')}`, id: message.id }, chatId);
         return true;
       }
       
@@ -558,7 +529,6 @@ module.exports = {
   taggingMap,
   MAX_TAGS_LENGTH,
   clearDescriptionCmds,
-  cleanDescriptionTags,
   sendMediaByType,
   sendMediaAsOriginal,
   handleRandomCommand,
