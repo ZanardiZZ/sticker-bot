@@ -53,6 +53,7 @@ async function handleMessage(client, message) {
  * Sets up message handling for the client
  * @param {Object} client - WhatsApp client instance
  */
+function setupMessageHandler(client) {
   client.onMessage(message => handleMessage(client, message));
 }
 
