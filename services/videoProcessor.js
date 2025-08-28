@@ -495,7 +495,9 @@ async function processGif(filePath) {
     } else {
       // Múltiplos frames - sumariza
       const prompt = `
-Você está analisando um GIF animado (ID: ${fileId}) através de múltiplos frames.
+Você está analisando um GIF animado ou meme (ID: ${fileId}) através de múltiplos frames.
+
+IMPORTANTE: Este é um GIF/meme, NÃO um vídeo. Descreva a animação, movimento ou cena sem usar termos como "vídeo", "filmagem" ou "gravação".
 
 ANÁLISE DE CADA FRAME:
 ${frameDescriptions}
@@ -503,11 +505,11 @@ ${frameDescriptions}
 TAGS IDENTIFICADAS:
 ${topTags.join(', ')}
 
-Por favor, forneça uma descrição única e concisa (máximo 50 palavras) que capture a essência da animação/movimento do GIF e 5 tags representativas.
+Por favor, forneça uma descrição única e concisa (máximo 50 palavras) que capture a essência da animação, movimento ou meme do GIF. Foque na ação, expressão ou situação mostrada. Use termos como "animação", "GIF", "meme", "cena" em vez de "vídeo".
 
 Responda no formato JSON:
 {
-  "description": "descrição da animação/GIF",
+  "description": "descrição da animação/meme/cena do GIF",
   "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"]
 }
 `.trim();
