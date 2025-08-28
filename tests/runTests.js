@@ -12,6 +12,7 @@ const { tests: contactsModelTests } = require('./unit/contactsModel.test');
 const { tests: databaseHandlerTests } = require('./unit/databaseHandler.test');
 const { tests: mediaQueueTests } = require('./unit/mediaQueue.test');
 const { tests: maintenanceModelTests } = require('./unit/maintenanceModel.test');
+const { tests: gifProcessorTests } = require('./unit/gifProcessor.test');
 
 async function runAllTests() {
   console.log('🧪 Running comprehensive test suite for new modules...\n');
@@ -26,6 +27,7 @@ async function runAllTests() {
     results.push(await runTestSuite('DatabaseHandler Tests', databaseHandlerTests));
     results.push(await runTestSuite('MediaQueue Tests', mediaQueueTests));
     results.push(await runTestSuite('Maintenance Model Tests', maintenanceModelTests));
+    results.push(await runTestSuite('GIF Processor Tests', gifProcessorTests));
     
     const totalTime = Date.now() - startTime;
     
