@@ -23,20 +23,29 @@
     th, td { text-align:left; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     th { color: #1e293b; background: #f8fafc; font-weight: 600; }
     
-    /* Optimize column widths for better space usage on expanded panel */
-    #tblUsers th:nth-child(1) { width: 4%; }    /* ID */
-    #tblUsers th:nth-child(2) { width: 14%; }   /* Usuário */
+    /* Full page spanning user management card - optimize for maximum space utilization */
+    #main-tab-users .panel { 
+      width: 100%; 
+      max-width: none; 
+      margin: 0; 
+      padding: 1.5rem;
+    }
+    
+    /* Optimize column widths for better space usage on full page spanning panel */
+    #tblUsers th:nth-child(1) { width: 3%; }    /* ID */
+    #tblUsers th:nth-child(2) { width: 12%; }   /* Usuário */
     #tblUsers th:nth-child(3) { width: 20%; }   /* Email */
-    #tblUsers th:nth-child(4) { width: 9%; }    /* Status Email */
-    #tblUsers th:nth-child(5) { width: 14%; }   /* Telefone */
+    #tblUsers th:nth-child(4) { width: 10%; }   /* Status Email */
+    #tblUsers th:nth-child(5) { width: 15%; }   /* Telefone */
     #tblUsers th:nth-child(6) { width: 16%; }   /* Nome Contato */
     #tblUsers th:nth-child(7) { width: 8%; }    /* Status */
     #tblUsers th:nth-child(8) { width: 7%; }    /* Pode Editar */
-    #tblUsers th:nth-child(9) { width: 8%; }    /* Criado em */
+    #tblUsers th:nth-child(9) { width: 9%; }    /* Criado em */
+    #tblUsers th:nth-child(10) { width: 10%; }  /* Ações */
     
     /* Fix table overflow issue - responsive table sizing */
-    #usersContainer { margin-top: 1rem; }
-    #tblUsers { width: 100%; min-width: 0; }
+    #usersContainer { margin-top: 1rem; width: 100%; }
+    #tblUsers { width: 100%; min-width: 0; table-layout: fixed; }
     
     /* Table responsiveness - no horizontal scroll on large screens */
     @media (min-width: 1024px) {
@@ -47,7 +56,7 @@
     /* Only add horizontal scroll on smaller screens where needed */
     @media (max-width: 1023px) {
       #usersContainer { overflow-x: auto; }
-      #tblUsers { min-width: 800px; }
+      #tblUsers { min-width: 900px; }
     }
     .btn-primary { background:#3b82f6; color:#fff; border:0; padding:.5rem .8rem; border-radius:6px; cursor:pointer; }
     .btn-danger { background:#ef4444; color:#fff; border:0; padding:.5rem .8rem; border-radius:6px; cursor:pointer; }
