@@ -56,3 +56,8 @@ test-*.db
 *.db-shm
 *.db-wal
 media.db-wal
+
+# Test temporary files and databases
+tests/temp/
+tests/**/*.db
+tests/**/*.db-*
