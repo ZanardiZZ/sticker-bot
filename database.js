@@ -627,35 +627,20 @@ async function replaceTagsForMedia(mediaId, newTags) {
  * Falls back to auto-increment behavior if no gaps exist
  */
 async function getNextAvailableMediaId() {
-  // First check if ID 1 is available (most common case for first gap)
-  const firstIdQuery = `SELECT COUNT(*) as count FROM media WHERE id = 1`;
-  const firstResult = await dbHandler.get(firstIdQuery);
-  
-  if (firstResult.count === 0) {
-    return 1;
-  }
-  
-  // Find the first gap in the sequence starting from 1
-  // We'll check for the smallest missing positive integer
-  const gapQuery = `
-    SELECT MIN(t1.id + 1) as gap_start
-    FROM media t1
-    LEFT JOIN media t2 ON t1.id + 1 = t2.id
-    WHERE t2.id IS NULL
-    AND t1.id + 1 <= (SELECT MAX(id) FROM media)
+  // Single query to find the minimum available ID (gap or next sequential)
+  const query = `
+    SELECT
+      MIN(candidate_id) AS next_id
+    FROM (
+      SELECT 1 AS candidate_id
+      UNION ALL
+      SELECT id + 1 AS candidate_id FROM media
+    )
+    WHERE candidate_id > 0
+      AND candidate_id NOT IN (SELECT id FROM media)
   `;
-  
-  const gapResult = await dbHandler.get(gapQuery);
-  
-  if (gapResult && gapResult.gap_start) {
-    return gapResult.gap_start;
-  }
-  
-  // No gaps found - find next sequential ID after the maximum
-  const nextIdQuery = `SELECT COALESCE(MAX(id), 0) + 1 as next_id FROM media`;
-  const nextResult = await dbHandler.get(nextIdQuery);
-  
-  return nextResult ? nextResult.next_id : 1;
+  const result = await dbHandler.get(query);
+  return result && result.next_id ? result.next_id : 1;
 }
 
 async function saveMedia({
