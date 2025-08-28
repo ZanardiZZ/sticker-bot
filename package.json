@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node tests/runTests.js",
+    "test": "npm run test:unit && npm run test:integration",
     "test:integration": "node tests/integration/database.test.js",
     "test:unit": "node tests/runTests.js",
     "web": "node web/server.js"
