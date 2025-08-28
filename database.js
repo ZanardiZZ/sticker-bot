@@ -621,6 +621,28 @@ async function replaceTagsForMedia(mediaId, newTags) {
     });
   });
 }
+
+/**
+ * Get the next available media ID, reusing deleted IDs if available
+ * Falls back to auto-increment behavior if no gaps exist
+ */
+async function getNextAvailableMediaId() {
+  // Single query to find the minimum available ID (gap or next sequential)
+  const query = `
+    SELECT
+      MIN(candidate_id) AS next_id
+    FROM (
+      SELECT 1 AS candidate_id
+      UNION ALL
+      SELECT id + 1 AS candidate_id FROM media
+    )
+    WHERE candidate_id > 0
+      AND candidate_id NOT IN (SELECT id FROM media)
+  `;
+  const result = await dbHandler.get(query);
+  return result && result.next_id ? result.next_id : 1;
+}
+
 async function saveMedia({
   chatId,
   groupId,
@@ -636,12 +658,16 @@ async function saveMedia({
 }) {
   // Queue the media saving operation to prevent SQLITE_BUSY errors
   return mediaQueue.add(async () => {
+    // Get the next available ID (reusing deleted IDs if possible)
+    const mediaId = await getNextAvailableMediaId();
+    
     const sql = `
-      INSERT INTO media (chat_id, group_id, sender_id, file_path, mimetype, timestamp, description, hash_visual, hash_md5, nsfw, count_random)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+      INSERT INTO media (id, chat_id, group_id, sender_id, file_path, mimetype, timestamp, description, hash_visual, hash_md5, nsfw, count_random)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     `;
     
-    const result = await dbHandler.run(sql, [
+    await dbHandler.run(sql, [
+      mediaId,
       chatId,
       groupId,
       senderId,
@@ -653,8 +679,6 @@ async function saveMedia({
       hashMd5,
       nsfw
     ]);
-    
-    const mediaId = result.lastID;
     
     // Process and associate tags if provided
     if (tags) {
@@ -1266,7 +1290,9 @@ module.exports = {
   getDuplicateMediaDetails,
   deleteDuplicateMedia,
   deleteMediaByIds,
-  getDuplicateStats
+  getDuplicateStats,
+  // ID reuse functionality
+  getNextAvailableMediaId
 };
 
 // Admin bootstrap is handled by the web server's safer initialization path
