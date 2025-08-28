@@ -393,15 +393,14 @@ async function handleCommand(client, message, chatId) {
       await handleForceCommand(client, message, chatId, forceMap);
       return true;
       
+    case '#editar':
+      await handleEditCommand(client, message, chatId, taggingMap, MAX_TAGS_LENGTH);
+      return true;
+      
     default:
       // Handle ID-based commands
       if (command === '#id' && params.length > 0) {
         await handleIdCommand(client, { body: `#ID ${params.join(' ')}`, id: message.id }, chatId);
-        return true;
-      }
-      
-      if (command === '#editar' && params.length > 0 && normalizeText(params[0]) === 'id') {
-        await handleEditCommand(client, message, chatId, taggingMap, MAX_TAGS_LENGTH);
         return true;
       }
       
