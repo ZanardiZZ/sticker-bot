@@ -232,6 +232,28 @@ function assertLength(array, expectedLength, message) {
 }
 
 /**
+ * Assert that two arrays are equal by comparing their elements
+ * @param {Array} actual - Actual array
+ * @param {Array} expected - Expected array
+ * @param {string} message - Error message if assertion fails
+ */
+function assertArrayEquals(actual, expected, message) {
+  if (!Array.isArray(actual) || !Array.isArray(expected)) {
+    throw new Error(`Assertion failed: ${message || `Both values must be arrays. Got ${typeof actual} and ${typeof expected}`}`);
+  }
+  
+  if (actual.length !== expected.length) {
+    throw new Error(`Assertion failed: ${message || `Array lengths differ. Expected ${expected.length} elements, got ${actual.length} elements`}`);
+  }
+  
+  for (let i = 0; i < actual.length; i++) {
+    if (actual[i] !== expected[i]) {
+      throw new Error(`Assertion failed: ${message || `Arrays differ at index ${i}. Expected '${expected[i]}', got '${actual[i]}'`}\nExpected: [${expected.join(', ')}]\nActual: [${actual.join(', ')}]`);
+    }
+  }
+}
+
+/**
  * Sleep utility for testing
  * @param {number} ms - Milliseconds to sleep
  * @returns {Promise<void>}
@@ -311,6 +333,7 @@ module.exports = {
   assert,
   assertEqual,
   assertLength,
+  assertArrayEquals,
   sleep,
   runTest,
   runTestSuite

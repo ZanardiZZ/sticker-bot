@@ -4,7 +4,7 @@
  */
 
 const path = require('path');
-const { createTestDatabase, createTestTables, insertTestMedia, insertTestContacts, assert, assertEqual, assertLength, runTestSuite } = require('../helpers/testUtils');
+const { createTestDatabase, createTestTables, insertTestMedia, insertTestContacts, assert, assertEqual, assertLength, assertArrayEquals, runTestSuite } = require('../helpers/testUtils');
 
 // Mock the maintenance model
 function createMaintenanceModel(db) {
@@ -380,8 +380,7 @@ const tests = [
       const expectedIds = ['chat1@c.us', 'group1@g.us', 'chat3@c.us'].sort();
       const actualIds = contacts.map(c => c.sender_id).sort();
       
-      assertEqual(JSON.stringify(actualIds), JSON.stringify(expectedIds), 
-                  'Should have correct sender IDs');
+      assertArrayEquals(actualIds, expectedIds, 'Should have correct sender IDs');
       
       // Verify display names are appropriate
       contacts.forEach(contact => {
