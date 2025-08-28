@@ -440,8 +440,14 @@ async function processOldStickers() {
         let tags = null;
         try {
           const aiResult = await getAiAnnotations(bufferWebp);
-          description = aiResult.description || null;
-          tags = aiResult.tags ? aiResult.tags.join(',') : null;
+          if (aiResult && typeof aiResult === 'object') {
+            description = aiResult.description || null;
+            tags = aiResult.tags ? aiResult.tags.join(',') : null;
+          } else {
+            console.warn('Resultado inválido da IA para figurinha antiga:', aiResult);
+            description = null;
+            tags = null;
+          }
         } catch (e) {
           console.warn('Erro ao chamar IA para figurinha antiga:', e);
         }
