@@ -103,9 +103,15 @@ async function processIncomingMedia(client, message) {
       if (message.mimetype.startsWith('video/')) {
         try {
           const aiResult = await processVideo(filePath);
-          const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
-          description = clean.description;
-          tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
+          if (aiResult && typeof aiResult === 'object') {
+            const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
+            description = clean.description;
+            tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
+          } else {
+            console.warn('Resultado inválido do processamento de vídeo:', aiResult);
+            description = '';
+            tags = '';
+          }
         } catch (err) {
           console.warn('Erro ao processar vídeo:', err);
         }
@@ -114,10 +120,16 @@ async function processIncomingMedia(client, message) {
         try {
           console.log('🎞️ Processing GIF using multi-frame analysis...');
           const aiResult = await processGif(filePath);
-          const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
-          description = clean.description;
-          tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
-          console.log(`✅ GIF processed successfully: ${description ? description.slice(0, 50) : 'no description'}...`);
+          if (aiResult && typeof aiResult === 'object') {
+            const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
+            description = clean.description;
+            tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
+            console.log(`✅ GIF processed successfully: ${description ? description.slice(0, 50) : 'no description'}...`);
+          } else {
+            console.warn('Resultado inválido do processamento de GIF:', aiResult);
+            description = '';
+            tags = '';
+          }
         } catch (err) {
           console.warn('Erro ao processar GIF com lógica de frames múltiplos, usando fallback de imagem:', err);
           // Fallback to single frame analysis if video processing fails
@@ -126,10 +138,16 @@ async function processIncomingMedia(client, message) {
             if (message.mimetype === 'image/gif') {
               const pngBuffer = await sharp(buffer).png().toBuffer();
               const aiResult = await getAiAnnotations(pngBuffer);
-              const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
-              description = clean.description;
-              tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
-              console.log('⚠️ GIF processed using fallback single-frame analysis');
+              if (aiResult && typeof aiResult === 'object') {
+                const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
+                description = clean.description;
+                tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
+                console.log('⚠️ GIF processed using fallback single-frame analysis');
+              } else {
+                console.warn('Resultado inválido do fallback para GIF:', aiResult);
+                description = '';
+                tags = '';
+              }
             } else {
               console.warn('⚠️ Fallback não aplicável para vídeos - formato não suportado pelo Sharp');
             }
@@ -139,17 +157,28 @@ async function processIncomingMedia(client, message) {
         }
       } else if (mimetypeToSave.startsWith('image/') && pngBuffer) {
         const aiResult = await getAiAnnotations(pngBuffer);
-        const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
-        description = clean.description;
-        tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
+        if (aiResult && typeof aiResult === 'object') {
+          const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
+          description = clean.description;
+          tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
+        } else {
+          console.warn('Resultado inválido do processamento de imagem:', aiResult);
+          description = '';
+          tags = '';
+        }
       } else if (message.mimetype.startsWith('audio/')) {
         try {
           description = await transcribeAudioBuffer(buffer);
           if (description) {
             const prompt = `\nVocê é um assistente que recebe a transcrição de um áudio em português e deve gerar até 5 tags relevantes, separadas por vírgula, relacionadas ao conteúdo dessa transcrição.\n\nTranscrição:\n${description}\n\nResposta (tags separadas por vírgula):\n              `.trim();
             const tagResult = await getAiAnnotationsFromPrompt(prompt);
-            const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(null, tagResult.tags);
-            tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
+            if (tagResult && typeof tagResult === 'object') {
+              const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(null, tagResult.tags);
+              tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
+            } else {
+              console.warn('Resultado inválido do processamento de tags de áudio:', tagResult);
+              tags = '';
+            }
           } else {
             tags = '';
           }

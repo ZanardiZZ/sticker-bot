@@ -316,8 +316,14 @@ Responda no formato JSON:
         console.log('[VideoProcessor] Sumarizando análise visual de múltiplos frames...');
         const summaryResult = await getAiAnnotationsFromPrompt(prompt);
         
-        finalDescription = summaryResult.description || frameAnalyses[0].description || 'Vídeo processado';
-        finalTags = summaryResult.tags && summaryResult.tags.length > 0 ? summaryResult.tags : topTags;
+        if (summaryResult && typeof summaryResult === 'object') {
+          finalDescription = summaryResult.description || frameAnalyses[0].description || 'Vídeo processado';
+          finalTags = summaryResult.tags && summaryResult.tags.length > 0 ? summaryResult.tags : topTags;
+        } else {
+          console.warn('[VideoProcessor] Resultado inválido da sumarização:', summaryResult);
+          finalDescription = frameAnalyses[0].description || 'Vídeo processado';
+          finalTags = topTags;
+        }
       }
     }
 
@@ -429,10 +435,18 @@ Responda no formato JSON:
       console.log('[VideoProcessor] Sumarizando análise do GIF...');
       const summaryResult = await getAiAnnotationsFromPrompt(prompt);
       
-      return {
-        description: summaryResult.description || frameAnalyses[0].description || 'GIF processado',
-        tags: summaryResult.tags && summaryResult.tags.length > 0 ? summaryResult.tags : topTags
-      };
+      if (summaryResult && typeof summaryResult === 'object') {
+        return {
+          description: summaryResult.description || frameAnalyses[0].description || 'GIF processado',
+          tags: summaryResult.tags && summaryResult.tags.length > 0 ? summaryResult.tags : topTags
+        };
+      } else {
+        console.warn('[VideoProcessor] Resultado inválido da sumarização de GIF:', summaryResult);
+        return {
+          description: frameAnalyses[0].description || 'GIF processado',
+          tags: topTags
+        };
+      }
     }
     
   } catch (error) {
