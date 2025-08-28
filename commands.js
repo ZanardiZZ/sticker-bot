@@ -529,7 +529,7 @@ async function handleCommand(client, message, chatId) {
     default:
       // Handle ID-based commands
       if (command === '#id' && params.length > 0) {
-        await handleSendMediaById(client, { body: `#ID ${params.join(' ')}` }, chatId);
+        await handleSendMediaById(client, { body: `#ID ${params.join(' ')}`, id: message.id }, chatId);
         return true;
       }
       
