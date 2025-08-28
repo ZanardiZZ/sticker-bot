@@ -23,8 +23,8 @@ try {
   if (ffmpegPath) {
     ffmpeg.setFfmpegPath(ffmpegPath);
   }
-} catch (error) {
-  console.warn('[Processing] FFmpeg não disponível:', error.message);
+} catch (ffmpegError) {
+  console.warn('[Processing] FFmpeg não disponível:', ffmpegError.message);
   console.warn('[Processing] Funcionalidades de reparo de WebP serão desabilitadas');
 }
 
