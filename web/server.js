@@ -37,7 +37,7 @@ console.time('[BOOT] total');
 const app = express();
 app.set('trust proxy', true);
 
-const { db, findDuplicateMedia, getDuplicateMediaDetails, deleteDuplicateMedia, deleteMediaByIds, getDuplicateStats } = require('../database.js');
+const { db, findDuplicateMedia, getDuplicateMediaDetails, deleteDuplicateMedia, deleteMediaByIds, getDuplicateStats } = require('../database');
 
 function initAnalyticsTables(db) {
   db.run(`CREATE TABLE IF NOT EXISTS request_log (
