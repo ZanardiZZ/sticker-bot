@@ -9,6 +9,7 @@ const { getAiAnnotations } = require('./services/ai'); // Importa a função IA
 const axios = require('axios');
 const MediaQueue = require('./services/mediaQueue');
 const DatabaseHandler = require('./services/databaseHandler');
+const { getGroupName } = require('./utils/groupUtils');
 
 // Conditional loading for FFmpeg - these may fail in some environments due to network restrictions
 let ffmpeg = null;
@@ -951,18 +952,6 @@ async function migrateHistoricalContacts(logger = console) {
       processNext();
     });
   });
-}
-
-// Nova função para obter nome de grupo (placeholder - seria preenchido por integração com WhatsApp)
-function getGroupName(groupId) {
-  // Por enquanto, extrai um nome "amigável" do ID do grupo
-  if (!groupId || !groupId.includes('@g.us')) {
-    return null;
-  }
-  
-  // Remove @g.us e pega primeiros caracteres como nome temporário
-  const cleanId = groupId.replace('@g.us', '');
-  return `Grupo ${cleanId.substring(0, 10)}...`;
 }
 
 // Função aprimorada de migração que inclui chat_id/group_id quando sender_id é nulo
