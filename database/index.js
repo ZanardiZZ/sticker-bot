@@ -6,10 +6,21 @@
 const { db, dbHandler } = require('./connection');
 const { initializeTables } = require('./migrations/schema');
 
+// Initialize media queue
+const MediaQueue = require('../services/mediaQueue');
+const mediaQueue = new MediaQueue({ 
+  concurrency: 3, 
+  retryAttempts: 5, 
+  retryDelay: 1000 
+});
+
 // Models
 const mediaModel = require('./models/media');
 const tagsModel = require('./models/tags');
 const contactsModel = require('./models/contacts');
+const duplicatesModel = require('./models/duplicates');
+const maintenanceModel = require('./models/maintenance');
+const processingModel = require('./models/processing');
 
 // Utilities
 const utils = require('./utils');
@@ -29,6 +40,7 @@ module.exports = {
   // Connection and handlers
   db,
   dbHandler,
+  mediaQueue,
   
   // Media operations
   ...mediaModel,
@@ -39,13 +51,15 @@ module.exports = {
   // Contact operations
   ...contactsModel,
   
+  // Duplicate management operations
+  ...duplicatesModel,
+  
+  // Maintenance and migration operations
+  ...maintenanceModel,
+  
+  // Media processing operations
+  ...processingModel,
+  
   // Utilities
   ...utils
-  
-  // TODO: Move remaining functions from original database.js:
-  // - processWebpWithRepair
-  // - processOldStickers
-  // - findSimilarTags
-  // - Various other functions that need to be migrated
-  // These will be added after the original database.js is refactored
 };
