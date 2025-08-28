@@ -6,11 +6,12 @@ const {
   getMD5,
   getHashVisual,
   findByHashVisual,
+  findById,
   saveMedia
 } = require('./database');
 const { isNSFW } = require('./services/nsfwFilter');
 const { isVideoNSFW } = require('./services/nsfwVideoFilter');
-const { getAiAnnotations, transcribeAudioBuffer, getAiAnnotationsFromPrompt } = require('./services/ai');
+const { getAiAnnotations, transcribeAudioBuffer, getAiAnnotationsFromPrompt, getAiAnnotationsForGif } = require('./services/ai');
 const { processVideo, processGif } = require('./services/videoProcessor');
 const { updateMediaDescription, updateMediaTags } = require('./database');
 const { forceMap, MAX_TAGS_LENGTH, clearDescriptionCmds } = require('./commands');
@@ -175,7 +176,7 @@ async function processIncomingMedia(client, message) {
             }
             
             console.log('🧠 Analisando GIF como imagem estática...');
-            const aiResult = await getAiAnnotations(pngBuffer);
+            const aiResult = await getAiAnnotationsForGif(pngBuffer);
             
             if (aiResult && typeof aiResult === 'object' && aiResult.description) {
               const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
@@ -247,7 +248,7 @@ async function processIncomingMedia(client, message) {
       message?.author ||
       (message?.from && !String(message.from).endsWith('@g.us') ? message.from : null);
 
-    await saveMedia({
+    const mediaId = await saveMedia({
       chatId,
       groupId,
       senderId,
@@ -261,32 +262,26 @@ async function processIncomingMedia(client, message) {
       nsfw: nsfw ? 1 : 0
     });
 
-    const savedMedia = await findByHashVisual(hashVisual);
+    const savedMedia = await findById(mediaId);
+    const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(savedMedia.description, savedMedia.tags ? (typeof savedMedia.tags === 'string' ? savedMedia.tags.split(',') : savedMedia.tags) : []);
 
-    // Handle the case where savedMedia might be undefined due to race condition with queued save operation
-    if (!savedMedia) {
-      console.warn('Mídia não encontrada imediatamente após salvamento - usando dados de processamento');
-      
-      // Use the data we already have from processing
-      const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(description, typeof tags === 'string' ? tags.split(',') : (tags || []));
-      
-      let responseMessage = `✅ Figurinha adicionada!\n\n`;
-      responseMessage += `📝 ${clean.description || ''}\n`;
-      responseMessage += `🏷️ ${clean.tags.length > 0 ? clean.tags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ') : ''}\n`;
-      responseMessage += `🔄 Processando...`;
-      
-      await client.sendText(chatId, responseMessage);
+    // Different response messages based on media type
+    let responseMessage = '';
+    if (mimetypeToSave === 'image/gif') {
+      responseMessage = `🎞️ GIF adicionado!\n\n`;
+    } else if (mimetypeToSave.startsWith('video/')) {
+      responseMessage = `🎥 Vídeo adicionado!\n\n`;
+    } else if (mimetypeToSave.startsWith('audio/')) {
+      responseMessage = `🎵 Áudio adicionado!\n\n`;
     } else {
-      // Normal case where savedMedia is found
-      const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(savedMedia.description, savedMedia.tags ? (typeof savedMedia.tags === 'string' ? savedMedia.tags.split(',') : savedMedia.tags) : []);
-
-      let responseMessage = `✅ Figurinha adicionada!\n\n`;
-      responseMessage += `📝 ${clean.description || ''}\n`;
-      responseMessage += `🏷️ ${clean.tags.length > 0 ? clean.tags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ') : ''}\n`;
-      responseMessage += `🆔 ${savedMedia.id}`;
-
-      await client.sendText(chatId, responseMessage);
+      responseMessage = `✅ Figurinha adicionada!\n\n`;
     }
+    
+    responseMessage += `📝 ${clean.description || ''}\n`;
+    responseMessage += `🏷️ ${clean.tags.length > 0 ? clean.tags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ') : ''}\n`;
+    responseMessage += `🆔 ${savedMedia.id}`;
+
+    await client.sendText(chatId, responseMessage);
 
   } catch (e) {
     console.error('Erro ao processar mídia:', e);
