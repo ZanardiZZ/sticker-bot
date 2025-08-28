@@ -11,7 +11,7 @@ const {
 } = require('./database');
 const { isNSFW } = require('./services/nsfwFilter');
 const { isVideoNSFW } = require('./services/nsfwVideoFilter');
-const { getAiAnnotations, transcribeAudioBuffer, getAiAnnotationsFromPrompt } = require('./services/ai');
+const { getAiAnnotations, transcribeAudioBuffer, getAiAnnotationsFromPrompt, getAiAnnotationsForGif } = require('./services/ai');
 const { processVideo, processGif } = require('./services/videoProcessor');
 const { updateMediaDescription, updateMediaTags } = require('./database');
 const { forceMap, MAX_TAGS_LENGTH, clearDescriptionCmds } = require('./commands');
@@ -176,7 +176,7 @@ async function processIncomingMedia(client, message) {
             }
             
             console.log('🧠 Analisando GIF como imagem estática...');
-            const aiResult = await getAiAnnotations(pngBuffer);
+            const aiResult = await getAiAnnotationsForGif(pngBuffer);
             
             if (aiResult && typeof aiResult === 'object' && aiResult.description) {
               const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
@@ -265,7 +265,18 @@ async function processIncomingMedia(client, message) {
     const savedMedia = await findById(mediaId);
     const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(savedMedia.description, savedMedia.tags ? (typeof savedMedia.tags === 'string' ? savedMedia.tags.split(',') : savedMedia.tags) : []);
 
-    let responseMessage = `✅ Figurinha adicionada!\n\n`;
+    // Different response messages based on media type
+    let responseMessage = '';
+    if (mimetypeToSave === 'image/gif') {
+      responseMessage = `🎞️ GIF adicionado!\n\n`;
+    } else if (mimetypeToSave.startsWith('video/')) {
+      responseMessage = `🎥 Vídeo adicionado!\n\n`;
+    } else if (mimetypeToSave.startsWith('audio/')) {
+      responseMessage = `🎵 Áudio adicionado!\n\n`;
+    } else {
+      responseMessage = `✅ Figurinha adicionada!\n\n`;
+    }
+    
     responseMessage += `📝 ${clean.description || ''}\n`;
     responseMessage += `🏷️ ${clean.tags.length > 0 ? clean.tags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ') : ''}\n`;
     responseMessage += `🆔 ${savedMedia.id}`;
