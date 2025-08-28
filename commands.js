@@ -9,6 +9,11 @@ try {
 } catch (e) {
   console.warn('[commands] wa-sticker-formatter não encontrado. Fallback para open-wa. Instale com: npm i wa-sticker-formatter');
 }
+// Import modular command handlers
+const { handleTop5UsersCommand } = require('./commands/handlers/top5users');
+const { handleIdCommand } = require('./commands/handlers/id');
+const { handleForceCommand } = require('./commands/handlers/force');
+const { handleEditCommand } = require('./commands/handlers/edit');
 const {
   saveMedia,
   getRandomMedia,
@@ -213,117 +218,8 @@ async function handleTop10Command(client, chatId) {
   }
 }
 
-async function handleTop5UsersCommand(client, chatId) {
-  try {
-    const topUsers = await getTop5UsersByStickerCount();
-    if (!topUsers || topUsers.length === 0) {
-      await client.sendText(chatId, 'Nenhum usuário encontrado.');
-      return;
-    }
 
-    let reply = 'Top 5 usuários que enviaram figurinhas:\n\n';
 
-    for (let i = 0; i < topUsers.length; i++) {
-      const user = topUsers[i];
-      let userName = (user.display_name && user.display_name.trim()) || null;
-
-      // Se é um grupo, usa o nome do grupo ou gera um nome baseado no ID
-      if (user.is_group) {
-        if (!userName && user.group_id) {
-          userName = `Grupo ${user.group_id.replace('@g.us', '').substring(0, 10)}...`;
-        }
-        userName = userName || 'Grupo desconhecido';
-      } else {
-        // Para usuários individuais, tenta buscar informações do contato
-        if (!userName && user.effective_sender) {
-          try {
-            const contact = await client.getContact(user.effective_sender);
-            userName =
-              contact?.pushname ||
-              contact?.formattedName ||
-              contact?.notifyName ||
-              contact?.name ||
-              null;
-          } catch {
-            // ignore
-          }
-        }
-
-        if (!userName) {
-          userName = user.effective_sender ? String(user.effective_sender).split('@')[0] : 'Desconhecido';
-        }
-      }
-
-      reply += `${i + 1}. ${userName} - ${user.sticker_count} figurinhas\n`;
-    }
-
-    await client.sendText(chatId, reply);
-  } catch (err) {
-    console.error('Erro ao buscar top 5 usuários:', err);
-    await client.sendText(chatId, 'Erro ao buscar top 5 usuários.');
-  }
-}
-
-async function handleSendMediaById(client, message, chatId) {
-  const parts = message.body.split(' ');
-  if (parts.length !== 2) return;
-  const mediaId = parts[1];
-
-  try {
-    const media = await findById(mediaId);
-    if (!media) {
-      await client.sendText(chatId, 'Mídia não encontrada para o ID fornecido.');
-      return;
-    }
-
-    await incrementRandomCount(media.id);
-    
-    // Use the new function that sends videos as videos, not stickers
-    await sendMediaAsOriginal(client, chatId, media);
-
-    // Get tags and prepare response message
-    const tags = await getTagsForMedia(media.id);
-    const cleanMediaInfo = cleanDescriptionTags(media.description, tags);
-    
-    // Use imported renderInfoMessage function
-    const responseMessage = renderInfoMessage({ 
-      description: cleanMediaInfo.description, 
-      tags: cleanMediaInfo.tags, 
-      id: media.id 
-    });
-
-    await client.reply(chatId, responseMessage, message.id);
-  } catch (err) {
-    console.error('Erro ao buscar mídia pelo ID:', err);
-    await client.sendText(chatId, 'Erro ao buscar essa mídia.');
-  }
-}
-
-async function handleForceCommand(client, message, chatId) {
-  if (message.hasQuotedMsg) {
-    try {
-      const quotedMsg = await client.getQuotedMessage(message.id);
-      const isMedia =
-        quotedMsg.isMedia &&
-        ['image', 'video', 'sticker', 'audio'].some(type =>
-          quotedMsg.mimetype?.startsWith(type)
-        );
-      if (isMedia) {
-        forceMap.set(chatId, true);
-        await client.sendText(chatId, 'Modo #forçar ativado para a próxima mídia.');
-        return true;
-      }
-    } catch {
-      // Ignore error
-    }
-  } else {
-    forceMap.set(chatId, true);
-    await client.sendText(chatId, 'Modo #forçar ativado. Envie a mídia que deseja salvar.');
-    return true;
-  }
-
-  return false;
-}
 
 async function handleTaggingMode(client, message, chatId) {
   if (!taggingMap.has(chatId)) return false;
@@ -494,29 +390,18 @@ async function handleCommand(client, message, chatId) {
       return true;
       
     case '#forcar': // normalized version of #forçar
-      await handleForceCommand(client, message, chatId);
+      await handleForceCommand(client, message, chatId, forceMap);
       return true;
       
     default:
       // Handle ID-based commands
       if (command === '#id' && params.length > 0) {
-        await handleSendMediaById(client, { body: `#ID ${params.join(' ')}`, id: message.id }, chatId);
+        await handleIdCommand(client, { body: `#ID ${params.join(' ')}`, id: message.id }, chatId);
         return true;
       }
       
       if (command === '#editar' && params.length > 0 && normalizeText(params[0]) === 'id') {
-        const mediaId = params[1];
-        if (mediaId) {
-          taggingMap.set(chatId, mediaId);
-          await client.sendText(
-            chatId,
-            `Modo edição ativado para a mídia ID ${mediaId}.\n\n` +
-              'Envie no formato:\n' +
-              'descricao: [sua descrição]; tags: tag1, tag2, tag3\n' +
-              'Você pode enviar apenas tags OU apenas descrição.\n' +
-              `Limite total de ${MAX_TAGS_LENGTH} caracteres.`
-          );
-        }
+        await handleEditCommand(client, message, chatId, taggingMap, MAX_TAGS_LENGTH);
         return true;
       }
       
@@ -535,8 +420,9 @@ module.exports = {
   handleCountCommand,
   handleTop10Command,
   handleTop5UsersCommand,
-  handleSendMediaById,
+  handleSendMediaById: handleIdCommand, // Alias for backwards compatibility
   handleForceCommand,
+  handleEditCommand,
   handleTaggingMode,
   isValidCommand,
   handleInvalidCommand,
