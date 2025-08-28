@@ -42,7 +42,7 @@ function cleanDescriptionTags(description, tags) {
     'não posso ajudar',
     'não disponível',
     'sem descrição',
-    'audio salvo sem descrição ai'
+    'audio salvo sem descrição IA'
   ];
   let cleanDesc = description ? description.toLowerCase() : '';
   if (badPhrases.some(phrase => cleanDesc.includes(phrase))) {
