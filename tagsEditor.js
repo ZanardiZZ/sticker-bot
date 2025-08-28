@@ -1,5 +1,6 @@
 const { findById, updateMediaDescription, updateMediaTags } = require('./database');
-const { cleanDescriptionTags, clearDescriptionCmds, MAX_TAGS_LENGTH } = require('./commands');
+const { cleanDescriptionTags } = require('./utils/messageUtils');
+const { clearDescriptionCmds, MAX_TAGS_LENGTH } = require('./commands');
 
 const taggingMap = {};
 
