@@ -84,12 +84,9 @@ function createIdReuseModel(db) {
     },
 
     async deleteMediaById(mediaId) {
-      return new Promise((resolve, reject) => {
-        db.run(`DELETE FROM media WHERE id = ?`, [mediaId], function (err) {
-          if (err) reject(err);
-          else resolve(this.changes);
-        });
-      });
+      const result = await dbHandler.run(`DELETE FROM media WHERE id = ?`, [mediaId]);
+      // dbHandler.run returns an object with 'changes' property (sqlite3)
+      return result.changes;
     },
 
     async getMediaIds() {
