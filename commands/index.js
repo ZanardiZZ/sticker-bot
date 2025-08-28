@@ -6,26 +6,26 @@
 const { handleRandomCommand } = require('./handlers/random');
 const { handleCountCommand } = require('./handlers/count');
 const { handleTop10Command } = require('./handlers/top10');
+const { handleTop5UsersCommand } = require('./handlers/top5users');
+const { handleIdCommand } = require('./handlers/id');
+const { handleForceCommand } = require('./handlers/force');
+const { handleEditCommand } = require('./handlers/edit');
 
 // Utilities
 const validation = require('./validation');
 const media = require('./media');
-
-// TODO: Add remaining handlers:
-// - handleEditCommand
-// - handleIdCommand  
-// - handleTop5UsersCommand
-// - handleForceCommand
 
 module.exports = {
   // Handlers
   handleRandomCommand,
   handleCountCommand,
   handleTop10Command,
+  handleTop5UsersCommand,
+  handleIdCommand,
+  handleForceCommand,
+  handleEditCommand,
   
   // Utilities
   ...validation,
   ...media
-  
-  // Legacy - TODO: move remaining functions from original commands.js
 };
