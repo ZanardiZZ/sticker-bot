@@ -19,6 +19,7 @@ const { forceMap, MAX_TAGS_LENGTH, clearDescriptionCmds } = require('./commands'
 const { cleanDescriptionTags } = require('./utils/messageUtils');
 const { generateResponseMessage } = require('./utils/responseMessage');
 const { isGifLikeVideo } = require('./utils/gifDetection');
+const { withTyping } = require('./utils/typingIndicator');
 
 // Fallback function if cleanDescriptionTags is not available
 function fallbackCleanDescriptionTags(description, tags) {
@@ -51,7 +52,9 @@ function fallbackCleanDescriptionTags(description, tags) {
 async function processIncomingMedia(client, message) {
   const chatId = message.from;
 
-  try {
+  // Show typing indicator while processing media
+  await withTyping(client, chatId, async () => {
+    try {
     const buffer = await decryptMedia(message);
     const ext = message.mimetype.split('/')[1] || 'bin';
 
@@ -284,13 +287,14 @@ async function processIncomingMedia(client, message) {
 
     await client.reply(chatId, responseMessage, message.id);
 
-  } catch (e) {
-    console.error('Erro ao processar mídia:', e);
-    if (e.response && e.response.data) {
-      console.error('Detalhes do erro de resposta:', e.response.data);
+    } catch (e) {
+      console.error('Erro ao processar mídia:', e);
+      if (e.response && e.response.data) {
+        console.error('Detalhes do erro de resposta:', e.response.data);
+      }
+      await client.reply(message.from, 'Erro ao processar sua mídia.', message.id);
     }
-    await client.reply(message.from, 'Erro ao processar sua mídia.', message.id);
-  }
+  });
 }
 
 module.exports = {
