@@ -7,7 +7,8 @@ const {
   getHashVisual,
   findByHashVisual,
   findById,
-  saveMedia
+  saveMedia,
+  getTagsForMedia
 } = require('./database');
 const { isNSFW } = require('./services/nsfwFilter');
 const { isVideoNSFW } = require('./services/nsfwVideoFilter');
@@ -17,6 +18,7 @@ const { updateMediaDescription, updateMediaTags } = require('./database');
 const { forceMap, MAX_TAGS_LENGTH, clearDescriptionCmds } = require('./commands');
 const { cleanDescriptionTags } = require('./utils/messageUtils');
 const { generateResponseMessage } = require('./utils/responseMessage');
+const { isGifLikeVideo } = require('./utils/gifDetection');
 
 // Fallback function if cleanDescriptionTags is not available
 function fallbackCleanDescriptionTags(description, tags) {
@@ -66,6 +68,7 @@ async function processIncomingMedia(client, message) {
       extToSave = 'gif';
       mimetypeToSave = 'image/gif';
     }
+    
 
     // Only convert to PNG and generate visual hash for image formats that Sharp supports
     let pngBuffer = null;
@@ -264,11 +267,16 @@ async function processIncomingMedia(client, message) {
     });
 
     const savedMedia = await findById(mediaId);
-    const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(savedMedia.description, savedMedia.tags ? (typeof savedMedia.tags === 'string' ? savedMedia.tags.split(',') : savedMedia.tags) : []);
+    const savedTags = await getTagsForMedia(mediaId);
+    const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(savedMedia.description, savedTags);
 
-    // Generate response message based on media type
+    // Check if this video is actually a GIF-like animation
+    let isGifLike = false;
+    if (mimetypeToSave.startsWith('video/')) {
+      isGifLike = await isGifLikeVideo(filePath, mimetypeToSave);
+    }
+
     let responseMessage = generateResponseMessage(mimetypeToSave);
-    
     responseMessage += `📝 ${clean.description || ''}\n`;
     responseMessage += `🏷️ ${clean.tags.length > 0 ? clean.tags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ') : ''}\n`;
     responseMessage += `🆔 ${savedMedia.id}`;
