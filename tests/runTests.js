@@ -18,6 +18,7 @@ const { tests: tagSimilarityTests, cleanup: tagSimilarityCleanup } = require('./
 const { tests: idCommandTests } = require('./unit/idCommand.test');
 const { tests: versionTests } = require('./unit/version.test');
 const { runAnimatedStickerTests } = require('./unit/animatedStickerAnalysis.test');
+const { testMultiFrameDisableFeature } = require('./unit/multiFrameDisabled.test');
 
 
 async function runAllTests() {
@@ -42,12 +43,15 @@ async function runAllTests() {
     // Run animated sticker tests (different format)
     await runAnimatedStickerTests();
     
+    // Run multi-frame disable tests (different format)
+    const multiFrameTestResults = await testMultiFrameDisableFeature();
+    
     const totalTime = Date.now() - startTime;
     
     // Calculate overall results
-    const totalTests = results.reduce((sum, result) => sum + result.total, 0);
-    const totalPassed = results.reduce((sum, result) => sum + result.passed, 0);
-    const totalFailed = results.reduce((sum, result) => sum + result.failed, 0);
+    const totalTests = results.reduce((sum, result) => sum + result.total, 0) + (multiFrameTestResults.passed + multiFrameTestResults.failed);
+    const totalPassed = results.reduce((sum, result) => sum + result.passed, 0) + multiFrameTestResults.passed;
+    const totalFailed = results.reduce((sum, result) => sum + result.failed, 0) + multiFrameTestResults.failed;
     
     console.log('\n' + '='.repeat(60));
     console.log('📊 OVERALL TEST RESULTS');
