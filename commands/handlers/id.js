@@ -20,7 +20,7 @@ async function handleIdCommand(client, message, chatId) {
   try {
     const media = await findById(mediaId);
     if (!media) {
-      await client.sendText(chatId, 'Mídia não encontrada para o ID fornecido.');
+      await client.reply(chatId, 'Mídia não encontrada para o ID fornecido.', message.id);
       return;
     }
 
@@ -33,7 +33,7 @@ async function handleIdCommand(client, message, chatId) {
     } catch (mediaError) {
       console.error(`[handleIdCommand] Erro ao enviar mídia ${mediaId}:`, mediaError.message);
       // Inform user about media sending failure
-      await client.sendText(chatId, `⚠️ Erro ao enviar a mídia (ID: ${mediaId}): ${mediaError.message}`);
+      await client.reply(chatId, `⚠️ Erro ao enviar a mídia (ID: ${mediaId}): ${mediaError.message}`, message.id);
       // Don't return here - still send the info message
     }
 
@@ -52,7 +52,7 @@ async function handleIdCommand(client, message, chatId) {
     
   } catch (err) {
     console.error('Erro geral no comando #ID:', err);
-    await client.sendText(chatId, 'Erro ao processar comando #ID.');
+    await client.reply(chatId, 'Erro ao processar comando #ID.', message.id);
   }
 }
 

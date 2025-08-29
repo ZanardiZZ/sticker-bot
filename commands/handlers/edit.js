@@ -24,22 +24,23 @@ async function handleEditReply(client, message, chatId, taggingMap, MAX_TAGS_LEN
       const rec = await findByHashVisual(hv);
       if (rec) {
         taggingMap.set(chatId, rec.id);
-        await client.sendText(
+        await client.reply(
           chatId,
           `Modo edição ativado para a mídia ID ${rec.id}.\n\n` +
             'Envie no formato:\n' +
             'descricao: [sua descrição]; tags: tag1, tag2, tag3\n' +
             'Você pode enviar apenas tags OU apenas descrição.\n' +
-            `Limite total de ${MAX_TAGS_LENGTH} caracteres.`
+            `Limite total de ${MAX_TAGS_LENGTH} caracteres.`,
+          message.id
         );
         return true;
       }
     }
-    await client.sendText(chatId, 'Não foi possível encontrar o ID da mídia respondida.');
+    await client.reply(chatId, 'Não foi possível encontrar o ID da mídia respondida.', message.id);
     return true;
   } catch (err) {
     console.error('Erro ao ativar modo edição via resposta:', err);
-    await client.sendText(chatId, 'Erro ao tentar ativar o modo edição.');
+    await client.reply(chatId, 'Erro ao tentar ativar o modo edição.', message.id);
     return true;
   }
 }
@@ -65,13 +66,14 @@ async function handleEditCommand(client, message, chatId, taggingMap, MAX_TAGS_L
     const mediaId = params[1];
     if (mediaId) {
       taggingMap.set(chatId, mediaId);
-      await client.sendText(
+      await client.reply(
         chatId,
         `Modo edição ativado para a mídia ID ${mediaId}.\n\n` +
           'Envie no formato:\n' +
           'descricao: [sua descrição]; tags: tag1, tag2, tag3\n' +
           'Você pode enviar apenas tags OU apenas descrição.\n' +
-          `Limite total de ${MAX_TAGS_LENGTH} caracteres.`
+          `Limite total de ${MAX_TAGS_LENGTH} caracteres.`,
+        message.id
       );
     }
     return true;

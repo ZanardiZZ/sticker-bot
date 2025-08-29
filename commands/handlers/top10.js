@@ -7,14 +7,15 @@ const { getTop10Media } = require('../../database');
 /**
  * Handles the #top10 command
  * @param {object} client - WhatsApp client
+ * @param {object} message - Message object
  * @param {string} chatId - Chat ID
  */
-async function handleTop10Command(client, chatId) {
+async function handleTop10Command(client, message, chatId) {
   try {
     const top10 = await getTop10Media();
     
     if (top10.length === 0) {
-      await client.sendText(chatId, 'Nenhuma mídia encontrada.');
+      await client.reply(chatId, 'Nenhuma mídia encontrada.', message.id);
       return;
     }
 
@@ -36,10 +37,10 @@ async function handleTop10Command(client, chatId) {
       msg += '\\n';
     });
 
-    await client.sendText(chatId, msg);
+    await client.reply(chatId, msg, message.id);
   } catch (err) {
     console.error('Erro no comando #top10:', err);
-    await client.sendText(chatId, 'Erro ao buscar top 10.');
+    await client.reply(chatId, 'Erro ao buscar top 10.', message.id);
   }
 }
 
