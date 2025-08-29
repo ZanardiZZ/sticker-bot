@@ -20,7 +20,7 @@ async function handleForceCommand(client, message, chatId, forceMap) {
         );
       if (isMedia) {
         forceMap.set(chatId, true);
-        await client.sendText(chatId, 'Modo #forçar ativado para a próxima mídia.');
+        await client.reply(chatId, 'Modo #forçar ativado para a próxima mídia.', message.id);
         return true;
       }
     } catch {
@@ -28,7 +28,7 @@ async function handleForceCommand(client, message, chatId, forceMap) {
     }
   } else {
     forceMap.set(chatId, true);
-    await client.sendText(chatId, 'Modo #forçar ativado. Envie a mídia que deseja salvar.');
+    await client.reply(chatId, 'Modo #forçar ativado. Envie a mídia que deseja salvar.', message.id);
     return true;
   }
 
