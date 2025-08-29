@@ -254,7 +254,7 @@ async function findSimilarTags(tagCandidates) {
       results.push(relatedMatches[0]);
     } else {
       // Multiple matches - use context to choose the best
-      const bestMatch = selectBestTagByContext(originalTag, relatedMatches, tagCandidates);
+      const bestMatch = await selectBestTagByContext(originalTag, relatedMatches, tagCandidates);
       results.push(bestMatch);
     }
   }
@@ -300,15 +300,15 @@ async function findRelatedTagMatches(originalTag, expandedTags) {
 }
 
 /**
- * Selects the best tag based on context from other tags
+ * Selects the best tag based on context from other tags using intelligent cross-matching
  * @param {string} originalTag - The original tag being searched for
  * @param {object[]} candidateTags - Array of candidate tag objects
- * @param {string[]} allContextTags - All tags in the current context
- * @returns {object} The best matching tag
+ * @param {string[]} allContextTags - All tags in the current context (from AI)
+ * @returns {Promise<object>} The best matching tag
  */
-function selectBestTagByContext(originalTag, candidateTags, allContextTags) {
+async function selectBestTagByContext(originalTag, candidateTags, allContextTags) {
   // Calculate context scores for each candidate
-  const tagScores = candidateTags.map(candidateTag => {
+  const tagScores = await Promise.all(candidateTags.map(async (candidateTag) => {
     let score = 0;
     const candidateLower = candidateTag.name.toLowerCase();
     const originalLower = originalTag.toLowerCase();
@@ -318,46 +318,51 @@ function selectBestTagByContext(originalTag, candidateTags, allContextTags) {
       score += 3;
     }
     
-    // Check similarity with other tags in context
+    // Extract compound part of candidate tag (part that's not the original)
+    const compoundPart = candidateLower.replace(originalLower, '');
+    
+    // Cross-match with AI-provided context tags using WordNet synonyms
     for (const contextTag of allContextTags) {
       if (contextTag === originalTag) continue; // Skip self-reference
       
       const contextLower = contextTag.toLowerCase();
       
-      // Strong boost for compound tags that contain context words
-      // Example: "HumorCanino" gets points if context includes "Cachorro", "Animal"
+      // Direct word inclusion - strong boost
       if (candidateLower.includes(contextLower) && candidateLower !== contextLower) {
         score += 20;
       }
       
       // Check if context tag relates to compound part of candidate
-      // E.g., "HumorCanino" -> "canino" relates to "Animal", "Cachorro"
-      const compoundPart = candidateLower.replace(originalLower, '');
       if (compoundPart.length > 2 && contextLower.includes(compoundPart)) {
         score += 15;
       }
       
-      // Semantic similarity for known animal-related terms
-      const animalTerms = ['animal', 'cachorro', 'canino', 'dog', 'pet', 'gato', 'felino', 'cat'];
-      const compoundContainsAnimal = animalTerms.some(term => candidateLower.includes(term));
-      const contextIsAnimal = animalTerms.some(term => contextLower.includes(term));
-      
-      if (compoundContainsAnimal && contextIsAnimal) {
-        score += 25;
-      }
-      
-      // Semantic similarity for other known domains
-      const workTerms = ['trabalho', 'office', 'business', 'professional'];
-      const environmentTerms = ['ambiente', 'setting', 'place', 'location'];
-      
-      const compoundContainsWork = workTerms.some(term => candidateLower.includes(term));
-      const contextIsWork = workTerms.some(term => contextLower.includes(term));
-      
-      const compoundContainsEnv = environmentTerms.some(term => candidateLower.includes(term));
-      const contextIsEnv = environmentTerms.some(term => contextLower.includes(term));
-      
-      if ((compoundContainsWork && contextIsWork) || (compoundContainsEnv && contextIsEnv)) {
-        score += 15;
+      // Intelligent semantic matching using WordNet synonyms
+      if (compoundPart.length > 2) {
+        // Get synonyms for the compound part
+        const compoundSynonyms = await expandTagsWithSynonyms([compoundPart]);
+        
+        // Get synonyms for the context tag  
+        const contextSynonyms = await expandTagsWithSynonyms([contextLower]);
+        
+        // Check for synonym overlap between compound part and context
+        const synonymOverlap = compoundSynonyms.some(compSyn => 
+          contextSynonyms.some(ctxSyn => compSyn === ctxSyn)
+        );
+        
+        if (synonymOverlap) {
+          score += 25; // High score for semantic relationship
+        }
+        
+        // Additional check: if context tag synonyms include the compound part directly
+        if (contextSynonyms.includes(compoundPart)) {
+          score += 20;
+        }
+        
+        // Check if compound part synonyms include the context tag
+        if (compoundSynonyms.includes(contextLower)) {
+          score += 20;
+        }
       }
     }
     
@@ -370,7 +375,7 @@ function selectBestTagByContext(originalTag, candidateTags, allContextTags) {
     }
     
     return { tag: candidateTag, score };
-  });
+  }));
   
   // Sort by score and return the best
   tagScores.sort((a, b) => b.score - a.score);
