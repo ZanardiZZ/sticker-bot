@@ -7,13 +7,14 @@ const { getTop5UsersByStickerCount } = require('../../database');
 /**
  * Handles the #top5users command
  * @param {object} client - WhatsApp client
+ * @param {object} message - Message object
  * @param {string} chatId - Chat ID
  */
-async function handleTop5UsersCommand(client, chatId) {
+async function handleTop5UsersCommand(client, message, chatId) {
   try {
     const topUsers = await getTop5UsersByStickerCount();
     if (!topUsers || topUsers.length === 0) {
-      await client.sendText(chatId, 'Nenhum usuário encontrado.');
+      await client.reply(chatId, 'Nenhum usuário encontrado.', message.id);
       return;
     }
 
@@ -53,10 +54,10 @@ async function handleTop5UsersCommand(client, chatId) {
       reply += `${i + 1}. ${userName} - ${user.sticker_count} figurinhas\n`;
     }
 
-    await client.sendText(chatId, reply);
+    await client.reply(chatId, reply, message.id);
   } catch (err) {
     console.error('Erro ao buscar top 5 usuários:', err);
-    await client.sendText(chatId, 'Erro ao buscar top 5 usuários.');
+    await client.reply(chatId, 'Erro ao buscar top 5 usuários.', message.id);
   }
 }
 

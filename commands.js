@@ -10,6 +10,9 @@ try {
   console.warn('[commands] wa-sticker-formatter não encontrado. Fallback para open-wa. Instale com: npm i wa-sticker-formatter');
 }
 // Import modular command handlers
+const { handleRandomCommand } = require('./commands/handlers/random');
+const { handleCountCommand } = require('./commands/handlers/count');
+const { handleTop10Command } = require('./commands/handlers/top10');
 const { handleTop5UsersCommand } = require('./commands/handlers/top5users');
 const { handleIdCommand } = require('./commands/handlers/id');
 const { handleForceCommand } = require('./commands/handlers/force');
@@ -152,71 +155,7 @@ async function sendMediaAsOriginal(client, chatId, media) {
   await client.sendFile(chatId, filePath, 'media');
 }
 
-async function handleRandomCommand(client, message, chatId) {
-  try {
-    const novasMedias = await processOldStickers();
 
-    let media;
-    if (novasMedias.length > 0) {
-      const lastMedia = novasMedias[novasMedias.length - 1];
-      media = await findById(lastMedia.id);
-    } else {
-      media = await getMediaWithLowestRandomCount();
-    }
-
-    if (!media) {
-      await client.sendText(chatId, 'Nenhuma mídia salva ainda.');
-      return;
-    }
-
-    await incrementRandomCount(media.id);
-
-    await sendMediaByType(client, chatId, media);
-
-    const tags = await getTagsForMedia(media.id);
-    const cleanRandom = cleanDescriptionTags(media.description, tags);
-
-    // Use consistent formatting with renderInfoMessage
-    const responseMessage = renderInfoMessage({
-      description: cleanRandom.description,
-      tags: cleanRandom.tags,
-      id: media.id
-    });
-
-    await client.reply(chatId, responseMessage, message.id);
-  } catch (err) {
-    console.error('Erro no comando #random:', err);
-    await client.sendText(chatId, 'Erro ao buscar mídia.');
-  }
-}
-
-async function handleCountCommand(client, chatId) {
-  try {
-    const total = await countMedia();
-    await client.sendText(chatId, `Existem ${total} figurinhas salvas no banco de dados.`);
-  } catch (err) {
-    console.error('Erro ao contar figurinhas:', err);
-    await client.sendText(chatId, 'Erro ao obter contagem de figurinhas.');
-  }
-}
-
-async function handleTop10Command(client, chatId) {
-  try {
-    const top10 = await getTop10Media();
-    if (!top10 || top10.length === 0) {
-      await client.sendText(chatId, 'Nenhuma figurinha encontrada.');
-      return;
-    }
-
-    await client.sendText(chatId, 'Top 10 figurinhas mais usadas:');
-    for (const media of top10) {
-      await sendMediaByType(client, chatId, media);
-    }
-  } catch (err) {
-    console.error('Erro ao enviar top10:', err);
-    await client.sendText(chatId, 'Erro ao buscar top 10 figurinhas.');
-  }
-}
 
 
 
@@ -229,7 +168,7 @@ async function handleTaggingMode(client, message, chatId) {
     const newText = message.body.trim();
 
     if (newText.length > MAX_TAGS_LENGTH) {
-      await client.sendText(chatId, `Texto muito longo. Limite de ${MAX_TAGS_LENGTH} caracteres.`);
+      await client.reply(chatId, `Texto muito longo. Limite de ${MAX_TAGS_LENGTH} caracteres.`, message.id);
       taggingMap.delete(chatId);
       return true;
     }
@@ -237,7 +176,7 @@ async function handleTaggingMode(client, message, chatId) {
     try {
       const media = await findById(mediaId);
       if (!media) {
-        await client.sendText(chatId, `Mídia com ID ${mediaId} não encontrada.`);
+        await client.reply(chatId, `Mídia com ID ${mediaId} não encontrada.`, message.id);
         taggingMap.delete(chatId);
         return true;
       }
@@ -292,11 +231,11 @@ async function handleTaggingMode(client, message, chatId) {
         `🏷️ ${cleanUpdated.tags.length > 0 ? cleanUpdated.tags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ') : ''}\n` +
         `🆔 ${updatedMedia.id}`;
 
-      await client.sendText(chatId, updatedMessage);
+      await client.reply(chatId, updatedMessage, message.id);
       taggingMap.delete(chatId);
     } catch (err) {
       console.error('Erro ao adicionar tags:', err);
-      await client.sendText(chatId, 'Erro ao adicionar tags/descrição.');
+      await client.reply(chatId, 'Erro ao adicionar tags/descrição.', message.id);
       taggingMap.delete(chatId);
     }
 
@@ -333,7 +272,7 @@ function isValidCommand(messageBody) {
   return isValid;
 }
 
-async function handleInvalidCommand(client, chatId) {
+async function handleInvalidCommand(client, message, chatId) {
   const validCommands = [
     '#random',
     '#editar',
@@ -345,9 +284,10 @@ async function handleInvalidCommand(client, chatId) {
     '#count'
   ];
 
-  await client.sendText(chatId,
+  await client.reply(chatId,
     `Comando não reconhecido.\nComandos disponíveis:\n` +
-    validCommands.map(c => c.replace('ID', 'XXX')).join('\n')
+    validCommands.map(c => c.replace('ID', 'XXX')).join('\n'),
+    message.id
   );
 }
 
@@ -366,7 +306,7 @@ async function handleCommand(client, message, chatId) {
 
   // Check if it's a valid command first
   if (!isValidCommand(messageBody)) {
-    await handleInvalidCommand(client, chatId);
+    await handleInvalidCommand(client, message, chatId);
     return true;
   }
 
@@ -378,15 +318,15 @@ async function handleCommand(client, message, chatId) {
       return true;
       
     case '#count':
-      await handleCountCommand(client, chatId);
+      await handleCountCommand(client, message, chatId);
       return true;
       
     case '#top10':
-      await handleTop10Command(client, chatId);
+      await handleTop10Command(client, message, chatId);
       return true;
       
     case '#top5users':
-      await handleTop5UsersCommand(client, chatId);
+      await handleTop5UsersCommand(client, message, chatId);
       return true;
       
     case '#forcar': // normalized version of #forçar
