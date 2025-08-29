@@ -44,8 +44,6 @@ const taggingMap = new Map();
 const MAX_TAGS_LENGTH = 500;
 const clearDescriptionCmds = ['nenhum', 'limpar', 'clear', 'apagar', 'remover'];
 
-
-
 // Função para envio da mídia conforme tipo (para stickers)
 async function sendMediaByType(client, chatId, media) {
   if (!media) return;
@@ -154,11 +152,6 @@ async function sendMediaAsOriginal(client, chatId, media) {
   // Audio and others
   await client.sendFile(chatId, filePath, 'media');
 }
-
-
-
-
-
 
 async function handleTaggingMode(client, message, chatId) {
   if (!taggingMap.has(chatId)) return false;
