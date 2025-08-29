@@ -88,59 +88,89 @@ async function sendMediaByType(client, chatId, media) {
  * @param {object} media - Media object from database
  */
 async function sendMediaAsOriginal(client, chatId, media) {
-  if (!media) return;
+  if (!media) {
+    throw new Error('Media object is required');
+  }
 
   const filePath = media.file_path;
   const mimetype = media.mimetype || '';
+
+  // Check if file exists
+  const fs = require('fs');
+  if (!fs.existsSync(filePath)) {
+    console.error(`[sendMediaAsOriginal] Arquivo não encontrado: ${filePath}`);
+    throw new Error(`Arquivo de mídia não encontrado: ${filePath}`);
+  }
+
+  console.log(`[sendMediaAsOriginal] Enviando mídia: ${filePath} (${mimetype})`);
 
   const isGif = mimetype === 'image/gif' || filePath.endsWith('.gif');
   const isVideo = mimetype.startsWith('video/');
   const isImage = mimetype.startsWith('image/');
 
-  // GIFs should be sent as animated stickers
-  if (isGif) {
-    if (typeof client.sendMp4AsSticker === 'function') {
-      try {
-        await client.sendMp4AsSticker(chatId, filePath, { pack: PACK_NAME, author: AUTHOR_NAME });
-        return;
-      } catch (e) {
-        console.warn('sendMp4AsSticker falhou, tentando sendImageAsStickerGif (se existir):', e?.message || e);
+  try {
+    // GIFs should be sent as animated stickers
+    if (isGif) {
+      if (typeof client.sendMp4AsSticker === 'function') {
+        try {
+          await client.sendMp4AsSticker(chatId, filePath, { pack: PACK_NAME, author: AUTHOR_NAME });
+          console.log('[sendMediaAsOriginal] GIF enviado via sendMp4AsSticker');
+          return;
+        } catch (e) {
+          console.warn('sendMp4AsSticker falhou, tentando sendImageAsStickerGif (se existir):', e?.message || e);
+        }
       }
-    }
-    if (typeof client.sendImageAsStickerGif === 'function') {
-      await client.sendImageAsStickerGif(chatId, filePath, { pack: PACK_NAME, author: AUTHOR_NAME });
+      if (typeof client.sendImageAsStickerGif === 'function') {
+        await client.sendImageAsStickerGif(chatId, filePath, { pack: PACK_NAME, author: AUTHOR_NAME });
+        console.log('[sendMediaAsOriginal] GIF enviado via sendImageAsStickerGif');
+        return;
+      }
+      await client.sendFile(chatId, filePath, 'media');
+      console.log('[sendMediaAsOriginal] GIF enviado via sendFile');
       return;
     }
+
+    // Videos should be sent as videos (not stickers)
+    if (isVideo) {
+      await client.sendFile(chatId, filePath, 'video');
+      console.log('[sendMediaAsOriginal] Vídeo enviado via sendFile');
+      return;
+    }
+
+    // Images can still be sent as stickers since that's expected behavior
+    if (isImage) {
+      if (Sticker && StickerTypes) {
+        try {
+          const sticker = new Sticker(filePath, {
+            pack: PACK_NAME,
+            author: AUTHOR_NAME,
+            type: StickerTypes.FULL,
+            quality: 70,
+          });
+          const webpBuf = await sticker.build();
+          const dataUrl = `data:image/webp;base64,${webpBuf.toString('base64')}`;
+          await client.sendRawWebpAsSticker(chatId, dataUrl, { pack: PACK_NAME, author: AUTHOR_NAME });
+          console.log('[sendMediaAsOriginal] Imagem enviada como sticker via wa-sticker-formatter');
+          return;
+        } catch (stickerError) {
+          console.warn(`[sendMediaAsOriginal] Erro ao processar sticker com wa-sticker-formatter: ${stickerError.message}`);
+          console.warn('[sendMediaAsOriginal] Tentando fallback para sendImageAsSticker');
+          // Fallback to simpler method
+        }
+      }
+      await client.sendImageAsSticker(chatId, filePath, { pack: PACK_NAME, author: AUTHOR_NAME });
+      console.log('[sendMediaAsOriginal] Imagem enviada como sticker via sendImageAsSticker');
+      return;
+    }
+
+    // Audio and others
     await client.sendFile(chatId, filePath, 'media');
-    return;
+    console.log('[sendMediaAsOriginal] Arquivo enviado via sendFile');
+    
+  } catch (error) {
+    console.error(`[sendMediaAsOriginal] Erro ao enviar mídia: ${error.message}`);
+    throw new Error(`Falha ao enviar mídia: ${error.message}`);
   }
-
-  // Videos should be sent as videos (not stickers)
-  if (isVideo) {
-    await client.sendFile(chatId, filePath, 'video');
-    return;
-  }
-
-  // Images can still be sent as stickers since that's expected behavior
-  if (isImage) {
-    if (Sticker && StickerTypes) {
-      const sticker = new Sticker(filePath, {
-        pack: PACK_NAME,
-        author: AUTHOR_NAME,
-        type: StickerTypes.FULL,
-        quality: 70,
-      });
-      const webpBuf = await sticker.build();
-      const dataUrl = `data:image/webp;base64,${webpBuf.toString('base64')}`;
-      await client.sendRawWebpAsSticker(chatId, dataUrl, { pack: PACK_NAME, author: AUTHOR_NAME });
-      return;
-    }
-    await client.sendImageAsSticker(chatId, filePath, { pack: PACK_NAME, author: AUTHOR_NAME });
-    return;
-  }
-
-  // Audio and others
-  await client.sendFile(chatId, filePath, 'media');
 }
 
 module.exports = {
