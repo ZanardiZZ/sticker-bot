@@ -81,8 +81,8 @@ function selectBestTagByContext(originalTag, candidateTags, allContextTags) {
       }
       
       // Boost for simple semantic similarity
-      const candidateWords = candidateLower.split(/(?=[A-Z])/).map(w => w.toLowerCase());
-      const contextWords = contextLower.split(/(?=[A-Z])/).map(w => w.toLowerCase());
+      const candidateWords = candidateTag.name.split(/(?=[A-Z])/).map(w => w.toLowerCase());
+      const contextWords = contextTag.split(/(?=[A-Z])/).map(w => w.toLowerCase());
       
       for (const cWord of candidateWords) {
         for (const ctxWord of contextWords) {
