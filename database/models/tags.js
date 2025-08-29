@@ -268,7 +268,7 @@ async function findSimilarTags(tagCandidates) {
  * @param {string[]} expandedTags - Array of expanded tag names (synonyms)
  * @returns {Promise<object[]>} Array of matching tags
  */
-function findRelatedTagMatches(originalTag, expandedTags) {
+async function findRelatedTagMatches(originalTag, expandedTags) {
   return new Promise((resolve, reject) => {
     // Find exact matches for synonyms
     const synonymPlaceholders = expandedTags.map(() => 'LOWER(name) = ?').join(' OR ');
