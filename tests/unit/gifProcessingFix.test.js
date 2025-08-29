@@ -1,86 +1,62 @@
 const assert = require('assert');
 const { getAiAnnotationsForGif, getAiAnnotations } = require('../../services/ai');
+const { generateResponseMessage } = require('../../utils/responseMessage');
+
+console.log('🧪 Testing GIF detection and response message fix...\n');
 
 /**
  * Test suite for GIF processing improvements
  * 
  * This verifies that:
  * 1. GIF-specific functions exist and work correctly
- * 2. Prompts are properly differentiated for GIFs vs regular images
+ * 2. Response messages are generated correctly using shared utility
  */
 
-describe('GIF Processing Improvements', () => {
-  
-  it('should have getAiAnnotationsForGif function available', () => {
-    assert.strictEqual(typeof getAiAnnotationsForGif, 'function', 'getAiAnnotationsForGif should be a function');
-  });
-
-  it('should have regular getAiAnnotations function available', () => {
-    assert.strictEqual(typeof getAiAnnotations, 'function', 'getAiAnnotations should be a function');
-  });
-
-  // Note: These functions require OpenAI API key to run actual tests
-  // The tests above just verify the functions are exported correctly
-  
-  console.log('✅ GIF processing functions are properly exported');
-  console.log('ℹ️  Full functionality requires OpenAI API key configuration');
-});
-
-// Test response message generation logic
-describe('Media Type Response Messages', () => {
-  
-  function generateResponseMessage(mimetype) {
-    let responseMessage = '';
-    if (mimetype === 'image/gif') {
-      responseMessage = `🎞️ GIF adicionado!\n\n`;
-    } else if (mimetype.startsWith('video/')) {
-      responseMessage = `🎥 Vídeo adicionado!\n\n`;
-    } else if (mimetype.startsWith('audio/')) {
-      responseMessage = `🎵 Áudio adicionado!\n\n`;
-    } else {
-      responseMessage = `✅ Figurinha adicionada!\n\n`;
-    }
-    return responseMessage;
+// Test 1: Check that the AI service exports the functions
+try {
+  if (typeof getAiAnnotationsForGif !== 'function') {
+    throw new Error('getAiAnnotationsForGif should be a function');
   }
+  
+  if (typeof getAiAnnotations !== 'function') {
+    throw new Error('getAiAnnotations should be a function');
+  }
+  
+  console.log('✅ Test 1 PASSED: GIF processing functions are properly exported');
+  
+} catch (error) {
+  console.log('❌ Test 1 FAILED:', error.message);
+  process.exit(1);
+}
 
-  it('should generate correct message for GIF', () => {
-    const message = generateResponseMessage('image/gif');
-    assert.strictEqual(message, '🎞️ GIF adicionado!\n\n', 'GIF should have specific message');
+// Test 2: Test response message generation logic using shared utility
+try {
+  const tests = [
+    { mimetype: 'image/gif', expected: '🎞️ GIF adicionado!' },
+    { mimetype: 'video/mp4', expected: '🎥 Vídeo adicionado!' },
+    { mimetype: 'audio/mp3', expected: '🎵 Áudio adicionado!' },
+    { mimetype: 'image/jpeg', expected: '✅ Figurinha adicionada!' }
+  ];
+
+  tests.forEach((test, index) => {
+    const message = generateResponseMessage(test.mimetype);
+    assert(message.includes(test.expected), `Expected "${test.expected}" in "${message}"`);
+    console.log(`  ✅ Case ${index + 1}: ${test.mimetype} -> ${test.expected}`);
   });
+  
+  console.log('✅ Test 2 PASSED: All media type response messages work correctly');
+  
+} catch (error) {
+  console.log('❌ Test 2 FAILED:', error.message);
+  process.exit(1);
+}
 
-  it('should generate correct message for video', () => {
-    const message = generateResponseMessage('video/mp4');
-    assert.strictEqual(message, '🎥 Vídeo adicionado!\n\n', 'Video should have specific message');
-  });
+console.log('\n🎉 All tests PASSED! GIF processing improvements work correctly.');
+console.log('ℹ️  Response message logic is now consolidated in shared utility.');
 
-  it('should generate correct message for audio', () => {
-    const message = generateResponseMessage('audio/mp3');
-    assert.strictEqual(message, '🎵 Áudio adicionado!\n\n', 'Audio should have specific message');
-  });
-
-  it('should generate correct message for regular image', () => {
-    const message = generateResponseMessage('image/jpeg');
-    assert.strictEqual(message, '✅ Figurinha adicionada!\n\n', 'Regular image should have sticker message');
-  });
-
-  console.log('✅ All media type response messages work correctly');
-});
-
-// Export for testing framework
+// Export the shared utility for testing framework compatibility
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    generateResponseMessage: function(mimetype) {
-      let responseMessage = '';
-      if (mimetype === 'image/gif') {
-        responseMessage = `🎞️ GIF adicionado!\n\n`;
-      } else if (mimetype.startsWith('video/')) {
-        responseMessage = `🎥 Vídeo adicionado!\n\n`;
-      } else if (mimetype.startsWith('audio/')) {
-        responseMessage = `🎵 Áudio adicionado!\n\n`;
-      } else {
-        responseMessage = `✅ Figurinha adicionada!\n\n`;
-      }
-      return responseMessage;
-    }
+    generateResponseMessage
   };
 }
