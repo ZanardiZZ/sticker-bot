@@ -106,11 +106,28 @@ class MediaQueue extends EventEmitter {
         
       } catch (error) {
         const isSqlBusy = error.code === 'SQLITE_BUSY' || (error.message && error.message.includes('SQLITE_BUSY'));
-        const shouldRetry = attempt < this.retryAttempts && isSqlBusy;
+        
+        // Detect resource contention errors for media processing
+        const isResourceContention = error.message && (
+          error.message.includes('resource contention detected') ||
+          error.message.includes('retryable') ||
+          error.message.includes('Timeout ao extrair frame') ||
+          error.message.includes('FFmpeg não consegue processar') ||
+          error.message.includes('Cannot find ffprobe') ||
+          error.message.includes('Erro ao criar diretório temp') ||
+          error.message.includes('processamento concorrente')
+        );
+        
+        const shouldRetry = attempt < this.retryAttempts && (isSqlBusy || isResourceContention);
         
         if (shouldRetry) {
           const delay = this.retryDelay * Math.pow(2, attempt - 1); // Exponential backoff
-          console.warn(`Job ${item.id} attempt ${attempt} failed (${error.message}), retrying in ${delay}ms`);
+          
+          if (isResourceContention) {
+            console.warn(`Job ${item.id} attempt ${attempt} failed due to resource contention (${error.message}), retrying in ${delay}ms`);
+          } else {
+            console.warn(`Job ${item.id} attempt ${attempt} failed (${error.message}), retrying in ${delay}ms`);
+          }
           
           this.emit('jobRetry', item.id, attempt, error);
           
