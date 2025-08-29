@@ -525,7 +525,7 @@ async function findSimilarTags(tagCandidates) {
 }
 
 // Busca matches relacionados para uma tag (exatos para sinônimos + compostos para palavra original)
-function findRelatedTagMatches(originalTag, expandedTags) {
+async function findRelatedTagMatches(originalTag, expandedTags) {
   return new Promise((resolve, reject) => {
     // Buscar matches exatos para sinônimos
     const synonymPlaceholders = expandedTags.map(() => 'LOWER(name) = ?').join(' OR ');
