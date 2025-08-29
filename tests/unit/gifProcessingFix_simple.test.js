@@ -1,4 +1,5 @@
 const assert = require('assert');
+const { generateResponseMessage } = require('../../utils/responseMessage');
 
 console.log('🧪 Testing GIF Processing Improvements...\n');
 
@@ -21,21 +22,7 @@ try {
   process.exit(1);
 }
 
-// Test 2: Validate response message logic
-function generateResponseMessage(mimetype) {
-  let responseMessage = '';
-  if (mimetype === 'image/gif') {
-    responseMessage = `🎞️ GIF adicionado!\n\n`;
-  } else if (mimetype.startsWith('video/')) {
-    responseMessage = `🎥 Vídeo adicionado!\n\n`;
-  } else if (mimetype.startsWith('audio/')) {
-    responseMessage = `🎵 Áudio adicionado!\n\n`;
-  } else {
-    responseMessage = `✅ Figurinha adicionada!\n\n`;
-  }
-  return responseMessage;
-}
-
+// Test 2: Validate response message logic using shared utility
 try {
   // Test GIF message
   const gifMessage = generateResponseMessage('image/gif');
@@ -82,11 +69,11 @@ try {
   const fs = require('fs');
   const mediaProcessorContent = fs.readFileSync('./mediaProcessor.js', 'utf8');
   
-  // Check that it has GIF-specific response
-  if (mediaProcessorContent.includes('🎞️ GIF adicionado!')) {
-    console.log('✅ Test 4 PASSED: MediaProcessor has GIF-specific response message');
+  // Check that it uses the shared utility function
+  if (mediaProcessorContent.includes('generateResponseMessage')) {
+    console.log('✅ Test 4 PASSED: MediaProcessor uses shared generateResponseMessage utility');
   } else {
-    throw new Error('GIF-specific response message not found in mediaProcessor.js');
+    throw new Error('generateResponseMessage utility not found in mediaProcessor.js');
   }
   
 } catch (error) {
