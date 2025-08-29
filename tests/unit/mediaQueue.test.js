@@ -38,6 +38,48 @@ class TestMediaQueue {
         addedAt: Date.now()
       };
       
+      // Optimization: If queue is empty and nothing is processing, execute immediately
+      if (this.queue.length === 0 && this.processing.size === 0) {
+        this.processing.add(queueItem.id);
+        this.emit('jobAdded', queueItem.id);
+        
+        // Execute immediately without queueing
+        setImmediate(async () => {
+          this.emit('jobStarted', queueItem.id);
+          
+          const executeWithRetry = async (attempt = 1) => {
+            try {
+              const result = await this.executeJob(queueItem);
+              this.stats.processed++;
+              this.emit('jobCompleted', queueItem.id, result);
+              queueItem.resolve(result);
+            } catch (error) {
+              if (attempt < this.retryAttempts) {
+                const delay = this.retryDelay * Math.pow(2, attempt - 1);
+                this.emit('jobRetry', queueItem.id, attempt, delay);
+                setTimeout(() => {
+                  executeWithRetry(attempt + 1);
+                }, delay);
+              } else {
+                this.stats.failed++;
+                this.emit('jobFailed', queueItem.id, error);
+                queueItem.reject(error);
+              }
+            }
+          };
+          
+          try {
+            await executeWithRetry();
+          } finally {
+            // Ensure cleanup happens in all cases
+            this.processing.delete(queueItem.id);
+          }
+        });
+        
+        return;
+      }
+      
+      // Otherwise, use normal queueing
       this.queue.push(queueItem);
       this.stats.queued++;
       this.emit('jobAdded', queueItem.id);
@@ -101,7 +143,7 @@ class TestMediaQueue {
     return {
       ...this.stats,
       processing: this.processing.size,
-      queued: this.queue.length
+      waiting: this.queue.length
     };
   }
 
@@ -450,6 +492,37 @@ const tests = [
       const stats = queue.getStats();
       assertEqual(stats.queued, 0, 'Queue should be empty after clear');
       assertEqual(stats.processing, 0, 'No jobs should be processing after clear');
+    }
+  },
+
+  {
+    name: 'Immediate execution optimization for empty queue',
+    fn: async () => {
+      const queue = new TestMediaQueue({ concurrency: 3, retryAttempts: 1, retryDelay: 100 });
+      
+      // Measure execution time for single job on empty queue
+      const start = process.hrtime.bigint();
+      
+      const result = await queue.add(async () => {
+        await sleep(10); // Minimal processing time
+        return 'immediate-result';
+      });
+      
+      const end = process.hrtime.bigint();
+      const executionTime = Number(end - start) / 1000000; // Convert to milliseconds
+      
+      assertEqual(result, 'immediate-result', 'Should return correct result');
+      
+      // Allow some tolerance for immediate execution, but should be faster than queued execution
+      assert(executionTime < 50, `Immediate execution should be fast, got ${executionTime.toFixed(2)}ms`);
+      
+      // Wait for async cleanup
+      await sleep(20);
+      
+      const stats = queue.getStats();
+      assertEqual(stats.processed, 1, 'Should have processed 1 job');
+      assertEqual(stats.processing, 0, 'Should have no jobs processing after cleanup');
+      assertEqual(stats.waiting, 0, 'Should have no jobs waiting');
     }
   }
 ];
