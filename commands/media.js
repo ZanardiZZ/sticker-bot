@@ -50,7 +50,7 @@ async function sendMediaByType(client, chatId, media) {
 
   // Videos should be sent as files
   if (isVideo) {
-    await client.sendFile(chatId, filePath, 'video');
+    await client.sendFile(chatId, filePath, 'media');
     return;
   }
 
@@ -139,10 +139,10 @@ async function sendMediaAsOriginal(client, chatId, media) {
         console.log('[sendMediaAsOriginal] GIF/GIF-like enviado via sendImageAsStickerGif');
         return;
       }
-      // Fallback for GIFs - send as video if it's actually a video file
+      // Fallback for GIFs - send as media if it's actually a video file
       if (isVideo) {
-        await client.sendFile(chatId, filePath, 'video');
-        console.log('[sendMediaAsOriginal] GIF-like video enviado via sendFile como vídeo (fallback)');
+        await client.sendFile(chatId, filePath, 'media');
+        console.log('[sendMediaAsOriginal] GIF-like video enviado via sendFile como media (fallback)');
       } else {
         await client.sendFile(chatId, filePath, 'media');
         console.log('[sendMediaAsOriginal] GIF enviado via sendFile como media (fallback)');
@@ -150,9 +150,9 @@ async function sendMediaAsOriginal(client, chatId, media) {
       return;
     }
 
-    // Regular videos should be sent as videos (not stickers)
+    // Regular videos should be sent as files (not stickers)
     if (isVideo) {
-      await client.sendFile(chatId, filePath, 'video');
+      await client.sendFile(chatId, filePath, 'media');
       console.log('[sendMediaAsOriginal] Vídeo enviado via sendFile');
       return;
     }
