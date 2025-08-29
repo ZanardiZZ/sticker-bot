@@ -230,32 +230,152 @@ function setMediaTagsExact(mediaId, tagNames) {
 }
 
 /**
- * Searches for similar tags for certain terms (exact matching to prevent tag pollution)
+ * Searches for similar tags using context-aware intelligent matching
  * @param {string[]} tagCandidates - Array of tag candidates to search for
  * @returns {Promise<object[]>} Array of similar tags with id and name
  */
 async function findSimilarTags(tagCandidates) {
   if (!tagCandidates.length) return [];
 
-  // Expand tags with their synonyms
-  const expandedTags = await expandTagsWithSynonyms(tagCandidates);
+  const results = [];
+  
+  for (const originalTag of tagCandidates) {
+    // Expand individual tag with its synonyms
+    const expandedTags = await expandTagsWithSynonyms([originalTag]);
+    
+    // Find related matches for the original tag and its synonyms
+    const relatedMatches = await findRelatedTagMatches(originalTag, expandedTags);
+    
+    if (relatedMatches.length === 0) {
+      // No matches found, skip this tag
+      continue;
+    } else if (relatedMatches.length === 1) {
+      // Perfect match, use directly
+      results.push(relatedMatches[0]);
+    } else {
+      // Multiple matches - use context to choose the best
+      const bestMatch = selectBestTagByContext(originalTag, relatedMatches, tagCandidates);
+      results.push(bestMatch);
+    }
+  }
+  
+  return results;
+}
 
+/**
+ * Finds related tag matches for expanded tags and compound variations
+ * @param {string} originalTag - The original tag being searched for  
+ * @param {string[]} expandedTags - Array of expanded tag names (synonyms)
+ * @returns {Promise<object[]>} Array of matching tags
+ */
+function findRelatedTagMatches(originalTag, expandedTags) {
   return new Promise((resolve, reject) => {
-    // Use exact matching instead of broad substring matching to prevent
-    // tags like "AmbienteAconchegante", "AmbienteAoArLivre" being treated as synonyms
-    // just because they both contain "ambiente"
-    const placeholders = expandedTags.map(() => 'LOWER(name) = ?').join(' OR ');
-    const params = expandedTags.map(t => t.toLowerCase());
+    // Find exact matches for synonyms
+    const synonymPlaceholders = expandedTags.map(() => 'LOWER(name) = ?').join(' OR ');
+    const synonymParams = expandedTags.map(t => t.toLowerCase());
+    
+    // Find compound tags that contain the original word
+    const compoundPlaceholder = 'LOWER(name) LIKE ? AND LOWER(name) != ?';
+    const compoundParams = [`%${originalTag.toLowerCase()}%`, originalTag.toLowerCase()];
+    
+    // Combine queries
+    const fullQuery = synonymPlaceholders + ' OR ' + compoundPlaceholder;
+    const fullParams = [...synonymParams, ...compoundParams];
 
     db.all(
-      `SELECT id, name FROM tags WHERE ${placeholders} LIMIT 10`,
-      params,
+      `SELECT id, name FROM tags WHERE ${fullQuery}`,
+      fullParams,
       (err, rows) => {
         if (err) reject(err);
-        else resolve(rows);
+        else {
+          // Remove duplicates based on ID
+          const uniqueRows = rows.filter((tag, index, self) => 
+            index === self.findIndex(t => t.id === tag.id)
+          );
+          resolve(uniqueRows);
+        }
       }
     );
   });
+}
+
+/**
+ * Selects the best tag based on context from other tags
+ * @param {string} originalTag - The original tag being searched for
+ * @param {object[]} candidateTags - Array of candidate tag objects
+ * @param {string[]} allContextTags - All tags in the current context
+ * @returns {object} The best matching tag
+ */
+function selectBestTagByContext(originalTag, candidateTags, allContextTags) {
+  // Calculate context scores for each candidate
+  const tagScores = candidateTags.map(candidateTag => {
+    let score = 0;
+    const candidateLower = candidateTag.name.toLowerCase();
+    const originalLower = originalTag.toLowerCase();
+    
+    // Base score for exact match (lower to allow context override)
+    if (candidateLower === originalLower) {
+      score += 3;
+    }
+    
+    // Check similarity with other tags in context
+    for (const contextTag of allContextTags) {
+      if (contextTag === originalTag) continue; // Skip self-reference
+      
+      const contextLower = contextTag.toLowerCase();
+      
+      // Strong boost for compound tags that contain context words
+      // Example: "HumorCanino" gets points if context includes "Cachorro", "Animal"
+      if (candidateLower.includes(contextLower) && candidateLower !== contextLower) {
+        score += 20;
+      }
+      
+      // Check if context tag relates to compound part of candidate
+      // E.g., "HumorCanino" -> "canino" relates to "Animal", "Cachorro"
+      const compoundPart = candidateLower.replace(originalLower, '');
+      if (compoundPart.length > 2 && contextLower.includes(compoundPart)) {
+        score += 15;
+      }
+      
+      // Semantic similarity for known animal-related terms
+      const animalTerms = ['animal', 'cachorro', 'canino', 'dog', 'pet', 'gato', 'felino', 'cat'];
+      const compoundContainsAnimal = animalTerms.some(term => candidateLower.includes(term));
+      const contextIsAnimal = animalTerms.some(term => contextLower.includes(term));
+      
+      if (compoundContainsAnimal && contextIsAnimal) {
+        score += 25;
+      }
+      
+      // Semantic similarity for other known domains
+      const workTerms = ['trabalho', 'office', 'business', 'professional'];
+      const environmentTerms = ['ambiente', 'setting', 'place', 'location'];
+      
+      const compoundContainsWork = workTerms.some(term => candidateLower.includes(term));
+      const contextIsWork = workTerms.some(term => contextLower.includes(term));
+      
+      const compoundContainsEnv = environmentTerms.some(term => candidateLower.includes(term));
+      const contextIsEnv = environmentTerms.some(term => contextLower.includes(term));
+      
+      if ((compoundContainsWork && contextIsWork) || (compoundContainsEnv && contextIsEnv)) {
+        score += 15;
+      }
+    }
+    
+    // Additional score for compound tags when context is rich
+    const isCompoundTag = candidateTag.name.length > originalTag.length;
+    const contextTagsCount = allContextTags.length;
+    
+    if (isCompoundTag && contextTagsCount > 2) {
+      score += 2;
+    }
+    
+    return { tag: candidateTag, score };
+  });
+  
+  // Sort by score and return the best
+  tagScores.sort((a, b) => b.score - a.score);
+  
+  return tagScores[0].tag;
 }
 
 module.exports = {
