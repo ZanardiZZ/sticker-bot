@@ -515,8 +515,16 @@ async function processGif(filePath) {
           console.log('[VideoProcessor] Fallback com frame único foi bem-sucedido');
         } catch (fallbackError) {
           console.error('[VideoProcessor] Fallback também falhou:', fallbackError.message);
-          // Throw error to trigger fallback mechanism in mediaProcessor.js
-          throw new Error('GIF frame extraction failed completely - will trigger single-frame analysis fallback');
+          // Check if this is a resource contention issue that should be retried
+          if (fallbackError.message.includes('Timeout') || 
+              fallbackError.message.includes('ENOENT') || 
+              fallbackError.message.includes('busy') ||
+              fallbackError.message.includes('tempDir')) {
+            throw new Error('GIF frame extraction failed completely - resource contention detected - retryable');
+          } else {
+            // Permanent error - trigger immediate fallback 
+            throw new Error('GIF frame extraction failed completely - will trigger single-frame analysis fallback');
+          }
         }
       } else {
         // Re-throw other types of extraction errors
