@@ -44,7 +44,7 @@ async function handleMessage(client, message) {
     console.error('Erro ao processar mensagem:', e);
     if (e?.response?.data) console.error('Detalhes resposta:', e.response.data);
     try { 
-      await client.sendText(message.from, 'Erro ao processar sua mensagem.'); 
+      await client.reply(message.from, 'Erro ao processar sua mensagem.', message.id); 
     } catch {}
   }
 }

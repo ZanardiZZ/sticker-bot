@@ -25,7 +25,7 @@ async function handleRandomCommand(client, message, chatId) {
     }
 
     if (!media) {
-      await client.sendText(chatId, 'Nenhuma mídia salva ainda.');
+      await client.reply(chatId, 'Nenhuma mídia salva ainda.', message.id);
       return;
     }
 
@@ -36,11 +36,11 @@ async function handleRandomCommand(client, message, chatId) {
     const infoText = renderInfoMessage(media, tags);
     
     if (infoText.trim()) {
-      await client.sendText(chatId, infoText);
+      await client.reply(chatId, infoText, message.id);
     }
   } catch (err) {
     console.error('Erro no comando #random:', err);
-    await client.sendText(chatId, 'Erro ao buscar mídia aleatória.');
+    await client.reply(chatId, 'Erro ao buscar mídia aleatória.', message.id);
   }
 }
 

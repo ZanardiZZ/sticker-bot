@@ -197,7 +197,9 @@ const tests = [
       assertEqual(client.sentStickers.length, 0, 'Should not send stickers for non-existent ID');
       assertEqual(client.sentFiles.length, 0, 'Should not send files for non-existent ID');
       assertEqual(client.sentMessages.length, 1, 'Should send one error message');
-      assert(client.sentMessages[0].text.includes('Mídia não encontrada'), 'Should send proper error message');
+      // Handle both old 'text' property and new 'message' property for reply
+      const messageText = client.sentMessages[0].message || client.sentMessages[0].text;
+      assert(messageText && messageText.includes('Mídia não encontrada'), 'Should send proper error message');
       
       // Restore original function
       database.findById = originalFindById;

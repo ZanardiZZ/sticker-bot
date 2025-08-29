@@ -7,15 +7,16 @@ const { countMedia } = require('../../database');
 /**
  * Handles the #count command
  * @param {object} client - WhatsApp client
+ * @param {object} message - Message object
  * @param {string} chatId - Chat ID
  */
-async function handleCountCommand(client, chatId) {
+async function handleCountCommand(client, message, chatId) {
   try {
     const count = await countMedia();
-    await client.sendText(chatId, `Total de mídias salvas: ${count}`);
+    await client.reply(chatId, `Total de mídias salvas: ${count}`, message.id);
   } catch (err) {
     console.error('Erro no comando #count:', err);
-    await client.sendText(chatId, 'Erro ao contar mídias.');
+    await client.reply(chatId, 'Erro ao contar mídias.', message.id);
   }
 }
 

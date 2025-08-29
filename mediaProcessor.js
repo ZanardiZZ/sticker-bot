@@ -94,9 +94,10 @@ async function processIncomingMedia(client, message) {
     if (!forceInsert && hashVisual) {
       const existing = await findByHashVisual(hashVisual);
       if (existing) {
-        await client.sendText(
+        await client.reply(
           chatId,
-          `Mídia visualmente semelhante já existe no banco. ID: ${existing.id}. Use #forçar respondendo à mídia para salvar duplicado ou use #ID ${existing.id} para solicitar esta mídia.`
+          `Mídia visualmente semelhante já existe no banco. ID: ${existing.id}. Use #forçar respondendo à mídia para salvar duplicado ou use #ID ${existing.id} para solicitar esta mídia.`,
+          message.id
         );
         return;
       }
@@ -281,14 +282,14 @@ async function processIncomingMedia(client, message) {
     responseMessage += `🏷️ ${clean.tags.length > 0 ? clean.tags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ') : ''}\n`;
     responseMessage += `🆔 ${savedMedia.id}`;
 
-    await client.sendText(chatId, responseMessage);
+    await client.reply(chatId, responseMessage, message.id);
 
   } catch (e) {
     console.error('Erro ao processar mídia:', e);
     if (e.response && e.response.data) {
       console.error('Detalhes do erro de resposta:', e.response.data);
     }
-    await client.sendText(message.from, 'Erro ao processar sua mídia.');
+    await client.reply(message.from, 'Erro ao processar sua mídia.', message.id);
   }
 }
 
