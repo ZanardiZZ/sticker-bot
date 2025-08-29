@@ -45,18 +45,34 @@ async function extractFrames(filePath, timestamps) {
   }
   
   const uniqueId = crypto.randomBytes(16).toString('hex');
-  const tempDir = path.resolve(__dirname, '../temp', `frames_${uniqueId}`);
+  const processId = process.pid; // Add process ID for extra uniqueness in concurrent scenarios
+  let tempDir = path.resolve(__dirname, '../temp', `frames_${processId}_${uniqueId}`);
 
   try {
     fs.mkdirSync(tempDir, { recursive: true });
     console.log(`[VideoProcessor] Diretório temporário criado: ${tempDir}`);
   } catch (mkdirErr) {
     console.warn('[VideoProcessor] Erro ao criar diretório temp:', mkdirErr.message);
-    throw new Error(`Falha ao criar diretório temporário para frames: ${mkdirErr.message}`);
+    // Try with an alternative directory name in case of concurrent access
+    const altTempDir = path.resolve(__dirname, '../temp', `frames_alt_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`);
+    try {
+      fs.mkdirSync(altTempDir, { recursive: true });
+      console.log(`[VideoProcessor] Diretório temporário alternativo criado: ${altTempDir}`);
+      // Update tempDir to use the alternative
+      tempDir = altTempDir;
+    } catch (altErr) {
+      throw new Error(`Falha ao criar diretório temporário para frames: ${mkdirErr.message}. Tentativa alternativa também falhou: ${altErr.message}`);
+    }
   }
 
   const promises = timestamps.map((timeSec, i) => new Promise((resolve, reject) => {
     const output = path.join(tempDir, `frame_${i}.jpg`);
+    
+    // Additional validation for timestamp before processing
+    if (!timeSec || isNaN(timeSec) || !isFinite(timeSec) || timeSec < 0) {
+      reject(new Error(`Timestamp inválido para frame ${i + 1}: ${timeSec}. Isso pode indicar um problema de processamento concorrente.`));
+      return;
+    }
     
     console.log(`[VideoProcessor] Extraindo frame ${i + 1} no timestamp ${timeSec}s...`);
     
@@ -69,8 +85,10 @@ async function extractFrames(filePath, timestamps) {
         clearTimeout(timeoutId);
         console.warn(`[VideoProcessor] Erro ao extrair frame ${i + 1}:`, err.message);
         
-        // Check for specific error types
-        if (err.message.includes('ffprobe') || err.message.includes('No such file')) {
+        // Enhanced error checking for timestamp-related issues
+        if (err.message.includes('Invalid duration specification') || err.message.includes('NaN')) {
+          reject(new Error(`Erro de timestamp inválido no frame ${i + 1}: ${err.message}. Timestamp usado: ${timeSec}s`));
+        } else if (err.message.includes('ffprobe') || err.message.includes('No such file')) {
           reject(new Error(`FFmpeg não pode processar o arquivo: ${err.message}`));
         } else {
           reject(err);
@@ -424,7 +442,7 @@ async function processGif(filePath) {
   
   try {
     // Para GIFs, usa timestamps fixos mais próximos
-    const duration = await new Promise((res, rej) => {
+    let duration = await new Promise((res, rej) => {
       ffmpeg.ffprobe(filePath, (err, meta) => {
         if (err) {
           console.warn(`[VideoProcessor] Erro ao obter metadados do GIF: ${err.message}`);
@@ -437,15 +455,31 @@ async function processGif(filePath) {
       });
     });
 
+    // Validate duration and apply fallback for concurrent processing safety
+    if (!duration || isNaN(duration) || duration <= 0 || !isFinite(duration)) {
+      console.warn(`[VideoProcessor] Duração inválida detectada (${duration}), usando fallback padrão`);
+      duration = 2; // Safe default duration
+    }
+
     // Para GIFs curtos, usa timestamps mais próximos
     const timestamps = duration > 3 
       ? [duration * 0.1, duration * 0.5, duration * 0.9]
       : [0.1, Math.max(0.5, duration * 0.3), Math.max(1, duration * 0.8)];
 
-    console.log(`[VideoProcessor] Extraindo frames do GIF nos timestamps: ${timestamps.join(', ')}s`);
+    // Additional safety check for computed timestamps
+    const validTimestamps = timestamps.filter(t => t && !isNaN(t) && isFinite(t) && t > 0);
+    const finalTimestamps = validTimestamps.length > 0 ? validTimestamps : [0.1, 0.5, 1.0];
+    
+    if (validTimestamps.length === 0) {
+      console.warn('[VideoProcessor] Todos os timestamps calculados são inválidos, usando timestamps padrão');
+    } else if (validTimestamps.length < timestamps.length) {
+      console.warn(`[VideoProcessor] ${timestamps.length - validTimestamps.length} timestamps inválidos foram filtrados`);
+    }
+
+    console.log(`[VideoProcessor] Extraindo frames do GIF nos timestamps: ${finalTimestamps.join(', ')}s`);
 
     // Extrai frames
-    tempFramePaths = await extractFrames(filePath, timestamps);
+    tempFramePaths = await extractFrames(filePath, finalTimestamps);
     console.log(`[VideoProcessor] ${tempFramePaths.length} frames extraídos com sucesso`);
 
     // Analisa cada frame individualmente
