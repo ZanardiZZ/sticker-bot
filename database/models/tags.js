@@ -230,7 +230,7 @@ function setMediaTagsExact(mediaId, tagNames) {
 }
 
 /**
- * Searches for similar tags for certain terms (simplified with LIKE)
+ * Searches for similar tags for certain terms (exact matching to prevent tag pollution)
  * @param {string[]} tagCandidates - Array of tag candidates to search for
  * @returns {Promise<object[]>} Array of similar tags with id and name
  */
@@ -241,8 +241,11 @@ async function findSimilarTags(tagCandidates) {
   const expandedTags = await expandTagsWithSynonyms(tagCandidates);
 
   return new Promise((resolve, reject) => {
-    const placeholders = expandedTags.map(() => 'LOWER(name) LIKE ?').join(' OR ');
-    const params = expandedTags.map(t => `%${t}%`);
+    // Use exact matching instead of broad substring matching to prevent
+    // tags like "AmbienteAconchegante", "AmbienteAoArLivre" being treated as synonyms
+    // just because they both contain "ambiente"
+    const placeholders = expandedTags.map(() => 'LOWER(name) = ?').join(' OR ');
+    const params = expandedTags.map(t => t.toLowerCase());
 
     db.all(
       `SELECT id, name FROM tags WHERE ${placeholders} LIMIT 10`,
