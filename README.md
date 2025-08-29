@@ -93,6 +93,44 @@ ADMIN_NUMBER=5511999999999@c.us
 
 ### 3. Start the Applications
 
+#### 🚀 Socket Mode (Recommended for Development)
+
+**Socket Mode** enables hot-reloading without losing WhatsApp connection - perfect for development!
+
+**Setup:**
+1. Enable socket mode in `.env`:
+   ```env
+   USE_SOCKET_MODE=true
+   ```
+
+2. Start socket server (keeps WhatsApp connected):
+   ```bash
+   npm run socket-server
+   ```
+   - Scan QR code with WhatsApp (first time only)
+   - Keep this running during development
+
+3. Start bot (can be restarted anytime):
+   ```bash
+   npm run bot
+   ```
+   - Connects to socket server automatically
+   - No QR code needed - instant restart!
+
+**Benefits:**
+- ⚡ **10-15x faster** development iteration
+- 🔄 **Hot-reload** bot code without losing WhatsApp connection
+- 🛠️ **Debug easily** without re-authentication
+
+**Available Scripts:**
+- `npm run socket-server` - Start WhatsApp socket server
+- `npm run bot` - Start bot in socket mode  
+- `npm run bot-direct` - Start bot in direct mode
+
+📖 **Full documentation:** [Socket Mode Guide](SOCKET_MODE_GUIDE.md)
+
+#### 📱 Direct Mode (Legacy)
+
 **Web Interface:**
 ```bash
 npm run web
@@ -103,6 +141,8 @@ npm run web
 **WhatsApp Bot:**
 ```bash
 node index.js
+# OR
+npm run bot-direct
 ```
 - Scan QR code with WhatsApp
 - Bot will be ready after connection
