@@ -38,6 +38,7 @@ const { isNSFW } = require('./services/nsfwFilter');
 const { getAiAnnotations, transcribeAudioBuffer, getAiAnnotationsFromPrompt } = require('./services/ai');
 const { processVideo } = require('./services/videoProcessor');
 const { normalizeText, matchesCommand, parseCommand } = require('./utils/commandNormalizer');
+const { withTyping } = require('./utils/typingIndicator');
 
 const forceMap = new Map();
 const taggingMap = new Map();
@@ -166,7 +167,9 @@ async function handleTaggingMode(client, message, chatId) {
       return true;
     }
 
-    try {
+    // Show typing indicator while processing tags
+    await withTyping(client, chatId, async () => {
+      try {
       const media = await findById(mediaId);
       if (!media) {
         await client.reply(chatId, `Mídia com ID ${mediaId} não encontrada.`, message.id);
@@ -226,11 +229,12 @@ async function handleTaggingMode(client, message, chatId) {
 
       await client.reply(chatId, updatedMessage, message.id);
       taggingMap.delete(chatId);
-    } catch (err) {
-      console.error('Erro ao adicionar tags:', err);
-      await client.reply(chatId, 'Erro ao adicionar tags/descrição.', message.id);
-      taggingMap.delete(chatId);
-    }
+      } catch (err) {
+        console.error('Erro ao adicionar tags:', err);
+        await client.reply(chatId, 'Erro ao adicionar tags/descrição.', message.id);
+        taggingMap.delete(chatId);
+      }
+    });
 
     return true;
   }
@@ -299,46 +303,51 @@ async function handleCommand(client, message, chatId) {
 
   // Check if it's a valid command first
   if (!isValidCommand(messageBody)) {
-    await handleInvalidCommand(client, message, chatId);
+    await withTyping(client, chatId, async () => {
+      await handleInvalidCommand(client, message, chatId);
+    });
     return true;
   }
 
   const { command, params } = parseCommand(messageBody);
   
-  switch (command) {
-    case '#random':
-      await handleRandomCommand(client, message, chatId);
-      return true;
-      
-    case '#count':
-      await handleCountCommand(client, message, chatId);
-      return true;
-      
-    case '#top10':
-      await handleTop10Command(client, message, chatId);
-      return true;
-      
-    case '#top5users':
-      await handleTop5UsersCommand(client, message, chatId);
-      return true;
-      
-    case '#forcar': // normalized version of #forçar
-      await handleForceCommand(client, message, chatId, forceMap);
-      return true;
-      
-    case '#editar':
-      await handleEditCommand(client, message, chatId, taggingMap, MAX_TAGS_LENGTH);
-      return true;
-      
-    default:
-      // Handle ID-based commands
-      if (command === '#id' && params.length > 0) {
-        await handleIdCommand(client, { body: `#ID ${params.join(' ')}`, id: message.id }, chatId);
-        return true;
-      }
-      
-      return false;
-  }
+  // Wrap all command processing with typing indicator
+  await withTyping(client, chatId, async () => {
+    switch (command) {
+      case '#random':
+        await handleRandomCommand(client, message, chatId);
+        break;
+        
+      case '#count':
+        await handleCountCommand(client, message, chatId);
+        break;
+        
+      case '#top10':
+        await handleTop10Command(client, message, chatId);
+        break;
+        
+      case '#top5users':
+        await handleTop5UsersCommand(client, message, chatId);
+        break;
+        
+      case '#forcar': // normalized version of #forçar
+        await handleForceCommand(client, message, chatId, forceMap);
+        break;
+        
+      case '#editar':
+        await handleEditCommand(client, message, chatId, taggingMap, MAX_TAGS_LENGTH);
+        break;
+        
+      default:
+        // Handle ID-based commands
+        if (command === '#id' && params.length > 0) {
+          await handleIdCommand(client, { body: `#ID ${params.join(' ')}`, id: message.id }, chatId);
+        }
+        break;
+    }
+  });
+  
+  return true;
 }
 
 module.exports = {
