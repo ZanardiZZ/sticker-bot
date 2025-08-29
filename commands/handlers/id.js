@@ -26,8 +26,16 @@ async function handleIdCommand(client, message, chatId) {
 
     await incrementRandomCount(media.id);
     
-    // Use the new function that sends videos as videos, not stickers
-    await sendMediaAsOriginal(client, chatId, media);
+    // Try to send the media first
+    try {
+      await sendMediaAsOriginal(client, chatId, media);
+      console.log(`[handleIdCommand] Mídia ${mediaId} enviada com sucesso`);
+    } catch (mediaError) {
+      console.error(`[handleIdCommand] Erro ao enviar mídia ${mediaId}:`, mediaError.message);
+      // Inform user about media sending failure
+      await client.sendText(chatId, `⚠️ Erro ao enviar a mídia (ID: ${mediaId}): ${mediaError.message}`);
+      // Don't return here - still send the info message
+    }
 
     // Get tags and prepare response message
     const tags = await getTagsForMedia(media.id);
@@ -41,9 +49,10 @@ async function handleIdCommand(client, message, chatId) {
     });
 
     await client.reply(chatId, responseMessage, message.id);
+    
   } catch (err) {
-    console.error('Erro ao buscar mídia pelo ID:', err);
-    await client.sendText(chatId, 'Erro ao buscar essa mídia.');
+    console.error('Erro geral no comando #ID:', err);
+    await client.sendText(chatId, 'Erro ao processar comando #ID.');
   }
 }
 
