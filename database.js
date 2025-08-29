@@ -495,26 +495,138 @@ function getMediaWithLowestRandomCount() {
   });
 }
 
-// Busca tags semelhantes para certos termos (simplificação com LIKE)
+// Busca tags semelhantes com lógica inteligente baseada em contexto
 async function findSimilarTags(tagCandidates) {
   if (!tagCandidates.length) return [];
 
-  // Expande as tags com seus sinônimos
-  const expandedTags = await expandTagsWithSynonyms(tagCandidates);
+  const results = [];
+  
+  for (const originalTag of tagCandidates) {
+    // Expande uma tag individual com seus sinônimos
+    const expandedTags = await expandTagsWithSynonyms([originalTag]);
+    
+    // Busca matches relacionados para a tag original e seus sinônimos
+    const relatedMatches = await findRelatedTagMatches(originalTag, expandedTags);
+    
+    if (relatedMatches.length === 0) {
+      // Nenhum match encontrado, usar a tag original
+      continue;
+    } else if (relatedMatches.length === 1) {
+      // Um match perfeito, usar diretamente
+      results.push(relatedMatches[0]);
+    } else {
+      // Múltiplos matches - usar contexto para escolher o melhor
+      const bestMatch = selectBestTagByContext(originalTag, relatedMatches, tagCandidates);
+      results.push(bestMatch);
+    }
+  }
+  
+  return results;
+}
 
+// Busca matches relacionados para uma tag (exatos para sinônimos + compostos para palavra original)
+async function findRelatedTagMatches(originalTag, expandedTags) {
   return new Promise((resolve, reject) => {
-    const placeholders = expandedTags.map(() => 'LOWER(name) LIKE ?').join(' OR ');
-    const params = expandedTags.map(t => `%${t}%`);
+    // Buscar matches exatos para sinônimos
+    const synonymPlaceholders = expandedTags.map(() => 'LOWER(name) = ?').join(' OR ');
+    const synonymParams = expandedTags.map(t => t.toLowerCase());
+    
+    // Buscar tags compostas que contêm a palavra original
+    const compoundPlaceholder = 'LOWER(name) LIKE ? AND LOWER(name) != ?';
+    const compoundParams = [`%${originalTag.toLowerCase()}%`, originalTag.toLowerCase()];
+    
+    // Combinar queries
+    const fullQuery = synonymPlaceholders + ' OR ' + compoundPlaceholder;
+    const fullParams = [...synonymParams, ...compoundParams];
 
     db.all(
-      `SELECT id, name FROM tags WHERE ${placeholders} LIMIT 10`,
-      params,
+      `SELECT id, name FROM tags WHERE ${fullQuery}`,
+      fullParams,
       (err, rows) => {
         if (err) reject(err);
-        else resolve(rows);
+        else {
+          // Remover duplicatas baseado no ID
+          const uniqueRows = rows.filter((tag, index, self) => 
+            index === self.findIndex(t => t.id === tag.id)
+          );
+          resolve(uniqueRows);
+        }
       }
     );
   });
+}
+
+// Seleciona a melhor tag baseada no contexto das outras tags
+function selectBestTagByContext(originalTag, candidateTags, allContextTags) {
+  // Calcular scores de contexto para cada candidato
+  const tagScores = candidateTags.map(candidateTag => {
+    let score = 0;
+    const candidateLower = candidateTag.name.toLowerCase();
+    const originalLower = originalTag.toLowerCase();
+    
+    // Score base para match exato (menor para permitir override por contexto)
+    if (candidateLower === originalLower) {
+      score += 3;
+    }
+    
+    // Verificar similaridade com outras tags no contexto
+    for (const contextTag of allContextTags) {
+      if (contextTag === originalTag) continue; // Pular auto-referência
+      
+      const contextLower = contextTag.toLowerCase();
+      
+      // Boost forte para tags compostas que contêm palavras do contexto
+      // Exemplo: "HumorCanino" ganha pontos se contexto inclui "Cachorro", "Animal"
+      if (candidateLower.includes(contextLower) && candidateLower !== contextLower) {
+        score += 20;
+      }
+      
+      // Verificar se tag do contexto relaciona com parte composta do candidato
+      // Ex: "HumorCanino" -> "canino" relaciona com "Animal", "Cachorro"
+      const compoundPart = candidateLower.replace(originalLower, '');
+      if (compoundPart.length > 2 && contextLower.includes(compoundPart)) {
+        score += 15;
+      }
+      
+      // Similaridade semântica para termos conhecidos relacionados a animais
+      const animalTerms = ['animal', 'cachorro', 'canino', 'dog', 'pet', 'gato', 'felino', 'cat'];
+      const compoundContainsAnimal = animalTerms.some(term => candidateLower.includes(term));
+      const contextIsAnimal = animalTerms.some(term => contextLower.includes(term));
+      
+      if (compoundContainsAnimal && contextIsAnimal) {
+        score += 25;
+      }
+      
+      // Similaridade semântica para outros domínios conhecidos
+      const workTerms = ['trabalho', 'office', 'business', 'professional'];
+      const environmentTerms = ['ambiente', 'setting', 'place', 'location'];
+      
+      const compoundContainsWork = workTerms.some(term => candidateLower.includes(term));
+      const contextIsWork = workTerms.some(term => contextLower.includes(term));
+      
+      const compoundContainsEnv = environmentTerms.some(term => candidateLower.includes(term));
+      const contextIsEnv = environmentTerms.some(term => contextLower.includes(term));
+      
+      if ((compoundContainsWork && contextIsWork) || (compoundContainsEnv && contextIsEnv)) {
+        score += 15;
+      }
+    }
+    
+    // Score adicional para tags compostas quando contexto é rico
+    const isCompoundTag = candidateTag.name.length > originalTag.length;
+    const contextTagsCount = allContextTags.length;
+    
+    if (isCompoundTag && contextTagsCount > 2) {
+      score += 2;
+    }
+    
+    return { tag: candidateTag, score };
+  });
+  
+  // Ordenar por score e retornar o melhor
+  tagScores.sort((a, b) => b.score - a.score);
+  
+  return tagScores[0].tag;
 }
 
 // Adiciona tags que não existem e atualiza uso_count para existentes
