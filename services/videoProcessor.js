@@ -106,7 +106,22 @@ async function extractFrames(filePath, timestamps) {
           console.log(`[VideoProcessor] Frame ${i + 1} extraído com sucesso: ${output}`);
           resolve(output);
         } else {
-          reject(new Error(`Frame ${i + 1} não foi criado em ${output}`));
+          // Add diagnostic information for debugging
+          console.warn(`[VideoProcessor] Frame ${i + 1} não foi criado. Diagnóstico:`);
+          console.warn(`  - Arquivo esperado: ${output}`);
+          console.warn(`  - Diretório existe: ${fs.existsSync(tempDir)}`);
+          console.warn(`  - Timestamp usado: ${timeSec}s`);
+          console.warn(`  - Arquivo original existe: ${fs.existsSync(filePath)}`);
+          
+          // List files in temp directory for debugging
+          try {
+            const tempFiles = fs.readdirSync(tempDir);
+            console.warn(`  - Arquivos no diretório temp: ${tempFiles.join(', ') || 'nenhum'}`);
+          } catch (listErr) {
+            console.warn(`  - Erro ao listar diretório temp: ${listErr.message}`);
+          }
+          
+          reject(new Error(`Frame ${i + 1} não foi criado em ${output}. Possível problema de formato GIF ou timestamp inválido.`));
         }
       });
   }));
@@ -478,9 +493,39 @@ async function processGif(filePath) {
 
     console.log(`[VideoProcessor] Extraindo frames do GIF nos timestamps: ${finalTimestamps.join(', ')}s`);
 
-    // Extrai frames
-    tempFramePaths = await extractFrames(filePath, finalTimestamps);
-    console.log(`[VideoProcessor] ${tempFramePaths.length} frames extraídos com sucesso`);
+    // Extrai frames - with better error handling for GIF format issues
+    try {
+      tempFramePaths = await extractFrames(filePath, finalTimestamps);
+      console.log(`[VideoProcessor] ${tempFramePaths.length} frames extraídos com sucesso`);
+    } catch (extractError) {
+      console.error('[VideoProcessor] Falha completa na extração de frames:', extractError.message);
+      
+      // Add more specific diagnostic information
+      if (extractError.message.includes('Falha ao extrair qualquer frame')) {
+        console.warn('[VideoProcessor] Possíveis causas do erro de extração de frames:');
+        console.warn('  1. Formato GIF incompatível ou corrompido');
+        console.warn('  2. Timestamps inválidos para este GIF específico');
+        console.warn('  3. Problema de permissão no diretório temporário');
+        console.warn('  4. FFmpeg não consegue processar este tipo de GIF');
+        
+        // Try with a simpler approach - just get the first frame at t=0
+        console.warn('[VideoProcessor] Tentando fallback com extração de frame único...');
+        try {
+          tempFramePaths = await extractFrames(filePath, [0]);
+          console.log('[VideoProcessor] Fallback com frame único foi bem-sucedido');
+        } catch (fallbackError) {
+          console.error('[VideoProcessor] Fallback também falhou:', fallbackError.message);
+          // Return early with basic GIF info instead of crashing
+          return {
+            description: 'GIF detectado mas extração de frames não foi possível',
+            tags: ['gif', 'extracao-falhou', 'formato-problematico']
+          };
+        }
+      } else {
+        // Re-throw other types of extraction errors
+        throw extractError;
+      }
+    }
 
     // Analisa cada frame individualmente
     console.log('[VideoProcessor] Analisando frames do GIF...');
