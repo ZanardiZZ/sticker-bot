@@ -16,6 +16,7 @@ const { processVideo, processGif } = require('./services/videoProcessor');
 const { updateMediaDescription, updateMediaTags } = require('./database');
 const { forceMap, MAX_TAGS_LENGTH, clearDescriptionCmds } = require('./commands');
 const { cleanDescriptionTags } = require('./utils/messageUtils');
+const { generateResponseMessage } = require('./utils/responseMessage');
 
 // Fallback function if cleanDescriptionTags is not available
 function fallbackCleanDescriptionTags(description, tags) {
@@ -265,17 +266,8 @@ async function processIncomingMedia(client, message) {
     const savedMedia = await findById(mediaId);
     const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(savedMedia.description, savedMedia.tags ? (typeof savedMedia.tags === 'string' ? savedMedia.tags.split(',') : savedMedia.tags) : []);
 
-    // Different response messages based on media type
-    let responseMessage = '';
-    if (mimetypeToSave === 'image/gif') {
-      responseMessage = `🎞️ GIF adicionado!\n\n`;
-    } else if (mimetypeToSave.startsWith('video/')) {
-      responseMessage = `🎥 Vídeo adicionado!\n\n`;
-    } else if (mimetypeToSave.startsWith('audio/')) {
-      responseMessage = `🎵 Áudio adicionado!\n\n`;
-    } else {
-      responseMessage = `✅ Figurinha adicionada!\n\n`;
-    }
+    // Generate response message based on media type
+    let responseMessage = generateResponseMessage(mimetypeToSave);
     
     responseMessage += `📝 ${clean.description || ''}\n`;
     responseMessage += `🏷️ ${clean.tags.length > 0 ? clean.tags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ') : ''}\n`;
