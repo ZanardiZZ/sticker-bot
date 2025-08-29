@@ -21,6 +21,7 @@ const contactsModel = require('./models/contacts');
 const duplicatesModel = require('./models/duplicates');
 const maintenanceModel = require('./models/maintenance');
 const processingModel = require('./models/processing');
+const versionModel = require('./models/version');
 
 // Utilities
 const utils = require('./utils');
@@ -30,6 +31,11 @@ const utils = require('./utils');
   try {
     await initializeTables(db);
     console.log('[DB] Database initialization completed');
+    
+    // Initialize version system if needed
+    await versionModel.initializeVersion();
+    const currentVersion = await versionModel.getCurrentVersionString();
+    console.log(`[DB] Version system initialized - Current version: ${currentVersion}`);
   } catch (error) {
     console.error('[DB] Database initialization failed:', error);
   }
@@ -60,6 +66,9 @@ module.exports = {
   // Media processing operations
   ...processingModel,
   
-  // Utilities
+  // Version operations
+  ...versionModel,
+  
+  // Utilities  
   ...utils
 };
