@@ -54,7 +54,7 @@ async function extractFrames(filePath, timestamps) {
   } catch (mkdirErr) {
     console.warn('[VideoProcessor] Erro ao criar diretório temp:', mkdirErr.message);
     // Try with an alternative directory name in case of concurrent access
-    const altTempDir = path.resolve(__dirname, '../temp', `frames_alt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
+    const altTempDir = path.resolve(__dirname, '../temp', `frames_alt_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`);
     try {
       fs.mkdirSync(altTempDir, { recursive: true });
       console.log(`[VideoProcessor] Diretório temporário alternativo criado: ${altTempDir}`);
