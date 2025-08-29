@@ -54,8 +54,8 @@ async function testProposedFix() {
   let duration = undefined;
   
   // PROPOSED FIX: Add proper validation and fallback
-  // If duration is undefined, null, NaN, or <= 0, use a default value
-  if (!duration || isNaN(duration) || duration <= 0) {
+  // If duration is undefined, null, NaN, <= 0, or not finite (Infinity/-Infinity), use a default value
+  if (!duration || isNaN(duration) || duration <= 0 || !isFinite(duration)) {
     duration = 2; // Default fallback duration
     console.log('Invalid duration detected, using fallback:', duration);
   }
@@ -99,7 +99,7 @@ async function testEdgeCases() {
     
     // Apply the same fix logic
     let duration = testDuration;
-    if (!duration || isNaN(duration) || duration <= 0) {
+    if (!duration || isNaN(duration) || duration <= 0 || !isFinite(duration)) {
       duration = 2; // Default fallback
     }
     
