@@ -230,29 +230,157 @@ function setMediaTagsExact(mediaId, tagNames) {
 }
 
 /**
- * Searches for similar tags for certain terms (simplified with LIKE)
+ * Searches for similar tags using context-aware intelligent matching
  * @param {string[]} tagCandidates - Array of tag candidates to search for
  * @returns {Promise<object[]>} Array of similar tags with id and name
  */
 async function findSimilarTags(tagCandidates) {
   if (!tagCandidates.length) return [];
 
-  // Expand tags with their synonyms
-  const expandedTags = await expandTagsWithSynonyms(tagCandidates);
+  const results = [];
+  
+  for (const originalTag of tagCandidates) {
+    // Expand individual tag with its synonyms
+    const expandedTags = await expandTagsWithSynonyms([originalTag]);
+    
+    // Find related matches for the original tag and its synonyms
+    const relatedMatches = await findRelatedTagMatches(originalTag, expandedTags);
+    
+    if (relatedMatches.length === 0) {
+      // No matches found, skip this tag
+      continue;
+    } else if (relatedMatches.length === 1) {
+      // Perfect match, use directly
+      results.push(relatedMatches[0]);
+    } else {
+      // Multiple matches - use context to choose the best
+      const bestMatch = await selectBestTagByContext(originalTag, relatedMatches, tagCandidates);
+      results.push(bestMatch);
+    }
+  }
+  
+  return results;
+}
 
+/**
+ * Finds related tag matches for expanded tags and compound variations
+ * @param {string} originalTag - The original tag being searched for  
+ * @param {string[]} expandedTags - Array of expanded tag names (synonyms)
+ * @returns {Promise<object[]>} Array of matching tags
+ */
+async function findRelatedTagMatches(originalTag, expandedTags) {
   return new Promise((resolve, reject) => {
-    const placeholders = expandedTags.map(() => 'LOWER(name) LIKE ?').join(' OR ');
-    const params = expandedTags.map(t => `%${t}%`);
+    // Find exact matches for synonyms
+    const synonymPlaceholders = expandedTags.map(() => 'LOWER(name) = ?').join(' OR ');
+    const synonymParams = expandedTags.map(t => t.toLowerCase());
+    
+    // Find compound tags that contain the original word
+    const compoundPlaceholder = 'LOWER(name) LIKE ? AND LOWER(name) != ?';
+    const compoundParams = [`%${originalTag.toLowerCase()}%`, originalTag.toLowerCase()];
+    
+    // Combine queries
+    const fullQuery = synonymPlaceholders + ' OR ' + compoundPlaceholder;
+    const fullParams = [...synonymParams, ...compoundParams];
 
     db.all(
-      `SELECT id, name FROM tags WHERE ${placeholders} LIMIT 10`,
-      params,
+      `SELECT id, name FROM tags WHERE ${fullQuery}`,
+      fullParams,
       (err, rows) => {
         if (err) reject(err);
-        else resolve(rows);
+        else {
+          // Remove duplicates based on ID
+          const uniqueRows = rows.filter((tag, index, self) => 
+            index === self.findIndex(t => t.id === tag.id)
+          );
+          resolve(uniqueRows);
+        }
       }
     );
   });
+}
+
+/**
+ * Selects the best tag based on context from other tags using intelligent cross-matching
+ * @param {string} originalTag - The original tag being searched for
+ * @param {object[]} candidateTags - Array of candidate tag objects
+ * @param {string[]} allContextTags - All tags in the current context (from AI)
+ * @returns {Promise<object>} The best matching tag
+ */
+async function selectBestTagByContext(originalTag, candidateTags, allContextTags) {
+  // Calculate context scores for each candidate
+  const tagScores = await Promise.all(candidateTags.map(async (candidateTag) => {
+    let score = 0;
+    const candidateLower = candidateTag.name.toLowerCase();
+    const originalLower = originalTag.toLowerCase();
+    
+    // Base score for exact match (lower to allow context override)
+    if (candidateLower === originalLower) {
+      score += 3;
+    }
+    
+    // Extract compound part of candidate tag (part that's not the original)
+    const compoundPart = candidateLower.replace(originalLower, '');
+    
+    // Cross-match with AI-provided context tags using WordNet synonyms
+    for (const contextTag of allContextTags) {
+      if (contextTag === originalTag) continue; // Skip self-reference
+      
+      const contextLower = contextTag.toLowerCase();
+      
+      // Direct word inclusion - strong boost
+      if (candidateLower.includes(contextLower) && candidateLower !== contextLower) {
+        score += 20;
+      }
+      
+      // Check if context tag relates to compound part of candidate
+      if (compoundPart.length > 2 && contextLower.includes(compoundPart)) {
+        score += 15;
+      }
+      
+      // Intelligent semantic matching using WordNet synonyms
+      if (compoundPart.length > 2) {
+        // Get synonyms for the compound part
+        const compoundSynonyms = await expandTagsWithSynonyms([compoundPart]);
+        
+        // Get synonyms for the context tag  
+        const contextSynonyms = await expandTagsWithSynonyms([contextLower]);
+        
+        // Check for synonym overlap between compound part and context
+        const synonymOverlap = compoundSynonyms.some(compSyn => 
+          contextSynonyms.some(ctxSyn => compSyn === ctxSyn)
+        );
+        
+        if (synonymOverlap) {
+          score += 25; // High score for semantic relationship
+        }
+        
+        // Additional check: if context tag synonyms include the compound part directly
+        if (contextSynonyms.includes(compoundPart)) {
+          score += 20;
+        }
+        
+        // Check if compound part synonyms include the context tag
+        if (compoundSynonyms.includes(contextLower)) {
+          score += 20;
+        }
+      }
+    }
+    
+    // Additional score for compound tags when context is rich
+    const isCompoundTag = candidateTag.name.length > originalTag.length;
+    const contextTagsCount = allContextTags.length;
+    
+    if (isCompoundTag && contextTagsCount > 2) {
+      score += 2;
+    }
+    
+    return { tag: candidateTag, score };
+  }));
+  
+  // Sort by score and return the best
+  tagScores.sort((a, b) => b.score - a.score);
+  
+  return tagScores[0].tag;
 }
 
 module.exports = {
