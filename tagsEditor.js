@@ -1,4 +1,4 @@
-const { findById, updateMediaDescription, updateMediaTags } = require('./database');
+const { findById, updateMediaDescription, updateMediaTags, getTagsForMedia } = require('./database');
 const { cleanDescriptionTags } = require('./utils/messageUtils');
 const { clearDescriptionCmds, MAX_TAGS_LENGTH } = require('./commands');
 
@@ -26,7 +26,7 @@ async function handleTagEditing(client, message, chatId) {
       }
 
       let newDescription = media.description || '';
-      let newTags = media.tags ? (typeof media.tags === 'string' ? media.tags.split(',') : media.tags) : [];
+      let newTags = await getTagsForMedia(media.id);
 
       const parts = newText.split(';');
       for (const part of parts) {
@@ -67,9 +67,10 @@ async function handleTagEditing(client, message, chatId) {
       await updateMediaTags(mediaId, updateTags);
 
       const updatedMedia = await findById(mediaId);
+      const updatedTags = await getTagsForMedia(mediaId);
       const cleanUpdated = cleanDescriptionTags(
         updatedMedia.description,
-        updatedMedia.tags ? (typeof updatedMedia.tags === 'string' ? updatedMedia.tags.split(',') : updatedMedia.tags) : []
+        updatedTags
       );
 
       let updatedMessage = `✅ Figurinha Atualizada!\n\n` +
