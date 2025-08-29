@@ -35,6 +35,27 @@ class MediaQueue extends EventEmitter {
         addedAt: Date.now()
       };
       
+      // Optimization: If queue is empty and nothing is processing, execute immediately
+      if (this.queue.length === 0 && this.processing.size === 0) {
+        this.processing.add(queueItem.id);
+        this.emit('jobAdded', queueItem.id);
+        
+        // Execute immediately without queueing
+        setImmediate(async () => {
+          try {
+            await this.executeJob(queueItem);
+          } catch (error) {
+            console.error(`Immediate job ${queueItem.id} failed:`, error);
+          } finally {
+            // Ensure cleanup happens in all cases
+            this.processing.delete(queueItem.id);
+          }
+        });
+        
+        return;
+      }
+      
+      // Otherwise, use normal queueing
       this.queue.push(queueItem);
       this.stats.queued++;
       this.emit('jobAdded', queueItem.id);
