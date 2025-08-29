@@ -139,9 +139,14 @@ async function sendMediaAsOriginal(client, chatId, media) {
         console.log('[sendMediaAsOriginal] GIF/GIF-like enviado via sendImageAsStickerGif');
         return;
       }
-      // Fallback for GIFs
-      await client.sendFile(chatId, filePath, 'media');
-      console.log('[sendMediaAsOriginal] GIF/GIF-like enviado via sendFile (fallback)');
+      // Fallback for GIFs - send as video if it's actually a video file
+      if (isVideo) {
+        await client.sendFile(chatId, filePath, 'video');
+        console.log('[sendMediaAsOriginal] GIF-like video enviado via sendFile como vídeo (fallback)');
+      } else {
+        await client.sendFile(chatId, filePath, 'media');
+        console.log('[sendMediaAsOriginal] GIF enviado via sendFile como media (fallback)');
+      }
       return;
     }
 
