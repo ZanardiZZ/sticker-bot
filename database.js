@@ -495,7 +495,7 @@ function getMediaWithLowestRandomCount() {
   });
 }
 
-// Busca tags semelhantes para certos termos (simplificação com LIKE)
+// Busca tags semelhantes para certos termos (busca mais precisa para evitar poluição de tags)
 async function findSimilarTags(tagCandidates) {
   if (!tagCandidates.length) return [];
 
@@ -503,8 +503,11 @@ async function findSimilarTags(tagCandidates) {
   const expandedTags = await expandTagsWithSynonyms(tagCandidates);
 
   return new Promise((resolve, reject) => {
-    const placeholders = expandedTags.map(() => 'LOWER(name) LIKE ?').join(' OR ');
-    const params = expandedTags.map(t => `%${t}%`);
+    // Use exact matching instead of broad substring matching to prevent
+    // tags like "AmbienteAconchegante", "AmbienteAoArLivre" being treated as synonyms
+    // just because they both contain "ambiente"
+    const placeholders = expandedTags.map(() => 'LOWER(name) = ?').join(' OR ');
+    const params = expandedTags.map(t => t.toLowerCase());
 
     db.all(
       `SELECT id, name FROM tags WHERE ${placeholders} LIMIT 10`,
