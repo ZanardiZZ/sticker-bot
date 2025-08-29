@@ -49,33 +49,39 @@ async function isGifLikeVideo(filePath, mimetype) {
     const videoStream = metadata.streams?.find(s => s.codec_type === 'video');
     const audioStream = metadata.streams?.find(s => s.codec_type === 'audio');
     
-    // GIF-like characteristics (more conservative detection):
-    // 1. Very short duration (typically < 15 seconds for GIFs)
-    // 2. No audio track (GIFs never have audio)
-    // 3. Low resolution (GIFs are usually small)
-    // 4. Small file size for the duration
+    // CRITICAL: GIFs cannot have audio by definition
+    // If a video has audio, it's definitely not a GIF, regardless of other characteristics
+    const hasAudio = !!audioStream;
+    if (hasAudio) {
+      console.log(`[GIF Detection] Analyzing ${path.basename(filePath)}:`);
+      console.log(`  Has audio: true - DEFINITELY NOT A GIF (GIFs cannot have audio)`);
+      console.log(`  Conclusion: DEFINITELY VIDEO (has audio track)`);
+      return false;
+    }
     
-    const hasNoAudio = !audioStream;
+    // Only for videos without audio: check additional GIF-like characteristics
+    // 1. Very short duration (typically < 15 seconds for GIFs)  
+    // 2. Low resolution (GIFs are usually small)
+    // 3. Small file size for the duration
+    
     const isVeryShortDuration = duration > 0 && duration <= 15; // More conservative: max 15 seconds for GIFs
     const isLowRes = videoStream && (videoStream.width <= 600 || videoStream.height <= 600); // More conservative resolution
     const isSmallFile = size <= 5 * 1024 * 1024; // More conservative: max 5MB for GIFs
     
-    // Require ALL 4 characteristics for GIF detection (more conservative)
-    // This prevents regular videos from being misclassified
+    // For audio-less videos, require ALL remaining characteristics for GIF detection
     let score = 0;
-    if (hasNoAudio) score++;
     if (isVeryShortDuration) score++;
     if (isLowRes) score++;
     if (isSmallFile) score++;
     
-    const isLikelyGif = score >= 4; // Require all 4 criteria instead of just 3
+    const isLikelyGif = score >= 3; // All 3 remaining criteria required (audio already confirmed absent)
     
     console.log(`[GIF Detection] Analyzing ${path.basename(filePath)}:`);
     console.log(`  Duration: ${duration}s (very short: ${isVeryShortDuration})`);
-    console.log(`  Has audio: ${!hasNoAudio} (no audio: ${hasNoAudio})`);
+    console.log(`  Has audio: false (confirmed no audio track)`);
     console.log(`  Resolution: ${videoStream?.width}x${videoStream?.height} (low res: ${isLowRes})`);
     console.log(`  Size: ${Math.round(size / 1024)}KB (small: ${isSmallFile})`);
-    console.log(`  GIF-like score: ${score}/4 (threshold: 4 - ALL criteria required)`);
+    console.log(`  GIF-like score: ${score}/3 (all criteria required for audio-less videos)`);
     console.log(`  Conclusion: ${isLikelyGif ? 'LIKELY GIF' : 'LIKELY VIDEO'}`);
     
     return isLikelyGif;
