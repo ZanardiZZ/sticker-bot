@@ -254,6 +254,17 @@ function assertArrayEquals(actual, expected, message) {
 }
 
 /**
+ * Creates a minimal 1x1 pixel WebP image buffer for testing
+ * @returns {Buffer} A minimal valid WebP image buffer
+ */
+function createMinimalWebP() {
+  return Buffer.from([
+    0x52, 0x49, 0x46, 0x46, 0x1a, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x4c,
+    0x0e, 0x00, 0x00, 0x00, 0x2f, 0x00, 0x00, 0x00, 0x10, 0x88, 0x88, 0x08, 0x00, 0x00
+  ]);
+}
+
+/**
  * Sleep utility for testing
  * @param {number} ms - Milliseconds to sleep
  * @returns {Promise<void>}
@@ -336,5 +347,6 @@ module.exports = {
   assertArrayEquals,
   sleep,
   runTest,
-  runTestSuite
+  runTestSuite,
+  createMinimalWebP
 };
