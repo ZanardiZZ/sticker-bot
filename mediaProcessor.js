@@ -217,36 +217,57 @@ async function processIncomingMedia(client, message) {
       } else if (mimetypeToSave.startsWith('image/') && pngBuffer) {
         // Check if this is an animated WebP (animated sticker) - should be analyzed as video (3 frames)
         if (mimetypeToSave === 'image/webp' && isAnimatedWebpBuffer(bufferWebp)) {
-          try {
-            console.log('🎬 Processing animated sticker using multi-frame analysis...');
-            const aiResult = await processGif(filePath);
-            
-            if (aiResult && typeof aiResult === 'object' && aiResult.description) {
-              const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
-              description = clean.description;
-              tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
-              console.log(`✅ Animated sticker processed successfully: ${description ? description.slice(0, 50) : 'no description'}...`);
-            } else {
-              console.warn('Resultado inválido do processamento de sticker animado:', aiResult);
-              // Still use fallback even if result format is invalid
-              throw new Error('Formato de resultado inválido do processamento de sticker animado');
-            }
-            
-          } catch (err) {
-            console.warn('Erro ao processar sticker animado com lógica de frames múltiplos:', err.message);
-            console.log('🔄 Tentando fallback para análise de frame único...');
-            
-            // Fallback to single frame analysis if multi-frame processing fails
+          
+          // Check if multi-frame analysis is disabled via environment variable
+          const disableMultiFrameAnalysis = process.env.DISABLE_MULTIFRAME_WEBP_ANALYSIS === 'true';
+          
+          if (disableMultiFrameAnalysis) {
+            console.log('⚠️ Multi-frame analysis disabled via DISABLE_MULTIFRAME_WEBP_ANALYSIS - using single-frame analysis for animated sticker');
+            // Process as single-frame image directly
             const aiResult = await getAiAnnotations(pngBuffer);
             if (aiResult && typeof aiResult === 'object') {
               const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
               description = clean.description;
               tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
-              console.log('⚠️ Animated sticker processed using fallback single-frame analysis');
+              console.log('✅ Animated sticker processed using single-frame analysis (disabled multi-frame)');
             } else {
-              console.warn('Resultado inválido do fallback para sticker animado:', aiResult);
+              console.warn('Resultado inválido do processamento de sticker animado (single-frame):', aiResult);
               description = 'Sticker animado detectado - análise de conteúdo não disponível';
               tags = 'sticker,animado,sem-analise';
+            }
+          } else {
+            // Normal multi-frame processing
+            try {
+              console.log('🎬 Processing animated sticker using multi-frame analysis...');
+              const aiResult = await processGif(filePath);
+              
+              if (aiResult && typeof aiResult === 'object' && aiResult.description) {
+                const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
+                description = clean.description;
+                tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
+                console.log(`✅ Animated sticker processed successfully: ${description ? description.slice(0, 50) : 'no description'}...`);
+              } else {
+                console.warn('Resultado inválido do processamento de sticker animado:', aiResult);
+                // Still use fallback even if result format is invalid
+                throw new Error('Formato de resultado inválido do processamento de sticker animado');
+              }
+              
+            } catch (err) {
+              console.warn('Erro ao processar sticker animado com lógica de frames múltiplos:', err.message);
+              console.log('🔄 Tentando fallback para análise de frame único...');
+              
+              // Fallback to single frame analysis if multi-frame processing fails
+              const aiResult = await getAiAnnotations(pngBuffer);
+              if (aiResult && typeof aiResult === 'object') {
+                const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
+                description = clean.description;
+                tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
+                console.log('⚠️ Animated sticker processed using fallback single-frame analysis');
+              } else {
+                console.warn('Resultado inválido do fallback para sticker animado:', aiResult);
+                description = 'Sticker animado detectado - análise de conteúdo não disponível';
+                tags = 'sticker,animado,sem-analise';
+              }
             }
           }
         } else {
