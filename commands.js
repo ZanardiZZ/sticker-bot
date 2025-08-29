@@ -126,9 +126,9 @@ async function sendMediaAsOriginal(client, chatId, media) {
     return;
   }
 
-  // Videos should be sent as videos (not stickers)
+  // Videos should be sent as files (not stickers)
   if (isVideo) {
-    await client.sendFile(chatId, filePath, 'video');
+    await client.sendFile(chatId, filePath, 'media');
     return;
   }
 
