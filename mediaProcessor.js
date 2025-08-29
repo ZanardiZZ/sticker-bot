@@ -16,6 +16,7 @@ const { processVideo, processGif } = require('./services/videoProcessor');
 const { updateMediaDescription, updateMediaTags } = require('./database');
 const { forceMap, MAX_TAGS_LENGTH, clearDescriptionCmds } = require('./commands');
 const { cleanDescriptionTags } = require('./utils/messageUtils');
+const { isGifLikeVideo } = require('./utils/gifDetection');
 
 // Fallback function if cleanDescriptionTags is not available
 function fallbackCleanDescriptionTags(description, tags) {
@@ -65,6 +66,7 @@ async function processIncomingMedia(client, message) {
       extToSave = 'gif';
       mimetypeToSave = 'image/gif';
     }
+    
 
     // Only convert to PNG and generate visual hash for image formats that Sharp supports
     let pngBuffer = null;
@@ -265,9 +267,15 @@ async function processIncomingMedia(client, message) {
     const savedMedia = await findById(mediaId);
     const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(savedMedia.description, savedMedia.tags ? (typeof savedMedia.tags === 'string' ? savedMedia.tags.split(',') : savedMedia.tags) : []);
 
+    // Check if this video is actually a GIF-like animation
+    let isGifLike = false;
+    if (mimetypeToSave.startsWith('video/')) {
+      isGifLike = await isGifLikeVideo(filePath, mimetypeToSave);
+    }
+
     // Different response messages based on media type
     let responseMessage = '';
-    if (mimetypeToSave === 'image/gif') {
+    if (mimetypeToSave === 'image/gif' || isGifLike) {
       responseMessage = `🎞️ GIF adicionado!\n\n`;
     } else if (mimetypeToSave.startsWith('video/')) {
       responseMessage = `🎥 Vídeo adicionado!\n\n`;
