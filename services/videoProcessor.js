@@ -515,11 +515,8 @@ async function processGif(filePath) {
           console.log('[VideoProcessor] Fallback com frame único foi bem-sucedido');
         } catch (fallbackError) {
           console.error('[VideoProcessor] Fallback também falhou:', fallbackError.message);
-          // Return early with basic GIF info instead of crashing
-          return {
-            description: 'GIF detectado mas extração de frames não foi possível',
-            tags: ['gif', 'extracao-falhou', 'formato-problematico']
-          };
+          // Throw error to trigger fallback mechanism in mediaProcessor.js
+          throw new Error('GIF frame extraction failed completely - will trigger single-frame analysis fallback');
         }
       } else {
         // Re-throw other types of extraction errors
