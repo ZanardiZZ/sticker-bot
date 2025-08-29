@@ -5,7 +5,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { createTestDatabase, createTestTables, assert, assertEqual, assertLength } = require('../helpers/testUtils');
+const { createTestDatabase, createTestTables, assert, assertEqual, assertLength, createMinimalWebP } = require('../helpers/testUtils');
 
 // Mock WhatsApp client for testing
 class MockWhatsAppClient {
@@ -88,11 +88,7 @@ const tests = [
       const testFilePath = path.join(fixturesDir, 'test-image.webp');
       
       // Create a minimal valid WebP file instead of fake data
-      // This is a minimal 1x1 pixel WebP image
-      const validWebPBuffer = Buffer.from([
-        0x52, 0x49, 0x46, 0x46, 0x1a, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x4c,
-        0x0e, 0x00, 0x00, 0x00, 0x2f, 0x00, 0x00, 0x00, 0x10, 0x88, 0x88, 0x08, 0x00, 0x00
-      ]);
+      const validWebPBuffer = createMinimalWebP();
       
       if (!fs.existsSync(testFilePath)) {
         fs.writeFileSync(testFilePath, validWebPBuffer);
