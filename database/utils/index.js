@@ -115,11 +115,74 @@ function upsertProcessedFile(fileName, lastModified) {
   });
 }
 
+/**
+ * Parses a SemVer string into components
+ * @param {string} versionString - Version string (e.g., "1.2.3-alpha+build.1")
+ * @returns {Object} Parsed version components
+ */
+function parseSemVer(versionString) {
+  const semverRegex = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
+  const match = versionString.match(semverRegex);
+  
+  if (!match) {
+    throw new Error(`Invalid SemVer string: ${versionString}`);
+  }
+  
+  return {
+    major: parseInt(match[1], 10),
+    minor: parseInt(match[2], 10),
+    patch: parseInt(match[3], 10),
+    preRelease: match[4] || null,
+    buildMetadata: match[5] || null,
+    raw: versionString
+  };
+}
+
+/**
+ * Compares two SemVer version strings
+ * @param {string} version1 - First version string
+ * @param {string} version2 - Second version string
+ * @returns {number} -1 if version1 < version2, 0 if equal, 1 if version1 > version2
+ */
+function compareSemVer(version1, version2) {
+  const v1 = parseSemVer(version1);
+  const v2 = parseSemVer(version2);
+  
+  // Compare major, minor, patch
+  if (v1.major !== v2.major) return v1.major > v2.major ? 1 : -1;
+  if (v1.minor !== v2.minor) return v1.minor > v2.minor ? 1 : -1;
+  if (v1.patch !== v2.patch) return v1.patch > v2.patch ? 1 : -1;
+  
+  // Handle pre-release versions
+  if (!v1.preRelease && !v2.preRelease) return 0;
+  if (!v1.preRelease && v2.preRelease) return 1;
+  if (v1.preRelease && !v2.preRelease) return -1;
+  
+  return v1.preRelease.localeCompare(v2.preRelease);
+}
+
+/**
+ * Validates if a string is a valid SemVer version
+ * @param {string} versionString - Version string to validate
+ * @returns {boolean} True if valid SemVer
+ */
+function isValidSemVer(versionString) {
+  try {
+    parseSemVer(versionString);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 module.exports = {
   getMD5,
   getSynonyms,
   expandTagsWithSynonyms,
   getHashVisual,
   isFileProcessed,
-  upsertProcessedFile
+  upsertProcessedFile,
+  parseSemVer,
+  compareSemVer,
+  isValidSemVer
 };

@@ -80,6 +80,23 @@ function initializeTables(db) {
         )
       `);
 
+      // Version tracking table for SemVer implementation
+      db.run(`
+        CREATE TABLE IF NOT EXISTS version_info (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          major INTEGER NOT NULL DEFAULT 1,
+          minor INTEGER NOT NULL DEFAULT 0,
+          patch INTEGER NOT NULL DEFAULT 0,
+          pre_release TEXT,
+          build_metadata TEXT,
+          created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')*1000),
+          created_by TEXT,
+          description TEXT,
+          hidden_data TEXT,
+          is_current INTEGER DEFAULT 1
+        )
+      `);
+
       // Analytics tables (if enabled)
       db.run(`
         CREATE TABLE IF NOT EXISTS request_log (
@@ -147,6 +164,10 @@ function createIndexes(db) {
 
   // Contact indexes
   db.run(`CREATE INDEX IF NOT EXISTS idx_contacts_display_name ON contacts(display_name)`);
+
+  // Version indexes
+  db.run(`CREATE INDEX IF NOT EXISTS idx_version_info_current ON version_info(is_current)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_version_info_created_at ON version_info(created_at DESC)`);
 }
 
 module.exports = { initializeTables };
