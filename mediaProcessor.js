@@ -7,7 +7,8 @@ const {
   getHashVisual,
   findByHashVisual,
   findById,
-  saveMedia
+  saveMedia,
+  getTagsForMedia
 } = require('./database');
 const { isNSFW } = require('./services/nsfwFilter');
 const { isVideoNSFW } = require('./services/nsfwVideoFilter');
@@ -265,7 +266,8 @@ async function processIncomingMedia(client, message) {
     });
 
     const savedMedia = await findById(mediaId);
-    const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(savedMedia.description, savedMedia.tags ? (typeof savedMedia.tags === 'string' ? savedMedia.tags.split(',') : savedMedia.tags) : []);
+    const savedTags = await getTagsForMedia(mediaId);
+    const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(savedMedia.description, savedTags);
 
     // Check if this video is actually a GIF-like animation
     let isGifLike = false;
