@@ -7,6 +7,7 @@ const { normalizeText } = require('../utils/commandNormalizer');
 const { logReceivedMessage } = require('./logging');
 const { upsertContactFromMessage } = require('./contacts');
 const { processIncomingMedia } = require('../mediaProcessor');
+const { withTyping } = require('../utils/typingIndicator');
 
 /**
  * Main message handler that processes all incoming messages
@@ -44,7 +45,9 @@ async function handleMessage(client, message) {
     console.error('Erro ao processar mensagem:', e);
     if (e?.response?.data) console.error('Detalhes resposta:', e.response.data);
     try { 
-      await client.reply(message.from, 'Erro ao processar sua mensagem.', message.id); 
+      await withTyping(client, message.from, async () => {
+        await client.reply(message.from, 'Erro ao processar sua mensagem.', message.id);
+      });
     } catch {}
   }
 }

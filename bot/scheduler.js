@@ -11,6 +11,7 @@ const {
   getTagsForMedia 
 } = require('../database');
 const { cleanDescriptionTags, renderInfoMessage } = require('../utils/messageUtils');
+const { withTyping } = require('../utils/typingIndicator');
 
 const AUTO_SEND_GROUP_ID = process.env.AUTO_SEND_GROUP_ID;
 
@@ -39,27 +40,30 @@ async function sendRandomMediaToGroup(client, sendStickerFunction) {
     return;
   }
 
-  try {
-    const media = await pickRandomMedia();
-    if (!media) {
-      console.log('Nenhuma mídia disponível para envio automático.');
-      return;
+  // Show typing while preparing and sending the random media
+  await withTyping(client, AUTO_SEND_GROUP_ID, async () => {
+    try {
+      const media = await pickRandomMedia();
+      if (!media) {
+        console.log('Nenhuma mídia disponível para envio automático.');
+        return;
+      }
+
+      await incrementRandomCount(media.id);
+      await sendStickerFunction(client, AUTO_SEND_GROUP_ID, media);
+
+      const full = await findById(media.id);
+      if (full) {
+        const tags = await getTagsForMedia(full.id);
+        const clean = cleanDescriptionTags(full.description, tags);
+        await client.sendText(AUTO_SEND_GROUP_ID, renderInfoMessage({ ...clean, id: full.id }));
+      }
+
+      console.log('Mídia enviada automaticamente ao grupo.');
+    } catch (err) {
+      console.error('Erro no envio automático:', err);
     }
-
-    await incrementRandomCount(media.id);
-    await sendStickerFunction(client, AUTO_SEND_GROUP_ID, media);
-
-    const full = await findById(media.id);
-    if (full) {
-      const tags = await getTagsForMedia(full.id);
-      const clean = cleanDescriptionTags(full.description, tags);
-      await client.sendText(AUTO_SEND_GROUP_ID, renderInfoMessage({ ...clean, id: full.id }));
-    }
-
-    console.log('Mídia enviada automaticamente ao grupo.');
-  } catch (err) {
-    console.error('Erro no envio automático:', err);
-  }
+  });
 }
 
 /**
