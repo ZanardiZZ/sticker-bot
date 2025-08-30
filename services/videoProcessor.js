@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const OpenAI = require('openai');
 const fs = require('fs');
 const path = require('path');
-const { getAiAnnotationsFromPrompt, getAiAnnotations } = require('./ai');
+const { getAiAnnotationsFromPrompt, getAiAnnotations, getAiAnnotationsForGif } = require('./ai');
 const sharp = require('sharp');
 const { getTopTags } = require('../utils/messageUtils');
 // (Removed unused constants whisperPath and modelPath)
@@ -663,5 +663,238 @@ Responda no formato JSON:
   }
 }
 
+/**
+ * Process animated WebP files using Sharp instead of FFmpeg
+ * @param {string} filePath - Path to animated WebP file
+ * @returns {Promise<Object>} Analysis result with description and tags
+ */
+async function processAnimatedWebp(filePath) {
+  console.log('[VideoProcessor] Processing animated WebP using Sharp...');
+  
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Arquivo não encontrado: ${filePath}`);
+  }
+  
+  let tempFramePaths = [];
+  
+  try {
+    // Read the animated WebP file
+    const webpBuffer = fs.readFileSync(filePath);
+    
+    // Get metadata to determine number of frames
+    const metadata = await sharp(webpBuffer).metadata();
+    console.log(`[VideoProcessor] WebP metadata: ${metadata.pages} frames, ${metadata.width}x${metadata.height}`);
+    
+    if (!metadata.pages || metadata.pages <= 1) {
+      // Not animated, process as single frame
+      console.log('[VideoProcessor] WebP appears to be static, using single-frame analysis');
+      const pngBuffer = await sharp(webpBuffer, { page: 0 }).png().toBuffer();
+      const aiResult = await getAiAnnotationsForGif(pngBuffer);
+      
+      if (aiResult && typeof aiResult === 'object' && (aiResult.description || aiResult.tags)) {
+        return {
+          description: aiResult.description || 'Sticker estático processado',
+          tags: Array.isArray(aiResult.tags) ? aiResult.tags : ['sticker', 'estatico']
+        };
+      } else {
+        return {
+          description: 'Sticker estático detectado',
+          tags: ['sticker', 'estatico', 'sem-analise']
+        };
+      }
+    }
+    
+    // For animated WebP, extract up to 3 frames evenly distributed
+    const totalFrames = metadata.pages;
+    const framesToExtract = Math.min(3, totalFrames);
+    const frameIndices = [];
+    
+    if (totalFrames === 1) {
+      frameIndices.push(0);
+    } else if (totalFrames === 2) {
+      frameIndices.push(0, 1);
+    } else {
+      // Distribute frames evenly: first, middle, last
+      frameIndices.push(0);
+      frameIndices.push(Math.floor(totalFrames / 2));
+      frameIndices.push(totalFrames - 1);
+    }
+    
+    console.log(`[VideoProcessor] Extracting frames at indices: ${frameIndices.join(', ')} from ${totalFrames} total frames`);
+    
+    // Extract frames using Sharp
+    const uniqueId = crypto.randomBytes(8).toString('hex');
+    const processId = process.pid;
+    const tempDir = path.resolve(__dirname, '../temp', `webp_frames_${processId}_${uniqueId}`);
+    
+    // Ensure temp directory exists
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+    
+    for (let i = 0; i < frameIndices.length; i++) {
+      const frameIndex = frameIndices[i];
+      const framePath = path.join(tempDir, `frame_${i + 1}_idx${frameIndex}.png`);
+      
+      try {
+        // Extract specific frame and convert to PNG
+        const frameBuffer = await sharp(webpBuffer, { page: frameIndex }).png().toBuffer();
+        fs.writeFileSync(framePath, frameBuffer);
+        tempFramePaths.push(framePath);
+        console.log(`[VideoProcessor] Extracted frame ${i + 1} (index ${frameIndex}) to ${framePath}`);
+      } catch (frameError) {
+        console.warn(`[VideoProcessor] Failed to extract frame ${frameIndex}: ${frameError.message}`);
+        // Continue with other frames
+      }
+    }
+    
+    if (tempFramePaths.length === 0) {
+      throw new Error('Failed to extract any frames from animated WebP');
+    }
+    
+    // Analyze each extracted frame
+    console.log(`[VideoProcessor] Analyzing ${tempFramePaths.length} frames from animated WebP...`);
+    const frameAnalyses = [];
+    
+    for (let i = 0; i < tempFramePaths.length; i++) {
+      try {
+        const framePath = tempFramePaths[i];
+        const frameBuffer = fs.readFileSync(framePath);
+        const analysis = await getAiAnnotationsForGif(frameBuffer);
+        
+        if (analysis && typeof analysis === 'object' && (analysis.description || analysis.tags)) {
+          frameAnalyses.push({
+            frameIndex: i + 1,
+            description: analysis.description,
+            tags: Array.isArray(analysis.tags) ? analysis.tags : []
+          });
+          console.log(`[VideoProcessor] Frame ${i + 1} analyzed successfully`);
+        }
+      } catch (frameError) {
+        console.warn(`[VideoProcessor] Error analyzing frame ${i + 1}: ${frameError.message}`);
+        // Continue with other frames
+      }
+    }
+    
+    if (frameAnalyses.length === 0) {
+      console.warn('[VideoProcessor] No frames analyzed successfully for animated WebP');
+      return { 
+        description: 'Sticker animado processado mas sem análise de conteúdo disponível', 
+        tags: ['sticker', 'animado', 'sem-analise'] 
+      };
+    }
+    
+    // Combine frame analyses
+    const fileId = path.basename(filePath).replace(/\W+/g, '_');
+    
+    if (frameAnalyses.length === 1) {
+      // Single frame analyzed
+      return {
+        description: frameAnalyses[0].description || 'Sticker animado processado',
+        tags: frameAnalyses[0].tags.length > 0 ? frameAnalyses[0].tags : ['sticker', 'animado']
+      };
+    } else {
+      // Multiple frames - create comprehensive description
+      const frameDescriptions = frameAnalyses
+        .map((analysis, i) => `Frame ${analysis.frameIndex}: ${analysis.description}`)
+        .filter(desc => desc.includes(':') && desc.split(':')[1].trim())
+        .join('\n');
 
-module.exports = { processVideo, processGif, extractFrames };
+      const allTags = frameAnalyses
+        .flatMap(analysis => analysis.tags)
+        .filter(tag => tag && tag.trim());
+
+      const topTags = getTopTags(allTags, 5);
+      
+      // Generate summary using AI
+      const prompt = `
+Você está analisando um sticker animado WebP (ID: ${fileId}) através de múltiplos frames.
+
+IMPORTANTE: Este é um sticker animado, não um vídeo. Descreva a animação ou movimento sem usar termos como "vídeo", "filmagem" ou "gravação".
+
+ANÁLISE DE CADA FRAME:
+${frameDescriptions}
+
+TAGS IDENTIFICADAS:
+${topTags.join(', ')}
+
+Por favor, forneça uma descrição única e concisa (máximo 50 palavras) que capture a essência da animação do sticker. Foque na ação, expressão ou movimento mostrado. Use termos como "sticker animado", "animação", "movimento" em vez de "vídeo".`;
+
+      try {
+        const summaryResult = await getAiAnnotationsFromPrompt(prompt);
+        if (summaryResult && summaryResult.description) {
+          return {
+            description: summaryResult.description,
+            tags: summaryResult.tags && summaryResult.tags.length > 0 ? summaryResult.tags : topTags
+          };
+        }
+      } catch (summaryError) {
+        console.warn('[VideoProcessor] Failed to generate AI summary for animated WebP:', summaryError.message);
+      }
+      
+      // Fallback: use first frame description with combined tags
+      return {
+        description: frameAnalyses[0].description || 'Sticker animado com múltiplos frames',
+        tags: topTags.length > 0 ? topTags : ['sticker', 'animado']
+      };
+    }
+    
+  } catch (error) {
+    console.error('[VideoProcessor] Error processing animated WebP:', error.message);
+    
+    // Enhanced error handling with specific fallbacks
+    if (error.message.includes('Input buffer contains unsupported image format') ||
+        error.message.includes('VipsForeignLoad') ||
+        error.message.includes('webp')) {
+      console.warn('[VideoProcessor] WebP format not supported by Sharp version or corrupted file');
+      return {
+        description: 'Sticker animado detectado - formato não suportado para análise detalhada',
+        tags: ['sticker', 'animado', 'formato-nao-suportado']
+      };
+    }
+    
+    if (error.message.includes('Failed to extract any frames')) {
+      console.warn('[VideoProcessor] Frame extraction failed completely');
+      return {
+        description: 'Sticker animado detectado - análise de frames não disponível',
+        tags: ['sticker', 'animado', 'sem-analise']
+      };
+    }
+    
+    // Generic error fallback
+    return { 
+      description: `Sticker animado processado com limitações: ${error.message.slice(0, 50)}...`, 
+      tags: ['sticker', 'animado', 'erro-processamento'] 
+    };
+  } finally {
+    // Clean up temporary files
+    if (tempFramePaths.length > 0) {
+      console.log(`[VideoProcessor] Cleaning up ${tempFramePaths.length} temporary frame files...`);
+      for (const fp of tempFramePaths) {
+        try { 
+          if (fs.existsSync(fp)) {
+            fs.unlinkSync(fp);
+          }
+        } catch (cleanupErr) {
+          console.warn(`[VideoProcessor] Error cleaning up temporary file ${fp}: ${cleanupErr.message}`);
+        }
+      }
+      
+      // Also clean up the temporary directory if empty
+      try {
+        const tempDir = path.dirname(tempFramePaths[0]);
+        if (fs.existsSync(tempDir)) {
+          const files = fs.readdirSync(tempDir);
+          if (files.length === 0) {
+            fs.rmdirSync(tempDir);
+          }
+        }
+      } catch (dirCleanupErr) {
+        console.warn(`[VideoProcessor] Error cleaning up temporary directory: ${dirCleanupErr.message}`);
+      }
+    }
+  }
+}
+
+
+module.exports = { processVideo, processGif, extractFrames, processAnimatedWebp };
