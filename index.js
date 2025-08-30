@@ -1,5 +1,9 @@
 require('dotenv').config();
 
+// Initialize log collector to capture bot logs
+const { getLogCollector } = require('./utils/logCollector');
+const logCollector = getLogCollector(2000);
+
 // ---- Modular bot components
 const { initializeBot } = require('./bot/client');
 const { scheduleAutoSend } = require('./bot/scheduler');
