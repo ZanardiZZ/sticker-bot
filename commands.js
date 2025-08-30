@@ -71,7 +71,8 @@ async function sendMediaByType(client, chatId, media) {
       await client.sendImageAsStickerGif(chatId, filePath, { pack: PACK_NAME, author: AUTHOR_NAME });
       return;
     }
-    await client.sendFile(chatId, filePath, 'media');
+    const path = require('path');
+    await client.sendFile(chatId, filePath, path.basename(filePath));
     return;
   }
 
@@ -94,7 +95,8 @@ async function sendMediaByType(client, chatId, media) {
   }
 
   // Others
-  await client.sendFile(chatId, filePath, 'media');
+  const path = require('path');
+  await client.sendFile(chatId, filePath, path.basename(filePath));
 }
 
 // Função para envio da mídia no formato original (para comando #ID)
@@ -123,13 +125,15 @@ async function sendMediaAsOriginal(client, chatId, media) {
       await client.sendImageAsStickerGif(chatId, filePath, { pack: PACK_NAME, author: AUTHOR_NAME });
       return;
     }
-    await client.sendFile(chatId, filePath, 'media');
+    const path = require('path');
+    await client.sendFile(chatId, filePath, path.basename(filePath));
     return;
   }
 
   // Videos should be sent as files (not stickers)
   if (isVideo) {
-    await client.sendFile(chatId, filePath, 'media');
+    const path = require('path');
+    await client.sendFile(chatId, filePath, path.basename(filePath));
     return;
   }
 
@@ -152,7 +156,8 @@ async function sendMediaAsOriginal(client, chatId, media) {
   }
 
   // Audio and others
-  await client.sendFile(chatId, filePath, 'media');
+  const path = require('path');
+  await client.sendFile(chatId, filePath, path.basename(filePath));
 }
 
 async function handleTaggingMode(client, message, chatId) {
