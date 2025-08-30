@@ -33,6 +33,8 @@ async function startSocketServer() {
       port: SOCKET_PORT,
       host: SOCKET_HOST,
       popup: false,
+      // Chrome executable path for environments where puppeteer Chrome wasn't downloaded
+      executablePath: process.env.CHROME_EXECUTABLE_PATH || '/usr/bin/google-chrome',
       restartOnCrash: () => {
         console.log('🔄 Cliente reiniciado devido a crash...');
       }
@@ -57,6 +59,16 @@ async function startSocketServer() {
 
   } catch (error) {
     console.error('❌ Erro ao iniciar servidor socket:', error);
+    
+    // Provide specific guidance for browser launch errors
+    if (error.message && error.message.includes('Failed to launch the browser process')) {
+      console.error('💡 Erro de lançamento do navegador detectado:');
+      console.error('   - Verifique se o Chrome está instalado no sistema');
+      console.error('   - Configure CHROME_EXECUTABLE_PATH no .env se necessário');
+      console.error('   - Caminhos comuns: /usr/bin/google-chrome, /usr/bin/chromium');
+      console.error('   - Ou reinstale com: npx puppeteer browsers install chrome');
+    }
+    
     process.exit(1);
   }
 }
