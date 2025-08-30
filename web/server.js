@@ -25,7 +25,9 @@ const {
   createLoginRateLimiter,
   createRegistrationRateLimiter,
   createRequestLogger,
-  createIPRulesMiddleware
+  createIPRulesMiddleware,
+  createCSRFMiddleware,
+  getCSRFToken
 } = require('./middlewares');
 const { registerRoutes } = require('./routes');
 const UMAMI_ORIGIN = process.env.UMAMI_ORIGIN || 'https://analytics.zanardizz.uk';
@@ -197,6 +199,9 @@ app.use(session({
   }
 }));
 
+// CSRF Protection
+app.use(createCSRFMiddleware());
+
 console.time('[BOOT] auth');
 authMiddleware(app);
 registerAuthRoutes(app);
@@ -251,6 +256,12 @@ app.use(requestLogger);
 
 // Register modularized routes
 registerRoutes(app, db);
+
+// CSRF Token endpoint
+app.get('/api/csrf-token', (req, res) => {
+  const token = getCSRFToken(req, res);
+  res.json({ csrfToken: token });
+});
   // ========= Email Confirmation API =========
 app.get('/confirm-email', async (req, res) => {
   const { token } = req.query;
