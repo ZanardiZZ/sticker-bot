@@ -9,6 +9,10 @@
 
 require('dotenv').config();
 
+// Initialize log collector to capture socket server logs
+const { getLogCollector } = require('./utils/logCollector');
+const logCollector = getLogCollector(2000);
+
 const { create, ev } = require('@open-wa/wa-automate');
 
 // Configuration

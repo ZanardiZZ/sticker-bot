@@ -4,6 +4,7 @@
 
 const createAccountRoutes = require('./account');
 const createCaptchaRoutes = require('./captcha');
+const createAdminRoutes = require('./admin');
 
 /**
  * Registers all API routes with the Express app
@@ -14,10 +15,10 @@ function registerRoutes(app, db) {
   // Register route modules
   app.use('/api', createAccountRoutes(db));
   app.use('/api', createCaptchaRoutes());
+  app.use('/api', createAdminRoutes(db));
   
   // TODO: Add other route modules:
   // - Registration routes
-  // - Admin routes  
   // - Media/sticker routes
   // - Analytics routes
 }

@@ -128,6 +128,7 @@
     <div class="main-tab-container">
       <div class="main-tab-nav">
         <button class="main-tab-button active" data-tab="settings">Configurações</button>
+        <button class="main-tab-button admin-only" data-tab="logs">Logs</button>
         <button class="main-tab-button admin-only" data-tab="network">Rede</button>
         <button class="main-tab-button admin-only" data-tab="users">Usuários</button>
         <button class="main-tab-button admin-only" data-tab="duplicates">Mídias Duplicadas</button>
@@ -146,6 +147,69 @@
             <button id="btnChangePass" class="btn-primary">Alterar senha</button>
           </div>
           <div id="cp_msg" class="muted"></div>
+        </div>
+      </div>
+      
+      <!-- Logs Tab Content -->
+      <div class="main-tab-content admin-only" id="main-tab-logs">
+        <div class="panel">
+          <h3>Visualizador de Logs</h3>
+          <div class="warn">
+            <strong>Logs do Sistema:</strong> Visualize logs do servidor web, bot e outros componentes em tempo real.
+          </div>
+          
+          <!-- Controles e Filtros -->
+          <div class="row" style="margin-bottom: 1rem; gap: 1rem; flex-wrap: wrap;">
+            <select id="logLevelFilter" style="flex: 0 0 150px;">
+              <option value="all">Todos os níveis</option>
+              <option value="info">Info</option>
+              <option value="warn">Warning</option>
+              <option value="error">Error</option>
+            </select>
+            <input id="logSearchFilter" type="text" placeholder="Buscar nos logs..." style="flex: 1 1 250px;">
+            <button id="refreshLogs" class="btn-primary" style="flex: 0 0 auto;">Atualizar</button>
+            <button id="clearLogs" class="btn-danger" style="flex: 0 0 auto;">Limpar</button>
+            <label style="flex: 0 0 auto; display: flex; align-items: center; gap: 0.5rem;">
+              <input type="checkbox" id="autoRefreshLogs" checked>
+              <span>Auto-refresh</span>
+            </label>
+          </div>
+          
+          <!-- Estatísticas -->
+          <div class="stats-grid" style="margin-bottom: 1rem;">
+            <div class="stat-card">
+              <div class="stat-value" id="totalLogs">-</div>
+              <div class="stat-label">Total de Logs</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="infoLogs" style="color: #059669;">-</div>
+              <div class="stat-label">Info</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="warnLogs" style="color: #d97706;">-</div>
+              <div class="stat-label">Warnings</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="errorLogs" style="color: #dc2626;">-</div>
+              <div class="stat-label">Errors</div>
+            </div>
+          </div>
+          
+          <!-- Container de Logs -->
+          <div id="logsContainer" style="background: #000; color: #00ff00; padding: 1rem; border-radius: 6px; height: 400px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 0.85rem; line-height: 1.4;">
+            <div id="logsContent">
+              <div style="color: #666;">Carregando logs...</div>
+            </div>
+          </div>
+          
+          <!-- Paginação -->
+          <div id="logsPagination" class="row" style="margin-top: 1rem; justify-content: space-between;">
+            <span id="logsInfo" class="muted">Nenhum log carregado</span>
+            <div>
+              <button id="prevLogs" class="btn-primary" disabled>Anterior</button>
+              <button id="nextLogs" class="btn-primary" disabled>Próxima</button>
+            </div>
+          </div>
         </div>
       </div>
       

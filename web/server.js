@@ -3,6 +3,11 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const ENABLE_INTERNAL_ANALYTICS = process.env.ENABLE_INTERNAL_ANALYTICS === '1';
+
+// Initialize log collector before any console logs
+const { getLogCollector } = require('../utils/logCollector');
+const logCollector = getLogCollector(2000); // Buffer de 2000 logs
+
 try {
   require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
   console.log('[ENV] .env carregado');
