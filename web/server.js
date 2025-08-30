@@ -3,6 +3,11 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const ENABLE_INTERNAL_ANALYTICS = process.env.ENABLE_INTERNAL_ANALYTICS === '1';
+
+// Initialize log collector before any console logs
+const { getLogCollector } = require('../utils/logCollector');
+const logCollector = getLogCollector(2000); // Buffer de 2000 logs
+
 try {
   require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
   console.log('[ENV] .env carregado');
@@ -20,7 +25,9 @@ const {
   createLoginRateLimiter,
   createRegistrationRateLimiter,
   createRequestLogger,
-  createIPRulesMiddleware
+  createIPRulesMiddleware,
+  createCSRFMiddleware,
+  getCSRFToken
 } = require('./middlewares');
 const { registerRoutes } = require('./routes');
 const UMAMI_ORIGIN = process.env.UMAMI_ORIGIN || 'https://analytics.zanardizz.uk';
@@ -192,6 +199,9 @@ app.use(session({
   }
 }));
 
+// CSRF Protection
+app.use(createCSRFMiddleware());
+
 console.time('[BOOT] auth');
 authMiddleware(app);
 registerAuthRoutes(app);
@@ -246,6 +256,12 @@ app.use(requestLogger);
 
 // Register modularized routes
 registerRoutes(app, db);
+
+// CSRF Token endpoint
+app.get('/api/csrf-token', (req, res) => {
+  const token = getCSRFToken(req, res);
+  res.json({ csrfToken: token });
+});
   // ========= Email Confirmation API =========
 app.get('/confirm-email', async (req, res) => {
   const { token } = req.query;
