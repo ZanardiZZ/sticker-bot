@@ -83,8 +83,17 @@ async function handleMessage(client, message) {
  * Sets up message handling for the client
  * @param {Object} client - WhatsApp client instance
  */
-function setupMessageHandler(client) {
-  client.onMessage(message => handleMessage(client, message));
+function setupMessageHandler(client, handleMessage) {
+  if (typeof client.onAnyMessage === "function") {
+    client.onAnyMessage(message => handleMessage(client, message));
+    console.log("✅ Registrado handler via onAnyMessage");
+  } else if (typeof client.onMessage === "function") {
+    client.onMessage(message => handleMessage(client, message));
+    console.log("✅ Registrado handler via onMessage");
+  } else {
+    console.error('❌ Nenhum método de listener de mensagem encontrado no client!');
+    throw new Error("Client does not support message listeners");
+  }
 }
 
 module.exports = {

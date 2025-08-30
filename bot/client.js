@@ -4,12 +4,13 @@
  */
 
 const { create } = require('@open-wa/wa-automate');
-const { WhatsAppSocketClient } = require('./socketClient');
+const { SocketClient } = require('@open-wa/wa-automate-socket-client');
 
 // Configuration
 const USE_SOCKET_MODE = process.env.USE_SOCKET_MODE === 'true';
 const SOCKET_HOST = process.env.SOCKET_HOST || 'localhost';
-const SOCKET_PORT = process.env.SOCKET_PORT || 3001;
+const SOCKET_PORT = process.env.SOCKET_PORT || 8002; // padrão do tutorial e socket-client
+const SOCKET_API_KEY = process.env.SOCKET_API_KEY || 'your_api_key';
 
 /**
  * Creates and configures the WhatsApp client (direct mode)
@@ -24,7 +25,6 @@ async function createDirectClient(startCallback) {
     qrTimeout: 0,
     authTimeout: 0,
     autoRefresh: true,
-    // Chrome executable path for environments where puppeteer Chrome wasn't downloaded
     executablePath: process.env.CHROME_EXECUTABLE_PATH || '/usr/bin/google-chrome',
     restartOnCrash: startCallback,
   });
@@ -36,9 +36,12 @@ async function createDirectClient(startCallback) {
  */
 async function createSocketClient() {
   console.log('🔌 Iniciando cliente via socket...');
-  const socketClient = new WhatsAppSocketClient(SOCKET_HOST, SOCKET_PORT);
-  await socketClient.connect();
-  return socketClient.getClient();
+  const client = await SocketClient.connect(
+    `http://${SOCKET_HOST}:${SOCKET_PORT}`,
+    SOCKET_API_KEY
+  );
+  console.log("Socket Connected! ID:", client.socket.id);
+  return client;
 }
 
 /**
@@ -61,19 +64,19 @@ async function createClient(startCallback) {
 async function initializeBot(startCallback) {
   try {
     console.log(`🚀 Iniciando bot em modo: ${USE_SOCKET_MODE ? 'SOCKET' : 'DIRETO'}`);
-    
+
     if (USE_SOCKET_MODE) {
-      console.log('💡 Certifique-se de que o servidor socket esteja rodando: npm run socket-server');
+      console.log('💡 Certifique-se de que o servidor socket esteja rodando: npx @open-wa/wa-automate --socket -p 8002 -k your_api_key');
     }
-    
+
     const client = await createClient(startCallback);
     await startCallback(client);
   } catch (error) {
     console.error('❌ Erro ao iniciar cliente:', error);
-    
+
     if (USE_SOCKET_MODE) {
       console.error('💡 Verifique se o servidor socket está rodando em', `${SOCKET_HOST}:${SOCKET_PORT}`);
-      console.error('💡 Execute: npm run socket-server');
+      console.error('💡 Execute: npx @open-wa/wa-automate --socket -p 8002 -k your_api_key');
     } else if (error.message && error.message.includes('Failed to launch the browser process')) {
       console.error('💡 Erro de lançamento do navegador detectado:');
       console.error('   - Verifique se o Chrome está instalado no sistema');
@@ -81,7 +84,7 @@ async function initializeBot(startCallback) {
       console.error('   - Caminhos comuns: /usr/bin/google-chrome, /usr/bin/chromium');
       console.error('   - Ou reinstale com: npx puppeteer browsers install chrome');
     }
-    
+
     throw error;
   }
 }

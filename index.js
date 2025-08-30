@@ -3,7 +3,7 @@ require('dotenv').config();
 // ---- Modular bot components
 const { initializeBot } = require('./bot/client');
 const { scheduleAutoSend } = require('./bot/scheduler');
-const { setupMessageHandler } = require('./bot/messageHandler');
+const { setupMessageHandler, handleMessage } = require('./bot/messageHandler');
 const { sendStickerForMediaRecord } = require('./bot/stickers');
 const { initContactsTable } = require('./bot/contacts');
 
@@ -19,7 +19,7 @@ async function start(client) {
   initContactsTable();
   
   // Setup message handling
-  setupMessageHandler(client);
+  setupMessageHandler(client, handleMessage);
   
   // Schedule automatic sending
   scheduleAutoSend(client, sendStickerForMediaRecord);
