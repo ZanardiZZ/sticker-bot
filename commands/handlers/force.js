@@ -2,6 +2,8 @@
  * Force command handler
  */
 
+const { safeReply } = require('../../utils/safeMessaging');
+
 /**
  * Handles the #forçar command (force mode to save duplicate media)
  * @param {object} client - WhatsApp client
@@ -20,7 +22,7 @@ async function handleForceCommand(client, message, chatId, forceMap) {
         );
       if (isMedia) {
         forceMap.set(chatId, true);
-        await client.reply(chatId, 'Modo #forçar ativado para a próxima mídia.', message.id);
+        await safeReply(client, chatId, 'Modo #forçar ativado para a próxima mídia.', message.id);
         return true;
       }
     } catch {
@@ -28,7 +30,7 @@ async function handleForceCommand(client, message, chatId, forceMap) {
     }
   } else {
     forceMap.set(chatId, true);
-    await client.reply(chatId, 'Modo #forçar ativado. Envie a mídia que deseja salvar.', message.id);
+    await safeReply(client, chatId, 'Modo #forçar ativado. Envie a mídia que deseja salvar.', message.id);
     return true;
   }
 

@@ -5,6 +5,7 @@
 const { decryptMedia } = require('@open-wa/wa-decrypt');
 const { getHashVisual, findByHashVisual } = require('../../database');
 const { normalizeText, parseCommand } = require('../../utils/commandNormalizer');
+const { safeReply } = require('../../utils/safeMessaging');
 
 /**
  * Handles the #editar command when replying to media
@@ -24,7 +25,7 @@ async function handleEditReply(client, message, chatId, taggingMap, MAX_TAGS_LEN
       const rec = await findByHashVisual(hv);
       if (rec) {
         taggingMap.set(chatId, rec.id);
-        await client.reply(
+        await safeReply(
           chatId,
           `Modo edição ativado para a mídia ID ${rec.id}.\n\n` +
             'Envie no formato:\n' +
@@ -36,11 +37,11 @@ async function handleEditReply(client, message, chatId, taggingMap, MAX_TAGS_LEN
         return true;
       }
     }
-    await client.reply(chatId, 'Não foi possível encontrar o ID da mídia respondida.', message.id);
+    await safeReply(client, chatId, 'Não foi possível encontrar o ID da mídia respondida.', message.id);
     return true;
   } catch (err) {
     console.error('Erro ao ativar modo edição via resposta:', err);
-    await client.reply(chatId, 'Erro ao tentar ativar o modo edição.', message.id);
+    await safeReply(client, chatId, 'Erro ao tentar ativar o modo edição.', message.id);
     return true;
   }
 }
@@ -66,7 +67,8 @@ async function handleEditCommand(client, message, chatId, taggingMap, MAX_TAGS_L
     const mediaId = params[1];
     if (mediaId) {
       taggingMap.set(chatId, mediaId);
-      await client.reply(
+      await safeReply(
+        client,
         chatId,
         `Modo edição ativado para a mídia ID ${mediaId}.\n\n` +
           'Envie no formato:\n' +
