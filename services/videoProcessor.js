@@ -468,8 +468,7 @@ async function processGif(filePath) {
           console.log(`[VideoProcessor] Duração do GIF detectada: ${fileDuration}s`);
           
           // Convert to number and validate
-          const numericDuration = parseFloat(fileDuration);
-          if (numericDuration && !isNaN(numericDuration) && numericDuration > 0) {
+          if (numericDuration !== null && numericDuration !== undefined && !isNaN(numericDuration) && numericDuration > 0) {
             res(numericDuration);
           } else {
             console.warn(`[VideoProcessor] Duração inválida ou não detectada: ${fileDuration}, usando fallback padrão`);
