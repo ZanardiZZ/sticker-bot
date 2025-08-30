@@ -37,6 +37,9 @@ async function handleIdCommand(client, message, chatId) {
       // Don't return here - still send the info message
     }
 
+    // Small delay to help with socket mode timing (avoid race conditions)
+    await new Promise(resolve => setTimeout(resolve, 100));
+
     // Get tags and prepare response message
     const tags = await getTagsForMedia(media.id);
     const cleanMediaInfo = cleanDescriptionTags(media.description, tags);
@@ -48,7 +51,24 @@ async function handleIdCommand(client, message, chatId) {
       id: media.id 
     });
 
-    await client.reply(chatId, responseMessage, message.id);
+    // Send description message with specific error handling for socket mode
+    try {
+      await client.reply(chatId, responseMessage, message.id);
+      console.log(`[handleIdCommand] Mensagem de descrição enviada com sucesso para mídia ${media.id}`);
+    } catch (replyError) {
+      console.error(`[handleIdCommand] Erro ao enviar descrição para mídia ${media.id}:`, replyError.message);
+      // Try alternative sending method if reply fails
+      try {
+        if (typeof client.sendText === 'function') {
+          await client.sendText(chatId, responseMessage);
+          console.log(`[handleIdCommand] Descrição enviada via sendText como fallback para mídia ${media.id}`);
+        } else {
+          console.error(`[handleIdCommand] client.sendText não disponível para fallback`);
+        }
+      } catch (fallbackError) {
+        console.error(`[handleIdCommand] Fallback também falhou:`, fallbackError.message);
+      }
+    }
     
   } catch (err) {
     console.error('Erro geral no comando #ID:', err);
