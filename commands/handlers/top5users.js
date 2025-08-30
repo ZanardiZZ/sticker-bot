@@ -3,6 +3,7 @@
  */
 
 const { getTop5UsersByStickerCount } = require('../../database');
+const { safeReply } = require('../../utils/safeMessaging');
 
 /**
  * Handles the #top5users command
@@ -14,7 +15,7 @@ async function handleTop5UsersCommand(client, message, chatId) {
   try {
     const topUsers = await getTop5UsersByStickerCount();
     if (!topUsers || topUsers.length === 0) {
-      await client.reply(chatId, 'Nenhum usuário encontrado.', message.id);
+      await safeReply(client, chatId, 'Nenhum usuário encontrado.', message.id);
       return;
     }
 
@@ -54,10 +55,10 @@ async function handleTop5UsersCommand(client, message, chatId) {
       reply += `${i + 1}. ${userName} - ${user.sticker_count} figurinhas\n`;
     }
 
-    await client.reply(chatId, reply, message.id);
+    await safeReply(client, chatId, reply, message.id);
   } catch (err) {
     console.error('Erro ao buscar top 5 usuários:', err);
-    await client.reply(chatId, 'Erro ao buscar top 5 usuários.', message.id);
+    await safeReply(client, chatId, 'Erro ao buscar top 5 usuários.', message.id);
   }
 }
 
