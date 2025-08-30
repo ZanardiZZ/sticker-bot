@@ -13,7 +13,7 @@ const {
 const { isNSFW } = require('./services/nsfwFilter');
 const { isVideoNSFW } = require('./services/nsfwVideoFilter');
 const { getAiAnnotations, transcribeAudioBuffer, getAiAnnotationsFromPrompt, getAiAnnotationsForGif } = require('./services/ai');
-const { processVideo, processGif } = require('./services/videoProcessor');
+const { processVideo, processGif, processAnimatedWebp } = require('./services/videoProcessor');
 const { updateMediaDescription, updateMediaTags } = require('./database');
 const { forceMap, MAX_TAGS_LENGTH, clearDescriptionCmds } = require('./commands');
 const { cleanDescriptionTags } = require('./utils/messageUtils');
@@ -238,16 +238,16 @@ async function processIncomingMedia(client, message) {
               tags = 'sticker,animado,sem-analise';
             }
           } else {
-            // Normal multi-frame processing
+            // Normal multi-frame processing using dedicated WebP processor
             try {
-              console.log('🎬 Processing animated sticker using multi-frame analysis...');
-              const aiResult = await processGif(filePath);
+              console.log('🎬 Processing animated WebP using Sharp-based analysis...');
+              const aiResult = await processAnimatedWebp(filePath);
               
               if (aiResult && typeof aiResult === 'object' && aiResult.description) {
                 const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
                 description = clean.description;
                 tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
-                console.log(`✅ Animated sticker processed successfully: ${description ? description.slice(0, 50) : 'no description'}...`);
+                console.log(`✅ Animated WebP processed successfully: ${description ? description.slice(0, 50) : 'no description'}...`);
               } else {
                 console.warn('Resultado inválido do processamento de sticker animado:', aiResult);
                 // Still use fallback even if result format is invalid
@@ -255,7 +255,7 @@ async function processIncomingMedia(client, message) {
               }
               
             } catch (err) {
-              console.warn('Erro ao processar sticker animado com lógica de frames múltiplos:', err.message);
+              console.warn('Erro ao processar sticker animado com análise WebP:', err.message);
               console.log('🔄 Tentando fallback para análise de frame único...');
               
               // Fallback to single frame analysis if multi-frame processing fails
