@@ -19,7 +19,7 @@ const { forceMap, MAX_TAGS_LENGTH, clearDescriptionCmds } = require('./commands'
 const { cleanDescriptionTags } = require('./utils/messageUtils');
 const { generateResponseMessage } = require('./utils/responseMessage');
 const { safeReply } = require('./utils/safeMessaging');
-const { isAnimatedWebpBuffer } = require('./bot/stickers');
+const { isAnimatedWebpBuffer, sendStickerForMediaRecord } = require('./bot/stickers');
 const { isGifLikeVideo } = require('./utils/gifDetection');
 const { withTyping } = require('./utils/typingIndicator');
 
@@ -348,8 +348,6 @@ async function processIncomingMedia(client, message) {
     if (isGif) {
       console.log('🎞️ Enviando GIF como sticker animado...');
       try {
-        // Import sendStickerForMediaRecord dynamically to avoid circular imports
-        const { sendStickerForMediaRecord } = require('./bot/stickers');
         await sendStickerForMediaRecord(client, chatId, savedMedia);
       } catch (stickerError) {
         console.warn('Erro ao enviar sticker do GIF, continuando com resposta de texto:', stickerError.message);
