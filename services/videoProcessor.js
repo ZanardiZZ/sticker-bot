@@ -466,7 +466,7 @@ async function processGif(filePath) {
         } else {
           const fileDuration = meta.format?.duration;
           console.log(`[VideoProcessor] Duração do GIF detectada: ${fileDuration}s`);
-          
+          let numericDuration = parseFloat(fileDuration);
           // Convert to number and validate
           if (numericDuration !== null && numericDuration !== undefined && !isNaN(numericDuration) && numericDuration > 0) {
             res(numericDuration);
