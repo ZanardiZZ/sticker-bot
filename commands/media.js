@@ -44,19 +44,22 @@ async function sendMediaByType(client, chatId, media) {
       await client.sendImageAsStickerGif(chatId, filePath, { pack: PACK_NAME, author: AUTHOR_NAME });
       return;
     }
-    await client.sendFile(chatId, filePath, 'media');
+    const path = require('path');
+    await client.sendFile(chatId, filePath, path.basename(filePath));
     return;
   }
 
   // Videos should be sent as files
   if (isVideo) {
-    await client.sendFile(chatId, filePath, 'media');
+    const path = require('path');
+    await client.sendFile(chatId, filePath, path.basename(filePath));
     return;
   }
 
   // Audio should be sent as files
   if (isAudio) {
-    await client.sendFile(chatId, filePath, 'audio');
+    const path = require('path');
+    await client.sendFile(chatId, filePath, path.basename(filePath));
     return;
   }
 
@@ -79,7 +82,8 @@ async function sendMediaByType(client, chatId, media) {
   }
 
   // Others
-  await client.sendFile(chatId, filePath, 'media');
+  const path = require('path');
+  await client.sendFile(chatId, filePath, path.basename(filePath));
 }
 
 /**
@@ -141,10 +145,12 @@ async function sendMediaAsOriginal(client, chatId, media) {
       }
       // Fallback for GIFs - send as media if it's actually a video file
       if (isVideo) {
-        await client.sendFile(chatId, filePath, 'media');
+        const path = require('path');
+        await client.sendFile(chatId, filePath, path.basename(filePath));
         console.log('[sendMediaAsOriginal] GIF-like video enviado via sendFile como media (fallback)');
       } else {
-        await client.sendFile(chatId, filePath, 'media');
+        const path = require('path');
+        await client.sendFile(chatId, filePath, path.basename(filePath));
         console.log('[sendMediaAsOriginal] GIF enviado via sendFile como media (fallback)');
       }
       return;
@@ -152,7 +158,8 @@ async function sendMediaAsOriginal(client, chatId, media) {
 
     // Regular videos should be sent as files (not stickers)
     if (isVideo) {
-      await client.sendFile(chatId, filePath, 'media');
+      const path = require('path');
+      await client.sendFile(chatId, filePath, path.basename(filePath));
       console.log('[sendMediaAsOriginal] Vídeo enviado via sendFile');
       return;
     }
@@ -184,7 +191,8 @@ async function sendMediaAsOriginal(client, chatId, media) {
     }
 
     // Audio and others
-    await client.sendFile(chatId, filePath, 'media');
+    const path = require('path');
+    await client.sendFile(chatId, filePath, path.basename(filePath));
     console.log('[sendMediaAsOriginal] Arquivo enviado via sendFile');
     
   } catch (error) {

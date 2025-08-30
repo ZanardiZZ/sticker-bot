@@ -12,11 +12,11 @@ class VideoTestClient {
     this.calls = [];
   }
 
-  async sendFile(chatId, filePath, type) {
-    const call = { method: 'sendFile', chatId, filePath, type };
+  async sendFile(chatId, filePath, filename) {
+    const call = { method: 'sendFile', chatId, filePath, filename };
     this.calls.push(call);
     
-    console.log(`[VideoTestClient] sendFile: type='${type}', file='${path.basename(filePath)}'`);
+    console.log(`[VideoTestClient] sendFile: filename='${filename}', file='${path.basename(filePath)}'`);
     return Promise.resolve();
   }
 
@@ -73,19 +73,22 @@ async function testVideoSendingFix() {
     }
     
     const sendFileCall = sendFileCalls[0];
-    console.log(`sendFile called with type: '${sendFileCall.type}'`);
+    console.log(`sendFile called with filename: '${sendFileCall.filename}'`);
     
-    if (sendFileCall.type === 'media') {
-      console.log('✅ SUCCESS: Video now uses "media" parameter');
-      console.log('✅ This matches the working pattern from bot/stickers.js');
-      console.log('✅ Should fix the silent failure issue with video files');
+    const expectedFilename = path.basename(testVideoPath);
+    
+    if (sendFileCall.filename === expectedFilename) {
+      console.log('✅ SUCCESS: Video now uses correct filename parameter');
+      console.log('✅ This ensures proper file sending via WhatsApp API');
+      console.log('✅ Should fix the issue where videos were not being received');
       return true;
-    } else if (sendFileCall.type === 'video') {
-      console.error('❌ FAIL: Video still uses "video" parameter');
-      console.error('❌ This may cause the silent failure issue');
+    } else if (sendFileCall.filename === 'media' || sendFileCall.filename === 'video') {
+      console.error('❌ FAIL: Video still uses incorrect string as filename');
+      console.error('❌ This causes the silent failure issue with video files');
       return false;
     } else {
-      console.error(`❌ FAIL: Unexpected type '${sendFileCall.type}'`);
+      console.error(`❌ FAIL: Unexpected filename '${sendFileCall.filename}'`);
+      console.error(`❌ Expected: '${expectedFilename}'`);
       return false;
     }
     
@@ -131,10 +134,19 @@ async function testDifferentVideoTypes() {
       
       const sendFileCalls = client.calls.filter(call => call.method === 'sendFile');
       
-      if (sendFileCalls.length > 0 && sendFileCalls[0].type === 'media') {
-        console.log(`✅ ${videoType.mimetype}: Uses "media" parameter correctly`);
+      if (sendFileCalls.length > 0) {
+        const expectedFilename = path.basename(testPath);
+        const actualFilename = sendFileCalls[0].filename;
+        
+        if (actualFilename === expectedFilename) {
+          console.log(`✅ ${videoType.mimetype}: Uses correct filename parameter`);
+        } else {
+          console.error(`❌ ${videoType.mimetype}: Wrong filename parameter`);
+          console.error(`  Expected: '${expectedFilename}', Got: '${actualFilename}'`);
+          allPassed = false;
+        }
       } else {
-        console.error(`❌ ${videoType.mimetype}: Does not use "media" parameter`);
+        console.error(`❌ ${videoType.mimetype}: No sendFile calls made`);
         allPassed = false;
       }
       
