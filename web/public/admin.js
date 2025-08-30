@@ -5,8 +5,57 @@ function rangeToFromTo(value){
   return { from: to - win, to };
 }
 
-async function fetchJSON(url){
-  const r = await fetch(url);
+// CSRF token management
+let csrfToken = null;
+
+async function getCSRFToken() {
+  if (!csrfToken) {
+    try {
+      const response = await fetch('/api/csrf-token');
+      const data = await response.json();
+      csrfToken = data.csrfToken;
+    } catch (e) {
+      console.warn('Failed to fetch CSRF token:', e);
+    }
+  }
+  return csrfToken;
+}
+
+async function fetchWithCSRF(url, options = {}) {
+  // Add CSRF token for POST/PUT/DELETE requests
+  if (options.method && ['POST', 'PUT', 'DELETE'].includes(options.method.toUpperCase())) {
+    const token = await getCSRFToken();
+    if (token) {
+      options.headers = options.headers || {};
+      options.headers['X-CSRF-Token'] = token;
+    }
+  }
+  return fetch(url, options);
+}
+
+async function fetchJSON(url, options = {}){
+  // Add CSRF token for POST/PUT/DELETE requests
+  if (options.method && ['POST', 'PUT', 'DELETE'].includes(options.method.toUpperCase())) {
+    const token = await getCSRFToken();
+    if (token) {
+      // Add token to headers
+      options.headers = options.headers || {};
+      options.headers['X-CSRF-Token'] = token;
+      
+      // If there's a body, also add to body for form data
+      if (options.body && options.headers['Content-Type'] === 'application/json') {
+        try {
+          const bodyData = JSON.parse(options.body);
+          bodyData._csrf = token;
+          options.body = JSON.stringify(bodyData);
+        } catch (e) {
+          // If parsing fails, just use header
+        }
+      }
+    }
+  }
+  
+  const r = await fetch(url, options);
   if (!r.ok) throw new Error('HTTP '+r.status);
   return r.json();
 }
@@ -85,7 +134,7 @@ document.getElementById('addRule').addEventListener('click', async () => {
   const ttl = document.getElementById('ttl').value ? Number(document.getElementById('ttl').value) : undefined;
   const reason = document.getElementById('reason').value.trim() || undefined;
   if (!ip) return alert('Informe um IP');
-  const r = await fetch('/api/admin/ip-rules', {
+  const r = await fetchWithCSRF('/api/admin/ip-rules', {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ ip, action, ttl_minutes: ttl, reason })
   });
@@ -101,7 +150,7 @@ document.addEventListener('click', async (e) => {
   const id = e.target?.dataset?.del;
   if (!id) return;
   if (!confirm('Remover a regra #' + id + '?')) return;
-  const r = await fetch('/api/admin/ip-rules/' + id, { method:'DELETE' });
+  const r = await fetchWithCSRF('/api/admin/ip-rules/' + id, { method:'DELETE' });
   if (!r.ok) {
     const data = await r.json().catch(() => ({}));
     return alert(getAdminErrorMessage(data, 'Falha ao remover'));
@@ -366,6 +415,20 @@ function initializeMainTabs() {
       // Load duplicates only when duplicates tab is clicked for the first time
       if (tabId === 'duplicates' && !duplicatesLoaded) {
         loadDuplicatesTab();
+      }
+      
+      // Initialize logs when logs tab is clicked
+      if (tabId === 'logs') {
+        loadLogs({ offset: 0 });
+        logsCurrentOffset = 0;
+        
+        // Start SSE if auto-refresh is enabled
+        if (document.getElementById('autoRefreshLogs')?.checked) {
+          startLogsSSE();
+        }
+      } else {
+        // Stop SSE when leaving logs tab
+        stopLogsSSE();
       }
     });
   });
@@ -646,7 +709,7 @@ async function deleteSelectedDuplicates() {
   
   for (const hashVisual of selectedHashes) {
     try {
-      const result = await fetch(`/api/admin/duplicates/${encodeURIComponent(hashVisual)}`, {
+      const result = await fetchWithCSRF(`/api/admin/duplicates/${encodeURIComponent(hashVisual)}`, {
         method: 'DELETE'
       });
       
@@ -700,5 +763,223 @@ if (deleteSelectedBtn) {
 document.addEventListener('change', (e) => {
   if (e.target instanceof Element && e.target.classList.contains('group-checkbox')) {
     updateSelectionButtons();
+  }
+});
+
+// ===== LOGS FUNCTIONALITY =====
+let currentLogsData = { logs: [], total: 0 };
+let logsEventSource = null;
+let logsCurrentOffset = 0;
+const logsPerPage = 50;
+
+// Formatação de logs para exibição
+function formatLogLevel(level) {
+  const levelColors = {
+    'info': '#00ff00',
+    'warn': '#ffff00',
+    'error': '#ff0000'
+  };
+  return `<span style="color: ${levelColors[level] || '#00ff00'};">[${level.toUpperCase()}]</span>`;
+}
+
+function formatLogTimestamp(timestamp) {
+  const date = new Date(timestamp);
+  return date.toLocaleString('pt-BR', { 
+    day: '2-digit', 
+    month: '2-digit', 
+    hour: '2-digit', 
+    minute: '2-digit', 
+    second: '2-digit' 
+  });
+}
+
+function formatLogMessage(message) {
+  // Escape HTML and preserve line breaks
+  return message
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\n/g, '<br>');
+}
+
+function renderLogs(logs) {
+  const logsContent = document.getElementById('logsContent');
+  if (!logs || logs.length === 0) {
+    logsContent.innerHTML = '<div style="color: #666;">Nenhum log encontrado.</div>';
+    return;
+  }
+
+  const logLines = logs.map(log => {
+    const timestamp = formatLogTimestamp(log.timestamp);
+    const level = formatLogLevel(log.level);
+    const message = formatLogMessage(log.message);
+    const source = log.source ? `<span style="color: #888;">(${log.source})</span>` : '';
+    
+    return `<div style="margin-bottom: 0.5rem;">
+      <span style="color: #888;">[${timestamp}]</span> ${level} ${message} ${source}
+    </div>`;
+  }).join('');
+
+  logsContent.innerHTML = logLines;
+  
+  // Auto-scroll para baixo se estiver na primeira página
+  if (logsCurrentOffset === 0) {
+    const container = document.getElementById('logsContainer');
+    container.scrollTop = container.scrollHeight;
+  }
+}
+
+function updateLogsStats(stats) {
+  if (!stats) return;
+  
+  document.getElementById('totalLogs').textContent = stats.total || 0;
+  document.getElementById('infoLogs').textContent = stats.byLevel?.info || 0;
+  document.getElementById('warnLogs').textContent = stats.byLevel?.warn || 0;
+  document.getElementById('errorLogs').textContent = stats.byLevel?.error || 0;
+}
+
+function updateLogsPagination(data) {
+  const info = document.getElementById('logsInfo');
+  const prevBtn = document.getElementById('prevLogs');
+  const nextBtn = document.getElementById('nextLogs');
+  
+  const start = data.offset + 1;
+  const end = Math.min(data.offset + data.logs.length, data.total);
+  
+  info.textContent = data.total > 0 
+    ? `Mostrando ${start}-${end} de ${data.total} logs`
+    : 'Nenhum log encontrado';
+  
+  prevBtn.disabled = data.offset === 0;
+  nextBtn.disabled = data.offset + data.logs.length >= data.total;
+}
+
+async function loadLogs(options = {}) {
+  try {
+    const params = new URLSearchParams({
+      level: options.level || document.getElementById('logLevelFilter').value,
+      search: options.search || document.getElementById('logSearchFilter').value,
+      limit: logsPerPage,
+      offset: options.offset || logsCurrentOffset
+    });
+
+    const response = await fetchJSON(`/api/admin/logs?${params}`);
+    currentLogsData = response;
+    
+    renderLogs(response.logs);
+    updateLogsStats(response.stats);
+    updateLogsPagination(response);
+    
+    logsCurrentOffset = options.offset || logsCurrentOffset;
+  } catch (error) {
+    console.error('Erro ao carregar logs:', error);
+    document.getElementById('logsContent').innerHTML = 
+      '<div style="color: #ff0000;">Erro ao carregar logs. Verifique se você tem permissão de admin.</div>';
+  }
+}
+
+async function clearLogs() {
+  if (!confirm('Tem certeza que deseja limpar todos os logs? Esta ação não pode ser desfeita.')) {
+    return;
+  }
+
+  try {
+    const response = await fetchWithCSRF('/api/admin/logs', { method: 'DELETE' });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    
+    alert('Logs limpos com sucesso!');
+    await loadLogs({ offset: 0 });
+    logsCurrentOffset = 0;
+  } catch (error) {
+    console.error('Erro ao limpar logs:', error);
+    alert('Erro ao limpar logs: ' + error.message);
+  }
+}
+
+function startLogsSSE() {
+  // Parar conexão anterior se existir
+  if (logsEventSource) {
+    logsEventSource.close();
+  }
+
+  try {
+    logsEventSource = new EventSource('/api/admin/logs/stream');
+    
+    logsEventSource.onmessage = function(event) {
+      const data = JSON.parse(event.data);
+      
+      if (data.type === 'initial') {
+        currentLogsData = data;
+        renderLogs(data.logs);
+        updateLogsStats(data.stats);
+      } else if (data.type === 'update') {
+        // Atualizar apenas se estamos na primeira página e sem filtros
+        const levelFilter = document.getElementById('logLevelFilter').value;
+        const searchFilter = document.getElementById('logSearchFilter').value;
+        
+        if (logsCurrentOffset === 0 && levelFilter === 'all' && !searchFilter) {
+          currentLogsData = data;
+          renderLogs(data.logs);
+          updateLogsStats(data.stats);
+        }
+      }
+    };
+    
+    logsEventSource.onerror = function(error) {
+      console.warn('[SSE] Erro na conexão de logs:', error);
+    };
+  } catch (error) {
+    console.error('Erro ao iniciar SSE de logs:', error);
+  }
+}
+
+function stopLogsSSE() {
+  if (logsEventSource) {
+    logsEventSource.close();
+    logsEventSource = null;
+  }
+}
+
+// Event listeners para logs
+document.getElementById('refreshLogs')?.addEventListener('click', () => {
+  loadLogs({ offset: 0 });
+  logsCurrentOffset = 0;
+});
+
+document.getElementById('clearLogs')?.addEventListener('click', clearLogs);
+
+document.getElementById('logLevelFilter')?.addEventListener('change', () => {
+  loadLogs({ offset: 0 });
+  logsCurrentOffset = 0;
+});
+
+document.getElementById('logSearchFilter')?.addEventListener('input', () => {
+  // Debounce search
+  clearTimeout(window.searchTimeout);
+  window.searchTimeout = setTimeout(() => {
+    loadLogs({ offset: 0 });
+    logsCurrentOffset = 0;
+  }, 500);
+});
+
+document.getElementById('autoRefreshLogs')?.addEventListener('change', (e) => {
+  if (e.target.checked) {
+    startLogsSSE();
+  } else {
+    stopLogsSSE();
+  }
+});
+
+document.getElementById('prevLogs')?.addEventListener('click', () => {
+  if (logsCurrentOffset > 0) {
+    logsCurrentOffset = Math.max(0, logsCurrentOffset - logsPerPage);
+    loadLogs({ offset: logsCurrentOffset });
+  }
+});
+
+document.getElementById('nextLogs')?.addEventListener('click', () => {
+  if (logsCurrentOffset + logsPerPage < currentLogsData.total) {
+    logsCurrentOffset += logsPerPage;
+    loadLogs({ offset: logsCurrentOffset });
   }
 });
