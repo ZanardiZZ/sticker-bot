@@ -364,6 +364,12 @@ OPENAI_API_KEY=sk-your-api-key-here
 PUPPETEER_SKIP_DOWNLOAD=true npm install --ignore-scripts
 ```
 
+**"Failed to launch the browser process":**
+- If you see browser launch errors after using `PUPPETEER_SKIP_DOWNLOAD=true`:
+- Add `CHROME_EXECUTABLE_PATH=/usr/bin/google-chrome` to your `.env` file
+- Or try other paths: `/usr/bin/chromium`, `/usr/bin/chromium-browser`
+- Alternative: Install Chrome for puppeteer: `npx puppeteer browsers install chrome`
+
 **"SQLITE_BUSY errors":**
 - Database uses WAL mode and queue system
 - Errors automatically retry up to 5 times
