@@ -25,6 +25,15 @@ class VideoTestClient {
     this.calls.push(call);
     
     console.log(`[VideoTestClient] reply: ${message.substring(0, 30)}...`);
+    // client.reply is now used for groups (@g.us) and individual chats (@c.us)
+    return Promise.resolve();
+  }
+
+  async sendText(chatId, message) {
+    const call = { method: 'sendText', chatId, message };
+    this.calls.push(call);
+    
+    console.log(`[VideoTestClient] sendText: ${message.substring(0, 30)}...`);
     return Promise.resolve();
   }
 }
