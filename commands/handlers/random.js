@@ -5,6 +5,7 @@
 const { processOldStickers, findById, getMediaWithLowestRandomCount, incrementRandomCount, getTagsForMedia } = require('../../database');
 const { sendMediaByType } = require('../media');
 const { renderInfoMessage } = require('../../utils/messageUtils');
+const { safeReply } = require('../../utils/safeMessaging');
 
 /**
  * Handles the #random command
@@ -25,7 +26,7 @@ async function handleRandomCommand(client, message, chatId) {
     }
 
     if (!media) {
-      await client.reply(chatId, 'Nenhuma mídia salva ainda.', message.id);
+      await safeReply(client, chatId, 'Nenhuma mídia salva ainda.', message.id);
       return;
     }
 
@@ -36,11 +37,11 @@ async function handleRandomCommand(client, message, chatId) {
     const infoText = renderInfoMessage(media, tags);
     
     if (infoText.trim()) {
-      await client.reply(chatId, infoText, message.id);
+      await safeReply(client, chatId, infoText, message.id);
     }
   } catch (err) {
     console.error('Erro no comando #random:', err);
-    await client.reply(chatId, 'Erro ao buscar mídia aleatória.', message.id);
+    await safeReply(client, chatId, 'Erro ao buscar mídia aleatória.', message.id);
   }
 }
 

@@ -3,6 +3,7 @@
  */
 
 const { getTop10Media } = require('../../database');
+const { safeReply } = require('../../utils/safeMessaging');
 
 /**
  * Handles the #top10 command
@@ -15,7 +16,7 @@ async function handleTop10Command(client, message, chatId) {
     const top10 = await getTop10Media();
     
     if (top10.length === 0) {
-      await client.reply(chatId, 'Nenhuma mídia encontrada.', message.id);
+      await safeReply(client, chatId, 'Nenhuma mídia encontrada.', message.id);
       return;
     }
 
@@ -37,10 +38,10 @@ async function handleTop10Command(client, message, chatId) {
       msg += '\\n';
     });
 
-    await client.reply(chatId, msg, message.id);
+    await safeReply(client, chatId, msg, message.id);
   } catch (err) {
     console.error('Erro no comando #top10:', err);
-    await client.reply(chatId, 'Erro ao buscar top 10.', message.id);
+    await safeReply(client, chatId, 'Erro ao buscar top 10.', message.id);
   }
 }
 

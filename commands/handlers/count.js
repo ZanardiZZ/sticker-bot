@@ -3,6 +3,7 @@
  */
 
 const { countMedia } = require('../../database');
+const { safeReply } = require('../../utils/safeMessaging');
 
 /**
  * Handles the #count command
@@ -13,10 +14,10 @@ const { countMedia } = require('../../database');
 async function handleCountCommand(client, message, chatId) {
   try {
     const count = await countMedia();
-    await client.reply(chatId, `Total de mídias salvas: ${count}`, message.id);
+    await safeReply(client, chatId, `Total de mídias salvas: ${count}`, message.id);
   } catch (err) {
     console.error('Erro no comando #count:', err);
-    await client.reply(chatId, 'Erro ao contar mídias.', message.id);
+    await safeReply(client, chatId, 'Erro ao contar mídias.', message.id);
   }
 }
 

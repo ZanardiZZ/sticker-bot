@@ -3,6 +3,7 @@ const path = require('path');
 const sharp = require('sharp');
 const { PACK_NAME, AUTHOR_NAME } = require('./config/stickers');
 const { renderInfoMessage, cleanDescriptionTags } = require('./utils/messageUtils');
+const { safeReply } = require('./utils/safeMessaging');
 let Sticker, StickerTypes;
 try {
   ({ Sticker, StickerTypes } = require('wa-sticker-formatter'));
@@ -162,7 +163,7 @@ async function handleTaggingMode(client, message, chatId) {
     const newText = message.body.trim();
 
     if (newText.length > MAX_TAGS_LENGTH) {
-      await client.reply(chatId, `Texto muito longo. Limite de ${MAX_TAGS_LENGTH} caracteres.`, message.id);
+      await safeReply(client, chatId, `Texto muito longo. Limite de ${MAX_TAGS_LENGTH} caracteres.`, message.id);
       taggingMap.delete(chatId);
       return true;
     }
@@ -172,7 +173,7 @@ async function handleTaggingMode(client, message, chatId) {
       try {
       const media = await findById(mediaId);
       if (!media) {
-        await client.reply(chatId, `Mídia com ID ${mediaId} não encontrada.`, message.id);
+        await safeReply(client, chatId, `Mídia com ID ${mediaId} não encontrada.`, message.id);
         taggingMap.delete(chatId);
         return true;
       }
@@ -227,11 +228,11 @@ async function handleTaggingMode(client, message, chatId) {
         `🏷️ ${cleanUpdated.tags.length > 0 ? cleanUpdated.tags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ') : ''}\n` +
         `🆔 ${updatedMedia.id}`;
 
-      await client.reply(chatId, updatedMessage, message.id);
+      await safeReply(client, chatId, updatedMessage, message.id);
       taggingMap.delete(chatId);
       } catch (err) {
         console.error('Erro ao adicionar tags:', err);
-        await client.reply(chatId, 'Erro ao adicionar tags/descrição.', message.id);
+        await safeReply(client, chatId, 'Erro ao adicionar tags/descrição.', message.id);
         taggingMap.delete(chatId);
       }
     });
@@ -281,7 +282,7 @@ async function handleInvalidCommand(client, message, chatId) {
     '#count'
   ];
 
-  await client.reply(chatId,
+  await safeReply(client, chatId,
     `Comando não reconhecido.\nComandos disponíveis:\n` +
     validCommands.map(c => c.replace('ID', 'XXX')).join('\n'),
     message.id
