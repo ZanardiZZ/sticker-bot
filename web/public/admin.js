@@ -5,8 +5,57 @@ function rangeToFromTo(value){
   return { from: to - win, to };
 }
 
-async function fetchJSON(url){
-  const r = await fetch(url);
+// CSRF token management
+let csrfToken = null;
+
+async function getCSRFToken() {
+  if (!csrfToken) {
+    try {
+      const response = await fetch('/api/csrf-token');
+      const data = await response.json();
+      csrfToken = data.csrfToken;
+    } catch (e) {
+      console.warn('Failed to fetch CSRF token:', e);
+    }
+  }
+  return csrfToken;
+}
+
+async function fetchWithCSRF(url, options = {}) {
+  // Add CSRF token for POST/PUT/DELETE requests
+  if (options.method && ['POST', 'PUT', 'DELETE'].includes(options.method.toUpperCase())) {
+    const token = await getCSRFToken();
+    if (token) {
+      options.headers = options.headers || {};
+      options.headers['X-CSRF-Token'] = token;
+    }
+  }
+  return fetch(url, options);
+}
+
+async function fetchJSON(url, options = {}){
+  // Add CSRF token for POST/PUT/DELETE requests
+  if (options.method && ['POST', 'PUT', 'DELETE'].includes(options.method.toUpperCase())) {
+    const token = await getCSRFToken();
+    if (token) {
+      // Add token to headers
+      options.headers = options.headers || {};
+      options.headers['X-CSRF-Token'] = token;
+      
+      // If there's a body, also add to body for form data
+      if (options.body && options.headers['Content-Type'] === 'application/json') {
+        try {
+          const bodyData = JSON.parse(options.body);
+          bodyData._csrf = token;
+          options.body = JSON.stringify(bodyData);
+        } catch (e) {
+          // If parsing fails, just use header
+        }
+      }
+    }
+  }
+  
+  const r = await fetch(url, options);
   if (!r.ok) throw new Error('HTTP '+r.status);
   return r.json();
 }
@@ -85,7 +134,7 @@ document.getElementById('addRule').addEventListener('click', async () => {
   const ttl = document.getElementById('ttl').value ? Number(document.getElementById('ttl').value) : undefined;
   const reason = document.getElementById('reason').value.trim() || undefined;
   if (!ip) return alert('Informe um IP');
-  const r = await fetch('/api/admin/ip-rules', {
+  const r = await fetchWithCSRF('/api/admin/ip-rules', {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ ip, action, ttl_minutes: ttl, reason })
   });
@@ -101,7 +150,7 @@ document.addEventListener('click', async (e) => {
   const id = e.target?.dataset?.del;
   if (!id) return;
   if (!confirm('Remover a regra #' + id + '?')) return;
-  const r = await fetch('/api/admin/ip-rules/' + id, { method:'DELETE' });
+  const r = await fetchWithCSRF('/api/admin/ip-rules/' + id, { method:'DELETE' });
   if (!r.ok) {
     const data = await r.json().catch(() => ({}));
     return alert(getAdminErrorMessage(data, 'Falha ao remover'));
@@ -660,7 +709,7 @@ async function deleteSelectedDuplicates() {
   
   for (const hashVisual of selectedHashes) {
     try {
-      const result = await fetch(`/api/admin/duplicates/${encodeURIComponent(hashVisual)}`, {
+      const result = await fetchWithCSRF(`/api/admin/duplicates/${encodeURIComponent(hashVisual)}`, {
         method: 'DELETE'
       });
       
@@ -835,7 +884,7 @@ async function clearLogs() {
   }
 
   try {
-    const response = await fetch('/api/admin/logs', { method: 'DELETE' });
+    const response = await fetchWithCSRF('/api/admin/logs', { method: 'DELETE' });
     if (!response.ok) throw new Error('HTTP ' + response.status);
     
     alert('Logs limpos com sucesso!');
