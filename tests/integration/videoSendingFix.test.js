@@ -25,7 +25,7 @@ class VideoTestClient {
     this.calls.push(call);
     
     console.log(`[VideoTestClient] reply: ${message.substring(0, 30)}...`);
-    // Note: client.reply is no longer used in the codebase, only sendText
+    // client.reply is now used for groups (@g.us) and individual chats (@c.us)
     return Promise.resolve();
   }
 
