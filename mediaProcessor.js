@@ -341,7 +341,22 @@ async function processIncomingMedia(client, message) {
       isGifLike = await isGifLikeVideo(filePath, mimetypeToSave);
     }
 
-    let responseMessage = generateResponseMessage(mimetypeToSave);
+    // Check if this is a GIF (either image/gif or GIF-like video)
+    const isGif = mimetypeToSave === 'image/gif' || isGifLike;
+
+    // For GIFs, send the animated sticker first, then the description
+    if (isGif) {
+      console.log('🎞️ Enviando GIF como sticker animado...');
+      try {
+        // Import sendStickerForMediaRecord dynamically to avoid circular imports
+        const { sendStickerForMediaRecord } = require('./bot/stickers');
+        await sendStickerForMediaRecord(client, chatId, savedMedia);
+      } catch (stickerError) {
+        console.warn('Erro ao enviar sticker do GIF, continuando com resposta de texto:', stickerError.message);
+      }
+    }
+
+    let responseMessage = generateResponseMessage(mimetypeToSave, isGifLike);
     responseMessage += `📝 ${clean.description || ''}\n`;
     responseMessage += `🏷️ ${clean.tags.length > 0 ? clean.tags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ') : ''}\n`;
     responseMessage += `🆔 ${savedMedia.id}`;
