@@ -69,7 +69,8 @@ async function extractFrames(filePath, timestamps) {
     const output = path.join(tempDir, `frame_${i}.jpg`);
     
     // Additional validation for timestamp before processing
-    if (!timeSec || isNaN(timeSec) || !isFinite(timeSec) || timeSec < 0) {
+    // Allow timestamp 0 as it's valid for seeking to beginning of media
+    if (timeSec === null || timeSec === undefined || isNaN(timeSec) || !isFinite(timeSec) || timeSec < 0) {
       reject(new Error(`Timestamp inválido para frame ${i + 1}: ${timeSec}. Isso pode indicar um problema de processamento concorrente.`));
       return;
     }
@@ -463,9 +464,17 @@ async function processGif(filePath) {
           console.warn(`[VideoProcessor] Erro ao obter metadados do GIF: ${err.message}`);
           rej(err);
         } else {
-          const fileDuration = meta.format?.duration || 2; // fallback para 2s se não detectar duração
+          const fileDuration = meta.format?.duration;
           console.log(`[VideoProcessor] Duração do GIF detectada: ${fileDuration}s`);
-          res(fileDuration);
+          
+          // Convert to number and validate
+          const numericDuration = parseFloat(fileDuration);
+          if (numericDuration && !isNaN(numericDuration) && numericDuration > 0) {
+            res(numericDuration);
+          } else {
+            console.warn(`[VideoProcessor] Duração inválida ou não detectada: ${fileDuration}, usando fallback padrão`);
+            res(2); // Safe fallback
+          }
         }
       });
     });
