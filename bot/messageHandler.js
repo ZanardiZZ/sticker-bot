@@ -8,6 +8,7 @@ const { logReceivedMessage } = require('./logging');
 const { upsertContactFromMessage } = require('./contacts');
 const { processIncomingMedia } = require('../mediaProcessor');
 const { withTyping } = require('../utils/typingIndicator');
+const { safeReply } = require('../utils/safeMessaging');
 const MediaQueue = require('../services/mediaQueue');
 
 // Create a shared media processing queue with higher retry attempts for media processing
@@ -73,7 +74,7 @@ async function handleMessage(client, message) {
     if (e?.response?.data) console.error('Detalhes resposta:', e.response.data);
     try { 
       await withTyping(client, message.from, async () => {
-        await client.reply(message.from, 'Erro ao processar sua mensagem.', message.id);
+        await safeReply(client, message.from, 'Erro ao processar sua mensagem.', message.id);
       });
     } catch {}
   }

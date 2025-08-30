@@ -18,6 +18,7 @@ const { updateMediaDescription, updateMediaTags } = require('./database');
 const { forceMap, MAX_TAGS_LENGTH, clearDescriptionCmds } = require('./commands');
 const { cleanDescriptionTags } = require('./utils/messageUtils');
 const { generateResponseMessage } = require('./utils/responseMessage');
+const { safeReply } = require('./utils/safeMessaging');
 const { isAnimatedWebpBuffer } = require('./bot/stickers');
 const { isGifLikeVideo } = require('./utils/gifDetection');
 const { withTyping } = require('./utils/typingIndicator');
@@ -98,7 +99,8 @@ async function processIncomingMedia(client, message) {
     if (!forceInsert && hashVisual) {
       const existing = await findByHashVisual(hashVisual);
       if (existing) {
-        await client.reply(
+        await safeReply(
+          client,
           chatId,
           `Mídia visualmente semelhante já existe no banco. ID: ${existing.id}. Use #forçar respondendo à mídia para salvar duplicado ou use #ID ${existing.id} para solicitar esta mídia.`,
           message.id
@@ -344,14 +346,14 @@ async function processIncomingMedia(client, message) {
     responseMessage += `🏷️ ${clean.tags.length > 0 ? clean.tags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ') : ''}\n`;
     responseMessage += `🆔 ${savedMedia.id}`;
 
-    await client.reply(chatId, responseMessage, message.id);
+    await safeReply(client, chatId, responseMessage, message.id);
 
     } catch (e) {
       console.error('Erro ao processar mídia:', e);
       if (e.response && e.response.data) {
         console.error('Detalhes do erro de resposta:', e.response.data);
       }
-      await client.reply(message.from, 'Erro ao processar sua mídia.', message.id);
+      await safeReply(client, message.from, 'Erro ao processar sua mídia.', message.id);
     }
   });
 }
