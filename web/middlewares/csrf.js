@@ -5,9 +5,10 @@
 
 const csrf = require('csrf');
 
+// Create a single csrf instance to reuse across the module
+const tokens = new csrf();
+
 function createCSRFMiddleware() {
-  const tokens = new csrf();
-  
   return (req, res, next) => {
     // Skip CSRF for safe methods and API endpoints that use other auth
     if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
@@ -55,10 +56,9 @@ function createCSRFMiddleware() {
 
 function getCSRFToken(req, res) {
   if (!req.session.csrfSecret) {
-    req.session.csrfSecret = new csrf().secretSync();
+    req.session.csrfSecret = tokens.secretSync();
   }
   
-  const tokens = new csrf();
   return tokens.create(req.session.csrfSecret);
 }
 
