@@ -151,6 +151,10 @@ class LogCollector {
     return stats;
   }
 
+  getLogCount() {
+    return this.logs.length;
+  }
+
   clearLogs() {
     this.logs = [];
     this.logIndex = 0;
