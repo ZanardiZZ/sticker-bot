@@ -71,7 +71,7 @@ async function sendMediaByType(client, chatId, media) {
       await client.sendImageAsStickerGif(chatId, filePath, { pack: PACK_NAME, author: AUTHOR_NAME });
       return;
     }
-    const path = require('path');
+    // use top-level 'path' import
     await client.sendFile(chatId, filePath, path.basename(filePath));
     return;
   }
