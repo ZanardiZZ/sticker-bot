@@ -17,6 +17,7 @@ const { tests: gifProcessorTests } = require('./unit/gifProcessor.test');
 const { tests: tagSimilarityTests, cleanup: tagSimilarityCleanup } = require('./unit/tagSimilarity.test');
 const { tests: idCommandTests } = require('./unit/idCommand.test');
 const { tests: versionTests } = require('./unit/version.test');
+const { tests: logCollectorTests } = require('./unit/logCollector.test');
 const { runAnimatedStickerTests } = require('./unit/animatedStickerAnalysis.test');
 const { testMultiFrameDisableFeature } = require('./unit/multiFrameDisabled.test');
 
@@ -39,6 +40,7 @@ async function runAllTests() {
     results.push(await runTestSuite('Tag Similarity Tests', tagSimilarityTests));
     results.push(await runTestSuite('ID Command Tests', idCommandTests));
     results.push(await runTestSuite('Version Model Tests', versionTests));
+    results.push(await runTestSuite('LogCollector Tests', logCollectorTests));
     
     // Run animated sticker tests (different format)
     await runAnimatedStickerTests();
