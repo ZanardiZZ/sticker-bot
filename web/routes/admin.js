@@ -77,10 +77,10 @@ function createAdminRoutes(db) {
     res.write(`data: ${JSON.stringify({ type: 'initial', ...initialData })}\n\n`);
 
     // Interceptar novos logs (implementação básica)
-    let lastLogCount = logCollector.logs.length;
+    let lastLogCount = logCollector.getLogCount();
     
     const checkForNewLogs = () => {
-      const currentLogCount = logCollector.logs.length;
+      const currentLogCount = logCollector.getLogCount();
       if (currentLogCount !== lastLogCount) {
         const newLogs = logCollector.getLogs({ limit: 10 });
         res.write(`data: ${JSON.stringify({ type: 'update', ...newLogs })}\n\n`);
