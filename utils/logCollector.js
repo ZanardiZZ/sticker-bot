@@ -14,6 +14,7 @@ class LogCollector {
       error: console.error,
       info: console.info
     };
+    this.isIntercepting = false;
     
     // Interceptar console methods
     this.setupConsoleInterception();
@@ -22,7 +23,16 @@ class LogCollector {
   }
 
   setupConsoleInterception() {
+    // Prevent multiple instances from intercepting console simultaneously
+    if (LogCollector._isConsoleIntercepted) {
+      console.warn('[LogCollector] Console já está sendo interceptado por outra instância');
+      return;
+    }
+
     const self = this;
+    LogCollector._isConsoleIntercepted = true;
+    LogCollector._activeInstance = this;
+    this.isIntercepting = true;
 
     // Interceptar console.log
     console.log = function(...args) {
@@ -181,19 +191,32 @@ class LogCollector {
 
   // Restaurar console original (para testes ou desativação)
   restore() {
-    console.log = this.originalConsole.log;
-    console.warn = this.originalConsole.warn;
-    console.error = this.originalConsole.error;
-    console.info = this.originalConsole.info;
-    console.log('[LogCollector] Console methods restaurados');
+    if (this.isIntercepting && LogCollector._activeInstance === this) {
+      console.log = this.originalConsole.log;
+      console.warn = this.originalConsole.warn;
+      console.error = this.originalConsole.error;
+      console.info = this.originalConsole.info;
+      
+      LogCollector._isConsoleIntercepted = false;
+      LogCollector._activeInstance = null;
+      this.isIntercepting = false;
+      
+      console.log('[LogCollector] Console methods restaurados');
+    } else if (this.isIntercepting) {
+      console.warn('[LogCollector] Não é possível restaurar - outra instância está ativa');
+    }
   }
 }
+
+// Static properties for tracking console interception state
+LogCollector._isConsoleIntercepted = false;
+LogCollector._activeInstance = null;
 
 // Singleton instance
 let logCollectorInstance = null;
 
 function getLogCollector(maxLogs = 1000) {
-  if (!logCollectorInstance) {
+  if (!logCollectorInstance || (!logCollectorInstance.isIntercepting && !LogCollector._isConsoleIntercepted)) {
     logCollectorInstance = new LogCollector(maxLogs);
   }
   return logCollectorInstance;
