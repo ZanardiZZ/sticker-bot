@@ -216,7 +216,7 @@ LogCollector._activeInstance = null;
 let logCollectorInstance = null;
 
 function getLogCollector(maxLogs = 1000) {
-  if (!logCollectorInstance || (logCollectorInstance && !logCollectorInstance.isIntercepting && !LogCollector._isConsoleIntercepted)) {
+  if (!logCollectorInstance || (!logCollectorInstance.isIntercepting && !LogCollector._isConsoleIntercepted)) {
     logCollectorInstance = new LogCollector(maxLogs);
   }
   return logCollectorInstance;
