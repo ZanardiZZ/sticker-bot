@@ -27,17 +27,17 @@ async function safeReply(client, chatId, responseMessage, originalMessageOrId = 
     }
   }
 
-  //try {
-    // Try client.reply for groups (@g.us) and individual chats (@c.us)
-  //  if (replyToId && (chatId.endsWith('@c.us') || chatId.endsWith('@g.us'))) {
-    //  if (typeof client.reply === 'function') {
-      //  await client.reply(chatId, responseMessage, replyToId);
-      //  return true;
-    //  }
-    //}
- // } catch (replyError) {
- //   console.error(`[safeReply] client.reply failed:`, replyError.message);
-  //}
+  try {
+    // Try client.reply for groups (@g.us), individual chats (@c.us), and newsletters (@lid)
+    if (replyToId && (chatId.endsWith('@c.us') || chatId.endsWith('@g.us') || chatId.endsWith('@lid'))) {
+      if (typeof client.reply === 'function') {
+        await client.reply(chatId, responseMessage, replyToId);
+        return true;
+      }
+    }
+  } catch (replyError) {
+    console.error(`[safeReply] client.reply failed:`, replyError.message);
+  }
 
   // Fallback to sendText with simulated reply format
   try {

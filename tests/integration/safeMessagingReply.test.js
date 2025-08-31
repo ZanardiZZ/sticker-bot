@@ -137,7 +137,7 @@ async function testBackwardCompatibilityWithMessageId() {
 }
 
 async function testNonReplyableChat() {
-  console.log('\n=== Testing non-replyable chat (not @c.us or @g.us) ===');
+  console.log('\n=== Testing non-replyable chat (not @c.us, @g.us, or @lid) ===');
   
   const client = new MockWhatsAppClient();
   const chatId = 'broadcast_12345'; // Not a regular chat
@@ -165,23 +165,45 @@ async function testNonReplyableChat() {
   }
 }
 
+async function testReplyForNewsletterChats() {
+  console.log('\n=== Testing client.reply for newsletter chats (@lid) ===');
+  
+  const client = new MockWhatsAppClient();
+  const chatId = '1234567890123456@lid'; // Newsletter chat
+  const responseMessage = 'Newsletter response';
+  const originalMessage = { id: 'msg_newsletter', body: 'Newsletter message' };
+  
+  const result = await safeReply(client, chatId, responseMessage, originalMessage);
+  
+  console.log('Calls made:', client.calls);
+  
+  if (result && client.calls.length === 1 && client.calls[0].method === 'reply') {
+    console.log('✅ SUCCESS: Used client.reply for newsletter chat (@lid)');
+    return true;
+  } else {
+    console.error('❌ FAIL: Did not use client.reply for newsletter chat (@lid)');
+    return false;
+  }
+}
+
 async function runAllSafeReplyTests() {
   console.log('🧪 SafeReply Functionality Tests');
   
   try {
     const test1 = await testReplyForGroups();
     const test2 = await testReplyForIndividualChats();
-    const test3 = await testFallbackToSimulatedReply();
-    const test4 = await testBackwardCompatibilityWithMessageId();
-    const test5 = await testNonReplyableChat();
+    const test3 = await testReplyForNewsletterChats();
+    const test4 = await testFallbackToSimulatedReply();
+    const test5 = await testBackwardCompatibilityWithMessageId();
+    const test6 = await testNonReplyableChat();
     
     console.log('\n=== FINAL RESULTS ===');
     
-    const allPassed = test1 && test2 && test3 && test4 && test5;
+    const allPassed = test1 && test2 && test3 && test4 && test5 && test6;
     
     if (allPassed) {
       console.log('✅ ALL SAFERELY TESTS PASSED');
-      console.log('✅ client.reply works for @c.us and @g.us');
+      console.log('✅ client.reply works for @c.us, @g.us, and @lid');
       console.log('✅ Fallback to simulated reply format works');
       console.log('✅ Backward compatibility maintained');
     } else {
