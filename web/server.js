@@ -1182,12 +1182,12 @@ function fixMediaUrl(row) {
 
     for (const c of candidates) {
       if (!c) continue;
-      let base = require('path').basename(c);
+      let base = path.basename(c);
       if (!base.includes('.') && row?.mimetype) {
         if (row.mimetype === 'image/webp') base += '.webp';
         else if (row.mimetype === 'video/mp4') base += '.mp4';
       }
-      const abs = require('path').join(STICKERS_DIR, base);
+      const abs = path.join(STICKERS_DIR, base);
       if (fs.existsSync(abs)) {
         row.url = '/media/' + base;
         return row;
@@ -1195,8 +1195,8 @@ function fixMediaUrl(row) {
     }
 
     if (row?.url?.startsWith('/media/')) {
-      const base = require('path').basename(row.url);
-      const abs = require('path').join(STICKERS_DIR, base);
+      const base = path.basename(row.url);
+      const abs = path.join(STICKERS_DIR, base);
       if (!fs.existsSync(abs)) {
         console.warn('[MEDIA] Arquivo não encontrado no disco para URL:', row.url, 'id:', row?.id, 'file_path:', row?.file_path);
       }
