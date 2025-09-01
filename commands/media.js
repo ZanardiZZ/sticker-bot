@@ -159,8 +159,17 @@ async function sendMediaAsOriginal(client, chatId, media) {
     // Regular videos should be sent as files (not stickers)
     if (isVideo) {
       const path = require('path');
-      await client.sendFile(chatId, filePath, path.basename(filePath));
-      console.log('[sendMediaAsOriginal] Vídeo enviado via sendFile');
+      await client.sendFile(
+  chatId,
+  filePath,
+  path.basename(filePath),
+  undefined,   // caption
+  undefined,   // quotedMsgId
+  true,       // waitForId
+  false,       // ptt
+  true         // withoutPreview - send as attachment/file
+);
+      console.log('[sendMediaAsOriginal] Vídeo enviado via sendVideo');
       return;
     }
 
