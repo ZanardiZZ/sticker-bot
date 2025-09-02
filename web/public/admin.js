@@ -744,7 +744,63 @@ const selectAllCheckbox = document.getElementById('selectAllDuplicates');
 const deleteSelectedBtn = document.getElementById('deleteSelectedDuplicates');
 
 if (refreshDuplicatesBtn) {
-  refreshDuplicatesBtn.addEventListener('click', loadDuplicateStats);
+  refreshDuplicatesBtn.addEventListener('click', async () => {
+    const btn = document.getElementById('refreshDuplicates');
+    btn.disabled = true;
+    btn.textContent = 'Processando...';
+    try {
+      const res = await fetch('/api/admin/duplicates/dhash-scan');
+      const data = await res.json();
+      const container = document.getElementById('duplicatesList');
+      container.innerHTML = '';
+      if (data.groups && data.groups.length > 0) {
+        data.groups.forEach(group => {
+          const div = document.createElement('div');
+          div.className = 'duplicate-group';
+          div.innerHTML = `<h4>Grupo (${group.length} duplicatas)</h4>` +
+            group.map(item => `<div class='duplicate-item' data-id='${item.id}'><span class='media-info'>ID: ${item.id} | Caminho: ${item.file_path}</span> <button class='btn-danger btn-delete-dup' data-id='${item.id}'>Deletar</button></div>`).join('');
+          container.appendChild(div);
+        });
+        // Adiciona handler de exclusão
+        container.querySelectorAll('.btn-delete-dup').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            const id = btn.getAttribute('data-id');
+            btn.disabled = true;
+            btn.textContent = 'Deletando...';
+            try {
+              const res = await fetch(`/api/admin/duplicates/${id}`, { method: 'DELETE' });
+              if (res.ok) {
+                // Remove item da interface
+                const itemDiv = btn.closest('.duplicate-item');
+                const groupDiv = btn.closest('.duplicate-group');
+                itemDiv.remove();
+                // Se só sobrou 1 no grupo, remove grupo
+                if (groupDiv.querySelectorAll('.duplicate-item').length <= 1) {
+                  groupDiv.remove();
+                }
+              } else {
+                alert('Erro ao deletar mídia.');
+                btn.disabled = false;
+                btn.textContent = 'Deletar';
+              }
+            } catch (err) {
+              alert('Erro ao deletar mídia: ' + (err.message || err));
+              btn.disabled = false;
+              btn.textContent = 'Deletar';
+            }
+          });
+        });
+        document.getElementById('duplicatesContainer').style.display = '';
+      } else {
+        container.innerHTML = '<div class="muted">Nenhuma duplicata encontrada.</div>';
+        document.getElementById('duplicatesContainer').style.display = '';
+      }
+    } catch (e) {
+      alert('Erro ao buscar duplicatas: ' + (e.message || e));
+    }
+    btn.disabled = false;
+    btn.textContent = 'Atualizar';
+  });
 }
 
 if (selectAllCheckbox) {

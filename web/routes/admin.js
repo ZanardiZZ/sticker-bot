@@ -1,3 +1,4 @@
+
 /**
  * Admin routes - handles admin-only functionality like logs, user management, etc.
  */
@@ -12,6 +13,80 @@ const { getLogCollector } = require('../../utils/logCollector');
  */
 function createAdminRoutes(db) {
   const router = express.Router();
+  // GET /api/admin/duplicates/dhash-scan - Detecta duplicatas usando dHash (full scan)
+  router.get('/admin/duplicates/dhash-scan', requireAdmin, async (req, res) => {
+    try {
+      const { db } = require('../../database/connection');
+      const sharp = require('sharp');
+      const { getDHash, getAnimatedDHashes } = require('../../database/utils');
+      // Busca todas mídias
+      const rows = await new Promise((resolve, reject) => {
+        db.all('SELECT id, file_path, hash_visual FROM media WHERE file_path IS NOT NULL', [], (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows);
+        });
+      });
+      // Calcula hashes e agrupa duplicatas
+      const hashMap = {};
+      for (const row of rows) {
+        try {
+          const buffer = require('fs').readFileSync(row.file_path);
+          let hashes = null;
+          let isAnimated = false;
+          try {
+            const meta = await sharp(buffer, { animated: true }).metadata();
+            isAnimated = meta.pages && meta.pages > 1;
+          } catch {}
+          if (isAnimated) {
+            hashes = await getAnimatedDHashes(buffer);
+          } else {
+            const hash = await getDHash(buffer);
+            hashes = hash ? [hash] : null;
+          }
+          if (!hashes) continue;
+          // Para animadas, agrupa por combinação de 2 de 3 hashes
+          let key = null;
+          if (isAnimated) {
+            // Usa as 3 combinações possíveis de 2 hashes
+            const combos = [
+              hashes[0] + '_' + hashes[1],
+              hashes[0] + '_' + hashes[2],
+              hashes[1] + '_' + hashes[2]
+            ];
+            key = combos.find(k => hashMap[k]);
+            if (!key) key = combos[0];
+          } else {
+            key = hashes[0];
+          }
+          if (!hashMap[key]) hashMap[key] = [];
+          hashMap[key].push(row);
+        } catch {}
+      }
+      // Monta grupos de duplicatas (2 ou mais)
+      const duplicateGroups = Object.values(hashMap).filter(arr => arr.length > 1);
+      res.json({ groups: duplicateGroups });
+    } catch (error) {
+      console.error('[API] Erro ao escanear duplicatas dHash:', error);
+      res.status(500).json({ error: 'internal_error' });
+    }
+  });
+  // DELETE /api/admin/duplicates/:id - Deleta mídia duplicada
+  router.delete('/admin/duplicates/:id', requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (!id) return res.status(400).json({ error: 'invalid_id' });
+      await new Promise((resolve, reject) => {
+        db.run('DELETE FROM media WHERE id = ?', [id], function(err) {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      res.json({ success: true });
+    } catch (error) {
+      console.error('[API] Erro ao deletar mídia:', error);
+      res.status(500).json({ error: 'internal_error' });
+    }
+  });
   const logCollector = getLogCollector();
 
   // GET /api/admin/logs - Buscar logs

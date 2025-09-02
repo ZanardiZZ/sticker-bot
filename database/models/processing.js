@@ -181,13 +181,55 @@ async function processOldStickers() {
         // Uses robust function to handle corrupted files
         const bufferWebp = await processWebpWithRepair(bufferOriginal, file);
 
-        const hashVisual = await getHashVisual(bufferWebp);
 
-        if (!hashVisual) continue;
+        // Detecta animada pelo metadata
+        let hashes = null;
+        let isAnimated = false;
+        try {
+          const meta = await sharp(bufferWebp, { animated: true }).metadata();
+          isAnimated = meta.pages && meta.pages > 1;
+        } catch {}
 
-        const existing = await findByHashVisual(hashVisual);
-        if (existing) {
-          // Mark as processed even if it already exists to avoid rework
+        if (isAnimated) {
+          hashes = await require('../utils').getAnimatedDHashes(bufferWebp);
+        } else {
+          const hash = await require('../utils').getDHash(bufferWebp);
+          hashes = hash ? [hash] : null;
+        }
+
+        if (!hashes) continue;
+
+        // Para animadas, busca por duplicidade considerando 2 de 3 hashes iguais
+        let isDuplicate = false;
+        if (isAnimated) {
+          // Busca todos registros que tenham pelo menos 2 hashes iguais
+          const db = require('../connection').db;
+          const rows = await new Promise((resolve, reject) => {
+            db.all('SELECT hash_visual FROM media WHERE hash_visual IS NOT NULL', [], (err, rows) => {
+              if (err) reject(err);
+              else resolve(rows);
+            });
+          });
+          for (const row of rows) {
+            try {
+              const otherHashes = row.hash_visual.split(',');
+              let count = 0;
+              for (const h of hashes) {
+                if (otherHashes.includes(h)) count++;
+              }
+              if (count >= 2) {
+                isDuplicate = true;
+                break;
+              }
+            } catch {}
+          }
+        } else {
+          // Estática: busca hash exato
+          const existing = await findByHashVisual(hashes[0]);
+          if (existing) isDuplicate = true;
+        }
+
+        if (isDuplicate) {
           await upsertProcessedFile(file, lastModified);
           continue;
         }

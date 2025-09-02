@@ -58,17 +58,39 @@ async function expandTagsWithSynonyms(tags) {
  * @param {Buffer} buffer - Image buffer
  * @returns {Promise<string|null>} Visual hash or null if error
  */
-async function getHashVisual(buffer) {
+
+/**
+ * Generates dHash (difference hash) of an image buffer
+ * @param {Buffer} buffer - Image buffer
+ * @returns {Promise<string|null>} dHash hex string or null if error
+ */
+async function getDHash(buffer) {
   try {
+    // Resize to 9x8 (dHash needs n+1 x n)
     const small = await sharp(buffer)
-      .resize(16, 16, { fit: 'inside' })
+      .resize(9, 8, { fit: 'inside' })
       .grayscale()
       .raw()
       .toBuffer();
-    return crypto.createHash('md5').update(small).digest('hex');
+    // Calculate dHash
+    let hash = '';
+    for (let row = 0; row < 8; row++) {
+      for (let col = 0; col < 8; col++) {
+        const left = small[row * 9 + col];
+        const right = small[row * 9 + col + 1];
+        hash += left > right ? '1' : '0';
+      }
+    }
+    // Convert binary string to hex
+    return parseInt(hash, 2).toString(16).padStart(16, '0');
   } catch {
     return null;
   }
+}
+
+// Mantém o hash visual antigo para compatibilidade
+async function getHashVisual(buffer) {
+  return getDHash(buffer);
 }
 
 /**
@@ -180,9 +202,44 @@ module.exports = {
   getSynonyms,
   expandTagsWithSynonyms,
   getHashVisual,
+  getDHash,
+  getAnimatedDHashes,
   isFileProcessed,
   upsertProcessedFile,
   parseSemVer,
   compareSemVer,
   isValidSemVer
 };
+/**
+ * Extracts 3 frames (10%, 50%, 90%) from animated image (webp/gif) and returns dHashes
+ * @param {Buffer} buffer - Animated image buffer
+ * @returns {Promise<string[]|null>} Array of 3 dHashes or null if error
+ */
+async function getAnimatedDHashes(buffer) {
+  try {
+    const sharpInstance = sharp(buffer, { animated: true });
+    const metadata = await sharpInstance.metadata();
+    if (!metadata.pages || metadata.pages < 2) {
+      // Not animated, fallback to static dHash
+      const hash = await getDHash(buffer);
+      return hash ? [hash] : null;
+    }
+    const totalFrames = metadata.pages;
+    const frameIdxs = [
+      Math.floor(totalFrames * 0.1),
+      Math.floor(totalFrames * 0.5),
+      Math.max(0, Math.floor(totalFrames * 0.9) - 1)
+    ];
+    const hashes = [];
+    for (const idx of frameIdxs) {
+      const frameBuffer = await sharp(buffer, { animated: true, page: idx })
+        .extractFrame(idx)
+        .toBuffer();
+      const hash = await getDHash(frameBuffer);
+      if (hash) hashes.push(hash);
+    }
+    return hashes.length === 3 ? hashes : null;
+  } catch {
+    return null;
+  }
+}
