@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Admin - Reiniciar Bot</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 40px; max-width: 720px; margin: auto; }
+    button { padding: 12px 20px; font-size: 16px; cursor: pointer; }
+    #status { margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <h1>Reiniciar Sticker Client</h1>
+  <p>Pressione o botão abaixo para solicitar a reinicialização do processo do bot (requer sessão admin).</p>
+  <button id="restart">Reiniciar Bot</button>
+  <div id="status"></div>
+
+  <script>
+    async function restart() {
+      document.getElementById('status').textContent = 'Enviando solicitação...';
+      try {
+        const resp = await fetch('/api/admin/restart-client', { method: 'POST', credentials: 'include' });
+        const body = await resp.json();
+        if (resp.ok) {
+          document.getElementById('status').textContent = 'Solicitação enviada com sucesso: ' + (body.message || JSON.stringify(body));
+        } else {
+          document.getElementById('status').textContent = 'Erro: ' + (body.message || JSON.stringify(body));
+        }
+      } catch (e) {
+        document.getElementById('status').textContent = 'Erro de rede: ' + e.message;
+      }
+    }
+    document.getElementById('restart').addEventListener('click', restart);
+  </script>
+</body>
+</html>
