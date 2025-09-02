@@ -137,6 +137,65 @@ function createAdminRoutes(db) {
     }
   });
 
+  // POST /api/admin/restart-client - Reinicia o processo do sticker-client (via PM2 quando disponível)
+  router.post('/admin/restart-client', requireAdmin, async (req, res) => {
+    try {
+      const pm2 = require('pm2');
+      // Connect to PM2 daemon
+      pm2.connect((connErr) => {
+        if (connErr) {
+          console.error('[ADMIN] PM2 connect error:', connErr);
+          return res.status(500).json({ error: 'pm2_connect_failed', message: 'PM2 connect falhou. Verifique se o PM2 está instalado/rodando.' });
+        }
+
+        // Try to find a running process that points to index.js or has name 'sticker-bot'
+        pm2.list((listErr, list) => {
+          if (listErr) {
+            console.error('[ADMIN] PM2 list error:', listErr);
+            pm2.disconnect();
+            return res.status(500).json({ error: 'pm2_list_failed' });
+          }
+
+          let target = null;
+          for (const proc of list || []) {
+            const execPath = (proc.pm2_env && proc.pm2_env.pm_exec_path) || '';
+            const name = (proc.name || '').toLowerCase();
+            if (execPath.endsWith('index.js') || name.includes('sticker-bot') || name.includes('bot')) {
+              target = proc;
+              break;
+            }
+          }
+
+          const doRestart = (procInfo) => {
+            if (!procInfo) {
+              pm2.disconnect();
+              return res.status(404).json({ error: 'pm2_process_not_found', message: 'Nenhum processo gerenciado pelo PM2 correspondente foi encontrado. Reinicie o bot manualmente.' });
+            }
+            const id = procInfo.pm_id;
+            pm2.restart(id, (restartErr) => {
+              pm2.disconnect();
+              if (restartErr) {
+                console.error('[ADMIN] PM2 restart error:', restartErr);
+                return res.status(500).json({ error: 'pm2_restart_failed', message: restartErr.message });
+              }
+              console.log('[ADMIN] Bot reiniciado via PM2 por', req.user && req.user.username);
+              return res.json({ success: true, message: 'Restart solicitado via PM2' });
+            });
+          };
+
+          if (target) return doRestart(target);
+
+          // No target found - disconnect and inform
+          pm2.disconnect();
+          return res.status(404).json({ error: 'pm2_process_not_found', message: 'Nenhum processo PM2 identificado para reiniciar. Use PM2 para gerenciar o processo com nome "sticker-bot".' });
+        });
+      });
+    } catch (error) {
+      console.error('[ADMIN] Erro ao tentar reiniciar o bot:', error);
+      return res.status(500).json({ error: 'unexpected_error', message: String(error) });
+    }
+  });
+
   // GET /api/admin/logs/stream - Server-Sent Events para logs em tempo real
   router.get('/admin/logs/stream', requireAdmin, (req, res) => {
     res.writeHead(200, {

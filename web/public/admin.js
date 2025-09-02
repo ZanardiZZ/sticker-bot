@@ -112,6 +112,36 @@ async function load() {
   await loadRules();
 }
 
+// ===== Bot Restart Control =====
+document.getElementById('restartClientBtn')?.addEventListener('click', async () => {
+  const btn = document.getElementById('restartClientBtn');
+  const status = document.getElementById('restartStatus');
+  if (!btn || !status) return;
+
+  if (!confirm('Deseja realmente reiniciar o sticker-client agora?')) return;
+
+  btn.disabled = true;
+  status.textContent = 'Solicitando reinício...';
+
+  try {
+    const resp = await fetchWithCSRF('/api/admin/restart-client', { method: 'POST' });
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      status.textContent = getAdminErrorMessage(data, 'Falha ao reiniciar o bot');
+      btn.disabled = false;
+      return;
+    }
+    const body = await resp.json();
+    status.textContent = body.message || 'Reinício solicitado com sucesso.';
+  } catch (error) {
+    console.error('Erro ao reiniciar bot:', error);
+    status.textContent = 'Erro de rede: ' + (error.message || error);
+  }
+
+  // Re-enable button after a short delay to avoid accidental double-click
+  setTimeout(() => { btn.disabled = false; }, 5000);
+});
+
 async function loadRules(){
   const rules = await fetchJSON('/api/admin/ip-rules');
   const rows = rules.map(r => ({
