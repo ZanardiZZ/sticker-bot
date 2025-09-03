@@ -106,7 +106,8 @@ class DatabaseHandler {
               }
               this.db.run('COMMIT', (err) => {
                 if (err) {
-                  console.error('[DB] Commit failed:', err && err.stack ? err.stack : err);
+                  const formatError = require('../utils/formatError');
+                  console.error('[DB] Commit failed:', formatError(err));
                   return reject(err);
                 }
                 resolve(results);
@@ -115,10 +116,11 @@ class DatabaseHandler {
             } catch (error) {
               // Attempt rollback and log any rollback errors as well
               this.db.run('ROLLBACK', (rbErr) => {
+                const formatError = require('../utils/formatError');
                 if (rbErr) {
-                  console.error('[DB] Rollback failed after error:', rbErr && rbErr.stack ? rbErr.stack : rbErr, 'original error:', error && error.stack ? error.stack : error);
+                  console.error('[DB] Rollback failed after error:', formatError(rbErr), 'original error:', formatError(error));
                 } else {
-                  console.warn('[DB] Rolled back transaction due to error:', error && error.stack ? error.stack : error);
+                  console.warn('[DB] Rolled back transaction due to error:', formatError(error));
                 }
                 reject(error);
               });

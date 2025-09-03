@@ -1215,8 +1215,9 @@ app.use((err, req, res, _next) => {
 
     console.error('[ERROR] Unhandled error - method=%s url=%s user=%s',
       req.method, req.originalUrl, (req.user && req.user.username) || 'anon');
+    const formatError = require('../utils/formatError');
     console.error('[ERROR] Error message:', err && err.message);
-    console.error('[ERROR] Stack:', err && err.stack);
+    console.error('[ERROR] Stack:', formatError(err));
     console.error('[ERROR] Request body:', req.body);
     console.error('[ERROR] Request headers (safe):', safeHeaders);
   } catch (logErr) {
@@ -1225,7 +1226,8 @@ app.use((err, req, res, _next) => {
   }
 
   // Respond as JSON for API calls, otherwise plain text
-    return res.status(500).json({ error: 'internal_error', message: 'An internal error occurred.' });
+  if (req.xhr || (req.originalUrl && req.originalUrl.startsWith('/api/'))) {
+    return res.status(500).json({ error: 'internal_error', message: err?.message });
   }
 
   res.status(500).send('Internal Server Error');
