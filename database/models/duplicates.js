@@ -168,7 +168,13 @@ async function deleteMediaByIds(mediaIds) {
     
     for (const mediaId of mediaIds) {
       // Get file path before deletion
-      const media = await dbHandler.get(`SELECT file_path FROM media WHERE id = ?`, [mediaId]);
+      let media;
+      try {
+        media = await dbHandler.get(`SELECT file_path FROM media WHERE id = ?`, [mediaId]);
+      } catch (err) {
+        console.error('[DELETE_MEDIA] Error fetching media id=%s before deletion: %s', mediaId, err && err.stack ? err.stack : err);
+        throw err;
+      }
       
       if (media) {
         // Delete media_tags associations
@@ -188,7 +194,8 @@ async function deleteMediaByIds(mediaIds) {
           try {
             fs.unlinkSync(media.file_path);
           } catch (err) {
-            console.warn(`Failed to delete file ${media.file_path}:`, err.message);
+            // Log full error to help debugging permission/IO issues
+            console.warn('[DELETE_MEDIA] Failed to delete file %s: %s', media.file_path, err && err.stack ? err.stack : err.message);
           }
         }
         
@@ -196,12 +203,17 @@ async function deleteMediaByIds(mediaIds) {
       }
     }
     
-    if (operations.length > 0) {
-      await dbHandler.transaction(operations);
+    try {
+      if (operations.length > 0) {
+        await dbHandler.transaction(operations);
+      }
+      console.log('Deleted %s media files by ID selection', deletedCount);
+      return deletedCount;
+    } catch (err) {
+      console.error('[DELETE_MEDIA] Transaction failed while deleting media IDs %s: %s', JSON.stringify(mediaIds), err && err.stack ? err.stack : err);
+      // Re-throw so callers (HTTP layer) receive the error and it can be returned as 500 with logs
+      throw err;
     }
-    
-    console.log(`Deleted ${deletedCount} media files by ID selection`);
-    return deletedCount;
   };
 
   // Use media queue if available for safety, otherwise run directly
