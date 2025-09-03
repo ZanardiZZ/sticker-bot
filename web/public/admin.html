@@ -125,6 +125,16 @@
       Por segurança, altere sua senha inicial agora.
     </div>
 
+    <!-- Admin: Bot control card -->
+    <div class="panel admin-only" id="admin-bot-control" style="display:none;">
+      <h3>Gerenciar Sticker Client</h3>
+      <div class="muted">Reinicie o processo do bot (gerenciado por PM2) quando necessário. Use com cuidado.</div>
+      <div style="display:flex; gap:.6rem; align-items:center; margin-top: .6rem;">
+        <button id="restartClientBtn" class="btn-danger">Reiniciar Bot</button>
+        <div id="restartStatus" class="muted">&nbsp;</div>
+      </div>
+    </div>
+
     <!-- Main Tab Navigation -->
     <div class="main-tab-container">
       <div class="main-tab-nav">
