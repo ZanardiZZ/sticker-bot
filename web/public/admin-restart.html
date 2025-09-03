@@ -20,7 +20,20 @@
     async function restart() {
       document.getElementById('status').textContent = 'Enviando solicitação...';
       try {
-        const resp = await fetch('/api/admin/restart-client', { method: 'POST', credentials: 'include' });
+        // Get CSRF token from cookie or meta tag
+        function getCSRFToken() {
+          const match = document.cookie.match(/(?:^|; )X-CSRF-Token=([^;]*)/);
+          if (match) return decodeURIComponent(match[1]);
+          const meta = document.querySelector('meta[name="csrf-token"]');
+          return meta ? meta.getAttribute('content') : '';
+        }
+        const resp = await fetch('/api/admin/restart-client', {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'X-CSRF-Token': getCSRFToken()
+          }
+        });
         const body = await resp.json();
         if (resp.ok) {
           document.getElementById('status').textContent = 'Solicitação enviada com sucesso: ' + (body.message || JSON.stringify(body));
