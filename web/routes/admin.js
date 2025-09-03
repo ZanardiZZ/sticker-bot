@@ -160,7 +160,7 @@ function createAdminRoutes(db) {
           for (const proc of list || []) {
             const execPath = (proc.pm2_env && proc.pm2_env.pm_exec_path) || '';
             const name = (proc.name || '').toLowerCase();
-            if (execPath.endsWith('index.js') || name.includes('sticker-bot') || name.includes('bot')) {
+            if (execPath.endsWith('index.js') || name === 'sticker-bot') {
               target = proc;
               break;
             }
