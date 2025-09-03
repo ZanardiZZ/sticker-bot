@@ -1207,9 +1207,30 @@ function fixMediaUrl(row) {
   return row;
 }
 
-app.use((err, _req, res, _next) => {
-  console.error('[ERROR] Middleware:', err);
-  res.status(500).json({ error: 'internal_error' });
+// Global error handler - logs rich context to help debug 500s (including DELETE)
+app.use((err, req, res, _next) => {
+  try {
+    const safeHeaders = { ...req.headers };
+    if (safeHeaders.cookie) safeHeaders.cookie = '[REDACTED]';
+
+    console.error('[ERROR] Unhandled error - method=%s url=%s user=%s',
+      req.method, req.originalUrl, (req.user && req.user.username) || 'anon');
+    const formatError = require('../utils/formatError');
+    console.error('[ERROR] Error message:', err && err.message);
+    console.error('[ERROR] Stack:', formatError(err));
+    console.error('[ERROR] Request body:', req.body);
+    console.error('[ERROR] Request headers (safe):', safeHeaders);
+  } catch (logErr) {
+    // If logging itself fails, ensure we still output both errors
+    console.error('[ERROR] Failed to log error context:', logErr);
+  }
+
+  // Respond as JSON for API calls, otherwise plain text
+  if (req.xhr || (req.originalUrl && req.originalUrl.startsWith('/api/'))) {
+    return res.status(500).json({ error: 'internal_error', message: err?.message });
+  }
+
+  res.status(500).send('Internal Server Error');
 });
 
 console.time('[BOOT] listen');
