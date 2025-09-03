@@ -104,14 +104,24 @@ class DatabaseHandler {
                 const result = await this.promisifyOperation(op.sql, op.params);
                 results.push(result);
               }
-              
               this.db.run('COMMIT', (err) => {
-                if (err) reject(err);
-                else resolve(results);
+                if (err) {
+                  const formatError = require('../utils/formatError');
+                  console.error('[DB] Commit failed:', formatError(err));
+                  return reject(err);
+                }
+                resolve(results);
               });
               
             } catch (error) {
-              this.db.run('ROLLBACK', () => {
+              // Attempt rollback and log any rollback errors as well
+              this.db.run('ROLLBACK', (rbErr) => {
+                const formatError = require('../utils/formatError');
+                if (rbErr) {
+                  console.error('[DB] Rollback failed after error:', formatError(rbErr), 'original error:', formatError(error));
+                } else {
+                  console.warn('[DB] Rolled back transaction due to error:', formatError(error));
+                }
                 reject(error);
               });
             }
