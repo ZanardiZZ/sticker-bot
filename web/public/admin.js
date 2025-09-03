@@ -11,7 +11,7 @@ let csrfToken = null;
 async function getCSRFToken() {
   if (!csrfToken) {
     try {
-      const response = await fetch('/api/csrf-token');
+    const response = await fetch('/api/csrf-token', { credentials: 'same-origin' });
       const data = await response.json();
       csrfToken = data.csrfToken;
     } catch (e) {
@@ -30,6 +30,7 @@ async function fetchWithCSRF(url, options = {}) {
       options.headers['X-CSRF-Token'] = token;
     }
   }
+  options.credentials = options.credentials || 'same-origin';
   return fetch(url, options);
 }
 
@@ -55,6 +56,7 @@ async function fetchJSON(url, options = {}){
     }
   }
   
+  options.credentials = options.credentials || 'same-origin';
   const r = await fetch(url, options);
   if (!r.ok) throw new Error('HTTP '+r.status);
   return r.json();
