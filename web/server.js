@@ -1209,6 +1209,21 @@ function fixMediaUrl(row) {
 
 // Global error handler - logs rich context to help debug 500s (including DELETE)
 app.use((err, req, res, _next) => {
+  // Handle CSRF errors explicitly to return 403 instead of being treated as 500
+  if (err && (err.code === 'EBADCSRFTOKEN' || (err.status === 403 && /csrf/i.test(String(err.message || ''))))) {
+    try {
+      console.warn('[SECURITY] Invalid CSRF token - method=%s url=%s ip=%s user=%s',
+        req.method, req.originalUrl, req.ip, (req.user && req.user.username) || 'anon');
+    } catch (logErr) {
+      console.warn('[SECURITY] Invalid CSRF token and failed to log context:', logErr);
+    }
+
+    if (req.xhr || (req.originalUrl && req.originalUrl.startsWith('/api/'))) {
+      return res.status(403).json({ error: 'invalid_csrf', message: 'Invalid CSRF token' });
+    }
+    return res.status(403).send('Forbidden - Invalid CSRF token');
+  }
+
   try {
     const safeHeaders = { ...req.headers };
     if (safeHeaders.cookie) safeHeaders.cookie = '[REDACTED]';
