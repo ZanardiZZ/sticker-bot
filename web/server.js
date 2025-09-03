@@ -1225,8 +1225,7 @@ app.use((err, req, res, _next) => {
   }
 
   // Respond as JSON for API calls, otherwise plain text
-  if (req.xhr || (req.originalUrl && req.originalUrl.startsWith('/api/'))) {
-    return res.status(500).json({ error: 'internal_error', message: err?.message });
+    return res.status(500).json({ error: 'internal_error', message: 'An internal error occurred.' });
   }
 
   res.status(500).send('Internal Server Error');
