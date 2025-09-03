@@ -7,6 +7,16 @@ const express = require('express');
 const { requireAdmin } = require('../auth');
 const { getLogCollector } = require('../../utils/logCollector');
 
+// Try to require pm2 once at module load to avoid repeated requires per-request.
+// If PM2 is not installed, pm2 will be null and the restart endpoint will return a clear error.
+let pm2 = null;
+try {
+  pm2 = require('pm2');
+} catch (e) {
+  console.warn('[ADMIN] PM2 module not available:', e && e.message);
+}
+
+
 /**
  * Creates admin routes with authentication middleware
  * @param {object} db - Database instance
@@ -140,7 +150,13 @@ function createAdminRoutes(db) {
   // POST /api/admin/restart-client - Reinicia o processo do sticker-client (via PM2 quando disponível)
   router.post('/admin/restart-client', requireAdmin, async (req, res) => {
     try {
-      const pm2 = require('pm2');
+      if (!pm2) {
+        return res.status(500).json({
+          error: 'pm2_not_available',
+          message: 'PM2 não está disponível no ambiente. Instale o PM2 ou reinicie o bot manualmente.'
+        });
+      }
+
       // Connect to PM2 daemon
       pm2.connect((connErr) => {
         if (connErr) {
@@ -148,7 +164,7 @@ function createAdminRoutes(db) {
           return res.status(500).json({ error: 'pm2_connect_failed', message: 'PM2 connect falhou. Verifique se o PM2 está instalado/rodando.' });
         }
 
-        // Try to find a running process that points to index.js or has name 'sticker-bot'
+        // Try to find a running process that points to [index.js](http://_vscodecontentref_/1) or has name 'sticker-bot'
         pm2.list((listErr, list) => {
           if (listErr) {
             console.error('[ADMIN] PM2 list error:', listErr);
