@@ -172,7 +172,8 @@ async function deleteMediaByIds(mediaIds) {
       try {
         media = await dbHandler.get(`SELECT file_path FROM media WHERE id = ?`, [mediaId]);
       } catch (err) {
-        console.error('[DELETE_MEDIA] Error fetching media id=%s before deletion: %s', mediaId, err && err.stack ? err.stack : err);
+        const formatError = require('../../utils/formatError');
+        console.error('[DELETE_MEDIA] Error fetching media id=%s before deletion: %s', mediaId, formatError(err));
         throw err;
       }
       
@@ -195,7 +196,8 @@ async function deleteMediaByIds(mediaIds) {
             fs.unlinkSync(media.file_path);
           } catch (err) {
             // Log full error to help debugging permission/IO issues
-            console.warn('[DELETE_MEDIA] Failed to delete file %s: %s', media.file_path, err && err.stack ? err.stack : err.message);
+            const formatError = require('../../utils/formatError');
+            console.warn('[DELETE_MEDIA] Failed to delete file %s: %s', media.file_path, formatError(err));
           }
         }
         
@@ -210,7 +212,8 @@ async function deleteMediaByIds(mediaIds) {
       console.log('Deleted %s media files by ID selection', deletedCount);
       return deletedCount;
     } catch (err) {
-      console.error('[DELETE_MEDIA] Transaction failed while deleting media IDs %s: %s', JSON.stringify(mediaIds), err && err.stack ? err.stack : err);
+      const formatError = require('../../utils/formatError');
+      console.error('[DELETE_MEDIA] Transaction failed while deleting media IDs %s: %s', JSON.stringify(mediaIds), formatError(err));
       // Re-throw so callers (HTTP layer) receive the error and it can be returned as 500 with logs
       throw err;
     }
