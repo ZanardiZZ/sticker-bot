@@ -166,7 +166,7 @@ async function processIncomingMedia(client, message) {
             // Garante que o texto extraído (se existir) seja incluído na descrição
             let descBase = aiResult.description || '';
             if (aiResult.text && typeof aiResult.text === 'string' && aiResult.text.trim().length > 0) {
-              if (!descBase.includes(aiResult.text.trim())) {
+              if (!descBase.includes(`Texto: ${aiResult.text.trim()}`)) {
                 descBase = descBase ? `${descBase} | Texto: ${aiResult.text.trim()}` : aiResult.text.trim();
               }
             }
