@@ -338,14 +338,22 @@ async function handleCommand(client, message, chatId) {
           try {
             const restricted = JSON.parse(userRow.restricted_commands);
             if (Array.isArray(restricted) && restricted.includes(command)) allowed = false;
-          } catch {}
+          } catch (err) {
+            console.error('[PERMISSION] Erro ao fazer parse de restricted_commands:', err);
+            // Default to empty array if parsing fails
+            if (Array.isArray([]) && [].includes(command)) allowed = false;
+          }
         }
         // Se houver lista de comandos permitidos
         if (userRow.allowed_commands) {
           try {
             const allowedList = JSON.parse(userRow.allowed_commands);
             if (Array.isArray(allowedList) && !allowedList.includes(command)) allowed = false;
-          } catch {}
+          } catch (err) {
+            console.error('[PERMISSION] Erro ao fazer parse de allowed_commands:', err);
+            // Default to empty array if parsing fails
+            if (Array.isArray([]) && ![].includes(command)) allowed = false;
+          }
         }
       }
       // Checa permissões globais do grupo
