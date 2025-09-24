@@ -14,6 +14,16 @@
   </div>
   <div id="usersTableContainer"></div>
   <script>
+    // Utility function to escape HTML special characters
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
     async function loadGroupUsers() {
       const groupId = document.getElementById('groupId').value.trim();
       if (!groupId) return alert('Informe o ID do grupo!');
@@ -22,17 +32,25 @@
       if (!data.users) return alert('Nenhum usuário encontrado.');
       renderUsersTable(data.users, groupId);
     }
+
     function renderUsersTable(users, groupId) {
       let html = '<table border="1"><tr><th>User ID</th><th>Função</th><th>Bloqueado</th><th>Última Atividade</th><th>Interações</th><th>Ações</th></tr>';
+      const escapedGroupId = escapeHtml(groupId);
       for (const u of users) {
+        // Defensive: escape all dynamic content in the table.
+        const escapedUserId = escapeHtml(u.user_id);
+        const escapedRole = escapeHtml(u.role);
+        const escapedInteraction = escapeHtml(u.interaction_count);
+        const escapedBlocked = u.blocked ? 'Sim' : 'Não';
+        const escapedLastActivity = u.last_activity ? escapeHtml(new Date(u.last_activity).toLocaleString()) : '-';
         html += `<tr>
-          <td>${u.user_id}</td>
-          <td>${u.role}</td>
-          <td>${u.blocked ? 'Sim' : 'Não'}</td>
-          <td>${u.last_activity ? new Date(u.last_activity).toLocaleString() : '-'}</td>
-          <td>${u.interaction_count}</td>
+          <td>${escapedUserId}</td>
+          <td>${escapedRole}</td>
+          <td>${escapedBlocked}</td>
+          <td>${escapedLastActivity}</td>
+          <td>${escapedInteraction}</td>
           <td>
-            <button onclick="editUser('${groupId}','${u.user_id}')">Editar</button>
+            <button onclick="editUser('${escapedGroupId}','${escapedUserId}')">Editar</button>
           </td>
         </tr>`;
       }
