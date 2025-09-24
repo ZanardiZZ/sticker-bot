@@ -171,6 +171,17 @@ const {
   rankUsers,
   updateMediaMeta,
   setMediaTagsExact
+  ,
+  listGroupUsers,
+  getGroupUser,
+  upsertGroupUser,
+  updateGroupUserField,
+  deleteGroupUser,
+  listGroupCommandPermissions,
+  setGroupCommandPermission,
+  deleteGroupCommandPermission,
+  getBotConfig,
+  setBotConfig
 } = require('./dataAccess.js');
 const { bus } = require('./eventBus.js');
 const { authMiddleware, registerAuthRoutes, requireLogin, requireAdmin } = require('./auth.js');
@@ -529,6 +540,124 @@ app.get('/api/admin/metrics/summary', requireAdmin, (req, res) => {
   });
 });
 }
+// ====== Group Users Management ======
+app.get('/api/admin/group-users/:groupId', requireAdmin, async (req, res) => {
+  try {
+    const groupId = req.params.groupId;
+    const users = await listGroupUsers(groupId);
+    res.json({ users });
+  } catch (err) {
+    res.status(500).json({ error: 'db_error', details: err.message });
+  }
+});
+
+app.get('/api/admin/group-users/:groupId/:userId', requireAdmin, async (req, res) => {
+  try {
+    const { groupId, userId } = req.params;
+    const user = await getGroupUser(groupId, userId);
+    if (!user) return res.status(404).json({ error: 'not_found' });
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ error: 'db_error', details: err.message });
+  }
+});
+
+app.post('/api/admin/group-users/:groupId/:userId', requireAdmin, async (req, res) => {
+  try {
+    const { groupId, userId } = req.params;
+    const { role, blocked, allowed_commands, restricted_commands } = req.body;
+    await upsertGroupUser({
+      group_id: groupId,
+      user_id: userId,
+      role: role || 'user',
+      blocked: blocked ? 1 : 0,
+      allowed_commands: allowed_commands ? JSON.stringify(allowed_commands) : null,
+      restricted_commands: restricted_commands ? JSON.stringify(restricted_commands) : null
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'db_error', details: err.message });
+  }
+});
+
+app.patch('/api/admin/group-users/:groupId/:userId', requireAdmin, async (req, res) => {
+  try {
+    const { groupId, userId } = req.params;
+    const { field, value } = req.body;
+    if (!['role','blocked','allowed_commands','restricted_commands'].includes(field)) {
+      return res.status(400).json({ error: 'invalid_field' });
+    }
+    await updateGroupUserField(groupId, userId, field, field.endsWith('_commands') ? JSON.stringify(value) : value);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'db_error', details: err.message });
+  }
+});
+
+app.delete('/api/admin/group-users/:groupId/:userId', requireAdmin, async (req, res) => {
+  try {
+    const { groupId, userId } = req.params;
+    await deleteGroupUser(groupId, userId);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'db_error', details: err.message });
+  }
+});
+
+// ====== Group Command Permissions ======
+app.get('/api/admin/group-commands/:groupId', requireAdmin, async (req, res) => {
+  try {
+    const groupId = req.params.groupId;
+    const permissions = await listGroupCommandPermissions(groupId);
+    res.json({ permissions });
+  } catch (err) {
+    res.status(500).json({ error: 'db_error', details: err.message });
+  }
+});
+
+app.post('/api/admin/group-commands/:groupId', requireAdmin, async (req, res) => {
+  try {
+    const groupId = req.params.groupId;
+    const { command, allowed } = req.body;
+    if (!command) return res.status(400).json({ error: 'missing_command' });
+    await setGroupCommandPermission(groupId, command, allowed ? 1 : 0);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'db_error', details: err.message });
+  }
+});
+
+app.delete('/api/admin/group-commands/:groupId/:command', requireAdmin, async (req, res) => {
+  try {
+    const { groupId, command } = req.params;
+    await deleteGroupCommandPermission(groupId, command);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'db_error', details: err.message });
+  }
+});
+
+// ====== Bot Config (frequency) ======
+app.get('/api/admin/bot-config/:key', requireAdmin, async (req, res) => {
+  try {
+    const key = req.params.key;
+    const value = await getBotConfig(key);
+    res.json({ key, value });
+  } catch (err) {
+    res.status(500).json({ error: 'db_error', details: err.message });
+  }
+});
+
+app.post('/api/admin/bot-config/:key', requireAdmin, async (req, res) => {
+  try {
+    const key = req.params.key;
+    const { value } = req.body;
+    await setBotConfig(key, value);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'db_error', details: err.message });
+  }
+});
 app.get('/api/admin/ip-rules', requireAdmin, (req, res) => {
   db.all(`SELECT * FROM ip_rules ORDER BY created_at DESC`, [], (err, rows) => {
     if (err) return res.status(500).json({ error: 'db', details: err.message });

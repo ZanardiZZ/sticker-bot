@@ -471,5 +471,49 @@ module.exports = {
   setMediaTagsExact,
   rankTags,
   rankUsers,
-  buildStickerURL
+  buildStickerURL,
+
+  // ====== Group Users Management ======
+  async listGroupUsers(groupId) {
+    return all(`SELECT * FROM group_users WHERE group_id = ?`, [groupId]);
+  },
+  async getGroupUser(groupId, userId) {
+    return get(`SELECT * FROM group_users WHERE group_id = ? AND user_id = ?`, [groupId, userId]);
+  },
+  async upsertGroupUser({ group_id, user_id, role = 'user', blocked = 0, last_activity = null, interaction_count = 0, allowed_commands = null, restricted_commands = null }) {
+    return run(`INSERT INTO group_users (group_id, user_id, role, blocked, last_activity, interaction_count, allowed_commands, restricted_commands)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(group_id, user_id) DO UPDATE SET role=excluded.role, blocked=excluded.blocked, last_activity=excluded.last_activity, interaction_count=excluded.interaction_count, allowed_commands=excluded.allowed_commands, restricted_commands=excluded.restricted_commands`,
+      [group_id, user_id, role, blocked, last_activity, interaction_count, allowed_commands, restricted_commands]);
+  },
+  async updateGroupUserField(group_id, user_id, field, value) {
+    return run(`UPDATE group_users SET ${field} = ? WHERE group_id = ? AND user_id = ?`, [value, group_id, user_id]);
+  },
+  async deleteGroupUser(group_id, user_id) {
+    return run(`DELETE FROM group_users WHERE group_id = ? AND user_id = ?`, [group_id, user_id]);
+  },
+
+  // ====== Group Command Permissions ======
+  async listGroupCommandPermissions(groupId) {
+    return all(`SELECT * FROM group_command_permissions WHERE group_id = ?`, [groupId]);
+  },
+  async setGroupCommandPermission(group_id, command, allowed = 1) {
+    return run(`INSERT INTO group_command_permissions (group_id, command, allowed)
+      VALUES (?, ?, ?)
+      ON CONFLICT(group_id, command) DO UPDATE SET allowed=excluded.allowed`,
+      [group_id, command, allowed]);
+  },
+  async deleteGroupCommandPermission(group_id, command) {
+    return run(`DELETE FROM group_command_permissions WHERE group_id = ? AND command = ?`, [group_id, command]);
+  },
+
+  // ====== Bot Config ======
+  async getBotConfig(key) {
+    const row = await get(`SELECT value FROM bot_config WHERE key = ?`, [key]);
+    return row ? row.value : null;
+  },
+  async setBotConfig(key, value) {
+    return run(`INSERT INTO bot_config (key, value) VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [key, value]);
+  }
 };
