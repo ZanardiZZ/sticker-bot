@@ -65,7 +65,26 @@ async function processIncomingMedia(client, message) {
     let mimetypeToSave = message.mimetype;
 
     if (message.mimetype.startsWith('image/') && message.mimetype !== 'image/gif') {
-      bufferWebp = await sharp(buffer).webp().toBuffer();
+      // Ajuste de aspect ratio: centraliza a imagem em um canvas quadrado com fundo transparente
+      const image = sharp(buffer);
+      const metadata = await image.metadata();
+      const { width, height } = metadata;
+      if (width !== height) {
+        const size = Math.max(width, height);
+        // Centraliza a imagem no canvas quadrado
+        bufferWebp = await image
+          .extend({
+            top: Math.floor((size - height) / 2),
+            bottom: Math.ceil((size - height) / 2),
+            left: Math.floor((size - width) / 2),
+            right: Math.ceil((size - width) / 2),
+            background: { r: 0, g: 0, b: 0, alpha: 0 } // fundo transparente
+          })          .resize(size, size) // garante que o canvas é quadrado
+          .webp()
+          .toBuffer();
+      } else {
+        bufferWebp = await image.webp().toBuffer();
+      }
       extToSave = 'webp';
       mimetypeToSave = 'image/webp';
     } else if (message.mimetype === 'image/gif') {
