@@ -584,9 +584,7 @@ app.patch('/api/admin/group-users/:groupId/:userId', requireAdmin, async (req, r
   try {
     const { groupId, userId } = req.params;
     const { field, value } = req.body;
-    if (!['role','blocked','allowed_commands','restricted_commands'].includes(field)) {
-      return res.status(400).json({ error: 'invalid_field' });
-    }
+    // Field validation is now enforced in updateGroupUserField for defense in depth
     await updateGroupUserField(groupId, userId, field, field.endsWith('_commands') ? JSON.stringify(value) : value);
     res.json({ ok: true });
   } catch (err) {
