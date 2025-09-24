@@ -408,20 +408,18 @@ async function deleteSticker(id) {
   }
 
   try {
-    const response = await fetch(`/api/stickers/${id}`, {
+    const response = await fetchWithCSRF(`/api/stickers/${id}`, {
       method: 'DELETE'
     });
 
     if (response.ok) {
       const result = await response.json();
       alert(`Sticker #${id} deletado com sucesso!`);
-      
       // Remove the card from the current view
       const card = document.querySelector(`[data-id="${id}"]`);
       if (card) {
         card.remove();
       }
-      
       // Update the count if visible
       const countEl = document.getElementById('count');
       if (countEl && countEl.textContent) {
