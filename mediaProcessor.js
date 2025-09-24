@@ -163,7 +163,14 @@ async function processIncomingMedia(client, message) {
         try {
           const aiResult = await processVideo(filePath);
           if (aiResult && typeof aiResult === 'object') {
-            const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
+            // Garante que o texto extraído (se existir) seja incluído na descrição
+            let descBase = aiResult.description || '';
+            if (aiResult.text && typeof aiResult.text === 'string' && aiResult.text.trim().length > 0) {
+              if (!descBase.includes(aiResult.text.trim())) {
+                descBase = descBase ? `${descBase} | Texto: ${aiResult.text.trim()}` : aiResult.text.trim();
+              }
+            }
+            const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(descBase, aiResult.tags);
             description = clean.description;
             tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
           } else {
@@ -181,7 +188,14 @@ async function processIncomingMedia(client, message) {
           const aiResult = await processGif(filePath);
           
           if (aiResult && typeof aiResult === 'object' && aiResult.description) {
-            const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
+            // Garante que o texto extraído (se existir) seja incluído na descrição
+            let descBase = aiResult.description || '';
+            if (aiResult.text && typeof aiResult.text === 'string' && aiResult.text.trim().length > 0) {
+              if (!descBase.includes(aiResult.text.trim())) {
+                descBase = descBase ? `${descBase} | Texto: ${aiResult.text.trim()}` : aiResult.text.trim();
+              }
+            }
+            const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(descBase, aiResult.tags);
             description = clean.description;
             tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
             console.log(`✅ GIF processed successfully: ${description ? description.slice(0, 50) : 'no description'}...`);

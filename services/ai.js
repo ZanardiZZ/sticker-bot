@@ -134,12 +134,14 @@ async function getAiAnnotations(buffer) {
 
     const messages = [
       { role: 'system', content:
-        `Você gera descrições curtas para imagens e CINCO hashtags únicas. ` +
-        `Responda ESTRITAMENTE em JSON: {"description":"...","tags":["#...",...] } ` +
-        `A descrição ≤${DESC_MAX} chars. Hashtags começam com #.`
+        `Você é um assistente de análise de imagens. Para cada imagem, sempre:
+1) Descreva a imagem de forma concisa (≤${DESC_MAX} chars).
+2) Identifique e extraia TODO o texto visível na imagem (caso exista). Se não houver texto, retorne "".
+3) Gere CINCO hashtags únicas e relevantes (começando com #).
+Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",...] }`
       },
       { role: 'user', content: [
-          { type: 'text', text: `Descreva a imagem (≤${DESC_MAX} chars) e dê CINCO hashtags.` },
+          { type: 'text', text: `Descreva a imagem (≤${DESC_MAX} chars), identifique TODO o texto presente (caso exista) e gere CINCO hashtags.` },
           { type: 'image_url', image_url: { url: `data:image/webp;base64,${b64}` } }
         ]
       }
@@ -156,6 +158,7 @@ async function getAiAnnotations(buffer) {
     try {
       const parsed = JSON.parse(cleanJsonBlock(raw));
       let description = String(parsed.description || '').trim();
+      let text = typeof parsed.text === 'string' ? parsed.text.trim() : '';
       let tags = Array.isArray(parsed.tags) ? parsed.tags.map(t => t.trim()) : [];
       if (tags.length < 5) {
         // Completa com hashtags geradas via pickHashtags para totalizar 5
@@ -167,6 +170,7 @@ async function getAiAnnotations(buffer) {
       if (tags.length === 0) tags = ['#imagem'];
       return {
         description: description.slice(0, DESC_MAX) || 'Sem descrição.',
+        text,
         tags
       };
     } catch {
@@ -175,7 +179,7 @@ async function getAiAnnotations(buffer) {
         .trim()
         .slice(0, DESC_MAX) || 'Sem descrição.';
       const tags = pickHashtags(raw, 5);
-      return { description, tags };
+      return { description, text: '', tags };
     }
   } catch (err) {
     console.error('❌ Erro na IA (imagem):', err);
@@ -219,13 +223,15 @@ async function getAiAnnotationsForGif(buffer) {
 
     const messages = [
       { role: 'system', content:
-        `Você analisa frames de GIFs/memes e gera descrições curtas e CINCO hashtags únicas. ` +
-        `IMPORTANTE: Isto é um frame de um GIF/meme, NÃO um vídeo. Use termos como "cena", "imagem", "frame", "meme" ao invés de "vídeo", "filmagem" ou "gravação". ` +
-        `Responda ESTRITAMENTE em JSON: {"description":"...","tags":["#...",...] } ` +
-        `A descrição ≤${DESC_MAX} chars. Hashtags começam com #.`
+        `Você é um assistente de análise de GIFs/memes. Para cada frame, sempre:
+1) Descreva o frame de forma concisa (≤${DESC_MAX} chars).
+2) Identifique e extraia TODO o texto visível no frame (caso exista). Se não houver texto, retorne "".
+3) Gere CINCO hashtags únicas e relevantes (começando com #).
+IMPORTANTE: Isto é um frame de um GIF/meme, NÃO um vídeo. Use termos como "cena", "imagem", "frame", "meme" ao invés de "vídeo", "filmagem" ou "gravação".
+Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",...] }`
       },
       { role: 'user', content: [
-          { type: 'text', text: `Analise este frame de GIF/meme (≤${DESC_MAX} chars) e dê CINCO hashtags. Foque na ação, expressão ou situação mostrada.` },
+          { type: 'text', text: `Analise este frame de GIF/meme (≤${DESC_MAX} chars), identifique TODO o texto presente (caso exista) e gere CINCO hashtags. Foque na ação, expressão ou situação mostrada.` },
           { type: 'image_url', image_url: { url: `data:image/webp;base64,${b64}` } }
         ]
       }
@@ -242,6 +248,7 @@ async function getAiAnnotationsForGif(buffer) {
     try {
       const parsed = JSON.parse(cleanJsonBlock(raw));
       let description = String(parsed.description || '').trim();
+      let text = typeof parsed.text === 'string' ? parsed.text.trim() : '';
       let tags = Array.isArray(parsed.tags) ? parsed.tags.map(t => t.trim()) : [];
       if (tags.length < 5) {
         // Completa com hashtags geradas via pickHashtags para totalizar 5
@@ -253,6 +260,7 @@ async function getAiAnnotationsForGif(buffer) {
       if (tags.length === 0) tags = ['#gif'];
       return {
         description: description.slice(0, DESC_MAX) || 'Sem descrição.',
+        text,
         tags
       };
     } catch {
@@ -261,7 +269,7 @@ async function getAiAnnotationsForGif(buffer) {
         .trim()
         .slice(0, DESC_MAX) || 'Sem descrição.';
       const tags = pickHashtags(raw, 5);
-      return { description, tags };
+      return { description, text: '', tags };
     }
   } catch (err) {
     console.error('❌ Erro na IA (GIF frame):', err);
