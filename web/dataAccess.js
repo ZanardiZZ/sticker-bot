@@ -486,7 +486,19 @@ module.exports = {
       ON CONFLICT(group_id, user_id) DO UPDATE SET role=excluded.role, blocked=excluded.blocked, last_activity=excluded.last_activity, interaction_count=excluded.interaction_count, allowed_commands=excluded.allowed_commands, restricted_commands=excluded.restricted_commands`,
       [group_id, user_id, role, blocked, last_activity, interaction_count, allowed_commands, restricted_commands]);
   },
+  // Only allow updating specific fields to prevent SQL injection
   async updateGroupUserField(group_id, user_id, field, value) {
+    const allowedFields = [
+      'role',
+      'blocked',
+      'last_activity',
+      'interaction_count',
+      'allowed_commands',
+      'restricted_commands'
+    ];
+    if (!allowedFields.includes(field)) {
+      throw new Error(`Invalid field name: ${field}`);
+    }
     return run(`UPDATE group_users SET ${field} = ? WHERE group_id = ? AND user_id = ?`, [value, group_id, user_id]);
   },
   async deleteGroupUser(group_id, user_id) {
