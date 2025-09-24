@@ -12,8 +12,11 @@ const {
 } = require('../database');
 const { cleanDescriptionTags, renderInfoMessage } = require('../utils/messageUtils');
 const { withTyping } = require('../utils/typingIndicator');
+const { getBotConfig } = require('../web/dataAccess');
 
 const AUTO_SEND_GROUP_ID = process.env.AUTO_SEND_GROUP_ID;
+let autoSendTask = null;
+let lastCronExpr = null;
 
 /**
  * Picks a random media for automatic sending, prioritizing newly processed media
@@ -71,7 +74,13 @@ async function sendRandomMediaToGroup(client, sendStickerFunction) {
  * @param {Object} client - WhatsApp client instance
  * @param {Function} sendStickerFunction - Function to send stickers
  */
-function scheduleAutoSend(client, sendStickerFunction) {
+
+/**
+ * Schedules or updates automatic media sending to the configured group, reading frequency from bot_config
+ * @param {Object} client - WhatsApp client instance
+ * @param {Function} sendStickerFunction - Function to send stickers
+ */
+async function scheduleAutoSend(client, sendStickerFunction) {
   if (!AUTO_SEND_GROUP_ID) {
     console.warn('AUTO_SEND_GROUP_ID não configurado no .env');
     return;
@@ -79,12 +88,39 @@ function scheduleAutoSend(client, sendStickerFunction) {
 
   const tz = process.env.TIMEZONE || process.env.TZ || 'America/Sao_Paulo';
 
-  // A cada hora cheia das 08:00 às 21:00 no fuso configurado
-  cron.schedule('0 8-21 * * *', () => sendRandomMediaToGroup(client, sendStickerFunction), {
-    timezone: tz,
-  });
+  // Busca expressão cron do banco/config
+  let cronExpr = await getBotConfig('auto_post_cron');
+  if (!cronExpr) {
+    // fallback padrão: de hora em hora das 08:00 às 21:00
+    cronExpr = '0 8-21 * * *';
+  }
 
-  console.log(`Agendamento: envios automáticos de 08h às 21h no fuso ${tz}, toda hora cheia.`);
+  // Se já existe uma task e a expressão mudou, para a anterior
+  if (autoSendTask && lastCronExpr !== cronExpr) {
+    autoSendTask.stop();
+    autoSendTask = null;
+  }
+
+  if (!autoSendTask) {
+    autoSendTask = cron.schedule(cronExpr, () => sendRandomMediaToGroup(client, sendStickerFunction), {
+      timezone: tz,
+    });
+    lastCronExpr = cronExpr;
+    console.log(`[SCHEDULER] Agendamento: '${cronExpr}' no fuso ${tz}.`);
+  }
+
+  // Checa a cada 2 minutos se houve alteração na config
+  setInterval(async () => {
+    const newExpr = await getBotConfig('auto_post_cron');
+    if (newExpr && newExpr !== lastCronExpr) {
+      console.log(`[SCHEDULER] Atualizando agendamento para: '${newExpr}'`);
+      if (autoSendTask) autoSendTask.stop();
+      autoSendTask = cron.schedule(newExpr, () => sendRandomMediaToGroup(client, sendStickerFunction), {
+        timezone: tz,
+      });
+      lastCronExpr = newExpr;
+    }
+  }, 2 * 60 * 1000);
 }
 
 module.exports = {

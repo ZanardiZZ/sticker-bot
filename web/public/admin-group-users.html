@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Administração de Usuários do Grupo</title>
+  <link rel="stylesheet" href="/admin-assets/styles.css">
+</head>
+<body>
+  <h1>Administração de Usuários do Grupo</h1>
+  <div>
+    <label for="groupId">ID do Grupo:</label>
+    <input type="text" id="groupId" placeholder="Ex: 123456@g.us">
+    <button onclick="loadGroupUsers()">Carregar Usuários</button>
+  </div>
+  <div id="usersTableContainer"></div>
+  <script>
+    async function loadGroupUsers() {
+      const groupId = document.getElementById('groupId').value.trim();
+      if (!groupId) return alert('Informe o ID do grupo!');
+      const res = await fetch(`/api/admin/group-users/${encodeURIComponent(groupId)}`);
+      const data = await res.json();
+      if (!data.users) return alert('Nenhum usuário encontrado.');
+      renderUsersTable(data.users, groupId);
+    }
+    function renderUsersTable(users, groupId) {
+      let html = '<table border="1"><tr><th>User ID</th><th>Função</th><th>Bloqueado</th><th>Última Atividade</th><th>Interações</th><th>Ações</th></tr>';
+      for (const u of users) {
+        html += `<tr>
+          <td>${u.user_id}</td>
+          <td>${u.role}</td>
+          <td>${u.blocked ? 'Sim' : 'Não'}</td>
+          <td>${u.last_activity ? new Date(u.last_activity).toLocaleString() : '-'}</td>
+          <td>${u.interaction_count}</td>
+          <td>
+            <button onclick="editUser('${groupId}','${u.user_id}')">Editar</button>
+          </td>
+        </tr>`;
+      }
+      html += '</table>';
+      document.getElementById('usersTableContainer').innerHTML = html;
+    }
+    function editUser(groupId, userId) {
+      window.location.href = `/admin-group-users.html?groupId=${encodeURIComponent(groupId)}&userId=${encodeURIComponent(userId)}`;
+    }
+  </script>
+</body>
+</html>

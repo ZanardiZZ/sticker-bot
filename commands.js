@@ -315,45 +315,86 @@ async function handleCommand(client, message, chatId) {
     return true;
   }
 
-  const { command, params } = parseCommand(messageBody);
-  
-  // Wrap all command processing with typing indicator
-  await withTyping(client, chatId, async () => {
-    switch (command) {
-      case '#random':
-        await handleRandomCommand(client, message, chatId);
-        break;
-        
-      case '#count':
-        await handleCountCommand(client, message, chatId);
-        break;
-        
-      case '#top10':
-        await handleTop10Command(client, message, chatId);
-        break;
-        
-      case '#top5users':
-        await handleTop5UsersCommand(client, message, chatId);
-        break;
-        
-      case '#forcar': // normalized version of #forçar
-        await handleForceCommand(client, message, chatId, forceMap);
-        break;
-        
-      case '#editar':
-        await handleEditCommand(client, message, chatId, taggingMap, MAX_TAGS_LENGTH);
-        break;
-        
-      default:
-        // Handle ID-based commands
-        if (command === '#id' && params.length > 0) {
-          await handleIdCommand(client, { body: `#ID ${params.join(' ')}`, id: message.id }, chatId);
+  // ======= PERMISSION CHECKS =======
+  // Permissões e restrições por grupo/usuário
+  try {
+    const { command, params } = parseCommand(messageBody);
+    const groupId = message.isGroupMsg ? message.chatId : null;
+    const userId = message.sender?.id || message.author || message.from;
+    let allowed = true;
+
+    // Carrega permissões do grupo
+    let groupPerm = null;
+    if (groupId) {
+      const { getGroupUser, listGroupCommandPermissions } = require('./web/dataAccess');
+      // Checa se usuário está bloqueado ou restrito
+      const userRow = await getGroupUser(groupId, userId);
+      if (userRow) {
+        if (userRow.blocked) {
+          allowed = false;
         }
-        break;
+        // Se houver restrição de comandos
+        if (userRow.restricted_commands) {
+          try {
+            const restricted = JSON.parse(userRow.restricted_commands);
+            if (Array.isArray(restricted) && restricted.includes(command)) allowed = false;
+          } catch {}
+        }
+        // Se houver lista de comandos permitidos
+        if (userRow.allowed_commands) {
+          try {
+            const allowedList = JSON.parse(userRow.allowed_commands);
+            if (Array.isArray(allowedList) && !allowedList.includes(command)) allowed = false;
+          } catch {}
+        }
+      }
+      // Checa permissões globais do grupo
+      const perms = await listGroupCommandPermissions(groupId);
+      if (perms && perms.length) {
+        const found = perms.find(p => p.command === command);
+        if (found && !found.allowed) allowed = false;
+      }
     }
-  });
-  
-  return true;
+    if (!allowed) {
+      await client.sendText(chatId, 'Você não tem permissão para usar este comando.');
+      return true;
+    }
+
+    // Wrap all command processing with typing indicator
+    await withTyping(client, chatId, async () => {
+      switch (command) {
+        case '#random':
+          await handleRandomCommand(client, message, chatId);
+          break;
+        case '#count':
+          await handleCountCommand(client, message, chatId);
+          break;
+        case '#top10':
+          await handleTop10Command(client, message, chatId);
+          break;
+        case '#top5users':
+          await handleTop5UsersCommand(client, message, chatId);
+          break;
+        case '#forcar': // normalized version of #forçar
+          await handleForceCommand(client, message, chatId, forceMap);
+          break;
+        case '#editar':
+          await handleEditCommand(client, message, chatId, taggingMap, MAX_TAGS_LENGTH);
+          break;
+        default:
+          // Handle ID-based commands
+          if (command === '#id' && params.length > 0) {
+            await handleIdCommand(client, { body: `#ID ${params.join(' ')}`, id: message.id }, chatId);
+          }
+          break;
+      }
+    });
+    return true;
+  } catch (err) {
+    console.error('[PERMISSION] Erro ao checar permissões:', err);
+    await client.sendText(chatId, 'Erro ao checar permissões. Tente novamente.');
+    return true;
+  }
 }
 
 module.exports = {
