@@ -45,6 +45,7 @@ const app = express();
 app.set('trust proxy', true);
 
 const { db, findDuplicateMedia, getDuplicateMediaDetails, deleteDuplicateMedia, deleteMediaByIds, getDuplicateStats } = require('../database');
+let whatsappClient = null;
 
 function initAnalyticsTables(db) {
   db.run(`CREATE TABLE IF NOT EXISTS request_log (
@@ -174,8 +175,7 @@ const {
   rankTags,
   rankUsers,
   updateMediaMeta,
-  setMediaTagsExact
-  ,
+  setMediaTagsExact,
   listGroupUsers,
   getGroupUser,
   upsertGroupUser,
@@ -187,6 +187,32 @@ const {
   getBotConfig,
   setBotConfig
 } = require('./dataAccess.js');
+
+// Tenta obter o client WhatsApp da instância principal
+try {
+  whatsappClient = require('../bot/messageHandler').getCurrentClient?.() || null;
+} catch (e) {
+  whatsappClient = null;
+}
+// ====== API: Listar grupos conectados ======
+app.get('/api/admin/connected-groups', requireAdmin, async (req, res) => {
+  try {
+    let groups = [];
+    if (global.getCurrentWhatsAppClient) {
+      const client = global.getCurrentWhatsAppClient();
+      if (client && typeof client.getAllChats === 'function') {
+        const chats = await client.getAllChats();
+        groups = chats.filter(c => c.isGroup && c.id && c.name).map(c => ({
+          id: c.id,
+          name: c.name
+        }));
+      }
+    }
+    res.json({ groups });
+  } catch (err) {
+    res.status(500).json({ error: 'failed_to_list_groups', details: err.message });
+  }
+});
 const { bus } = require('./eventBus.js');
 const { authMiddleware, registerAuthRoutes, requireLogin, requireAdmin } = require('./auth.js');
 const emailService = require('./emailService.js');
