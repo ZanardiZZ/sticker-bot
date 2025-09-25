@@ -15,7 +15,12 @@ function injectOrReplace(filePath, origin, websiteId) {
 
   // Remove snippets antigos do Umami (qualquer <script ... script.js ... data-website-id="..."></script>)
   const reOld = /<script[^>]*src=["'][^"']*script\.js["'][^>]*data-website-id=["'][^"']+["'][^>]*><\/script>\s*/gi;
-  let updated = html.replace(reOld, '');
+  let updated = html;
+  let prev;
+  do {
+    prev = updated;
+    updated = updated.replace(reOld, '');
+  } while (updated !== prev);
 
   // Injeta antes de </head>
   const idx = updated.lastIndexOf('</head>');
