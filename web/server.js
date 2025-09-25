@@ -225,7 +225,7 @@ app.post('/api/register', require('./routes').registerHandler);
 
 // CSRF Protection (use csurf, recognized by CodeQL)
 app.use((req, res, next) => {
-  // Skip CSRF for login and register
+  // Skip CSRF for login and register POST requests
   if ((req.path === '/api/login' || req.path === '/api/register') && req.method === 'POST') {
     return next();
   }
