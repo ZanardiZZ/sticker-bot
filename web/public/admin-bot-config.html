@@ -8,20 +8,64 @@
 <body>
   <h1>Configuração de Frequência de Postagem Automática</h1>
   <div>
-    <label for="cronExpr">Expressão CRON:</label>
-    <input type="text" id="cronExpr" placeholder="Ex: 0 8-21 * * *">
+    <label for="freqSelect">Frequência de Postagem:</label>
+    <select id="freqSelect" onchange="onFreqChange()">
+      <option value="0 8-21 * * *">A cada hora (08:00-21:00)</option>
+      <option value="0 */2 8-21 * * *">A cada 2 horas (08:00-21:00)</option>
+      <option value="0 12 * * *">Diariamente às 12:00</option>
+      <option value="custom">Personalizado...</option>
+    </select>
+    <input type="text" id="cronExpr" placeholder="Ex: 0 8-21 * * *" style="display:none;margin-left:8px;" />
     <button onclick="saveConfig()">Salvar</button>
   </div>
   <div id="status"></div>
   <script>
+    function onFreqChange() {
+      const freq = document.getElementById('freqSelect').value;
+      const cronInput = document.getElementById('cronExpr');
+      if (freq === 'custom') {
+        cronInput.style.display = '';
+        cronInput.value = '';
+        cronInput.focus();
+      } else {
+        cronInput.style.display = 'none';
+        cronInput.value = freq;
+      }
+    }
+
     async function loadConfig() {
       const res = await fetch('/api/admin/bot-config/auto_post_cron');
       const data = await res.json();
-      document.getElementById('cronExpr').value = data.value || '';
+      const cronExpr = data.value || '';
+      const freqSelect = document.getElementById('freqSelect');
+      const cronInput = document.getElementById('cronExpr');
+      let found = false;
+      for (let i = 0; i < freqSelect.options.length; i++) {
+        if (freqSelect.options[i].value === cronExpr) {
+          freqSelect.selectedIndex = i;
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        freqSelect.value = 'custom';
+        cronInput.style.display = '';
+        cronInput.value = cronExpr;
+      } else {
+        cronInput.style.display = 'none';
+        cronInput.value = cronExpr;
+      }
     }
+
     async function saveConfig() {
-      const value = document.getElementById('cronExpr').value.trim();
-      if (!value) return alert('Informe a expressão CRON!');
+      const freq = document.getElementById('freqSelect').value;
+      let value = '';
+      if (freq === 'custom') {
+        value = document.getElementById('cronExpr').value.trim();
+        if (!value) return alert('Informe a expressão CRON personalizada!');
+      } else {
+        value = freq;
+      }
       const res = await fetch('/api/admin/bot-config/auto_post_cron', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
