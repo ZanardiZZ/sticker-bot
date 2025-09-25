@@ -1,4 +1,5 @@
 const express = require('express');
+const { authMiddleware, registerAuthRoutes, requireLogin, requireAdmin } = require('./auth.js');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
@@ -214,7 +215,6 @@ app.get('/api/admin/connected-groups', requireAdmin, async (req, res) => {
   }
 });
 const { bus } = require('./eventBus.js');
-const { authMiddleware, registerAuthRoutes, requireLogin, requireAdmin } = require('./auth.js');
 const emailService = require('./emailService.js');
 console.timeEnd('[BOOT] requires');
 
