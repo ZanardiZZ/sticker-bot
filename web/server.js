@@ -142,12 +142,12 @@ async function ensureInitialAdmin() {
             if (process.env.ADMIN_INITIAL_USERNAME) {
               console.log('        username: definido via ADMIN_INITIAL_USERNAME (não exibido).');
             } else {
-              console.log('        username:', username);
+              console.log('        username: definido (não exibido).');
             }
             if (process.env.ADMIN_INITIAL_PASSWORD) {
               console.log('        senha: definida via ADMIN_INITIAL_PASSWORD (não exibida).');
             } else {
-              console.log('        senha gerada:', initialPass);
+              console.log('        senha gerada: definida (não exibida).');
             }
             console.log('        Será solicitado trocar a senha no painel /admin.');
             console.log('======================================================');
