@@ -95,6 +95,12 @@ async function scheduleAutoSend(client, sendStickerFunction) {
     cronExpr = '0 8-21 * * *';
   }
 
+  // Validação da expressão CRON
+  if (!cron.validate(cronExpr)) {
+    console.error(`[SCHEDULER] Expressão CRON inválida: '${cronExpr}'. Agendamento não será iniciado.`);
+    return;
+  }
+
   // Se já existe uma task e a expressão mudou, para a anterior
   if (autoSendTask && lastCronExpr !== cronExpr) {
     autoSendTask.stop();
@@ -102,23 +108,36 @@ async function scheduleAutoSend(client, sendStickerFunction) {
   }
 
   if (!autoSendTask) {
-    autoSendTask = cron.schedule(cronExpr, () => sendRandomMediaToGroup(client, sendStickerFunction), {
-      timezone: tz,
-    });
-    lastCronExpr = cronExpr;
-    console.log(`[SCHEDULER] Agendamento: '${cronExpr}' no fuso ${tz}.`);
+    try {
+      autoSendTask = cron.schedule(cronExpr, () => sendRandomMediaToGroup(client, sendStickerFunction), {
+        timezone: tz,
+      });
+      lastCronExpr = cronExpr;
+      console.log(`[SCHEDULER] Agendamento: '${cronExpr}' no fuso ${tz}.`);
+    } catch (err) {
+      console.error(`[SCHEDULER] Erro ao agendar tarefa com expressão '${cronExpr}':`, err);
+      return;
+    }
   }
 
   // Checa a cada 2 minutos se houve alteração na config
   setInterval(async () => {
     const newExpr = await getBotConfig('auto_post_cron');
     if (newExpr && newExpr !== lastCronExpr) {
+      if (!cron.validate(newExpr)) {
+        console.error(`[SCHEDULER] Expressão CRON inválida detectada na atualização: '${newExpr}'. Agendamento não será alterado.`);
+        return;
+      }
       console.log(`[SCHEDULER] Atualizando agendamento para: '${newExpr}'`);
       if (autoSendTask) autoSendTask.stop();
-      autoSendTask = cron.schedule(newExpr, () => sendRandomMediaToGroup(client, sendStickerFunction), {
-        timezone: tz,
-      });
-      lastCronExpr = newExpr;
+      try {
+        autoSendTask = cron.schedule(newExpr, () => sendRandomMediaToGroup(client, sendStickerFunction), {
+          timezone: tz,
+        });
+        lastCronExpr = newExpr;
+      } catch (err) {
+        console.error(`[SCHEDULER] Erro ao atualizar agendamento com expressão '${newExpr}':`, err);
+      }
     }
   }, 2 * 60 * 1000);
 }
