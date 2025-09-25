@@ -6,7 +6,7 @@ const fs = require('fs');
 const sqlite3 = require('sqlite3').verbose();
 
 const MIGRATIONS_DIR = path.join(__dirname, '../database/migrations');
-const DB_PATH = path.join(__dirname, '../database/media.db');
+const DB_PATH = path.join(__dirname, '../media.db');
 
 
 // Promisify db.run, db.get, db.all for async/await compatibility
