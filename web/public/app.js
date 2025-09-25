@@ -1,6 +1,35 @@
 let CURRENT_USER = null;
 let BOT_CONFIG = null;
 
+// CSRF token management (copied from admin.js)
+let csrfToken = null;
+
+async function getCSRFToken() {
+  if (!csrfToken) {
+    try {
+      const response = await fetch('/api/csrf-token', { credentials: 'same-origin' });
+      const data = await response.json();
+      csrfToken = data.csrfToken;
+    } catch (e) {
+      console.warn('Failed to fetch CSRF token:', e);
+    }
+  }
+  return csrfToken;
+}
+
+async function fetchWithCSRF(url, options = {}) {
+  // Add CSRF token for POST/PUT/DELETE requests
+  if (options.method && ['POST', 'PUT', 'DELETE'].includes(options.method.toUpperCase())) {
+    const token = await getCSRFToken();
+    if (token) {
+      options.headers = options.headers || {};
+      options.headers['X-CSRF-Token'] = token;
+    }
+  }
+  options.credentials = options.credentials || 'same-origin';
+  return fetch(url, options);
+}
+
 async function fetchBotConfig() {
   try {
     const r = await fetch('/api/bot-config');
