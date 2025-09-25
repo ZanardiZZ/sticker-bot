@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Configuração de Frequência do Bot</title>
+  <link rel="stylesheet" href="/admin-assets/styles.css">
+</head>
+<body>
+  <h1>Configuração de Frequência de Postagem Automática</h1>
+  <div>
+    <label for="cronExpr">Expressão CRON:</label>
+    <input type="text" id="cronExpr" placeholder="Ex: 0 8-21 * * *">
+    <button onclick="saveConfig()">Salvar</button>
+  </div>
+  <div id="status"></div>
+  <script>
+    async function loadConfig() {
+      const res = await fetch('/api/admin/bot-config/auto_post_cron');
+      const data = await res.json();
+      document.getElementById('cronExpr').value = data.value || '';
+    }
+    async function saveConfig() {
+      const value = document.getElementById('cronExpr').value.trim();
+      if (!value) return alert('Informe a expressão CRON!');
+      const res = await fetch('/api/admin/bot-config/auto_post_cron', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value })
+      });
+      if (res.ok) {
+        document.getElementById('status').innerText = 'Configuração salva com sucesso!';
+      } else {
+        document.getElementById('status').innerText = 'Erro ao salvar configuração.';
+      }
+    }
+    loadConfig();
+  </script>
+</body>
+</html>

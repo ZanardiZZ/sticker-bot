@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Administração de Usuários do Grupo</title>
+  <link rel="stylesheet" href="/admin-assets/styles.css">
+</head>
+<body>
+  <h1>Administração de Usuários do Grupo</h1>
+  <div>
+    <label for="groupId">ID do Grupo:</label>
+    <input type="text" id="groupId" placeholder="Ex: 123456@g.us">
+    <button onclick="loadGroupUsers()">Carregar Usuários</button>
+  </div>
+  <div id="usersTableContainer"></div>
+  <script>
+    // Utility function to escape HTML special characters
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    async function loadGroupUsers() {
+      const groupId = document.getElementById('groupId').value.trim();
+      if (!groupId) return alert('Informe o ID do grupo!');
+      const res = await fetch(`/api/admin/group-users/${encodeURIComponent(groupId)}`);
+      const data = await res.json();
+      if (!data.users) return alert('Nenhum usuário encontrado.');
+      renderUsersTable(data.users, groupId);
+    }
+
+    function renderUsersTable(users, groupId) {
+      let html = '<table border="1"><tr><th>User ID</th><th>Função</th><th>Bloqueado</th><th>Última Atividade</th><th>Interações</th><th>Ações</th></tr>';
+      const escapedGroupId = escapeHtml(groupId);
+      for (const u of users) {
+        // Defensive: escape all dynamic content in the table.
+        const escapedUserId = escapeHtml(u.user_id);
+        const escapedRole = escapeHtml(u.role);
+        const escapedInteraction = escapeHtml(u.interaction_count);
+        const escapedBlocked = u.blocked ? 'Sim' : 'Não';
+        const escapedLastActivity = u.last_activity ? escapeHtml(new Date(u.last_activity).toLocaleString()) : '-';
+        html += `<tr>
+          <td>${escapedUserId}</td>
+          <td>${escapedRole}</td>
+          <td>${escapedBlocked}</td>
+          <td>${escapedLastActivity}</td>
+          <td>${escapedInteraction}</td>
+          <td>
+            <button onclick="editUser('${escapedGroupId}','${escapedUserId}')">Editar</button>
+          </td>
+        </tr>`;
+      }
+      html += '</table>';
+      document.getElementById('usersTableContainer').innerHTML = html;
+    }
+    function editUser(groupId, userId) {
+      window.location.href = `/admin-group-users.html?groupId=${encodeURIComponent(groupId)}&userId=${encodeURIComponent(userId)}`;
+    }
+  </script>
+</body>
+</html>
