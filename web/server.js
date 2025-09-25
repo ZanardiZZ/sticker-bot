@@ -15,6 +15,7 @@ try {
   console.warn('[ENV] dotenv não carregado:', e.message);
 }
 const session = require('express-session');
+const cookieParser = require('cookie-parser');
 const bcrypt = require('bcryptjs');
 const rateLimit = require('express-rate-limit');
 
@@ -195,8 +196,11 @@ const STICKERS_DIR = process.env.STICKERS_DIR || path.join(ROOT_DIR, 'media');
 console.log('[WEB] STICKERS_DIR:', STICKERS_DIR, 'exists:', fs.existsSync(STICKERS_DIR));
 const PUBLIC_DIR = process.env.PUBLIC_DIR || path.resolve(__dirname, 'public');
 console.log('[WEB] PUBLIC_DIR:', PUBLIC_DIR, 'exists:', fs.existsSync(PUBLIC_DIR));
+
 app.use(cors());
+app.use(cookieParser());
 app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: false }));
 
 // Session middleware for CAPTCHA
 app.use(session({
