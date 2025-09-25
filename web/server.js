@@ -139,7 +139,11 @@ async function ensureInitialAdmin() {
           } else {
             console.log('======================================================');
             console.log('[INIT] Admin inicial criado/garantido:');
-            console.log('        username:', username);
+            if (process.env.ADMIN_INITIAL_USERNAME) {
+              console.log('        username: definido via ADMIN_INITIAL_USERNAME (não exibido).');
+            } else {
+              console.log('        username:', username);
+            }
             if (process.env.ADMIN_INITIAL_PASSWORD) {
               console.log('        senha: definida via ADMIN_INITIAL_PASSWORD (não exibida).');
             } else {
