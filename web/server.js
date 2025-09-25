@@ -206,6 +206,7 @@ app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: false }));
 
 // Session middleware for CAPTCHA
+
 app.use(session({
   secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
   resave: false,
@@ -217,9 +218,19 @@ app.use(session({
   }
 }));
 
+// --- CSRF EXCEPTION ROUTES ---
+// Login and registration routes must be defined before csurf middleware
+app.post('/api/login', require('./routes').loginHandler);
+app.post('/api/register', require('./routes').registerHandler);
 
 // CSRF Protection (use csurf, recognized by CodeQL)
-app.use(csurf({ cookie: false }));
+app.use((req, res, next) => {
+  // Skip CSRF for login and register
+  if ((req.path === '/api/login' || req.path === '/api/register') && req.method === 'POST') {
+    return next();
+  }
+  return csurf({ cookie: false })(req, res, next);
+});
 
 console.time('[BOOT] auth');
 authMiddleware(app);
