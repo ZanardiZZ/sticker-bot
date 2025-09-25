@@ -18,13 +18,16 @@ const { initContactsTable } = require('./bot/contacts');
  */
 async function start(client) {
   console.log('🤖 Bot iniciado e aguardando mensagens...');
-  
+
+  // Torna o client acessível globalmente para o painel admin
+  global.getCurrentWhatsAppClient = () => client;
+
   // Certifica que a tabela contacts existe
   initContactsTable();
-  
+
   // Setup message handling
   setupMessageHandler(client, handleMessage);
-  
+
   // Schedule automatic sending
   scheduleAutoSend(client, sendStickerForMediaRecord);
 }

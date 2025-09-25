@@ -8,10 +8,33 @@
 <body>
   <h1>Administração de Usuários do Grupo</h1>
   <div>
-    <label for="groupId">ID do Grupo:</label>
-    <input type="text" id="groupId" placeholder="Ex: 123456@g.us">
+    <label for="groupId">Grupo:</label>
+    <select id="groupId">
+      <option value="">Selecione um grupo...</option>
+    </select>
     <button onclick="loadGroupUsers()">Carregar Usuários</button>
   </div>
+    // Popula o select com os grupos conectados
+    async function populateGroups() {
+      try {
+        const res = await fetch('/api/admin/connected-groups');
+        const data = await res.json();
+        const select = document.getElementById('groupId');
+        if (data.groups && data.groups.length > 0) {
+          data.groups.forEach(g => {
+            const opt = document.createElement('option');
+            opt.value = g.id;
+            opt.textContent = `${g.name} (${g.id})`;
+            select.appendChild(opt);
+          });
+        }
+      } catch (e) {
+        // fallback: não faz nada
+      }
+    }
+
+    // Chama ao carregar a página
+    window.addEventListener('DOMContentLoaded', populateGroups);
   <div id="usersTableContainer"></div>
   <script>
     // Utility function to escape HTML special characters
