@@ -218,10 +218,6 @@ app.use(session({
   }
 }));
 
-// --- CSRF EXCEPTION ROUTES ---
-// Login and registration routes must be defined before csurf middleware
-app.post('/api/login', require('./routes').loginHandler);
-app.post('/api/register', require('./routes').registerHandler);
 
 // CSRF Protection (use csurf, recognized by CodeQL)
 app.use((req, res, next) => {
