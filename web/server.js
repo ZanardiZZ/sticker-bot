@@ -15,6 +15,7 @@ try {
   console.warn('[ENV] dotenv não carregado:', e.message);
 }
 const session = require('express-session');
+const csurf = require('csurf');
 const cookieParser = require('cookie-parser');
 const bcrypt = require('bcryptjs');
 const rateLimit = require('express-rate-limit');
@@ -26,9 +27,7 @@ const {
   createLoginRateLimiter,
   createRegistrationRateLimiter,
   createRequestLogger,
-  createIPRulesMiddleware,
-  createCSRFMiddleware,
-  getCSRFToken
+  createIPRulesMiddleware
 } = require('./middlewares');
 const { registerRoutes } = require('./routes');
 const UMAMI_ORIGIN = process.env.UMAMI_ORIGIN || 'https://analytics.zanardizz.uk';
@@ -214,8 +213,9 @@ app.use(session({
   }
 }));
 
-// CSRF Protection
-app.use(createCSRFMiddleware());
+
+// CSRF Protection (use csurf, recognized by CodeQL)
+app.use(csurf({ cookie: false }));
 
 console.time('[BOOT] auth');
 authMiddleware(app);
@@ -274,8 +274,7 @@ registerRoutes(app, db);
 
 // CSRF Token endpoint
 app.get('/api/csrf-token', (req, res) => {
-  const token = getCSRFToken(req, res);
-  res.json({ csrfToken: token });
+  res.json({ csrfToken: req.csrfToken() });
 });
   // ========= Email Confirmation API =========
 app.get('/confirm-email', async (req, res) => {
