@@ -419,8 +419,13 @@ app.post('/api/register', registerRateLimit, async (req, res) => {
   }
   
   // Email validation
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (typeof email !== 'string' || !emailRegex.test(email)) {
+  const MAX_EMAIL_LENGTH = 254;
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  if (
+  typeof email !== 'string' ||
+  email.length > MAX_EMAIL_LENGTH ||
+  !emailRegex.test(email)
+) {
     return res.status(400).json({ error: 'invalid_email' });
   }
   
