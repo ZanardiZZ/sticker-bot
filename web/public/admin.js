@@ -21,6 +21,13 @@ async function getCSRFToken() {
   return csrfToken;
 }
 
+// Expose a function to force-refresh the CSRF token (for use after login)
+async function refreshCSRFToken() {
+  csrfToken = null;
+  await getCSRFToken();
+}
+window.refreshCSRFToken = refreshCSRFToken;
+
 async function fetchWithCSRF(url, options = {}) {
   // Add CSRF token for POST/PUT/DELETE requests
   if (options.method && ['POST', 'PUT', 'DELETE'].includes(options.method.toUpperCase())) {
