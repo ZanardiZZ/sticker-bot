@@ -1336,6 +1336,60 @@ app.get('/api/stream', (req, res) => {
     bus.off('media:updated', onUpd);
   });
 });
+// Função para gerar expressão CRON para intervalos de 5,10,15,30,45,60 minutos
+function buildCronExpr(start, end, interval) {
+  const [startH, startM] = start.split(':').map(Number);
+  const [endH, endM] = end.split(':').map(Number);
+  let minutes = [];
+  let hours = [];
+
+  // Gera lista de horários válidos
+  for (let h = startH; h <= endH; h++) {
+    let minStart = (h === startH) ? startM : 0;
+    let minEnd = (h === endH) ? endM : 59;
+    for (let m = minStart; m <= minEnd; m += interval) {
+      minutes.push(m);
+      hours.push(h);
+    }
+  }
+
+  // Remove duplicatas e ordena
+  minutes = [...new Set(minutes)].sort((a, b) => a - b);
+  hours = [...new Set(hours)].sort((a, b) => a - b);
+
+  // Se cobre todas as horas e minutos, pode simplificar
+  if (minutes.length === 60 / interval && hours.length === (endH - startH + 1)) {
+    return `${minutes.join(',')} ${hours.join(',')} * * *`;
+  }
+
+  // Exemplo: "0,15,30,45 8-21 * * *"
+  return `${minutes.join(',')} ${hours.join(',')} * * *`;
+}
+
+// Endpoint para configuração de agendamento do bot
+app.get('/api/admin/bot-config/schedule', requireAdmin, async (req, res) => {
+  const start = await getBotConfig('auto_send_start') || '08:00';
+  const end = await getBotConfig('auto_send_end') || '21:00';
+  const interval = await getBotConfig('auto_send_interval') || '60';
+  res.json({ start, end, interval });
+});
+
+app.post('/api/admin/bot-config/schedule', requireAdmin, express.json(), async (req, res) => {
+  const { start, end, interval } = req.body;
+  const validIntervals = [5, 10, 15, 30, 45, 60];
+  if (!start || !end || !interval) {
+    return res.status(400).json({ error: 'Parâmetros obrigatórios ausentes.' });
+  }
+  if (!validIntervals.includes(Number(interval))) {
+    return res.status(400).json({ error: 'Intervalo inválido.' });
+  }
+  const cronExpr = buildCronExpr(start, end, Number(interval));
+  await setBotConfig('auto_send_start', start);
+  await setBotConfig('auto_send_end', end);
+  await setBotConfig('auto_send_interval', interval);
+  await setBotConfig('auto_send_cron', cronExpr);
+  res.json({ ok: true, cron: cronExpr });
+});
 
 function fixMediaUrl(row) {
   try {

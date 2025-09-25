@@ -7,69 +7,108 @@
 </head>
 <body>
   <h1>Configuração de Frequência de Postagem Automática</h1>
-  <div>
-    <label for="freqSelect">Frequência de Postagem:</label>
-    <select id="freqSelect" onchange="onFreqChange()">
-      <option value="0 8-21 * * *">A cada hora (08:00-21:00)</option>
-      <option value="0 */2 8-21 * * *">A cada 2 horas (08:00-21:00)</option>
-      <option value="0 12 * * *">Diariamente às 12:00</option>
-      <option value="custom">Personalizado...</option>
+  <div class="form-group">
+    <label for="scheduleStart">Horário de início:</label>
+    <select id="scheduleStart" name="scheduleStart" class="form-control">
+      <!-- opções de 00:00 a 23:00 -->
+      <option value="00:00">00:00</option>
+      <option value="01:00">01:00</option>
+      <option value="02:00">02:00</option>
+      <option value="03:00">03:00</option>
+      <option value="04:00">04:00</option>
+      <option value="05:00">05:00</option>
+      <option value="06:00">06:00</option>
+      <option value="07:00">07:00</option>
+      <option value="08:00">08:00</option>
+      <option value="09:00">09:00</option>
+      <option value="10:00">10:00</option>
+      <option value="11:00">11:00</option>
+      <option value="12:00">12:00</option>
+      <option value="13:00">13:00</option>
+      <option value="14:00">14:00</option>
+      <option value="15:00">15:00</option>
+      <option value="16:00">16:00</option>
+      <option value="17:00">17:00</option>
+      <option value="18:00">18:00</option>
+      <option value="19:00">19:00</option>
+      <option value="20:00">20:00</option>
+      <option value="21:00">21:00</option>
+      <option value="22:00">22:00</option>
+      <option value="23:00">23:00</option>
     </select>
-    <input type="text" id="cronExpr" placeholder="Ex: 0 8-21 * * *" style="display:none;margin-left:8px;" />
-    <button onclick="saveConfig()">Salvar</button>
   </div>
+  <div class="form-group">
+    <label for="scheduleEnd">Horário de término:</label>
+    <select id="scheduleEnd" name="scheduleEnd" class="form-control">
+      <!-- opções de 00:00 a 23:00 -->
+      <option value="00:00">00:00</option>
+      <option value="01:00">01:00</option>
+      <option value="02:00">02:00</option>
+      <option value="03:00">03:00</option>
+      <option value="04:00">04:00</option>
+      <option value="05:00">05:00</option>
+      <option value="06:00">06:00</option>
+      <option value="07:00">07:00</option>
+      <option value="08:00">08:00</option>
+      <option value="09:00">09:00</option>
+      <option value="10:00">10:00</option>
+      <option value="11:00">11:00</option>
+      <option value="12:00">12:00</option>
+      <option value="13:00">13:00</option>
+      <option value="14:00">14:00</option>
+      <option value="15:00">15:00</option>
+      <option value="16:00">16:00</option>
+      <option value="17:00">17:00</option>
+      <option value="18:00">18:00</option>
+      <option value="19:00">19:00</option>
+      <option value="20:00">20:00</option>
+      <option value="21:00">21:00</option>
+      <option value="22:00">22:00</option>
+      <option value="23:00">23:00</option>
+    </select>
+  </div>
+  <div class="form-group">
+    <label for="scheduleInterval">Intervalo (minutos):</label>
+    <select id="scheduleInterval" name="scheduleInterval" class="form-control">
+      <option value="5">A cada 5 minutos</option>
+      <option value="10">A cada 10 minutos</option>
+      <option value="15">A cada 15 minutos</option>
+      <option value="30">A cada 30 minutos</option>
+      <option value="45">A cada 45 minutos</option>
+      <option value="60" selected>A cada 60 minutos</option>
+    </select>
+  </div>
+  <button onclick="saveConfig()">Salvar</button>
   <div id="status"></div>
   <script>
-    function onFreqChange() {
-      const freq = document.getElementById('freqSelect').value;
-      const cronInput = document.getElementById('cronExpr');
-      if (freq === 'custom') {
-        cronInput.style.display = '';
-        cronInput.value = '';
-        cronInput.focus();
-      } else {
-        cronInput.style.display = 'none';
-        cronInput.value = freq;
-      }
+    async function getCsrfToken() {
+      const res = await fetch('/api/csrf-token');
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.csrfToken;
     }
 
     async function loadConfig() {
-      const res = await fetch('/api/admin/bot-config/auto_post_cron');
+      const res = await fetch('/api/admin/bot-config/schedule');
+      if (!res.ok) return;
       const data = await res.json();
-      const cronExpr = data.value || '';
-      const freqSelect = document.getElementById('freqSelect');
-      const cronInput = document.getElementById('cronExpr');
-      let found = false;
-      for (let i = 0; i < freqSelect.options.length; i++) {
-        if (freqSelect.options[i].value === cronExpr) {
-          freqSelect.selectedIndex = i;
-          found = true;
-          break;
-        }
-      }
-      if (!found) {
-        freqSelect.value = 'custom';
-        cronInput.style.display = '';
-        cronInput.value = cronExpr;
-      } else {
-        cronInput.style.display = 'none';
-        cronInput.value = cronExpr;
-      }
+      if (data.start) document.getElementById('scheduleStart').value = data.start;
+      if (data.end) document.getElementById('scheduleEnd').value = data.end;
+      if (data.interval) document.getElementById('scheduleInterval').value = data.interval;
     }
 
     async function saveConfig() {
-      const freq = document.getElementById('freqSelect').value;
-      let value = '';
-      if (freq === 'custom') {
-        value = document.getElementById('cronExpr').value.trim();
-        if (!value) return alert('Informe a expressão CRON personalizada!');
-      } else {
-        value = freq;
-      }
-      const res = await fetch('/api/admin/bot-config/auto_post_cron', {
+      const start = document.getElementById('scheduleStart').value;
+      const end = document.getElementById('scheduleEnd').value;
+      const interval = document.getElementById('scheduleInterval').value;
+      const csrfToken = await getCsrfToken();
+      const res = await fetch('/api/admin/bot-config/schedule', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ value })
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': csrfToken
+        },
+        body: JSON.stringify({ start, end, interval })
       });
       if (res.ok) {
         document.getElementById('status').innerText = 'Configuração salva com sucesso!';
