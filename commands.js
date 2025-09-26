@@ -252,12 +252,14 @@ function isValidCommand(messageBody) {
   const validCommands = [
     '#random',
     '#editar',
-    '#editar ID', 
+    '#editar ID',
     '#top10',
     '#top5users',
     '#ID',
     '#forçar',
-    '#count'
+    '#count',
+    '#bot',
+    '#ping'
   ];
 
   if (!messageBody.startsWith('#')) return true; // não é comando
@@ -284,7 +286,9 @@ async function handleInvalidCommand(client, message, chatId) {
     '#top5users',
     '#ID',
     '#forçar',
-    '#count'
+    '#count',
+    '#bot',
+    '#ping'
   ];
 
   await safeReply(client, chatId,
@@ -389,6 +393,40 @@ async function handleCommand(client, message, chatId) {
         case '#editar':
           await handleEditCommand(client, message, chatId, taggingMap, MAX_TAGS_LENGTH);
           break;
+        case '#bot':
+        case '#ping': {
+          // Uptime
+          const uptimeSeconds = Math.floor(process.uptime());
+          const uptime = new Date(uptimeSeconds * 1000).toISOString().substr(11, 8);
+          // Latência
+          const start = Date.now();
+          //const sentMsg = await client.sendText(chatId, '⏳ Testando...');
+          const latency = Date.now() - start;
+          // Versão
+          let version = 'desconhecida';
+          try {
+            version = require('./package.json').version || 'desconhecida';
+          } catch {}
+          // CRON/configuração
+          let cronInfo = '';
+          try {
+            const { getBotConfig } = require('./web/dataAccess');
+            let cronExpr = await getBotConfig('auto_post_cron');
+            if (!cronExpr) cronExpr = '0 8-21 * * *';
+            cronInfo = `⏰ CRON: ${cronExpr}`;
+          } catch {
+            cronInfo = '⏰ CRON: não disponível';
+          }
+          const statusMsg = [
+            `🤖 *Sticker Bot*`,
+            `🟢 Uptime: ${uptime}`,
+            `📡 Latência: ${latency} ms`,
+            cronInfo,
+            `🛠️ Versão: ${version}`,
+          ].join('\n');
+          await client.sendText(chatId, statusMsg);
+          break;
+        }
         default:
           // Handle ID-based commands
           if (command === '#id' && params.length > 0) {
