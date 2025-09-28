@@ -28,12 +28,9 @@ async function transcribeAudioBuffer(buffer) {
     // Create a temporary file for the audio buffer (OpenAI API requires a file stream, not just a file)
     const tmpDir = path.resolve(__dirname, '../tmp');
     if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
-
-    const tmpFile = path.join(tmpDir, `audio-${Date.now()}.wav`);
-    
+    const tmpFile = path.join(tmpDir, `audio-${Date.now()}-${Math.floor(Math.random()*10000)}.wav`);
     try {
       fs.writeFileSync(tmpFile, buffer);
-
       // Use OpenAI Whisper API for transcription
       const transcription = await openai.audio.transcriptions.create({
         file: fs.createReadStream(tmpFile),
@@ -41,21 +38,18 @@ async function transcribeAudioBuffer(buffer) {
         language: 'pt', // Portuguese
         response_format: 'text'
       });
-
       const transcript = transcription.trim();
       return transcript || 'Áudio sem conteúdo transcrito.';
-
     } catch (apiError) {
       console.warn('[AI] Erro ao transcrever áudio com OpenAI:', apiError.message);
       return 'Áudio não transcrito - erro na API OpenAI.';
     } finally {
-      // Clean up temporary file
+      // Clean up temporary file and directory if empty
       try {
-        if (fs.existsSync(tmpFile)) {
-          fs.unlinkSync(tmpFile);
-        }
+        if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
+        if (fs.existsSync(tmpDir) && fs.readdirSync(tmpDir).length === 0) fs.rmdirSync(tmpDir);
       } catch (cleanupErr) {
-        console.warn('[AI] Erro ao limpar arquivo temporário:', cleanupErr.message);
+        console.warn('[AI] Erro ao limpar arquivo/diretório temporário:', cleanupErr.message);
       }
     }
   } catch (error) {

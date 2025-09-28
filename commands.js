@@ -411,7 +411,8 @@ async function handleCommand(client, message, chatId) {
           let cronInfo = '';
           try {
             const { getBotConfig } = require('./web/dataAccess');
-            let cronExpr = await getBotConfig('auto_post_cron');
+            // correct key is 'auto_send_cron' (was mistakenly using auto_post_cron)
+            let cronExpr = await getBotConfig('auto_send_cron');
             if (!cronExpr) cronExpr = '0 8-21 * * *';
             cronInfo = `⏰ CRON: ${cronExpr}`;
           } catch {

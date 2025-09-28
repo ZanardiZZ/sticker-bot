@@ -1,3 +1,4 @@
+// ... route definitions moved later so `app` is initialized first
 const express = require('express');
 const { authMiddleware, registerAuthRoutes, requireLogin, requireAdmin } = require('./auth.js');
 const cors = require('cors');
@@ -308,6 +309,29 @@ app.use(requestLogger);
 
 // Register modularized routes
 registerRoutes(app, db);
+
+// Lista as figurinhas enviadas pelo usuário autenticado
+app.get('/api/my-stickers', requireLogin, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    // Busca as figurinhas enviadas por esse usuário, ordenadas da mais recente para a mais antiga
+    const { page = 1, perPage = 20 } = req.query;
+    const result = await listMedia({
+      q: '',
+      tags: [],
+      anyTag: [],
+      nsfw: 'all',
+      sort: 'newest',
+      page: parseInt(page, 10),
+      perPage: parseInt(perPage, 10),
+      senderId: userId
+    });
+    res.json(result);
+  } catch (e) {
+    console.error('[API] /api/my-stickers ERRO:', e);
+    res.status(500).json({ error: 'internal_error', msg: e?.message });
+  }
+});
 
 // CSRF Token endpoint
 app.get('/api/csrf-token', (req, res) => {
@@ -1371,7 +1395,8 @@ app.get('/api/admin/bot-config/schedule', requireAdmin, async (req, res) => {
   const start = await getBotConfig('auto_send_start') || '08:00';
   const end = await getBotConfig('auto_send_end') || '21:00';
   const interval = await getBotConfig('auto_send_interval') || '60';
-  res.json({ start, end, interval });
+  const cronExpr = await getBotConfig('auto_send_cron') || buildCronExpr(start, end, Number(interval));
+  res.json({ start, end, interval, cron: cronExpr });
 });
 
 app.post('/api/admin/bot-config/schedule', requireAdmin, express.json(), async (req, res) => {
@@ -1384,11 +1409,38 @@ app.post('/api/admin/bot-config/schedule', requireAdmin, express.json(), async (
     return res.status(400).json({ error: 'Intervalo inválido.' });
   }
   const cronExpr = buildCronExpr(start, end, Number(interval));
+  console.log(`[WEB] new schedule requested: start=${start} end=${end} interval=${interval} -> cron='${cronExpr}'`);
   await setBotConfig('auto_send_start', start);
   await setBotConfig('auto_send_end', end);
   await setBotConfig('auto_send_interval', interval);
-  await setBotConfig('auto_send_cron', cronExpr);
+  const cronSaveRes = await setBotConfig('auto_send_cron', cronExpr);
+  console.log('[WEB] setBotConfig auto_send_cron result:', cronSaveRes);
+  // Emit an event so the running scheduler can reload immediately
+  try {
+    const { bus } = require('./eventBus.js');
+    bus.emit('bot:scheduleUpdated', cronExpr);
+  } catch (e) {
+    console.warn('[WEB] eventBus emit failed:', e.message);
+  }
+  // Return the computed cron expression so UI and other services can display it
   res.json({ ok: true, cron: cronExpr });
+});
+
+// Temporary debug endpoint (token-protected) to inspect persisted bot config and process identity
+// Usage: /api/debug/bot-config?token=YOUR_TOKEN
+app.get('/api/debug/bot-config', async (req, res) => {
+  try {
+    const token = req.query.token;
+    const ourToken = process.env.DEBUG_BOT_CONFIG_TOKEN;
+    if (!ourToken || token !== ourToken) return res.status(403).json({ error: 'forbidden' });
+    const start = await getBotConfig('auto_send_start');
+    const end = await getBotConfig('auto_send_end');
+    const interval = await getBotConfig('auto_send_interval');
+    const cronExpr = await getBotConfig('auto_send_cron');
+    return res.json({ pid: process.pid, start, end, interval, cron: cronExpr });
+  } catch (e) {
+    return res.status(500).json({ error: 'internal_error', msg: e.message });
+  }
 });
 
 function fixMediaUrl(row) {

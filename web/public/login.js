@@ -8,6 +8,11 @@ f.addEventListener('submit', async (e) => {
   const r = await fetch('/api/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
   if (r.ok) {
     // Refresh CSRF token after login before redirecting
+    let user = null;
+    try {
+      const data = await r.json();
+      user = data;
+    } catch {}
     if (window.refreshCSRFToken) {
       await window.refreshCSRFToken();
     } else {
@@ -16,7 +21,11 @@ f.addEventListener('submit', async (e) => {
         await fetch('/api/csrf-token', { credentials: 'same-origin' });
       } catch (e) {}
     }
-    location.href = '/';
+    if (user && user.role === 'admin') {
+      location.href = '/admin.html';
+    } else {
+      location.href = '/painel.html';
+    }
   } else {
     const d = await r.json().catch(() => ({}));
     const errorMsg = d.error === 'account_not_approved' ? d.message :

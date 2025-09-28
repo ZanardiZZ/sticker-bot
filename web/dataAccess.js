@@ -66,7 +66,7 @@ function buildStickerURL(file_path) {
   return '/media/' + encodeURIComponent(path.basename(file_path));
 }
 
-async function listMedia({ q = '', tags = [], anyTag = [], nsfw = 'all', sort = 'newest', page = 1, perPage = 60 }) {
+async function listMedia({ q = '', tags = [], anyTag = [], nsfw = 'all', sort = 'newest', page = 1, perPage = 60, senderId = null } = {}) {
   try {
     page = Math.max(1, page);
     perPage = Math.min(200, Math.max(1, perPage));
@@ -74,6 +74,10 @@ async function listMedia({ q = '', tags = [], anyTag = [], nsfw = 'all', sort = 
     // Build the WHERE clause more efficiently
     const whereParts = []; 
     const params = {};
+    if (senderId) {
+      whereParts.push('m.sender_id = $senderId');
+      params.$senderId = senderId;
+    }
 
     // NSFW filter (with index support)
     if (nsfw === '0') {

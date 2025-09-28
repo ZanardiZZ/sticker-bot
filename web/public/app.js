@@ -126,7 +126,13 @@ async function fetchMe(){
     CURRENT_USER = d.user;
     const ui = document.getElementById('userInfo');
     if (CURRENT_USER) {
-      ui.innerHTML = 'Logado como ' + CURRENT_USER.username + ' <button id="logoutBtn" style="font-size:.65rem;">Logout</button>';
+      let painelLink = '';
+      if (CURRENT_USER.role === 'admin') {
+        painelLink = '<a href="/admin.html" style="margin-right:1rem;">Painel</a>';
+      } else {
+        painelLink = '<a href="/painel.html" style="margin-right:1rem;">Painel</a>';
+      }
+      ui.innerHTML = painelLink + 'Logado como ' + CURRENT_USER.username + ' <button id="logoutBtn" style="font-size:.65rem;">Logout</button>';
       document.getElementById('logoutBtn').onclick = async () => { await fetch('/api/logout',{method:'POST'}); location.reload(); };
     } else {
       ui.innerHTML = '<a href="/login">Login</a>';
