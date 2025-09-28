@@ -79,7 +79,11 @@
     </select>
   </div>
   <button onclick="saveConfig()">Salvar</button>
-  <div id="status"></div>
+   <div id="status"></div>
+   <div style="margin-top:1rem">
+     <strong>Expressão CRON atual:</strong>
+     <div id="currentCron" style="font-family:monospace; margin-top:0.5rem;">carregando...</div>
+   </div>
   <script>
     async function getCsrfToken() {
       const res = await fetch('/api/csrf-token');
@@ -90,11 +94,16 @@
 
     async function loadConfig() {
       const res = await fetch('/api/admin/bot-config/schedule');
-      if (!res.ok) return;
+      if (!res.ok) {
+        document.getElementById('status').innerText = `Erro ao carregar configuração (HTTP ${res.status}). Verifique se você está autenticado.`;
+        document.getElementById('currentCron').innerText = 'não disponível';
+        return;
+      }
       const data = await res.json();
       if (data.start) document.getElementById('scheduleStart').value = data.start;
       if (data.end) document.getElementById('scheduleEnd').value = data.end;
       if (data.interval) document.getElementById('scheduleInterval').value = data.interval;
+      document.getElementById('currentCron').innerText = data.cron || 'não disponível';
     }
 
     async function saveConfig() {
@@ -111,9 +120,17 @@
         body: JSON.stringify({ start, end, interval })
       });
       if (res.ok) {
+        document.getElementById('status').innerText = 'Configuração salva com sucesso! Atualizando...';
+        // Re-load the configuration from server to ensure displayed cron matches persisted value
+        await loadConfig();
         document.getElementById('status').innerText = 'Configuração salva com sucesso!';
       } else {
-        document.getElementById('status').innerText = 'Erro ao salvar configuração.';
+        let msg = `Erro ao salvar configuração (HTTP ${res.status}).`;
+        try {
+          const errData = await res.json();
+          if (errData && errData.error) msg += ' ' + (errData.error_msg || errData.error || '');
+        } catch {}
+        document.getElementById('status').innerText = msg;
       }
     }
     loadConfig();

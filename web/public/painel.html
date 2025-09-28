@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Painel do Usuário</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    body { background: #f1f5f9; }
+    .panel { background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:2rem; max-width:500px; margin:2rem auto; box-shadow:0 1px 3px 0 rgb(0 0 0 / 0.1); }
+    .muted { color:#64748b; font-size:.95rem; }
+    .row { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; }
+    .row > * { flex: 1 1 220px; }
+    .btn-primary { background:#3b82f6; color:#fff; border:0; padding:.5rem .8rem; border-radius:6px; cursor:pointer; }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="/">Home</a>
+    <strong>Painel</strong>
+    <span id="userInfo" style="margin-left:auto;"></span>
+  </nav>
+  <div class="panel">
+    <h2>Minha Conta</h2>
+    <div id="accountInfo" class="muted">Carregando dados...</div>
+    <hr style="margin:2rem 0;">
+    <h3>Histórico de Figurinhas Enviadas</h3>
+    <div id="myStickers" class="muted">Carregando...</div>
+    <hr style="margin:2rem 0;">
+    <h3>Alterar Senha</h3>
+    <div class="row">
+      <input id="cp_current" type="password" placeholder="Senha atual">
+      <input id="cp_new" type="password" placeholder="Nova senha (mín. 8)">
+      <input id="cp_new2" type="password" placeholder="Confirmar nova senha">
+    </div>
+    <div style="display:flex; gap:.5rem; justify-content:flex-end; margin-top:.6rem;">
+      <button id="btnChangePass" class="btn-primary">Alterar senha</button>
+    </div>
+    <div id="cp_msg" class="muted"></div>
+  </div>
+  <script src="/app.js"></script>
+  <script src="/painel.js"></script>
+</body>
+</html>

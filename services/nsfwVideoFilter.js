@@ -148,7 +148,7 @@ async function isVideoNSFW(filePath) {
         // Always try to clean up the frame file
         try {
           if (fs.existsSync(fp)) {
-            fs.unlinkSync(fp);
+            try { if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch (e) { console.warn('[NSFWVideo] Erro ao remover frame temporário:', e.message); }
           }
         } catch (cleanupErr) {
           console.warn('[NSFW Video] Erro ao limpar frame:', fp, cleanupErr.message);
@@ -161,7 +161,7 @@ async function isVideoNSFW(filePath) {
         for (const remainingFp of framesPaths) {
           try {
             if (fs.existsSync(remainingFp)) {
-              fs.unlinkSync(remainingFp);
+              try { if (fs.existsSync(remainingFp)) fs.unlinkSync(remainingFp); } catch (e) { console.warn('[NSFWVideo] Erro ao remover frame temporário:', e.message); }
             }
           } catch (cleanupErr) {
             // Ignore cleanup errors
