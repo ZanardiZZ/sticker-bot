@@ -20,6 +20,9 @@ const { tests: versionTests } = require('./unit/version.test');
 const { tests: logCollectorTests } = require('./unit/logCollector.test');
 const { runAnimatedStickerTests } = require('./unit/animatedStickerAnalysis.test');
 const { testMultiFrameDisableFeature } = require('./unit/multiFrameDisabled.test');
+const { tests: mockBaileysIntegrationTests } = require('./integration/mockBaileysIntegration.test');
+const { tests: mediaSendHandlerTests } = require('./unit/mediaSendHandlers.test');
+const { tests: processIncomingMediaTests } = require('./unit/processIncomingMedia.test');
 
 
 async function runAllTests() {
@@ -41,6 +44,9 @@ async function runAllTests() {
     results.push(await runTestSuite('ID Command Tests', idCommandTests));
     results.push(await runTestSuite('Version Model Tests', versionTests));
     results.push(await runTestSuite('LogCollector Tests', logCollectorTests));
+    results.push(await runTestSuite('Mock Baileys Integration Tests', mockBaileysIntegrationTests));
+    results.push(await runTestSuite('Media Sending Helper Tests', mediaSendHandlerTests));
+    results.push(await runTestSuite('Process Incoming Media Tests', processIncomingMediaTests));
     
     // Run animated sticker tests (different format)
     await runAnimatedStickerTests();
