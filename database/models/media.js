@@ -234,7 +234,7 @@ function findMediaByTheme(keywords, limit = 5) {
 
     db.all(sql, params, (err, rows) => {
       if (err) {
-        console.error('[DB] Erro ao buscar mídia por tema:', err);
+        console.error('[DB] Error searching media by theme:', err);
         resolve([]);
       } else {
         resolve(rows || []);
