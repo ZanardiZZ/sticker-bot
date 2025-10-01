@@ -296,6 +296,34 @@ async function start() {
   // Ensure auth dir exists
   fs.mkdirSync(AUTH_DIR, { recursive: true });
 
+  // HTTP server + WS for clients
+  const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Baileys WebSocket Server running\n');
+  });
+
+  const wss = new WebSocketServer({ server });
+
+  const closeWss = () => new Promise((resolve) => {
+    try {
+      for (const ws of wss.clients) {
+        try { ws.close(1012, 'server_restart'); } catch {}
+      }
+      wss.close(() => resolve());
+    } catch {
+      resolve();
+    }
+  });
+
+  const closeServer = () => new Promise((resolve) => {
+    try {
+      if (!server.listening) return resolve();
+      server.close(() => resolve());
+    } catch {
+      resolve();
+    }
+  });
+
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
   const { version } = await fetchLatestBaileysVersion();
 
@@ -312,29 +340,76 @@ async function start() {
 
   sock.ev.on('creds.update', saveCreds);
 
+  let restartScheduled = false;
+  const scheduleRestart = ({ clearAuth = false, delayMs = 3000 } = {}) => {
+    if (restartScheduled) return;
+    restartScheduled = true;
+
+    const performRestart = async () => {
+      try { sock.ev.removeAllListeners('connection.update'); } catch {}
+      try { sock.ws?.close(1001, 'server_restart'); } catch {}
+      try { await sock.logout?.(); } catch {}
+      try { await sock.end?.(); } catch {}
+
+      try {
+        for (const [, entry] of clientsByToken) {
+          try { entry.ws?.close(1012, 'server_restart'); } catch {}
+        }
+      } catch {}
+      clientsByToken.clear();
+
+      await Promise.all([
+        closeWss(),
+        closeServer()
+      ]);
+
+      if (clearAuth) {
+        try { fs.rmSync(AUTH_DIR, { recursive: true, force: true }); }
+        catch (err) {
+          console.error('[Baileys] Failed to clear auth directory:', err);
+        }
+      }
+
+      setTimeout(() => {
+        restartScheduled = false;
+        start().catch(console.error);
+      }, delayMs);
+    };
+
+    performRestart().catch((err) => {
+      console.error('[Baileys] Failed during restart:', err);
+      restartScheduled = false;
+      setTimeout(() => start().catch(console.error), delayMs);
+    });
+  };
+
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect, qr } = update;
-    if (qr) { console.log('[Baileys] QR updated. Scan to authenticate.');
-    qrcode.generate(qr, { small: true })
+    if (qr) {
+      console.log('[Baileys] QR updated. Scan to authenticate.');
+      qrcode.generate(qr, { small: true });
     }
     if (connection === 'open') {
       console.log('[Baileys] Connection opened');
     } else if (connection === 'close') {
-      const reason = lastDisconnect?.error?.output?.statusCode || lastDisconnect?.error?.message;
+      const statusCode = lastDisconnect?.error?.output?.statusCode
+        ?? lastDisconnect?.error?.statusCode
+        ?? lastDisconnect?.error?.payload?.statusCode;
+      const reason = statusCode ?? lastDisconnect?.error?.message;
       console.warn('[Baileys] Connection closed. Reason:', reason);
-      if (reason !== DisconnectReason.loggedOut) {
-        setTimeout(() => start().catch(console.error), 3000);
+
+      const numericReason = typeof reason === 'number' ? reason : Number(reason);
+      const isLoggedOut = numericReason === DisconnectReason.loggedOut
+        || statusCode === DisconnectReason.loggedOut;
+
+      if (isLoggedOut) {
+        console.warn('[Baileys] Session logged out. Clearing auth state and restarting for a new QR.');
+        scheduleRestart({ clearAuth: true, delayMs: 1000 });
+      } else {
+        scheduleRestart({ clearAuth: false, delayMs: 3000 });
       }
     }
   });
-
-  // HTTP server + WS for clients
-  const server = http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Baileys WebSocket Server running\n');
-  });
-
-  const wss = new WebSocketServer({ server });
 
   function send(ws, obj) {
     try { ws.send(JSON.stringify(obj)); } catch {}
