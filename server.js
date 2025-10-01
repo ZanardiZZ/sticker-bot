@@ -53,6 +53,72 @@ function isTokenAllowed(token) {
   return ALLOWED_TOKENS.includes(token);
 }
 
+function getFromStore(collection, key) {
+  if (!collection || !key) return null;
+  const altKey = typeof key === 'string' && key.endsWith('@s.whatsapp.net')
+    ? key.replace('@s.whatsapp.net', '@c.us')
+    : null;
+  if (typeof collection.get === 'function') {
+    return collection.get(key) || (altKey ? collection.get(altKey) : null) || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(collection, key)) return collection[key];
+  if (altKey && Object.prototype.hasOwnProperty.call(collection, altKey)) return collection[altKey];
+  return null;
+}
+
+function getContactFromStore(store, jid) {
+  if (!jid) return null;
+  return getFromStore(store?.contacts, jid);
+}
+
+function buildOpenWAContact(store, jid, opts = {}) {
+  const { pushNameFallback } = opts;
+  if (!jid) {
+    return {
+      id: '',
+      pushname: '',
+      formattedName: '',
+      notifyName: '',
+      name: '',
+      shortName: '',
+      verifiedName: '',
+      isBusiness: false,
+      isEnterprise: false,
+      profilePicUrl: '',
+      number: ''
+    };
+  }
+
+  const contact = getContactFromStore(store, jid) || null;
+  const pushname = (
+    contact?.pushName
+    || contact?.name
+    || contact?.verifiedName
+    || contact?.notify
+    || pushNameFallback
+    || ''
+  );
+
+  return {
+    id: jid,
+    pushname,
+    formattedName: contact?.name || contact?.verifiedName || pushname || '',
+    notifyName: contact?.notify || '',
+    name: contact?.name || pushname || '',
+    shortName: contact?.shortName || '',
+    verifiedName: contact?.verifiedName || '',
+    isBusiness: !!contact?.isBusiness,
+    isEnterprise: !!contact?.isEnterprise,
+    profilePicUrl: contact?.profilePictureUrl || contact?.profilePicUrl || '',
+    number: jid.split('@')[0] || ''
+  };
+}
+
+function getChatFromStore(store, jid) {
+  if (!jid) return null;
+  return getFromStore(store?.chats, jid) || getFromStore(store?.groupMetadata, jid);
+}
+
 function normalizeOpenWAMessage(msg, opts = {}) {
   const { store, userId, rememberMessage, rememberQuoted } = opts;
 
@@ -76,29 +142,6 @@ function normalizeOpenWAMessage(msg, opts = {}) {
     if (!entries.length) return { type: null, content: null };
     const [type, content] = entries[0];
     return { type, content };
-  };
-
-  const getFromStore = (collection, key) => {
-    if (!collection || !key) return null;
-    const altKey = typeof key === 'string' && key.endsWith('@s.whatsapp.net')
-      ? key.replace('@s.whatsapp.net', '@c.us')
-      : null;
-    if (typeof collection.get === 'function') {
-      return collection.get(key) || (altKey ? collection.get(altKey) : null) || null;
-    }
-    if (Object.prototype.hasOwnProperty.call(collection, key)) return collection[key];
-    if (altKey && Object.prototype.hasOwnProperty.call(collection, altKey)) return collection[altKey];
-    return null;
-  };
-
-  const getContactFromStore = (jid) => {
-    if (!jid) return null;
-    return getFromStore(store?.contacts, jid);
-  };
-
-  const getChatFromStore = (jid) => {
-    if (!jid) return null;
-    return getFromStore(store?.chats, jid) || getFromStore(store?.groupMetadata, jid);
   };
 
   const unwrap = unwrapMessageContent(m.message || {});
@@ -144,21 +187,7 @@ function normalizeOpenWAMessage(msg, opts = {}) {
   const senderId = fromMe
     ? (userId || remoteJid)
     : (m.key?.participant || m.participant || remoteJid);
-  const senderContact = getContactFromStore(senderId);
-  const senderPushname = m.pushName
-    || senderContact?.pushName
-    || senderContact?.name
-    || senderContact?.verifiedName
-    || senderContact?.notify
-    || '';
-
-  const sender = {
-    id: senderId || '',
-    pushname: senderPushname,
-    formattedName: senderContact?.name || senderContact?.verifiedName || senderPushname || '',
-    notifyName: senderContact?.notify || '',
-    name: senderContact?.name || senderPushname || ''
-  };
+  const sender = buildOpenWAContact(store, senderId, { pushNameFallback: m.pushName });
 
   const chatMeta = getChatFromStore(chatId);
   const chat = {
@@ -201,10 +230,8 @@ function normalizeOpenWAMessage(msg, opts = {}) {
     const qId = contextInfo.stanzaId || contextInfo.stanzaID || contextInfo.messageId || null;
     const qParticipant = contextInfo.participant || contextInfo.remoteJid || contextInfo.quotedParticipant || null;
     const qSenderId = qParticipant || chatId;
-    const qContact = getContactFromStore(qSenderId);
-    const qPushname = qContact?.pushName || qContact?.name || qContact?.verifiedName || qContact?.notify || '';
-
     quotedMsgId = qId;
+    const qSender = buildOpenWAContact(store, qSenderId);
     quotedMsg = {
       id: qId || '',
       chatId,
@@ -214,13 +241,7 @@ function normalizeOpenWAMessage(msg, opts = {}) {
       type: qType,
       isMedia: qIsMedia,
       mimetype: qMimetype,
-      sender: {
-        id: qSenderId || '',
-        pushname: qPushname,
-        formattedName: qContact?.name || qContact?.verifiedName || qPushname || '',
-        notifyName: qContact?.notify || '',
-        name: qContact?.name || qPushname || ''
-      },
+      sender: qSender,
       author: qSenderId || '',
       isGroupMsg: isGroupMsg,
       _fromQuote: true
@@ -366,37 +387,7 @@ async function start() {
   }
 
   function buildContactPayload(jid) {
-    if (!jid) {
-      return { id: '', pushname: '', formattedName: '', notifyName: '', name: '', number: '' };
-    }
-
-    const resolveFromStore = (collection) => {
-      if (!collection) return null;
-      const altJid = jid.endsWith('@s.whatsapp.net') ? jid.replace('@s.whatsapp.net', '@c.us') : null;
-      if (typeof collection.get === 'function') {
-        return collection.get(jid) || (altJid ? collection.get(altJid) : null) || null;
-      }
-      if (Object.prototype.hasOwnProperty.call(collection, jid)) return collection[jid];
-      if (altJid && Object.prototype.hasOwnProperty.call(collection, altJid)) return collection[altJid];
-      return null;
-    };
-
-    const contact = resolveFromStore(store?.contacts) || null;
-    const pushname = contact?.pushName || contact?.name || contact?.verifiedName || contact?.notify || '';
-
-    return {
-      id: jid,
-      pushname,
-      formattedName: contact?.name || contact?.verifiedName || pushname || '',
-      notifyName: contact?.notify || '',
-      name: contact?.name || pushname || '',
-      shortName: contact?.shortName || '',
-      verifiedName: contact?.verifiedName || '',
-      isBusiness: !!contact?.isBusiness,
-      isEnterprise: !!contact?.isEnterprise,
-      profilePicUrl: contact?.profilePictureUrl || contact?.profilePicUrl || '',
-      number: jid.split('@')[0] || '',
-    };
+    return buildOpenWAContact(store, jid);
   }
 
   function broadcastAuthorized(openwaMsg) {
