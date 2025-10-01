@@ -318,20 +318,33 @@ async function start() {
 
   // cache limited number of recent media messages for download on demand
   const MAX_CACHE = 500;
-  const mediaCache = new Map(); // messageId -> { m, chatId }
+  const MEDIA_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+  const mediaCache = new Map(); // messageId -> { m, chatId, timestamp }
   const MAX_MESSAGE_CACHE = 1000;
-  const messageCache = new Map(); // messageId -> { normalized, raw }
+  const MESSAGE_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+  const messageCache = new Map(); // messageId -> { normalized, raw, timestamp }
+
+  function pruneCache(map, ttl) {
+    const now = Date.now();
+    for (const [key, value] of map) {
+      const ts = value?.timestamp;
+      if (typeof ts === 'number' && now - ts > ttl) {
+        map.delete(key);
+      }
+    }
+  }
 
   function rememberMedia(m) {
     try {
       const id = m?.key?.id;
       const chatId = m?.key?.remoteJid;
       if (!id || !chatId) return;
+      pruneCache(mediaCache, MEDIA_CACHE_TTL_MS);
       if (mediaCache.size >= MAX_CACHE) {
         const firstKey = mediaCache.keys().next().value;
         if (firstKey) mediaCache.delete(firstKey);
       }
-      mediaCache.set(id, { m, chatId });
+      mediaCache.set(id, { m, chatId, timestamp: Date.now() });
     } catch {}
   }
 
@@ -339,13 +352,15 @@ async function start() {
     try {
       const messageId = normalized?.id || normalized?.messageId || raw?.key?.id;
       if (!messageId) return;
+      pruneCache(messageCache, MESSAGE_CACHE_TTL_MS);
       if (messageCache.size >= MAX_MESSAGE_CACHE) {
         const firstKey = messageCache.keys().next().value;
         if (firstKey) messageCache.delete(firstKey);
       }
       messageCache.set(messageId, {
         normalized: { ...normalized },
-        raw
+        raw,
+        timestamp: Date.now()
       });
     } catch {}
   }
@@ -575,6 +590,10 @@ async function start() {
       if (type === 'downloadMedia') {
         const { messageId } = msg || {};
         const cached = messageId ? mediaCache.get(messageId) : null;
+        if (cached && typeof cached.timestamp === 'number' && Date.now() - cached.timestamp > MEDIA_CACHE_TTL_MS) {
+          mediaCache.delete(messageId);
+          return send(ws, { type: 'error', action: 'downloadMedia', messageId, error: 'media_expired' });
+        }
         if (!cached) return send(ws, { type: 'error', action: 'downloadMedia', messageId, error: 'media_not_found' });
         const { m, chatId } = cached;
         const entryCan = entry.allowedChats.has('*') || entry.allowedChats.has(chatId);
@@ -593,6 +612,10 @@ async function start() {
         const { messageId } = msg || {};
         if (!messageId) return send(ws, { type: 'error', action: 'getQuotedMessage', error: 'messageId_required' });
         const stored = messageCache.get(messageId);
+        if (stored && typeof stored.timestamp === 'number' && Date.now() - stored.timestamp > MESSAGE_CACHE_TTL_MS) {
+          messageCache.delete(messageId);
+          return send(ws, { type: 'error', action: 'getQuotedMessage', messageId, error: 'quoted_expired' });
+        }
         if (!stored) return send(ws, { type: 'error', action: 'getQuotedMessage', messageId, error: 'quoted_not_found' });
 
         let target = null;
