@@ -177,6 +177,71 @@ function getTop10Media() {
   });
 }
 
+/**
+ * Finds media items that match provided keywords in description or tags
+ * @param {string[]} keywords - Array of keyword strings
+ * @param {number} limit - Maximum number of media items to return
+ * @returns {Promise<object[]>} Array of matching media objects ordered by relevance
+ */
+function findMediaByTheme(keywords, limit = 5) {
+  return new Promise((resolve) => {
+    if (!Array.isArray(keywords) || keywords.length === 0) {
+      resolve([]);
+      return;
+    }
+
+    const cleanKeywords = keywords
+      .map(keyword => (typeof keyword === 'string' ? keyword.trim().toLowerCase() : ''))
+      .filter(Boolean);
+
+    if (!cleanKeywords.length) {
+      resolve([]);
+      return;
+    }
+
+    const matchExpressions = cleanKeywords.map(() => `(
+      CASE
+        WHEN LOWER(COALESCE(m.description, '')) LIKE ?
+          OR LOWER(COALESCE(t.name, '')) LIKE ?
+        THEN 1 ELSE 0
+      END
+    )`);
+
+    const matchScoreExpression = matchExpressions.join(' + ');
+
+    const sql = `
+      SELECT m.*, ${matchScoreExpression} AS match_score
+      FROM media m
+      LEFT JOIN media_tags mt ON m.id = mt.media_id
+      LEFT JOIN tags t ON t.id = mt.tag_id
+      WHERE m.nsfw = 0
+      GROUP BY m.id
+      HAVING match_score > 0
+      ORDER BY m.count_random ASC, match_score DESC, m.id ASC
+      LIMIT ?
+    `;
+
+    const params = [];
+    cleanKeywords.forEach(keyword => {
+      const pattern = `%${keyword}%`;
+      params.push(pattern, pattern);
+    });
+
+    const normalizedLimit = Number.isInteger(limit) ? limit : parseInt(limit, 10);
+    const parsedLimit = Number.isNaN(normalizedLimit) ? 5 : Math.max(1, normalizedLimit);
+    params.push(parsedLimit);
+
+    db.all(sql, params, (err, rows) => {
+      if (err) {
+        console.error('[DB] Erro ao buscar mídia por tema:', err);
+        resolve([]);
+      } else {
+        resolve(rows || []);
+      }
+    });
+  });
+}
+
 module.exports = {
   saveMedia,
   findByHashVisual,
@@ -186,5 +251,6 @@ module.exports = {
   incrementRandomCount,
   updateMediaDescription,
   countMedia,
-  getTop10Media
+  getTop10Media,
+  findMediaByTheme
 };

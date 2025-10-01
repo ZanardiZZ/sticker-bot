@@ -154,6 +154,7 @@ Send these commands to the bot in WhatsApp:
 | Command | Description | Example |
 |---------|-------------|---------|
 | `#random` | Get a random sticker | `#random` |
+| `#tema` | Send up to 10 stickers matching keywords | `#tema guerra 5` |
 | `#count` | Show total sticker count | `#count` |
 | `#top10` | Top 10 most used stickers | `#top10` |
 | `#top5users` | Top 5 users by sticker count | `#top5users` |
