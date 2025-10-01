@@ -1,4 +1,3 @@
-const { decryptMedia } = require('@open-wa/wa-decrypt');
 const path = require('path');
 const sharp = require('sharp');
 const { PACK_NAME, AUTHOR_NAME } = require('./config/stickers');
