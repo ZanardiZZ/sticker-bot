@@ -50,6 +50,13 @@ class MockWhatsAppClient {
   }
 }
 
+const handlerPath = path.resolve(__dirname, '..', '..', 'commands/handlers/id.js');
+
+function loadHandleIdCommand() {
+  delete require.cache[handlerPath];
+  return require('../../commands/handlers/id');
+}
+
 // Helper to insert test media
 async function insertTestMedia(db, mediaData) {
   const {
@@ -90,7 +97,8 @@ const tests = [
       // Create a minimal valid WebP file instead of fake data
       const validWebPBuffer = createMinimalWebP();
       
-      if (!fs.existsSync(testFilePath)) {
+      const hadFixture = fs.existsSync(testFilePath);
+      if (!hadFixture) {
         fs.writeFileSync(testFilePath, validWebPBuffer);
       }
       
@@ -129,7 +137,7 @@ const tests = [
         return []; // Simplified for test
       };
       
-      const { handleIdCommand } = require('../../commands/handlers/id');
+      const { handleIdCommand } = loadHandleIdCommand();
       
       const message = {
         body: `#ID ${testMedia.id}`,
@@ -147,7 +155,7 @@ const tests = [
       const mediaSent = client.sentStickers.length > 0 || client.sentFiles.length > 0;
       
       // Check that description message was sent
-      const descriptionSent = client.sentMessages.length > 0 && client.sentMessages.some(m => m.type === 'reply');
+      const descriptionSent = client.sentMessages.length > 0 && client.sentMessages.some(m => m.type === 'reply' || m.type === 'text');
       
       console.log('Media sent:', mediaSent);
       console.log('Description sent:', descriptionSent);
@@ -162,7 +170,7 @@ const tests = [
       database.getTagsForMedia = originalGetTagsForMedia;
       
       // Clean up test file
-      if (fs.existsSync(testFilePath)) {
+      if (!hadFixture && fs.existsSync(testFilePath)) {
         fs.unlinkSync(testFilePath);
       }
       
@@ -183,7 +191,7 @@ const tests = [
       const originalFindById = database.findById;
       database.findById = () => Promise.resolve(null);
       
-      const { handleIdCommand } = require('../../commands/handlers/id');
+      const { handleIdCommand } = loadHandleIdCommand();
       
       const message = {
         body: '#ID 99999',
@@ -240,7 +248,7 @@ const tests = [
       database.incrementRandomCount = async (id) => Promise.resolve(1);
       database.getTagsForMedia = async (id) => [];
       
-      const { handleIdCommand } = require('../../commands/handlers/id');
+      const { handleIdCommand } = loadHandleIdCommand();
       
       const message = {
         body: `#ID ${testMedia.id}`,

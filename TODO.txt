@@ -1,0 +1,6 @@
+-Site: Edição por usuarios necessita aprovacao de outros 3 para ser validada (ou de admin)
+-Banco de dados: Corrigir duplicadas
+-Bot: Adicionar novas funções com base nos outros bots existentes para whatsapp, ver o que é interessante e Adicionar
+-Site: Verificar a questao do cadastro do site não estar funcionando
+-Site: capacidade de pedir nova descricao do sticker via ia
+-Bot: reavaliar os envios anteriores a tabela tag
