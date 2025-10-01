@@ -140,11 +140,17 @@ async function updateGroupSetting(groupId, field, value) {
   if (!Object.prototype.hasOwnProperty.call(allowedFields, field)) {
     throw new Error('invalid_field');
   }
+  // Map field to a constant column name
+  const fieldToColumn = {
+    auto_send_enabled: 'auto_send_enabled',
+    processing_enabled: 'processing_enabled'
+  };
+  const columnName = fieldToColumn[field];
   const normalizedValue = allowedFields[field](value);
   const now = Date.now();
   const result = await run(`
     UPDATE group_settings
-    SET ${field} = ?, updated_at = ?
+    SET ${columnName} = ?, updated_at = ?
     WHERE group_id = ?
   `, [normalizedValue, now, groupId]);
   if (!result || result.changes === 0) {
