@@ -32,43 +32,6 @@ if (process.env.OPENAI_API_KEY) {
   });
 }
 
-// --- Helpers for entity extraction and tag normalization ---
-function extractNamedEntitiesFromText(text) {
-  if (!text || typeof text !== 'string') return [];
-  // Simple heuristic: capture capitalized words (with accents) likely to be names; exclude common words
-  const stop = new Set(['Frame','Um','Uma','O','A','Os','As','De','Do','Da','Dos','Das','E','Em','No','Na','Nos','Nas','Com','Sem','Para','Por','Que','Isso','Isto','Este','Esta','Esse','Essa','Aquele','Aquela','Homem','Mulher','Pessoa','Personagem','Cena','Gif','GIF','Meme']);
-  const regex = /\b[\p{Lu}][\p{Ll}]+(?:[-\s][\p{Lu}][\p{Ll}]+)?\b/gu; // allows two-word names
-  const found = new Set();
-  let m;
-  while ((m = regex.exec(text)) !== null) {
-    const w = m[0].trim();
-    if (!stop.has(w) && w.length >= 3) {
-      found.add(w);
-    }
-  }
-  return Array.from(found).slice(0, 8); // cap
-}
-
-function ensureEntitiesInResult(description, tags, entities) {
-  let finalDesc = description || '';
-  const lowerDesc = finalDesc.toLowerCase();
-  const ensuredTags = Array.isArray(tags) ? [...tags] : [];
-  const toAddTags = [];
-  for (const e of entities || []) {
-    const eLower = e.toLowerCase();
-    if (!lowerDesc.includes(eLower)) {
-      toAddTags.push(e);
-    }
-    if (!ensuredTags.some(t => (t||'').toLowerCase() === eLower)) {
-      ensuredTags.push(e);
-    }
-  }
-  if (toAddTags.length > 0) {
-    finalDesc = finalDesc ? `${finalDesc} — com ${toAddTags.slice(0, 3).join(', ')}` : `Com ${toAddTags.slice(0, 3).join(', ')}`;
-  }
-  return { description: finalDesc, tags: ensuredTags };
-}
-
 // Extrai frames (timestamps em segundos)
 async function extractFrames(filePath, timestamps) {
   // Check if FFmpeg is available
@@ -286,40 +249,10 @@ async function analyzeFrame(framePath, frameIndex) {
   }
 }
 
-// Analisa um frame individual especificamente para GIFs usando o pipeline de GIF
-async function analyzeGifFrame(framePath, frameIndex) {
-  try {
-    if (!fs.existsSync(framePath)) {
-      console.warn(`[VideoProcessor] Frame ${frameIndex} não encontrado: ${framePath}`);
-      return { description: '', tags: [] };
-    }
-
-    const buffer = fs.readFileSync(framePath);
-    const result = await getAiAnnotationsForGif(buffer);
-
-    console.log(`[VideoProcessor] [GIF] Frame ${frameIndex} analisado: ${result.description?.slice(0, 30) || 'sem descrição'}...`);
-
-    return {
-      description: (result && result.description) ? result.description : '',
-      tags: (result && Array.isArray(result.tags)) ? result.tags : []
-    };
-  } catch (error) {
-    console.warn(`[VideoProcessor] [GIF] Erro ao analisar frame ${frameIndex}:`, error.message);
-    return { description: '', tags: [] };
-  }
-}
-
 // Função principal: processa vídeo, gera prompt com imagens + transcrição e solicita IA
 async function processVideo(filePath) {
   console.log(`[VideoProcessor] Processando arquivo: ${path.basename(filePath)}`);
   
-  // Route animated WebP to dedicated processor
-  const ext = path.extname(filePath).toLowerCase();
-  if (ext === '.webp') {
-    console.log('[VideoProcessor] Detected .webp file, delegating to processAnimatedWebp');
-    return processAnimatedWebp(filePath);
-  }
-
   // Check if FFmpeg is available
   if (!ffmpeg) {
     console.warn('[VideoProcessor] FFmpeg não disponível, retornando análise básica');
@@ -331,21 +264,15 @@ async function processVideo(filePath) {
   
   try {
     // Duração vídeo
-    let duration = await new Promise((res, rej) => {
+    const duration = await new Promise((res, rej) => {
       ffmpeg.ffprobe(filePath, (err, meta) => {
         if (err) rej(err);
         else res(meta.format.duration);
       });
     });
 
-    // Validate duration to avoid NaN timestamps
-    duration = Number(duration);
-    if (!Number.isFinite(duration) || duration <= 0) {
-      throw new Error(`Duração inválida para vídeo: ${duration}`);
-    }
-
     // Timestamps para frames: 10%, 50%, 90%
-  const timestamps = [duration * 0.1, duration * 0.5, duration * 0.9];
+    const timestamps = [duration * 0.1, duration * 0.5, duration * 0.9];
 
     // Extrai frames
     const extractResult = await extractFrames(filePath, timestamps);
@@ -418,7 +345,6 @@ async function processVideo(filePath) {
 
     if (transcription && transcription !== '[sem áudio]' && !transcription.includes('não transcrito')) {
       // Se tem áudio válido, integra com análise visual
-      const entities = extractNamedEntitiesFromText(frameDescriptions + '\n' + transcription);
       const prompt = `
 Você está analisando um vídeo (ID: ${fileId}) que contém tanto conteúdo visual quanto áudio.
 
@@ -431,13 +357,9 @@ ${transcription}
 TAGS VISUAIS IDENTIFICADAS:
 ${topTags.join(', ')}
 
-ENTIDADES NOMEADAS DETECTADAS (mantenha-as na saída se forem pertinentes):
-${entities.join(', ')}
-
 Por favor, forneça uma análise integrada que combine o conteúdo visual e auditivo:
 1) Uma descrição concisa do vídeo (máximo 50 palavras) que integre ambos os aspectos
 2) Uma lista de 5 tags relevantes que representem tanto o conteúdo visual quanto auditivo
-3) Preserve nomes próprios (personagens, lugares, marcas) detectados nos frames/áudio; não generalize esses nomes.
 
 Responda no formato JSON:
 {
@@ -450,13 +372,8 @@ Responda no formato JSON:
       const integratedResult = await getAiAnnotationsFromPrompt(prompt);
       
       if (integratedResult && typeof integratedResult === 'object') {
-        const merged = ensureEntitiesInResult(
-          integratedResult.description || frameDescriptions.split('\n')[0]?.split(': ')[1] || 'Vídeo analisado',
-          integratedResult.tags && integratedResult.tags.length > 0 ? integratedResult.tags : topTags,
-          entities
-        );
-        finalDescription = merged.description;
-        finalTags = merged.tags;
+        finalDescription = integratedResult.description || frameDescriptions.split('\n')[0]?.split(': ')[1] || 'Vídeo analisado';
+        finalTags = integratedResult.tags && integratedResult.tags.length > 0 ? integratedResult.tags : topTags;
       } else {
         console.warn('[VideoProcessor] Resultado inválido da integração audiovisual:', integratedResult);
         finalDescription = frameDescriptions.split('\n')[0]?.split(': ')[1] || 'Vídeo analisado';
@@ -469,7 +386,6 @@ Responda no formato JSON:
         finalDescription = frameAnalyses[0].description || 'Vídeo processado';
       } else {
         // Sumariza múltiplos frames
-        const entities = extractNamedEntitiesFromText(frameDescriptions);
         const prompt = `
 Você está analisando um vídeo (ID: ${fileId}) através de múltiplos frames.
 
@@ -479,11 +395,7 @@ ${frameDescriptions}
 TAGS IDENTIFICADAS:
 ${topTags.join(', ')}
 
-ENTIDADES NOMEADAS DETECTADAS (mantenha-as na saída se forem pertinentes):
-${entities.join(', ')}
-
 Por favor, forneça uma descrição única e concisa (máximo 50 palavras) que sumarize o conteúdo visual geral do vídeo e 5 tags representativas.
-Requisito: Preserve nomes próprios (personagens, lugares, marcas) detectados nos frames; não generalize esses nomes. Inclua-os na descrição e nas tags quando fizer sentido.
 
 Responda no formato JSON:
 {
@@ -496,13 +408,8 @@ Responda no formato JSON:
         const summaryResult = await getAiAnnotationsFromPrompt(prompt);
         
         if (summaryResult && typeof summaryResult === 'object') {
-          const merged = ensureEntitiesInResult(
-            summaryResult.description || frameAnalyses[0].description || 'Vídeo processado',
-            summaryResult.tags && summaryResult.tags.length > 0 ? summaryResult.tags : topTags,
-            entities
-          );
-          finalDescription = merged.description;
-          finalTags = merged.tags;
+          finalDescription = summaryResult.description || frameAnalyses[0].description || 'Vídeo processado';
+          finalTags = summaryResult.tags && summaryResult.tags.length > 0 ? summaryResult.tags : topTags;
         } else {
           console.warn('[VideoProcessor] Resultado inválido da sumarização:', summaryResult);
           finalDescription = frameAnalyses[0].description || 'Vídeo processado';
@@ -580,29 +487,18 @@ async function processGif(filePath) {
     }
 
     // Para GIFs curtos, usa timestamps mais próximos
-    const rawTimestamps = duration > 3
+    const timestamps = duration > 3
       ? [duration * 0.1, duration * 0.5, duration * 0.9]
-      : [0.1, Math.max(0.3 * duration, 0.2), Math.max(0.8 * duration, 0.6)];
+      : [0.1, Math.max(0.5, duration * 0.3), Math.max(1, duration * 0.8)];
 
     // Sanitize timestamps to numbers and ensure no NaN values are passed to extractFrames
-    const epsilon = 0.001; // 1ms safety margin to stay within duration
-    let sanitized = rawTimestamps
+    let sanitized = timestamps
       .map(t => Number(t))
-      .filter(t => Number.isFinite(t) && t >= 0)
-      .map(t => Math.min(Math.max(0, t), Math.max(0, duration - epsilon)));
-
-    // Deduplicate and sort
-    sanitized = Array.from(new Set(sanitized.map(v => v.toFixed(3))))
-      .map(v => Number(v))
-      .sort((a,b) => a - b);
+      .filter(t => Number.isFinite(t) && t >= 0);
 
     if (sanitized.length === 0) {
-      console.warn('[VideoProcessor] Todos os timestamps calculados são inválidos, usando timestamps padrão 0.05, 0.5, 0.9*dur');
-      sanitized = [
-        Math.min(0.05, Math.max(0, duration - epsilon)),
-        Math.min(0.5, Math.max(0, duration - epsilon)),
-        Math.max(0, Math.min(duration * 0.9, Math.max(0, duration - epsilon)))
-      ];
+      console.warn('[VideoProcessor] Todos os timestamps calculados são inválidos, usando timestamps padrão 0.1,0.5,1.0');
+      sanitized = [0.1, 0.5, 1.0];
     }
 
     const finalTimestamps = sanitized;
@@ -614,12 +510,12 @@ async function processGif(filePath) {
       tempFramePaths = Array.isArray(extractResult) ? extractResult : (extractResult.frames || []);
       const framesTempDirLocal = extractResult.tempDir;
       console.log(`[VideoProcessor] ${tempFramePaths.length} frames extraídos com sucesso`);
-      // Analisa cada frame individualmente ANTES da limpeza (pipeline específico para GIF)
+      // Analisa cada frame individualmente ANTES da limpeza
       console.log('[VideoProcessor] Analisando frames do GIF...');
       for (let i = 0; i < tempFramePaths.length; i++) {
         try {
-          const analysis = await analyzeGifFrame(tempFramePaths[i], i + 1);
-          if (analysis && (analysis.description || (analysis.tags && analysis.tags.length > 0))) {
+          const analysis = await analyzeFrame(tempFramePaths[i], i + 1);
+          if (analysis && (analysis.description || analysis.tags.length > 0)) {
             frameAnalyses.push(analysis);
           }
         } catch (frameError) {
@@ -655,20 +551,7 @@ async function processGif(filePath) {
           const fallbackExtract = await extractFrames(filePath, [0]);
           tempFramePaths = Array.isArray(fallbackExtract) ? fallbackExtract : (fallbackExtract.frames || []);
           console.log('[VideoProcessor] Fallback com frame único foi bem-sucedido');
-
-          // Analisa o(s) frame(s) extraído(s) no fallback antes de limpar
-          for (let i = 0; i < tempFramePaths.length; i++) {
-            try {
-              const analysis = await analyzeGifFrame(tempFramePaths[i], i + 1);
-              if (analysis && (analysis.description || (analysis.tags && analysis.tags.length > 0))) {
-                frameAnalyses.push(analysis);
-              }
-            } catch (frameError) {
-              console.warn(`[VideoProcessor] Erro ao analisar frame (fallback) ${i + 1}: ${frameError.message}`);
-            }
-          }
-
-          // Cleanup fallback temp dir after analysis
+          // Cleanup fallback temp dir after use
           try {
             if (fallbackExtract && fallbackExtract.tempDir && fs.existsSync(fallbackExtract.tempDir)) {
               fs.rmSync(fallbackExtract.tempDir, { recursive: true, force: true });
@@ -728,8 +611,7 @@ async function processGif(filePath) {
       };
     } else {
       // Múltiplos frames - sumariza
-  const entities = extractNamedEntitiesFromText(frameDescriptions);
-  const prompt = `
+      const prompt = `
 Você está analisando um GIF animado ou meme (ID: ${fileId}) através de múltiplos frames.
 
 IMPORTANTE: Este é um GIF/meme, NÃO um vídeo. Descreva a animação, movimento ou cena sem usar termos como "vídeo", "filmagem" ou "gravação".
@@ -740,11 +622,7 @@ ${frameDescriptions}
 TAGS IDENTIFICADAS:
 ${topTags.join(', ')}
 
-ENTIDADES NOMEADAS DETECTADAS (mantenha-as na saída se forem pertinentes):
-${entities.join(', ')}
-
 Por favor, forneça uma descrição única e concisa (máximo 50 palavras) que capture a essência da animação, movimento ou meme do GIF. Foque na ação, expressão ou situação mostrada. Use termos como "animação", "GIF", "meme", "cena" em vez de "vídeo".
-Requisito: Preserve nomes próprios (personagens, lugares, marcas) detectados nos frames; não generalize esses nomes. Inclua-os na descrição e nas tags quando fizer sentido.
 
 Responda no formato JSON:
 {
@@ -757,14 +635,9 @@ Responda no formato JSON:
       const summaryResult = await getAiAnnotationsFromPrompt(prompt);
       
       if (summaryResult && typeof summaryResult === 'object' && summaryResult.description) {
-        const merged = ensureEntitiesInResult(
-          summaryResult.description || frameAnalyses[0].description || 'GIF processado',
-          summaryResult.tags && summaryResult.tags.length > 0 ? summaryResult.tags : topTags,
-          entities
-        );
         return {
-          description: merged.description,
-          tags: merged.tags
+          description: summaryResult.description || frameAnalyses[0].description || 'GIF processado',
+          tags: summaryResult.tags && summaryResult.tags.length > 0 ? summaryResult.tags : topTags
         };
       } else {
         console.warn('[VideoProcessor] Resultado inválido da sumarização de GIF:', summaryResult);
@@ -959,8 +832,7 @@ async function processAnimatedWebp(filePath) {
       const topTags = getTopTags(allTags, 5);
       
       // Generate summary using AI
-  const entities = extractNamedEntitiesFromText(frameDescriptions);
-  const prompt = `
+      const prompt = `
 Você está analisando um sticker animado WebP (ID: ${fileId}) através de múltiplos frames.
 
 IMPORTANTE: Este é um sticker animado, não um vídeo. Descreva a animação ou movimento sem usar termos como "vídeo", "filmagem" ou "gravação".
@@ -971,22 +843,14 @@ ${frameDescriptions}
 TAGS IDENTIFICADAS:
 ${topTags.join(', ')}
 
-ENTIDADES NOMEADAS DETECTADAS (mantenha-as na saída se forem pertinentes):
-${entities.join(', ')}
-
 Por favor, forneça uma descrição única e concisa (máximo 50 palavras) que capture a essência da animação do sticker. Foque na ação, expressão ou movimento mostrado. Use termos como "sticker animado", "animação", "movimento" em vez de "vídeo".`;
 
       try {
         const summaryResult = await getAiAnnotationsFromPrompt(prompt);
         if (summaryResult && summaryResult.description) {
-          const merged = ensureEntitiesInResult(
-            summaryResult.description,
-            summaryResult.tags && summaryResult.tags.length > 0 ? summaryResult.tags : topTags,
-            entities
-          );
           return {
-            description: merged.description,
-            tags: merged.tags
+            description: summaryResult.description,
+            tags: summaryResult.tags && summaryResult.tags.length > 0 ? summaryResult.tags : topTags
           };
         }
       } catch (summaryError) {

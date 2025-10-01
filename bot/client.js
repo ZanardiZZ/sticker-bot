@@ -5,9 +5,11 @@
 
 const { create } = require('@open-wa/wa-automate');
 const { SocketClient } = require('@open-wa/wa-automate-socket-client');
+const { createAdapter: createBaileysAdapter } = require('../waAdapter');
 
 // Configuration
 const USE_SOCKET_MODE = process.env.USE_SOCKET_MODE === 'true';
+const USE_BAILEYS = process.env.USE_BAILEYS === 'true';
 const SOCKET_HOST = process.env.SOCKET_HOST || 'localhost';
 const SOCKET_PORT = process.env.SOCKET_PORT || 8002; // padrão do tutorial e socket-client
 const SOCKET_API_KEY = process.env.SOCKET_API_KEY || 'your_api_key';
@@ -50,7 +52,11 @@ async function createSocketClient() {
  * @returns {Promise} Promise that resolves to the WhatsApp client
  */
 async function createClient(startCallback) {
-  if (USE_SOCKET_MODE) {
+  if (USE_BAILEYS) {
+    console.log('🔗 Iniciando cliente via Baileys WS Adapter...');
+    const adapter = await createBaileysAdapter();
+    return adapter;
+  } else if (USE_SOCKET_MODE) {
     return await createSocketClient();
   } else {
     return await createDirectClient(startCallback);
@@ -63,9 +69,10 @@ async function createClient(startCallback) {
  */
 async function initializeBot(startCallback) {
   try {
-    console.log(`🚀 Iniciando bot em modo: ${USE_SOCKET_MODE ? 'SOCKET' : 'DIRETO'}`);
+  const mode = USE_BAILEYS ? 'BAILEYS_WS' : (USE_SOCKET_MODE ? 'SOCKET' : 'DIRETO');
+  console.log(`🚀 Iniciando bot em modo: ${mode}`);
 
-    if (USE_SOCKET_MODE) {
+  if (USE_SOCKET_MODE && !USE_BAILEYS) {
       console.log('💡 Certifique-se de que o servidor socket esteja rodando: npx @open-wa/wa-automate --socket -p 8002 -k your_api_key');
     }
 
