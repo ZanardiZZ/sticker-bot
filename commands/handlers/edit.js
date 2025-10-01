@@ -2,7 +2,7 @@
  * Edit command handler
  */
 
-const { decryptMedia } = require('@open-wa/wa-decrypt');
+const { downloadMediaForMessage } = require('../../utils/mediaDownload');
 const { getHashVisual, findByHashVisual } = require('../../database');
 const { normalizeText, parseCommand } = require('../../utils/commandNormalizer');
 const { safeReply } = require('../../utils/safeMessaging');
@@ -20,13 +20,13 @@ async function handleEditReply(client, message, chatId, taggingMap, MAX_TAGS_LEN
   try {
     const quoted = await client.getQuotedMessage(message.id);
     if (quoted.isMedia) {
-      const buf = await decryptMedia(quoted);
-      const hv = await getHashVisual(buf);
+      const { buffer } = await downloadMediaForMessage(client, quoted);
+      const hv = await getHashVisual(buffer);
       const rec = await findByHashVisual(hv);
       if (rec) {
         taggingMap.set(chatId, rec.id);
         await safeReply(
-          chatId,
+          client,
           `Modo edição ativado para a mídia ID ${rec.id}.\n\n` +
             'Envie no formato:\n' +
             'descricao: [sua descrição]; tags: tag1, tag2, tag3\n' +
