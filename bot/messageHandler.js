@@ -10,6 +10,7 @@ const { processIncomingMedia } = require('../mediaProcessor');
 const { withTyping } = require('../utils/typingIndicator');
 const { safeReply } = require('../utils/safeMessaging');
 const MediaQueue = require('../services/mediaQueue');
+const { recordGroupMetadata, isGroupProcessingEnabled } = require('../web/dataAccess');
 
 // Create a shared media processing queue with higher retry attempts for media processing
 const mediaProcessingQueue = new MediaQueue({ 
@@ -50,7 +51,33 @@ async function handleMessage(client, message) {
   
   try {
     const chatId = message.from;
-    
+    const isGroup = !!message?.isGroupMsg;
+    const groupId = isGroup ? (message.chatId || message.from) : null;
+
+    if (isGroup && groupId) {
+      try {
+        const groupName =
+          message?.chat?.name ||
+          message?.chat?.formattedTitle ||
+          message?.chat?.formattedName ||
+          message?.sender?.shortName ||
+          message?.sender?.pushname ||
+          null;
+        await recordGroupMetadata(groupId, groupName);
+      } catch (err) {
+        console.warn('[bot] Falha ao registrar metadados do grupo:', err?.message || err);
+      }
+
+      try {
+        const allowed = await isGroupProcessingEnabled(groupId);
+        if (!allowed) {
+          return;
+        }
+      } catch (err) {
+        console.warn('[bot] Não foi possível verificar configuração de processamento do grupo:', err?.message || err);
+      }
+    }
+
     // 1) Try to handle command via commands module (includes validation)
     const commandHandled = await handleCommand(client, message, chatId);
     if (commandHandled) return;

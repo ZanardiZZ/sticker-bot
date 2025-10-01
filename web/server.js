@@ -186,6 +186,8 @@ const {
   listGroupCommandPermissions,
   setGroupCommandPermission,
   deleteGroupCommandPermission,
+  listGroupSettings,
+  updateGroupSetting,
   getBotConfig,
   setBotConfig
 } = require('./dataAccess.js');
@@ -700,6 +702,37 @@ app.delete('/api/admin/group-commands/:groupId/:command', requireAdmin, async (r
     await deleteGroupCommandPermission(groupId, command);
     res.json({ ok: true });
   } catch (err) {
+    res.status(500).json({ error: 'db_error', details: err.message });
+  }
+});
+
+// ====== Group Settings Overview ======
+app.get('/api/admin/group-settings', requireAdmin, async (_req, res) => {
+  try {
+    const groups = await listGroupSettings();
+    res.json({ groups });
+  } catch (err) {
+    res.status(500).json({ error: 'db_error', details: err.message });
+  }
+});
+
+app.patch('/api/admin/group-settings/:groupId', requireAdmin, async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const { field, value } = req.body || {};
+    const allowedFields = ['auto_send_enabled', 'processing_enabled'];
+    if (!field || !allowedFields.includes(field)) {
+      return res.status(400).json({ error: 'invalid_field' });
+    }
+    const updated = await updateGroupSetting(groupId, field, value);
+    res.json({ ok: true, group: updated });
+  } catch (err) {
+    if (err && err.message === 'group_not_found') {
+      return res.status(404).json({ error: 'group_not_found' });
+    }
+    if (err && err.message === 'invalid_field') {
+      return res.status(400).json({ error: 'invalid_field' });
+    }
     res.status(500).json({ error: 'db_error', details: err.message });
   }
 });

@@ -2,84 +2,10 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <title>Comandos Permitidos por Grupo</title>
-  <link rel="stylesheet" href="/admin-assets/styles.css">
+  <meta http-equiv="refresh" content="0; url=/admin-group.html">
+  <title>Redirecionando...</title>
 </head>
 <body>
-  <h1>Gerenciar Comandos Permitidos por Grupo</h1>
-  <div>
-    <label for="groupId">ID do Grupo:</label>
-    <input type="text" id="groupId" placeholder="Ex: 123456@g.us">
-    <button onclick="loadGroupCommands()">Carregar</button>
-  </div>
-  <div id="commandsTableContainer"></div>
-  <div>
-    <h3>Adicionar/Alterar Permissão</h3>
-    <input type="text" id="commandName" placeholder="#comando">
-    <select id="allowed">
-      <option value="1">Permitir</option>
-      <option value="0">Bloquear</option>
-    </select>
-    <button onclick="saveCommandPermission()">Salvar</button>
-  </div>
-  <script>
-    // Helper to escape HTML special characters
-    function escapeHtml(str) {
-      return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-    }
-
-    async function loadGroupCommands() {
-      const groupId = document.getElementById('groupId').value.trim();
-      if (!groupId) return alert('Informe o ID do grupo!');
-      const res = await fetch(`/api/admin/group-commands/${encodeURIComponent(groupId)}`);
-      const data = await res.json();
-      if (!data.permissions) return alert('Nenhum comando encontrado.');
-      renderCommandsTable(data.permissions, groupId);
-    }
-    function renderCommandsTable(perms, groupId) {
-      let html = '<table border="1"><tr><th>Comando</th><th>Permitido?</th><th>Ações</th></tr>';
-      for (const p of perms) {
-        html += `<tr>
-          <td>${escapeHtml(p.command)}</td>
-          <td>${p.allowed ? 'Sim' : 'Não'}</td>
-          <td><button onclick="deleteCommand('${escapeHtml(groupId)}','${escapeHtml(p.command)}')">Remover</button></td>
-        </tr>`;
-      }
-      html += '</table>';
-      document.getElementById('commandsTableContainer').innerHTML = html;
-    }
-    async function saveCommandPermission() {
-      const groupId = document.getElementById('groupId').value.trim();
-      const command = document.getElementById('commandName').value.trim();
-      const allowed = document.getElementById('allowed').value === '1';
-      if (!groupId || !command) return alert('Preencha todos os campos!');
-      const res = await fetch(`/api/admin/group-commands/${encodeURIComponent(groupId)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command, allowed })
-      });
-      if (res.ok) {
-        loadGroupCommands();
-      } else {
-        alert('Erro ao salvar permissão.');
-      }
-    }
-    async function deleteCommand(groupId, command) {
-      if (!confirm('Remover permissão deste comando?')) return;
-      const res = await fetch(`/api/admin/group-commands/${encodeURIComponent(groupId)}/${encodeURIComponent(command)}`, {
-        method: 'DELETE'
-      });
-      if (res.ok) {
-        loadGroupCommands();
-      } else {
-        alert('Erro ao remover permissão.');
-      }
-    }
-  </script>
+  <p>Esta página foi movida. Você será redirecionado automaticamente para <a href="/admin-group.html">/admin-group.html</a>.</p>
 </body>
 </html>

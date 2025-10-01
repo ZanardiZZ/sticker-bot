@@ -12,7 +12,7 @@ const {
 } = require('../database');
 const { cleanDescriptionTags, renderInfoMessage } = require('../utils/messageUtils');
 const { withTyping } = require('../utils/typingIndicator');
-const { getBotConfig } = require('../web/dataAccess');
+const { getBotConfig, listAutoSendGroupIds } = require('../web/dataAccess');
 const { bus } = require('../web/eventBus.js');
 
 const AUTO_SEND_GROUP_ID = process.env.AUTO_SEND_GROUP_ID;
@@ -38,14 +38,12 @@ async function pickRandomMedia() {
  * @param {Object} client - WhatsApp client instance
  * @param {Function} sendStickerFunction - Function to send stickers
  */
-async function sendRandomMediaToGroup(client, sendStickerFunction) {
-  if (!AUTO_SEND_GROUP_ID) {
-    console.warn('AUTO_SEND_GROUP_ID não configurado no .env');
+async function sendRandomMediaToGroup(client, sendStickerFunction, groupId) {
+  if (!groupId) {
     return;
   }
 
-  // Show typing while preparing and sending the random media
-  await withTyping(client, AUTO_SEND_GROUP_ID, async () => {
+  await withTyping(client, groupId, async () => {
     try {
       const media = await pickRandomMedia();
       if (!media) {
@@ -54,20 +52,48 @@ async function sendRandomMediaToGroup(client, sendStickerFunction) {
       }
 
       await incrementRandomCount(media.id);
-      await sendStickerFunction(client, AUTO_SEND_GROUP_ID, media);
+      await sendStickerFunction(client, groupId, media);
 
       const full = await findById(media.id);
       if (full) {
         const tags = await getTagsForMedia(full.id);
         const clean = cleanDescriptionTags(full.description, tags);
-        await client.sendText(AUTO_SEND_GROUP_ID, renderInfoMessage({ ...clean, id: full.id }));
+        await client.sendText(groupId, renderInfoMessage({ ...clean, id: full.id }));
       }
 
-      console.log('Mídia enviada automaticamente ao grupo.');
+      console.log(`Mídia enviada automaticamente ao grupo ${groupId}.`);
     } catch (err) {
       console.error('Erro no envio automático:', err);
     }
   });
+}
+
+async function getAutoSendTargetGroups() {
+  try {
+    const configured = await listAutoSendGroupIds();
+    if (configured && configured.length) {
+      return configured;
+    }
+  } catch (err) {
+    console.warn('[SCHEDULER] Falha ao carregar grupos configurados para auto send:', err?.message || err);
+  }
+
+  if (AUTO_SEND_GROUP_ID) {
+    return [AUTO_SEND_GROUP_ID];
+  }
+  return [];
+}
+
+async function sendRandomMediaToConfiguredGroups(client, sendStickerFunction) {
+  const targets = await getAutoSendTargetGroups();
+  if (!targets.length) {
+    console.warn('[SCHEDULER] Nenhum grupo configurado para envio automático.');
+    return;
+  }
+
+  for (const groupId of targets) {
+    await sendRandomMediaToGroup(client, sendStickerFunction, groupId);
+  }
 }
 
 /**
@@ -82,11 +108,6 @@ async function sendRandomMediaToGroup(client, sendStickerFunction) {
  * @param {Function} sendStickerFunction - Function to send stickers
  */
 async function scheduleAutoSend(client, sendStickerFunction) {
-  if (!AUTO_SEND_GROUP_ID) {
-    console.warn('AUTO_SEND_GROUP_ID não configurado no .env');
-    return;
-  }
-
   const tz = process.env.TIMEZONE || process.env.TZ || 'America/Sao_Paulo';
 
   // Busca expressão cron do banco/config
@@ -110,7 +131,7 @@ async function scheduleAutoSend(client, sendStickerFunction) {
 
   if (!autoSendTask) {
   try {
-      autoSendTask = cron.schedule(cronExpr, () => sendRandomMediaToGroup(client, sendStickerFunction), {
+      autoSendTask = cron.schedule(cronExpr, () => sendRandomMediaToConfiguredGroups(client, sendStickerFunction), {
         timezone: tz,
       });
       lastCronExpr = cronExpr;
@@ -132,7 +153,7 @@ async function scheduleAutoSend(client, sendStickerFunction) {
       console.log(`[SCHEDULER] Detected cron change in DB. Atualizando agendamento para: '${newExpr}'`);
       if (autoSendTask) autoSendTask.stop();
       try {
-        autoSendTask = cron.schedule(newExpr, () => sendRandomMediaToGroup(client, sendStickerFunction), {
+        autoSendTask = cron.schedule(newExpr, () => sendRandomMediaToConfiguredGroups(client, sendStickerFunction), {
           timezone: tz,
         });
         lastCronExpr = newExpr;
@@ -154,7 +175,7 @@ async function scheduleAutoSend(client, sendStickerFunction) {
       console.log(`[SCHEDULER] Atualizando agendamento via evento para: '${expr}'`);
       if (autoSendTask) autoSendTask.stop();
       try {
-        autoSendTask = cron.schedule(expr, () => sendRandomMediaToGroup(client, sendStickerFunction), { timezone: tz });
+        autoSendTask = cron.schedule(expr, () => sendRandomMediaToConfiguredGroups(client, sendStickerFunction), { timezone: tz });
         lastCronExpr = expr;
       } catch (err) {
         console.error('[SCHEDULER] Erro ao agendar via evento:', err);
@@ -168,5 +189,6 @@ async function scheduleAutoSend(client, sendStickerFunction) {
 module.exports = {
   pickRandomMedia,
   sendRandomMediaToGroup,
+  sendRandomMediaToConfiguredGroups,
   scheduleAutoSend
 };
