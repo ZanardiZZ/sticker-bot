@@ -49,6 +49,46 @@ const ALLOWED_TOKENS = (process.env.BAILEYS_ALLOWED_TOKENS || '')
 // token -> { ws, allowedChats: Set<string> }
 const clientsByToken = new Map();
 
+function createSimpleStore() {
+  return {
+    contacts: new Map(),
+    chats: new Map(),
+    groupMetadata: new Map()
+  };
+}
+
+function upsertStoreEntry(collection, id, data) {
+  if (!collection || !id || !data) return;
+  if (typeof collection.set === 'function' && typeof collection.get === 'function') {
+    const prev = collection.get(id) || {};
+    collection.set(id, { ...prev, ...data });
+    return;
+  }
+  const prev = Object.prototype.hasOwnProperty.call(collection, id) ? collection[id] : {};
+  collection[id] = { ...prev, ...data };
+}
+
+function rememberStoreContact(store, contact) {
+  if (!store) return;
+  const { id } = contact || {};
+  if (!id) return;
+  upsertStoreEntry(store.contacts, id, contact);
+}
+
+function rememberStoreChat(store, chat) {
+  if (!store) return;
+  const { id } = chat || {};
+  if (!id) return;
+  upsertStoreEntry(store.chats, id, chat);
+}
+
+function rememberStoreGroup(store, metadata) {
+  if (!store) return;
+  const { id } = metadata || {};
+  if (!id) return;
+  upsertStoreEntry(store.groupMetadata, id, metadata);
+}
+
 function isTokenAllowed(token) {
   if (!token) return false;
   if (ALLOWED_TOKENS.length === 0) return true; // open policy if none configured
@@ -191,12 +231,40 @@ function normalizeOpenWAMessage(msg, opts = {}) {
     : (m.key?.participant || m.participant || remoteJid);
   const sender = buildOpenWAContact(store, senderId, { pushNameFallback: m.pushName });
 
-  const chatMeta = getChatFromStore(chatId);
+  if (senderId) {
+    rememberStoreContact(store, {
+      id: senderId,
+      pushName: sender.pushname || m.pushName || '',
+      name: sender.name || sender.pushname || '',
+      verifiedName: sender.verifiedName || '',
+      notify: sender.notifyName || '',
+      profilePictureUrl: sender.profilePicUrl || ''
+    });
+  }
+
+  const chatMeta = getChatFromStore(store, chatId);
   const chat = {
     id: chatId,
     name: chatMeta?.name || chatMeta?.subject || chatMeta?.formattedTitle || '',
     formattedTitle: chatMeta?.formattedTitle || chatMeta?.subject || chatMeta?.name || ''
   };
+
+  if (chatId) {
+    rememberStoreChat(store, {
+      id: chatId,
+      name: chat.name,
+      subject: chat.formattedTitle || chat.name || '',
+      formattedTitle: chat.formattedTitle,
+      conversationTimestamp: Number(m.messageTimestamp) || Date.now() / 1000
+    });
+    if (isGroupMsg) {
+      rememberStoreGroup(store, {
+        id: chatId,
+        subject: chat.formattedTitle || chat.name || '',
+        name: chat.name || ''
+      });
+    }
+  }
 
   let quotedMsg = null;
   let quotedMsgId = null;
@@ -234,6 +302,14 @@ function normalizeOpenWAMessage(msg, opts = {}) {
     const qSenderId = qParticipant || chatId;
     quotedMsgId = qId;
     const qSender = buildOpenWAContact(store, qSenderId);
+    if (qSenderId) {
+      rememberStoreContact(store, {
+        id: qSenderId,
+        pushName: qSender.pushname || '',
+        name: qSender.name || qSender.pushname || '',
+        notify: qSender.notifyName || ''
+      });
+    }
     quotedMsg = {
       id: qId || '',
       chatId,
@@ -326,8 +402,7 @@ async function start() {
 
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
   const { version } = await fetchLatestBaileysVersion();
-
-  //const store = makeInMemoryStore({});
+  const store = createSimpleStore();
 
   const sock = makeWASocket({
     version,
@@ -336,7 +411,58 @@ async function start() {
     browser: ['StickerBot', 'Chrome', '1.0']
   });
 
-  //store.bind(sock.ev);
+  const toArray = (value) => (Array.isArray(value) ? value : []);
+
+  const mergeContacts = (contacts) => {
+    try {
+      for (const contact of toArray(contacts)) {
+        const id = contact?.id || contact?.jid;
+        if (!id) continue;
+        rememberStoreContact(store, { ...contact, id });
+      }
+    } catch (err) {
+      console.warn('[Baileys] Failed to merge contacts into cache:', err);
+    }
+  };
+
+  const mergeChats = (chats) => {
+    try {
+      for (const chat of toArray(chats)) {
+        const id = chat?.id || chat?.jid || chat?.remoteJid;
+        if (!id) continue;
+        rememberStoreChat(store, { ...chat, id });
+        if (chat?.subject || chat?.name || chat?.formattedTitle) {
+          rememberStoreGroup(store, {
+            id,
+            subject: chat.subject || chat.formattedTitle || chat.name || '',
+            name: chat.name || '',
+            formattedTitle: chat.formattedTitle || ''
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('[Baileys] Failed to merge chats into cache:', err);
+    }
+  };
+
+  const mergeGroups = (groups) => {
+    try {
+      for (const group of toArray(groups)) {
+        const id = group?.id || group?.jid;
+        if (!id) continue;
+        rememberStoreGroup(store, { ...group, id });
+      }
+    } catch (err) {
+      console.warn('[Baileys] Failed to merge groups into cache:', err);
+    }
+  };
+
+  sock.ev.on('contacts.upsert', mergeContacts);
+  sock.ev.on('contacts.update', mergeContacts);
+  sock.ev.on('chats.upsert', mergeChats);
+  sock.ev.on('chats.update', mergeChats);
+  sock.ev.on('groups.upsert', mergeGroups);
+  sock.ev.on('groups.update', mergeGroups);
 
   sock.ev.on('creds.update', saveCreds);
 

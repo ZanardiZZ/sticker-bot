@@ -76,6 +76,34 @@ function getAdminErrorMessage(errorData, defaultMessage) {
   return defaultMessage + ': ' + (errorData.error || 'Erro desconhecido');
 }
 
+function escapeHtml(value) {
+  if (value === null || value === undefined) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function decodeHashSegment(value) {
+  if (!value) return '';
+  try {
+    return decodeURIComponent(value);
+  } catch (error) {
+    return value;
+  }
+}
+
+function formatDateTime(value) {
+  if (!value) return '—';
+  try {
+    return new Date(value).toLocaleString('pt-BR');
+  } catch (error) {
+    return '—';
+  }
+}
+
 function fillTable(tbody, rows, cols) {
   tbody.innerHTML = rows.map(r => `<tr>${cols.map(c => `<td>${(r[c] ?? '').toString().slice(0,200)}</td>`).join('')}</tr>`).join('');
 }
@@ -434,69 +462,704 @@ document.addEventListener('click', async (e) => {
 let duplicatesLoaded = false;
 let currentUserRole = null;
 
-// Initialize main tab navigation
+let mainTabButtons = [];
+let mainTabContents = [];
+let tabButtons = [];
+let tabContents = [];
+
+let currentMainTab = 'settings';
+let currentSubTab = 'account';
+let hashUpdateInProgress = false;
+let lastLoadedGroupUsersId = '';
+let lastLoadedGroupCommandsId = '';
+
+const mainTabIds = new Set(['settings', 'logs', 'network', 'users', 'duplicates']);
+const subTabLoaders = {
+  'group-users': initializeGroupUsersTab,
+  'bot-frequency': loadBotSchedule,
+  'group-config': initializeGroupCommandsTab
+};
+const initializedSubTabs = new Set();
+const tabPayload = {};
+
 function initializeMainTabs() {
-  const mainTabButtons = document.querySelectorAll('.main-tab-button');
-  const mainTabContents = document.querySelectorAll('.main-tab-content');
-  
-  mainTabButtons.forEach(button => {
+  mainTabButtons = Array.from(document.querySelectorAll('.main-tab-button'));
+  mainTabContents = Array.from(document.querySelectorAll('.main-tab-content'));
+
+  mainTabButtons.forEach((button) => {
     button.addEventListener('click', () => {
       const tabId = button.dataset.tab;
-      
-      // Remove active class from all buttons and contents
-      mainTabButtons.forEach(btn => btn.classList.remove('active'));
-      mainTabContents.forEach(content => content.classList.remove('active'));
-      
-      // Add active class to clicked button and corresponding content
-      button.classList.add('active');
-      document.getElementById(`main-tab-${tabId}`).classList.add('active');
-      
-      // Load duplicates only when duplicates tab is clicked for the first time
-      if (tabId === 'duplicates' && !duplicatesLoaded) {
-        loadDuplicatesTab();
-      }
-      
-      // Initialize logs when logs tab is clicked
-      if (tabId === 'logs') {
-        loadLogs({ offset: 0 });
-        logsCurrentOffset = 0;
-        
-        // Start SSE if auto-refresh is enabled
-        if (document.getElementById('autoRefreshLogs')?.checked) {
-          startLogsSSE();
-        }
-      } else {
-        // Stop SSE when leaving logs tab
-        stopLogsSSE();
-      }
+      setActiveMainTab(tabId, { updateHash: true });
     });
   });
 }
 
-// Legacy tab function for backwards compatibility
 function initializeTabs() {
-  const tabButtons = document.querySelectorAll('.tab-button');
-  const tabContents = document.querySelectorAll('.tab-content');
-  
-  tabButtons.forEach(button => {
+  tabButtons = Array.from(document.querySelectorAll('.tab-button'));
+  tabContents = Array.from(document.querySelectorAll('.tab-content'));
+
+  tabButtons.forEach((button) => {
     button.addEventListener('click', () => {
-      const tabId = button.dataset.tab;
-      
-      // Remove active class from all buttons and contents
-      tabButtons.forEach(btn => btn.classList.remove('active'));
-      tabContents.forEach(content => content.classList.remove('active'));
-      
-      // Add active class to clicked button and corresponding content
-      button.classList.add('active');
-      document.getElementById(`tab-${tabId}`).classList.add('active');
-      
-      // Load duplicates only when duplicates tab is clicked for the first time
-      if (tabId === 'duplicates' && !duplicatesLoaded) {
-        loadDuplicatesTab();
-      }
+      setActiveSubTab(button.dataset.tab, { updateHash: true });
     });
   });
 }
+
+function setActiveMainTab(tabId, options = {}) {
+  const { updateHash = false } = options;
+  if (!mainTabIds.has(tabId)) {
+    tabId = 'settings';
+  }
+
+  currentMainTab = tabId;
+
+  mainTabButtons.forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.tab === tabId);
+  });
+
+  mainTabContents.forEach((content) => {
+    content.classList.toggle('active', content.id === `main-tab-${tabId}`);
+  });
+
+  if (tabId === 'duplicates' && !duplicatesLoaded) {
+    loadDuplicatesTab();
+  }
+
+  if (tabId === 'logs') {
+    loadLogs({ offset: 0 });
+    logsCurrentOffset = 0;
+    if (document.getElementById('autoRefreshLogs')?.checked) {
+      startLogsSSE();
+    }
+  } else {
+    stopLogsSSE();
+  }
+
+  if (tabId === 'settings') {
+    setActiveSubTab(currentSubTab, { updateHash: false });
+  }
+
+  if (updateHash) {
+    updateLocationHash();
+  }
+}
+
+function setActiveSubTab(tabId, options = {}) {
+  const { updateHash = false } = options;
+  const availableIds = tabButtons.map((btn) => btn.dataset.tab);
+  if (!availableIds.includes(tabId)) {
+    tabId = 'account';
+  }
+
+  currentSubTab = tabId;
+
+  tabButtons.forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.tab === tabId);
+  });
+
+  tabContents.forEach((content) => {
+    content.classList.toggle('active', content.id === `tab-${tabId}`);
+  });
+
+  if (!initializedSubTabs.has(tabId) && typeof subTabLoaders[tabId] === 'function') {
+    initializedSubTabs.add(tabId);
+    Promise.resolve(subTabLoaders[tabId]()).catch((error) => {
+      console.warn(`Failed to initialize sub-tab "${tabId}":`, error);
+    });
+  }
+
+  if (updateHash) {
+    updateLocationHash();
+  }
+}
+
+function updateLocationHash() {
+  if (hashUpdateInProgress) {
+    return;
+  }
+
+  const parts = [currentMainTab];
+  if (currentMainTab === 'settings' && currentSubTab) {
+    parts.push(currentSubTab);
+    if (currentSubTab === 'group-users' && lastLoadedGroupUsersId) {
+      parts.push(encodeURIComponent(lastLoadedGroupUsersId));
+    }
+    if (currentSubTab === 'group-config' && lastLoadedGroupCommandsId) {
+      parts.push(encodeURIComponent(lastLoadedGroupCommandsId));
+    }
+  }
+  const hashValue = parts.filter(Boolean).join('/');
+  const targetHash = hashValue ? `#${hashValue}` : '';
+
+  if (window.location.hash === targetHash) {
+    return;
+  }
+
+  hashUpdateInProgress = true;
+  if (hashValue) {
+    window.location.hash = hashValue;
+  } else {
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
+  setTimeout(() => {
+    hashUpdateInProgress = false;
+  }, 0);
+}
+
+function applyHashNavigation() {
+  if (hashUpdateInProgress) {
+    return;
+  }
+
+  const rawHash = window.location.hash.replace(/^#/, '');
+  const params = new URLSearchParams(window.location.search);
+
+  let mainTab = 'settings';
+  let subTab = 'account';
+  let payload = '';
+
+  if (rawHash) {
+    const parts = rawHash.split('/');
+    if (parts.length === 1) {
+      const single = parts[0];
+      if (mainTabIds.has(single)) {
+        mainTab = single;
+      } else {
+        subTab = single;
+      }
+    } else {
+      if (mainTabIds.has(parts[0])) {
+        mainTab = parts[0];
+      }
+      if (parts[1]) {
+        subTab = parts[1];
+      }
+      if (parts.length > 2) {
+        payload = decodeHashSegment(parts.slice(2).join('/'));
+      }
+    }
+  } else if (params.has('tab')) {
+    const tabParam = params.get('tab');
+    if (tabParam && mainTabIds.has(tabParam)) {
+      mainTab = tabParam;
+    } else if (tabParam) {
+      subTab = tabParam;
+    }
+  }
+
+  if (!payload) {
+    if (subTab === 'group-users' && (params.get('group') || params.get('groupId'))) {
+      payload = params.get('group') || params.get('groupId') || '';
+    }
+    if (subTab === 'group-config' && (params.get('group') || params.get('groupId'))) {
+      payload = params.get('group') || params.get('groupId') || '';
+    }
+  }
+
+  if (payload) {
+    tabPayload[subTab] = payload;
+  }
+
+  setActiveMainTab(mainTab, { updateHash: false });
+  if (mainTab === 'settings') {
+    setActiveSubTab(subTab, { updateHash: false });
+  }
+}
+
+function consumeTabPayload(tabId) {
+  if (!tabId) return '';
+  const value = tabPayload[tabId];
+  if (value === undefined || value === null) {
+    return '';
+  }
+  delete tabPayload[tabId];
+  return String(value).trim();
+}
+
+// ---- Connected Groups + Group Tabs ----
+
+let connectedGroupsCache = null;
+
+async function fetchConnectedGroups(force = false) {
+  if (!force && Array.isArray(connectedGroupsCache)) {
+    return connectedGroupsCache;
+  }
+  try {
+    const response = await fetchJSON('/api/admin/connected-groups');
+    const groups = Array.isArray(response?.groups) ? response.groups : [];
+    connectedGroupsCache = groups.sort((a, b) => {
+      const nameA = (a.name || a.subject || a.id || '').toLocaleLowerCase('pt-BR');
+      const nameB = (b.name || b.subject || b.id || '').toLocaleLowerCase('pt-BR');
+      return nameA.localeCompare(nameB);
+    });
+  } catch (error) {
+    console.warn('Falha ao carregar grupos conectados:', error);
+    connectedGroupsCache = [];
+  }
+  return connectedGroupsCache;
+}
+
+function populateGroupSelect(selectEl, groups, placeholder) {
+  if (!selectEl) return;
+  const currentValue = selectEl.value;
+  const options = [
+    `<option value="">${placeholder}</option>`,
+    ...groups.map((group) => {
+      const id = group?.id || group?.jid || '';
+      const labelName = group?.name || group?.subject || '';
+      const label = labelName ? `${escapeHtml(labelName)} (${escapeHtml(id)})` : escapeHtml(id);
+      const selected = currentValue && currentValue === id ? ' selected' : '';
+      return `<option value="${escapeHtml(id)}"${selected}>${label}</option>`;
+    })
+  ];
+  selectEl.innerHTML = options.join('');
+}
+
+function bindGroupInputs(selectEl, inputEl) {
+  if (!selectEl || !inputEl) return;
+  if (!selectEl.dataset.bound) {
+    selectEl.dataset.bound = 'true';
+    selectEl.addEventListener('change', () => {
+      if (selectEl.value) {
+        inputEl.value = selectEl.value;
+      }
+    });
+  }
+  if (!inputEl.dataset.bound) {
+    inputEl.dataset.bound = 'true';
+    inputEl.addEventListener('input', () => {
+      if (inputEl.value !== selectEl.value) {
+        selectEl.value = '';
+      }
+    });
+  }
+}
+
+async function ensureGroupSelectPopulated(selectEl, placeholder) {
+  if (!selectEl || selectEl.dataset.populated === 'true') {
+    return;
+  }
+  const groups = await fetchConnectedGroups();
+  populateGroupSelect(selectEl, groups, placeholder);
+  selectEl.dataset.populated = 'true';
+}
+
+async function initializeGroupUsersTab() {
+  const selectEl = document.getElementById('groupUsersSelect');
+  const inputEl = document.getElementById('groupUsersId');
+  const loadBtn = document.getElementById('loadGroupUsersBtn');
+  if (!selectEl || !inputEl || !loadBtn) return;
+
+  await ensureGroupSelectPopulated(selectEl, 'Selecione um grupo...');
+  bindGroupInputs(selectEl, inputEl);
+
+  if (!loadBtn.dataset.bound) {
+    loadBtn.dataset.bound = 'true';
+    loadBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      loadGroupUsersFromInputs();
+    });
+  }
+
+  if (!selectEl.dataset.loadOnChange) {
+    selectEl.dataset.loadOnChange = 'true';
+    selectEl.addEventListener('change', () => {
+      if (selectEl.value) {
+        loadGroupUsers(selectEl.value);
+      }
+    });
+  }
+
+  if (!inputEl.dataset.loadOnEnter) {
+    inputEl.dataset.loadOnEnter = 'true';
+    inputEl.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        loadGroupUsersFromInputs();
+      }
+    });
+  }
+
+  const payload = consumeTabPayload('group-users');
+  if (payload) {
+    inputEl.value = payload;
+    selectEl.value = payload;
+    await loadGroupUsers(payload);
+  } else if (lastLoadedGroupUsersId) {
+    inputEl.value = lastLoadedGroupUsersId;
+    selectEl.value = lastLoadedGroupUsersId;
+  }
+}
+
+async function loadGroupUsersFromInputs() {
+  const selectEl = document.getElementById('groupUsersSelect');
+  const inputEl = document.getElementById('groupUsersId');
+  const statusEl = document.getElementById('groupUsersStatus');
+  if (!selectEl || !inputEl) return;
+  const groupId = (inputEl.value || selectEl.value || '').trim();
+  if (!groupId) {
+    if (statusEl) {
+      statusEl.textContent = 'Selecione ou informe um ID de grupo válido.';
+    }
+    return;
+  }
+  await loadGroupUsers(groupId);
+}
+
+async function loadGroupUsers(groupId) {
+  if (!groupId) return;
+  const statusEl = document.getElementById('groupUsersStatus');
+  const tableBody = document.querySelector('#groupUsersTable tbody');
+  if (!tableBody) return;
+
+  lastLoadedGroupUsersId = groupId;
+
+  if (statusEl) statusEl.textContent = 'Carregando usuários do grupo...';
+  tableBody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#94a3b8;">Carregando usuários...</td></tr>`;
+
+  try {
+    const data = await fetchJSON(`/api/admin/group-users/${encodeURIComponent(groupId)}`);
+    const users = Array.isArray(data?.users) ? data.users : [];
+    renderGroupUsersTable(users);
+    if (statusEl) {
+      statusEl.textContent = users.length
+        ? `Exibindo ${users.length} usuário(s) para ${groupId}`
+        : `Nenhum usuário encontrado para ${groupId}.`;
+    }
+    if (currentMainTab === 'settings' && currentSubTab === 'group-users') {
+      updateLocationHash();
+    }
+  } catch (error) {
+    console.error('Erro ao carregar usuários do grupo:', error);
+    if (statusEl) {
+      statusEl.textContent = 'Erro ao carregar usuários do grupo.';
+    }
+    tableBody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#ef4444;">Erro ao carregar usuários.</td></tr>`;
+  }
+}
+
+function renderGroupUsersTable(users) {
+  const tableBody = document.querySelector('#groupUsersTable tbody');
+  if (!tableBody) return;
+
+  if (!Array.isArray(users) || users.length === 0) {
+    tableBody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#94a3b8;">Nenhum usuário para o grupo selecionado.</td></tr>`;
+    return;
+  }
+
+  const rows = users.map((user) => {
+    const userRawId = user.user_id || user.id || '';
+    const userId = escapeHtml(userRawId);
+    const role = escapeHtml(user.role || '—');
+    const blocked = user.blocked ? '<span style="color:#dc2626; font-weight:600;">Sim</span>' : 'Não';
+    const lastActivity = user.last_activity ? formatDateTime(user.last_activity) : '—';
+    const interactions = user.interaction_count === null || user.interaction_count === undefined
+      ? '—'
+      : escapeHtml(user.interaction_count);
+    const encodedUser = encodeURIComponent(userRawId);
+    const actionButton = userId
+      ? `<button class="btn-primary" style="padding:0.25rem 0.6rem; font-size:0.8rem;" data-open-users="${encodedUser}">Gerenciar</button>`
+      : '';
+
+    return `
+      <tr>
+        <td>${userId || '—'}</td>
+        <td>${role}</td>
+        <td>${blocked}</td>
+        <td>${lastActivity}</td>
+        <td>${interactions}</td>
+        <td>${actionButton}</td>
+      </tr>
+    `;
+  }).join('');
+
+  tableBody.innerHTML = rows;
+}
+
+async function loadBotSchedule() {
+  const statusEl = document.getElementById('botScheduleStatus');
+  const cronEl = document.getElementById('botScheduleCron');
+  const startEl = document.getElementById('botScheduleStart');
+  const endEl = document.getElementById('botScheduleEnd');
+  const intervalEl = document.getElementById('botScheduleInterval');
+  if (!startEl || !endEl || !intervalEl) return;
+
+  if (statusEl) statusEl.textContent = 'Carregando configuração...';
+
+  try {
+    const data = await fetchJSON('/api/admin/bot-config/schedule');
+    if (data.start) startEl.value = data.start;
+    if (data.end) endEl.value = data.end;
+    if (data.interval) intervalEl.value = String(data.interval);
+    if (cronEl) cronEl.textContent = data.cron || 'não disponível';
+    if (statusEl) statusEl.textContent = '';
+  } catch (error) {
+    console.error('Erro ao carregar configuração do bot:', error);
+    if (statusEl) {
+      statusEl.textContent = 'Erro ao carregar configuração. Verifique suas permissões.';
+    }
+    if (cronEl) cronEl.textContent = 'não disponível';
+  }
+}
+
+async function saveBotSchedule() {
+  const startEl = document.getElementById('botScheduleStart');
+  const endEl = document.getElementById('botScheduleEnd');
+  const intervalEl = document.getElementById('botScheduleInterval');
+  const statusEl = document.getElementById('botScheduleStatus');
+  if (!startEl || !endEl || !intervalEl) return;
+
+  const payload = {
+    start: startEl.value,
+    end: endEl.value,
+    interval: Number(intervalEl.value)
+  };
+
+  if (statusEl) statusEl.textContent = 'Salvando configuração...';
+
+  try {
+    const response = await fetchWithCSRF('/api/admin/bot-config/schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(getAdminErrorMessage(errorData, 'Erro ao salvar configuração'));
+    }
+
+    if (statusEl) statusEl.textContent = 'Configuração salva com sucesso!';
+    await loadBotSchedule();
+  } catch (error) {
+    console.error('Erro ao salvar configuração do bot:', error);
+    if (statusEl) statusEl.textContent = error.message || 'Falha ao salvar configuração.';
+  }
+}
+
+async function initializeGroupCommandsTab() {
+  const selectEl = document.getElementById('groupCommandsSelect');
+  const inputEl = document.getElementById('groupCommandsGroupId');
+  const loadBtn = document.getElementById('loadGroupCommandsBtn');
+  const saveBtn = document.getElementById('saveGroupCommandBtn');
+  if (!selectEl || !inputEl || !loadBtn || !saveBtn) return;
+
+  await ensureGroupSelectPopulated(selectEl, 'Selecione um grupo...');
+  bindGroupInputs(selectEl, inputEl);
+
+  if (!loadBtn.dataset.bound) {
+    loadBtn.dataset.bound = 'true';
+    loadBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      loadGroupCommandsFromInputs();
+    });
+  }
+
+  if (!selectEl.dataset.loadOnChange) {
+    selectEl.dataset.loadOnChange = 'true';
+    selectEl.addEventListener('change', () => {
+      if (selectEl.value) {
+        loadGroupCommands(selectEl.value);
+      }
+    });
+  }
+
+  if (!inputEl.dataset.loadOnEnter) {
+    inputEl.dataset.loadOnEnter = 'true';
+    inputEl.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        loadGroupCommandsFromInputs();
+      }
+    });
+  }
+
+  if (!saveBtn.dataset.bound) {
+    saveBtn.dataset.bound = 'true';
+    saveBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      saveGroupCommand();
+    });
+  }
+
+  const payload = consumeTabPayload('group-config');
+  if (payload) {
+    inputEl.value = payload;
+    selectEl.value = payload;
+    await loadGroupCommands(payload);
+  } else if (lastLoadedGroupCommandsId) {
+    inputEl.value = lastLoadedGroupCommandsId;
+    selectEl.value = lastLoadedGroupCommandsId;
+  }
+}
+
+async function loadGroupCommandsFromInputs() {
+  const selectEl = document.getElementById('groupCommandsSelect');
+  const inputEl = document.getElementById('groupCommandsGroupId');
+  const statusEl = document.getElementById('groupCommandsStatus');
+  if (!selectEl || !inputEl) return;
+  const groupId = (inputEl.value || selectEl.value || '').trim();
+  if (!groupId) {
+    if (statusEl) {
+      statusEl.textContent = 'Selecione ou informe um ID de grupo válido.';
+    }
+    return;
+  }
+  await loadGroupCommands(groupId);
+}
+
+async function loadGroupCommands(groupId) {
+  if (!groupId) return;
+  const statusEl = document.getElementById('groupCommandsStatus');
+  const tableBody = document.querySelector('#groupCommandsTable tbody');
+  if (!tableBody) return;
+
+  lastLoadedGroupCommandsId = groupId;
+
+  if (statusEl) statusEl.textContent = 'Carregando permissões...';
+  tableBody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:#94a3b8;">Carregando permissões...</td></tr>`;
+
+  try {
+    const data = await fetchJSON(`/api/admin/group-commands/${encodeURIComponent(groupId)}`);
+    const permissions = Array.isArray(data?.permissions) ? data.permissions : [];
+    renderGroupCommandsTable(permissions, groupId);
+    if (statusEl) {
+      statusEl.textContent = permissions.length
+        ? `Exibindo ${permissions.length} comando(s) configurado(s) para ${groupId}`
+        : `Nenhuma permissão configurada para ${groupId}.`;
+    }
+    if (currentMainTab === 'settings' && currentSubTab === 'group-config') {
+      updateLocationHash();
+    }
+  } catch (error) {
+    console.error('Erro ao carregar permissões de grupo:', error);
+    if (statusEl) statusEl.textContent = 'Erro ao carregar permissões do grupo.';
+    tableBody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:#ef4444;">Erro ao carregar permissões.</td></tr>`;
+  }
+}
+
+function renderGroupCommandsTable(permissions, groupId) {
+  const tableBody = document.querySelector('#groupCommandsTable tbody');
+  if (!tableBody) return;
+
+  if (!Array.isArray(permissions) || permissions.length === 0) {
+    tableBody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:#94a3b8;">Nenhuma permissão configurada.</td></tr>`;
+    return;
+  }
+
+  const rows = permissions.map((perm) => {
+    const commandRaw = perm.command || '';
+    const command = escapeHtml(commandRaw);
+    const allowed = perm.allowed
+      ? '<span style="color:#059669; font-weight:600;">Permitido</span>'
+      : '<span style="color:#dc2626; font-weight:600;">Bloqueado</span>';
+    const encodedCommand = encodeURIComponent(commandRaw);
+    const encodedGroup = encodeURIComponent(groupId);
+    return `
+      <tr>
+        <td>${command || '—'}</td>
+        <td>${allowed}</td>
+        <td>
+          <button class="btn-danger" style="padding:0.25rem 0.6rem; font-size:0.8rem;" data-delete-group-command="${encodedCommand}" data-group-id="${encodedGroup}">Remover</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  tableBody.innerHTML = rows;
+}
+
+async function saveGroupCommand() {
+  const inputEl = document.getElementById('groupCommandsGroupId');
+  const selectEl = document.getElementById('groupCommandsSelect');
+  const commandEl = document.getElementById('groupCommandsCommandName');
+  const allowedEl = document.getElementById('groupCommandsAllowed');
+  const statusEl = document.getElementById('groupCommandsStatus');
+  if (!inputEl || !selectEl || !commandEl || !allowedEl) return;
+
+  const groupId = (inputEl.value || selectEl.value || '').trim();
+  const command = commandEl.value.trim();
+  const allowed = allowedEl.value === 'allow';
+
+  if (!groupId || !command) {
+    if (statusEl) {
+      statusEl.textContent = 'Informe o ID do grupo e o comando antes de salvar.';
+    }
+    return;
+  }
+
+  if (statusEl) statusEl.textContent = 'Salvando permissão...';
+
+  try {
+    const response = await fetchWithCSRF(`/api/admin/group-commands/${encodeURIComponent(groupId)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command, allowed })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(getAdminErrorMessage(errorData, 'Erro ao salvar permissão'));
+    }
+
+    commandEl.value = '';
+    if (statusEl) statusEl.textContent = 'Permissão salva com sucesso!';
+    await loadGroupCommands(groupId);
+  } catch (error) {
+    console.error('Erro ao salvar permissão de comando:', error);
+    if (statusEl) statusEl.textContent = error.message || 'Falha ao salvar permissão.';
+  }
+}
+
+async function deleteGroupCommand(groupId, command) {
+  if (!groupId || !command) return;
+  if (!confirm(`Remover permissão do comando "${command}" para o grupo ${groupId}?`)) {
+    return;
+  }
+
+  const statusEl = document.getElementById('groupCommandsStatus');
+  if (statusEl) statusEl.textContent = 'Removendo permissão...';
+
+  try {
+    const response = await fetchWithCSRF(`/api/admin/group-commands/${encodeURIComponent(groupId)}/${encodeURIComponent(command)}`, {
+      method: 'DELETE'
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(getAdminErrorMessage(errorData, 'Erro ao remover permissão'));
+    }
+    if (statusEl) statusEl.textContent = 'Permissão removida.';
+    await loadGroupCommands(groupId);
+  } catch (error) {
+    console.error('Erro ao remover permissão de comando:', error);
+    if (statusEl) statusEl.textContent = error.message || 'Falha ao remover permissão.';
+  }
+}
+
+const botScheduleSaveBtn = document.getElementById('botScheduleSave');
+if (botScheduleSaveBtn && !botScheduleSaveBtn.dataset.bound) {
+  botScheduleSaveBtn.dataset.bound = 'true';
+  botScheduleSaveBtn.addEventListener('click', (event) => {
+    event.preventDefault();
+    saveBotSchedule();
+  });
+}
+
+document.addEventListener('click', (event) => {
+  const openUsersBtn = event.target instanceof Element ? event.target.closest('[data-open-users]') : null;
+  if (openUsersBtn) {
+    setActiveMainTab('users', { updateHash: true });
+  }
+
+  const deleteCommandBtn = event.target instanceof Element ? event.target.closest('[data-delete-group-command]') : null;
+  if (deleteCommandBtn) {
+    const commandAttr = deleteCommandBtn.getAttribute('data-delete-group-command');
+    const groupAttr = deleteCommandBtn.getAttribute('data-group-id');
+    const command = commandAttr ? decodeURIComponent(commandAttr) : '';
+    const groupId = groupAttr ? decodeURIComponent(groupAttr) : lastLoadedGroupCommandsId;
+    deleteGroupCommand(groupId, command);
+  }
+});
 
 // Check and update UI based on user role
 async function checkUserRole() {
@@ -570,9 +1233,15 @@ async function loadDuplicatesTab() {
   // Initialize legacy tab functionality - always call this regardless of API errors
   initializeTabs();
   
+  applyHashNavigation();
+  
   // Do NOT load duplicates automatically anymore
   // They will be loaded only when the duplicates tab is clicked
 })();
+
+window.addEventListener('hashchange', () => {
+  applyHashNavigation();
+});
 
 // ---- Duplicate Media Management Functions ----
 
