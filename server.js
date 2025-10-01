@@ -53,6 +53,155 @@ function isTokenAllowed(token) {
   return ALLOWED_TOKENS.includes(token);
 }
 
+function unwrapMessageContent(message) {
+  if (!message || typeof message !== 'object') return {};
+
+  const unwrapKeys = [
+    'ephemeralMessage',
+    'viewOnceMessage',
+    'viewOnceMessageV2',
+    'viewOnceMessageV2Extension',
+    'documentWithCaptionMessage'
+  ];
+
+  let current = message;
+  for (const key of unwrapKeys) {
+    while (current?.[key]?.message) {
+      current = current[key].message;
+    }
+  }
+
+  if (current?.message) {
+    return unwrapMessageContent(current.message);
+  }
+
+  return current;
+}
+
+function describeMessageContent(content) {
+  const details = {
+    body: '',
+    type: 'chat',
+    isMedia: false,
+    mimetype: ''
+  };
+
+  if (!content || typeof content !== 'object') return details;
+
+  if (content.conversation) {
+    details.body = content.conversation;
+    return details;
+  }
+
+  if (content.extendedTextMessage) {
+    details.body = content.extendedTextMessage.text || '';
+    return details;
+  }
+
+  if (content.imageMessage) {
+    details.isMedia = true;
+    details.type = 'image';
+    details.mimetype = content.imageMessage.mimetype || 'image/jpeg';
+    details.body = content.imageMessage.caption || '';
+    return details;
+  }
+
+  if (content.videoMessage) {
+    details.isMedia = true;
+    details.type = 'video';
+    details.mimetype = content.videoMessage.mimetype || 'video/mp4';
+    details.body = content.videoMessage.caption || '';
+    return details;
+  }
+
+  if (content.stickerMessage) {
+    details.isMedia = true;
+    details.type = 'sticker';
+    details.mimetype = content.stickerMessage.mimetype || 'image/webp';
+    return details;
+  }
+
+  if (content.audioMessage) {
+    details.isMedia = true;
+    details.type = 'audio';
+    details.mimetype = content.audioMessage.mimetype || 'audio/ogg';
+    return details;
+  }
+
+  if (content.documentMessage) {
+    details.isMedia = true;
+    details.type = 'document';
+    details.mimetype = content.documentMessage.mimetype || 'application/octet-stream';
+    details.body = content.documentMessage.caption || '';
+    return details;
+  }
+
+  if (content.buttonsMessage) {
+    details.body = content.buttonsMessage?.contentText || '';
+    return details;
+  }
+
+  if (content.listMessage) {
+    details.body = content.listMessage?.description || '';
+    return details;
+  }
+
+  return details;
+}
+
+function extractContextInfo(messageContent) {
+  if (!messageContent || typeof messageContent !== 'object') return null;
+  const candidates = [
+    messageContent.extendedTextMessage,
+    messageContent.imageMessage,
+    messageContent.videoMessage,
+    messageContent.stickerMessage,
+    messageContent.audioMessage,
+    messageContent.documentMessage,
+    messageContent.buttonsMessage,
+    messageContent.listMessage
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate?.contextInfo) return candidate.contextInfo;
+  }
+
+  return null;
+}
+
+function extractQuotedSnapshot(contextInfo, fallbackChatId) {
+  if (!contextInfo || typeof contextInfo !== 'object') {
+    return {
+      hasQuotedMsg: false,
+      quotedMsgId: null,
+      quotedMsg: null
+    };
+  }
+
+  const quotedMsgId = contextInfo.stanzaId || contextInfo.stanzaID || null;
+  const quotedMessageContent = unwrapMessageContent(contextInfo.quotedMessage || {});
+  const snapshot = describeMessageContent(quotedMessageContent);
+
+  if (quotedMsgId) {
+    snapshot.id = quotedMsgId;
+    snapshot.messageId = quotedMsgId;
+  }
+  if (fallbackChatId && !snapshot.chatId) {
+    snapshot.chatId = fallbackChatId;
+  }
+  if (fallbackChatId && !snapshot.from) {
+    snapshot.from = fallbackChatId;
+  }
+
+  const hasQuotedMsg = Boolean(quotedMsgId || snapshot.body || snapshot.isMedia);
+
+  return {
+    hasQuotedMsg,
+    quotedMsgId: quotedMsgId || null,
+    quotedMsg: hasQuotedMsg ? snapshot : null
+  };
+}
+
 function normalizeOpenWAMessage(msg) {
   // Convert Baileys message to an OpenWA-like shape used by current code
   const m = msg?.messages?.[0];
@@ -66,11 +215,12 @@ function normalizeOpenWAMessage(msg) {
 
   // Body extraction (text/caption)
   let body = '';
+  const messageContent = unwrapMessageContent(m.message || {});
   try {
-    body = m.message?.conversation
-      || m.message?.extendedTextMessage?.text
-      || m.message?.imageMessage?.caption
-      || m.message?.videoMessage?.caption
+    body = messageContent?.conversation
+      || messageContent?.extendedTextMessage?.text
+      || messageContent?.imageMessage?.caption
+      || messageContent?.videoMessage?.caption
       || '';
   } catch {}
 
@@ -78,15 +228,22 @@ function normalizeOpenWAMessage(msg) {
   let isMedia = false;
   let mimetype = '';
   let type = 'chat';
-  if (m.message?.imageMessage) {
-    isMedia = true; mimetype = m.message.imageMessage.mimetype || 'image/jpeg'; type = 'image';
-  } else if (m.message?.videoMessage) {
-    isMedia = true; mimetype = m.message.videoMessage.mimetype || 'video/mp4'; type = 'video';
-  } else if (m.message?.stickerMessage) {
-    isMedia = true; mimetype = m.message.stickerMessage.mimetype || 'image/webp'; type = 'sticker';
-  } else if (m.message?.audioMessage) {
-    isMedia = true; mimetype = m.message.audioMessage.mimetype || 'audio/ogg'; type = 'audio';
+  if (messageContent?.imageMessage) {
+    isMedia = true; mimetype = messageContent.imageMessage.mimetype || 'image/jpeg'; type = 'image';
+  } else if (messageContent?.videoMessage) {
+    isMedia = true; mimetype = messageContent.videoMessage.mimetype || 'video/mp4'; type = 'video';
+  } else if (messageContent?.stickerMessage) {
+    isMedia = true; mimetype = messageContent.stickerMessage.mimetype || 'image/webp'; type = 'sticker';
+  } else if (messageContent?.audioMessage) {
+    isMedia = true; mimetype = messageContent.audioMessage.mimetype || 'audio/ogg'; type = 'audio';
+  } else if (messageContent?.documentMessage) {
+    isMedia = true; mimetype = messageContent.documentMessage.mimetype || 'application/octet-stream'; type = 'document';
   }
+
+  const { hasQuotedMsg, quotedMsgId, quotedMsg } = extractQuotedSnapshot(
+    extractContextInfo(messageContent),
+    chatId
+  );
 
   return {
     from,
@@ -100,6 +257,9 @@ function normalizeOpenWAMessage(msg) {
     isGroupMsg,
     sender: { id: m.key?.participant || m.pushName || '' },
     author: m.key?.participant || '',
+    hasQuotedMsg,
+    quotedMsgId,
+    quotedMsg,
     // raw for advanced usage
     _raw: m
   };
@@ -156,6 +316,9 @@ async function start() {
   const MAX_CACHE = 500;
   const mediaCache = new Map(); // messageId -> { m, chatId }
 
+  const MESSAGE_CACHE_LIMIT = 1000;
+  const recentMessages = new Map(); // messageId -> { openwa, raw }
+
   function rememberMedia(m) {
     try {
       const id = m?.key?.id;
@@ -166,6 +329,21 @@ async function start() {
         if (firstKey) mediaCache.delete(firstKey);
       }
       mediaCache.set(id, { m, chatId });
+    } catch {}
+  }
+
+  function rememberMessage(openwaMsg, rawMsg) {
+    try {
+      const id = openwaMsg?.id;
+      if (!id) return;
+      if (recentMessages.has(id)) {
+        recentMessages.delete(id);
+      }
+      if (recentMessages.size >= MESSAGE_CACHE_LIMIT) {
+        const firstKey = recentMessages.keys().next().value;
+        if (firstKey) recentMessages.delete(firstKey);
+      }
+      recentMessages.set(id, { openwa: openwaMsg, raw: rawMsg });
     } catch {}
   }
 
@@ -358,6 +536,31 @@ async function start() {
           return send(ws, { type: 'error', error: e.message || String(e) });
         }
       }
+
+      if (type === 'getQuotedMessage') {
+        const { messageId } = msg || {};
+        if (!messageId) return send(ws, { type: 'error', error: 'message_not_found' });
+        const entryMessage = recentMessages.get(messageId);
+        if (!entryMessage?.openwa) return send(ws, { type: 'error', error: 'message_not_found', messageId });
+        if (!canSendTo(entryMessage.openwa.chatId)) return send(ws, { type: 'error', error: 'forbidden', messageId });
+        const quotedId = entryMessage.openwa.quotedMsgId;
+        if (!quotedId) return send(ws, { type: 'error', error: 'quoted_not_found', messageId });
+
+        let payload = recentMessages.get(quotedId)?.openwa;
+        if (!payload && entryMessage.openwa.quotedMsg) {
+          payload = {
+            ...entryMessage.openwa.quotedMsg,
+            id: entryMessage.openwa.quotedMsg.id || quotedId,
+            messageId: entryMessage.openwa.quotedMsg.messageId || quotedId,
+            chatId: entryMessage.openwa.quotedMsg.chatId || entryMessage.openwa.chatId,
+            from: entryMessage.openwa.quotedMsg.from || entryMessage.openwa.chatId
+          };
+        }
+
+        if (!payload) return send(ws, { type: 'error', error: 'quoted_not_found', messageId });
+
+        return send(ws, { type: 'quotedMessage', messageId, data: payload });
+      }
     });
 
     ws.on('close', () => {
@@ -384,6 +587,13 @@ async function start() {
           rememberMedia(m);
         }
       } catch {}
+      if (wrapped.quotedMsgId && recentMessages.has(wrapped.quotedMsgId)) {
+        const cachedQuoted = recentMessages.get(wrapped.quotedMsgId);
+        if (cachedQuoted?.openwa) {
+          wrapped.quotedMsg = cachedQuoted.openwa;
+        }
+      }
+      rememberMessage(wrapped, evt.messages?.[0]);
       broadcastAuthorized(wrapped);
     }
   });

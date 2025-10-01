@@ -14,7 +14,8 @@ class BaileysWsAdapter {
     this._listeners = new Set();
     this._anyListeners = new Set();
     this._ready = false;
-  this._pendingMedia = new Map(); // messageId -> resolver
+    this._pendingMedia = new Map(); // messageId -> resolver
+    this._pendingQuoted = new Map(); // messageId -> resolver
   }
 
   async connect() {
@@ -41,11 +42,28 @@ class BaileysWsAdapter {
           this._pendingMedia.delete(msg.messageId);
           pending.resolve(msg);
         }
-      } else if (msg.type === 'error' && msg.messageId) {
-        const pending = this._pendingMedia.get(msg.messageId);
+      } else if (msg.type === 'quotedMessage' && msg.messageId) {
+        const pending = this._pendingQuoted.get(msg.messageId);
         if (pending) {
+          this._pendingQuoted.delete(msg.messageId);
+          pending.resolve(msg.data);
+        }
+      } else if (msg.type === 'error' && msg.messageId) {
+        let handled = false;
+        const mediaPending = this._pendingMedia.get(msg.messageId);
+        if (mediaPending) {
           this._pendingMedia.delete(msg.messageId);
-          pending.reject(new Error(msg.error || 'media_error'));
+          mediaPending.reject(new Error(msg.error || 'media_error'));
+          handled = true;
+        }
+        const quotedPending = this._pendingQuoted.get(msg.messageId);
+        if (quotedPending) {
+          this._pendingQuoted.delete(msg.messageId);
+          quotedPending.reject(new Error(msg.error || 'quoted_message_error'));
+          handled = true;
+        }
+        if (!handled && msg.error) {
+          console.warn('[BaileysWsAdapter] Unhandled error:', msg.error);
         }
       }
     });
@@ -117,11 +135,27 @@ class BaileysWsAdapter {
   }
 
   async sendImageAsStickerGif(chatId, filePath, options = {}) {
-  this._send({ type: 'sendImageAsStickerGif', chatId, filePath, options });
+    this._send({ type: 'sendImageAsStickerGif', chatId, filePath, options });
   }
 
   async sendMp4AsSticker(chatId, filePath, options = {}) {
-  this._send({ type: 'sendMp4AsSticker', chatId, filePath, options });
+    this._send({ type: 'sendMp4AsSticker', chatId, filePath, options });
+  }
+
+  async getQuotedMessage(messageId) {
+    if (!messageId) throw new Error('messageId_required');
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) throw new Error('ws_not_ready');
+    const p = new Promise((resolve, reject) => {
+      this._pendingQuoted.set(messageId, { resolve, reject });
+      setTimeout(() => {
+        if (this._pendingQuoted.has(messageId)) {
+          this._pendingQuoted.delete(messageId);
+          reject(new Error('quoted_message_timeout'));
+        }
+      }, 10000);
+    });
+    this._send({ type: 'getQuotedMessage', messageId });
+    return p;
   }
 
   _send(obj) {
