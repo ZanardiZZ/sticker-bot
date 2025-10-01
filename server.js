@@ -11,15 +11,17 @@ const path = require('path');
 const http = require('http');
 const { WebSocketServer } = require('ws');
 const mime = require('mime-types');
-
+const qrcode = require('qrcode-terminal')
 const {
   default: makeWASocket,
   DisconnectReason,
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
-  makeInMemoryStore,
   downloadContentFromMessage
 } = require('@whiskeysockets/baileys');
+
+// agora importa o store do caminho certo
+//const { makeInMemoryStore } = require('@whiskeysockets/baileys/lib/store');
 
 // FFmpeg setup for conversions
 let ffmpeg = null;
@@ -297,23 +299,24 @@ async function start() {
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
   const { version } = await fetchLatestBaileysVersion();
 
-  const store = makeInMemoryStore({});
+  //const store = makeInMemoryStore({});
 
   const sock = makeWASocket({
     version,
     auth: state,
-    printQRInTerminal: true,
     syncFullHistory: false,
     browser: ['StickerBot', 'Chrome', '1.0']
   });
 
-  store.bind(sock.ev);
+  //store.bind(sock.ev);
 
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect, qr } = update;
-    if (qr) console.log('[Baileys] QR updated. Scan to authenticate.');
+    if (qr) { console.log('[Baileys] QR updated. Scan to authenticate.');
+    qrcode.generate(qr, { small: true })
+    }
     if (connection === 'open') {
       console.log('[Baileys] Connection opened');
     } else if (connection === 'close') {
