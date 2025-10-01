@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
-const { decryptMedia } = require('@open-wa/wa-decrypt');
+const { downloadMediaForMessage } = require('./utils/mediaDownload');
 const {
   getMD5,
   getHashVisual,
@@ -59,10 +59,15 @@ async function processIncomingMedia(client, message) {
   let description = null;
   let tags = null;
   try {
-  const buffer = await decryptMedia(message);
-  console.log('[MediaProcessor] Mimetype recebido:', message.mimetype);
-  console.log('[MediaProcessor] Tamanho do buffer:', buffer ? buffer.length : 'null');
-  const ext = message.mimetype.split('/')[1] || 'bin';
+    const { buffer, mimetype: downloadedMimetype } = await downloadMediaForMessage(client, message);
+    if (!message.mimetype && downloadedMimetype) {
+      message.mimetype = downloadedMimetype;
+    }
+    const effectiveMimetype = message.mimetype || downloadedMimetype || 'application/octet-stream';
+    message.mimetype = effectiveMimetype;
+    console.log('[MediaProcessor] Mimetype recebido:', effectiveMimetype);
+    console.log('[MediaProcessor] Tamanho do buffer:', buffer ? buffer.length : 'null');
+    const ext = (effectiveMimetype.split('/')[1]) || 'bin';
   const tmpDir = path.resolve(__dirname, 'temp');
   if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
   const tmpFilePath = path.join(tmpDir, `media-tmp-${Date.now()}-${Math.floor(Math.random()*10000)}.${ext}`);
