@@ -8,6 +8,7 @@ yarn-debug.log*
 yarn-error.log*
 # Environment variables
 .env
+creds.json
 # Build outputs / Whisper build artifacts
 whisper.cpp/
 # OS files
