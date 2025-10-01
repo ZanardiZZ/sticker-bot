@@ -241,19 +241,15 @@ function createAdminRoutes(db) {
     // Verificar por novos logs a cada 2 segundos
     const interval = setInterval(checkForNewLogs, 2000);
 
-    // Limpar quando o cliente desconectar
-    req.on('close', () => {
-      clearInterval(interval);
-      console.log('[SSE] Cliente de logs desconectado');
-    });
-
     // Keep-alive ping
     const pingInterval = setInterval(() => {
       res.write(': ping\n\n');
     }, 30000);
 
     req.on('close', () => {
+      clearInterval(interval);
       clearInterval(pingInterval);
+      console.log('[SSE] Cliente de logs desconectado');
     });
   });
 
