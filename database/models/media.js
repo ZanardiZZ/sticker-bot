@@ -217,6 +217,7 @@ function findMediaByTheme(keywords, limit = 5) {
       WHERE m.nsfw = 0
       GROUP BY m.id
       HAVING match_score > 0
+      -- Prioritize media with lower usage counts (m.count_random ASC), then higher match scores (match_score DESC), then by ID for stability
       ORDER BY m.count_random ASC, match_score DESC, m.id ASC
       LIMIT ?
     `;
