@@ -47,7 +47,7 @@ function sanitizeWebpBuffer(buffer) {
   actualWebpIndex = sanitized.indexOf(WEBP_SIGNATURE);
   if (actualWebpIndex !== 8) {
     // If after slicing we still don't have WEBP at offset 8, bail out using original buffer
-    return { buffer, changed: false, notes: [] };
+    return { buffer, changed: false, notes };
   }
 
   let resultBuffer = sanitized;
