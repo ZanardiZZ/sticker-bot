@@ -56,6 +56,130 @@ function get(sql, params = {}) {
   });
 }
 
+async function recordGroupMetadata(groupId, displayName) {
+  if (!groupId) return { changes: 0 };
+  const trimmedName = typeof displayName === 'string' ? displayName.trim() : '';
+  const now = Date.now();
+  return run(`
+    INSERT INTO group_settings (group_id, display_name, auto_send_enabled, processing_enabled, last_seen_at, created_at, updated_at)
+    VALUES ($group_id, $display_name, 0, 1, $now, $now, $now)
+    ON CONFLICT(group_id) DO UPDATE SET
+      display_name = CASE
+        WHEN excluded.display_name IS NOT NULL AND excluded.display_name != '' THEN excluded.display_name
+        ELSE group_settings.display_name
+      END,
+      last_seen_at = CASE
+        WHEN group_settings.last_seen_at IS NULL OR excluded.last_seen_at > group_settings.last_seen_at THEN excluded.last_seen_at
+        ELSE group_settings.last_seen_at
+      END,
+      updated_at = excluded.updated_at
+  `, {
+    $group_id: groupId,
+    $display_name: trimmedName ? trimmedName : null,
+    $now: now
+  });
+}
+
+async function listGroupSettings() {
+  const rows = await all(`
+    SELECT
+      gs.group_id,
+      gs.display_name,
+      gs.auto_send_enabled,
+      gs.processing_enabled,
+      gs.last_seen_at,
+      gs.created_at,
+      gs.updated_at,
+      COALESCE(SUM(CASE WHEN gcp.allowed = 0 THEN 1 ELSE 0 END), 0) AS blocked_commands,
+      COALESCE(SUM(CASE WHEN gcp.allowed = 1 THEN 1 ELSE 0 END), 0) AS allowed_commands
+    FROM group_settings gs
+    LEFT JOIN group_command_permissions gcp ON gcp.group_id = gs.group_id
+    GROUP BY gs.group_id
+    ORDER BY COALESCE(gs.display_name, gs.group_id) COLLATE NOCASE
+  `);
+  return rows.map(row => ({
+    ...row,
+    auto_send_enabled: row.auto_send_enabled ? 1 : 0,
+    processing_enabled: row.processing_enabled ? 1 : 0,
+    blocked_commands: row.blocked_commands || 0,
+    allowed_commands: row.allowed_commands || 0
+  }));
+}
+
+async function getGroupSetting(groupId) {
+  if (!groupId) return null;
+  const row = await get(`
+    SELECT
+      gs.group_id,
+      gs.display_name,
+      gs.auto_send_enabled,
+      gs.processing_enabled,
+      gs.last_seen_at,
+      gs.created_at,
+      gs.updated_at,
+      (SELECT COUNT(*) FROM group_command_permissions gcp WHERE gcp.group_id = gs.group_id AND gcp.allowed = 0) AS blocked_commands,
+      (SELECT COUNT(*) FROM group_command_permissions gcp WHERE gcp.group_id = gs.group_id AND gcp.allowed = 1) AS allowed_commands
+    FROM group_settings gs
+    WHERE gs.group_id = ?
+  `, [groupId]);
+  if (!row) return null;
+  return {
+    ...row,
+    auto_send_enabled: row.auto_send_enabled ? 1 : 0,
+    processing_enabled: row.processing_enabled ? 1 : 0,
+    blocked_commands: row.blocked_commands || 0,
+    allowed_commands: row.allowed_commands || 0
+  };
+}
+
+async function updateGroupSetting(groupId, field, value) {
+  const allowedFields = {
+    auto_send_enabled: (val) => (val ? 1 : 0),
+    processing_enabled: (val) => (val ? 1 : 0)
+  };
+  if (!Object.prototype.hasOwnProperty.call(allowedFields, field)) {
+    throw new Error('invalid_field');
+  }
+  // Map field to a constant column name
+  const fieldToColumn = {
+    auto_send_enabled: 'auto_send_enabled',
+    processing_enabled: 'processing_enabled'
+  };
+  const columnName = fieldToColumn[field];
+  const normalizedValue = allowedFields[field](value);
+  const now = Date.now();
+  const result = await run(`
+    UPDATE group_settings
+    SET ${columnName} = ?, updated_at = ?
+    WHERE group_id = ?
+  `, [normalizedValue, now, groupId]);
+  if (!result || result.changes === 0) {
+    throw new Error('group_not_found');
+  }
+  return getGroupSetting(groupId);
+}
+
+async function listAutoSendGroupIds() {
+  const rows = await all(`
+    SELECT group_id
+    FROM group_settings
+    WHERE auto_send_enabled = 1
+    ORDER BY COALESCE(display_name, group_id) COLLATE NOCASE
+  `);
+  return rows.map(r => r.group_id);
+}
+
+async function isGroupProcessingEnabled(groupId) {
+  if (!groupId) return true;
+  const row = await get(`
+    SELECT processing_enabled
+    FROM group_settings
+    WHERE group_id = ?
+  `, [groupId]);
+  if (!row) return true;
+  return row.processing_enabled ? true : false;
+}
+
 function buildStickerURL(file_path) {
   if (file_path.includes('/media/')) {
     return '/media/' + encodeURIComponent(path.basename(file_path));
@@ -522,6 +646,14 @@ module.exports = {
   async deleteGroupCommandPermission(group_id, command) {
     return run(`DELETE FROM group_command_permissions WHERE group_id = ? AND command = ?`, [group_id, command]);
   },
+
+  // ====== Group Settings ======
+  recordGroupMetadata,
+  listGroupSettings,
+  getGroupSetting,
+  updateGroupSetting,
+  listAutoSendGroupIds,
+  isGroupProcessingEnabled,
 
   // ====== Bot Config ======
   async getBotConfig(key) {

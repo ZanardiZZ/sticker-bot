@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Configurações de Grupos</title>
+  <link rel="stylesheet" href="/admin-assets/styles.css">
+  <style>
+    body { max-width: 960px; margin: 0 auto; padding: 2rem; }
+    h1 { margin-bottom: 1rem; }
+    .card { background: #fff; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 2px 6px rgba(15, 23, 42, 0.12); }
+    .card h2 { margin-top: 0; font-size: 1.25rem; }
+    .form-row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin-bottom: 1rem; }
+    label { font-weight: 600; }
+    select, input[type="text"], select#allowed { padding: 0.5rem 0.75rem; border-radius: 6px; border: 1px solid #cbd5f5; min-width: 220px; }
+    button { padding: 0.5rem 1rem; border-radius: 6px; border: none; background: #2563eb; color: #fff; cursor: pointer; }
+    button.secondary { background: #64748b; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    th, td { border: 1px solid #e2e8f0; padding: 0.6rem; text-align: left; }
+    th { background: #f1f5f9; }
+    .toggles { display: flex; gap: 1.5rem; align-items: center; flex-wrap: wrap; }
+    .toggle { display: flex; gap: 0.5rem; align-items: center; }
+    .empty-state { color: #475569; }
+    .summary-table caption { text-align: left; font-weight: 600; padding-bottom: 0.4rem; }
+    .muted { color: #64748b; font-size: 0.9rem; margin-top: 0.4rem; }
+  </style>
+</head>
+<body>
+  <h1>Configurações de Grupos</h1>
+  <p class="muted">A lista de grupos é preenchida automaticamente a partir das mensagens recebidas pelo bot. Use esta página para controlar quais grupos têm comandos ativos, recebem envios automáticos e podem ser processados.</p>
+
+  <section class="card">
+    <h2>Detalhes do Grupo</h2>
+    <div class="form-row">
+      <label for="groupSelect">Grupo conhecido:</label>
+      <select id="groupSelect">
+        <option value="">Selecione um grupo...</option>
+      </select>
+      <button id="reloadGroups" type="button" class="secondary">Atualizar lista</button>
+    </div>
+    <div id="groupInfo" class="muted">Selecione um grupo para visualizar as configurações.</div>
+    <div class="toggles">
+      <label class="toggle">
+        <input type="checkbox" id="autoSendToggle" disabled>
+        Envio automático habilitado
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="processingToggle" disabled>
+        Processamento de mensagens ativo
+      </label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Permissões de Comandos</h2>
+    <p class="muted">Defina comandos que devem ser permitidos ou bloqueados especificamente para o grupo selecionado.</p>
+    <div class="form-row">
+      <input type="text" id="commandName" placeholder="#comando">
+      <select id="allowed">
+        <option value="1">Permitir</option>
+        <option value="0">Bloquear</option>
+      </select>
+      <button type="button" id="saveCommandBtn">Salvar permissão</button>
+    </div>
+    <div id="commandsTableContainer" class="empty-state">Selecione um grupo para visualizar as permissões.</div>
+  </section>
+
+  <section class="card">
+    <h2>Resumo dos Grupos</h2>
+    <div id="groupsSummary" class="empty-state">Nenhum grupo conhecido até o momento.</div>
+  </section>
+
+  <script>
+    const state = {
+      groups: [],
+      currentGroupId: null
+    };
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function formatTimestamp(ts) {
+      if (!ts) return '-';
+      const numericTs = Number(ts);
+      if (Number.isNaN(numericTs)) return '-';
+      const date = new Date(numericTs);
+      if (Number.isNaN(date.getTime())) return '-';
+      return date.toLocaleString('pt-BR');
+    }
+
+    function renderGroupOptions() {
+      const select = document.getElementById('groupSelect');
+      const previous = select.value;
+      select.innerHTML = '<option value="">Selecione um grupo...</option>';
+      state.groups.forEach(group => {
+        const option = document.createElement('option');
+        const label = group.display_name ? `${group.display_name} (${group.group_id})` : group.group_id;
+        option.value = group.group_id;
+        option.textContent = label;
+        select.appendChild(option);
+      });
+      if (state.currentGroupId && state.groups.some(g => g.group_id === state.currentGroupId)) {
+        select.value = state.currentGroupId;
+      } else if (previous && state.groups.some(g => g.group_id === previous)) {
+        state.currentGroupId = previous;
+        select.value = previous;
+      }
+    }
+
+    function renderGroupsSummary() {
+      const container = document.getElementById('groupsSummary');
+      if (!state.groups.length) {
+        container.classList.add('empty-state');
+        container.innerHTML = 'Nenhum grupo conhecido até o momento.';
+        return;
+      }
+
+      container.classList.remove('empty-state');
+      const rows = state.groups.map(group => {
+        const name = escapeHtml(group.display_name || group.group_id);
+        const blocked = Number(group.blocked_commands || 0);
+        const allowed = Number(group.allowed_commands || 0);
+        return `<tr>
+          <td>${name}</td>
+          <td>${escapeHtml(group.group_id)}</td>
+          <td>${group.auto_send_enabled ? 'Sim' : 'Não'}</td>
+          <td>${group.processing_enabled ? 'Ativo' : 'Desativado'}</td>
+          <td>${blocked}</td>
+          <td>${allowed}</td>
+          <td>${formatTimestamp(group.last_seen_at)}</td>
+        </tr>`;
+      }).join('');
+
+      container.innerHTML = `<table class="summary-table">
+        <caption>Status atual dos grupos conhecidos</caption>
+        <thead>
+          <tr>
+            <th>Nome</th>
+            <th>ID</th>
+            <th>Auto envio</th>
+            <th>Processamento</th>
+            <th>Comandos bloqueados</th>
+            <th>Comandos permitidos</th>
+            <th>Última mensagem</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+    }
+
+    function updateGroupDetailUI() {
+      const info = document.getElementById('groupInfo');
+      const autoToggle = document.getElementById('autoSendToggle');
+      const processingToggle = document.getElementById('processingToggle');
+
+      autoToggle.disabled = true;
+      processingToggle.disabled = true;
+
+      if (!state.currentGroupId) {
+        info.textContent = 'Selecione um grupo para visualizar as configurações.';
+        autoToggle.checked = false;
+        processingToggle.checked = false;
+        return;
+      }
+
+      const group = state.groups.find(g => g.group_id === state.currentGroupId);
+      if (!group) {
+        info.textContent = 'Grupo não encontrado na lista conhecida.';
+        autoToggle.checked = false;
+        processingToggle.checked = false;
+        return;
+      }
+
+      const name = group.display_name ? `${group.display_name} (${group.group_id})` : group.group_id;
+      const lastSeen = formatTimestamp(group.last_seen_at);
+      info.innerHTML = `<strong>Grupo:</strong> ${escapeHtml(name)}<br><strong>Última mensagem registrada:</strong> ${lastSeen}`;
+
+      autoToggle.checked = !!group.auto_send_enabled;
+      processingToggle.checked = !!group.processing_enabled;
+      autoToggle.disabled = false;
+      processingToggle.disabled = false;
+    }
+
+    async function loadGroupSettings(options = {}) {
+      const { reloadCommands = true } = options;
+      try {
+        const res = await fetch('/api/admin/group-settings');
+        if (!res.ok) throw new Error('failed');
+        const data = await res.json();
+        state.groups = Array.isArray(data.groups) ? data.groups : [];
+        if (!state.currentGroupId && state.groups.length) {
+          state.currentGroupId = state.groups[0].group_id;
+        } else if (state.currentGroupId && !state.groups.some(g => g.group_id === state.currentGroupId)) {
+          state.currentGroupId = state.groups.length ? state.groups[0].group_id : null;
+        }
+        renderGroupOptions();
+        renderGroupsSummary();
+        updateGroupDetailUI();
+        if (reloadCommands) {
+          await loadGroupCommands();
+        }
+      } catch (err) {
+        console.error('Erro ao carregar lista de grupos:', err);
+        alert('Erro ao carregar a lista de grupos conhecidos.');
+      }
+    }
+
+    async function loadGroupCommands() {
+      if (!state.currentGroupId) {
+        document.getElementById('commandsTableContainer').textContent = 'Selecione um grupo para visualizar as permissões.';
+        return;
+      }
+      try {
+        const res = await fetch(`/api/admin/group-commands/${encodeURIComponent(state.currentGroupId)}`);
+        if (!res.ok) throw new Error('failed');
+        const data = await res.json();
+        renderCommandsTable(Array.isArray(data.permissions) ? data.permissions : []);
+      } catch (err) {
+        console.error('Erro ao carregar permissões:', err);
+        document.getElementById('commandsTableContainer').textContent = 'Erro ao carregar as permissões deste grupo.';
+      }
+    }
+
+    function renderCommandsTable(perms) {
+      const container = document.getElementById('commandsTableContainer');
+      if (!perms.length) {
+        container.classList.add('empty-state');
+        container.textContent = 'Nenhuma permissão específica configurada para este grupo.';
+        return;
+      }
+
+      container.classList.remove('empty-state');
+      const rows = perms.map(perm => {
+        const command = escapeHtml(perm.command);
+        const allowed = perm.allowed ? 'Sim' : 'Não';
+        const encodedCommand = encodeURIComponent(perm.command);
+        return `<tr>
+          <td>${command}</td>
+          <td>${allowed}</td>
+          <td><button type="button" class="delete-command" data-command="${encodedCommand}">Remover</button></td>
+        </tr>`;
+      }).join('');
+
+      container.innerHTML = `<table>
+        <thead>
+          <tr>
+            <th>Comando</th>
+            <th>Permitido?</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+    }
+
+    async function updateGroupFlag(field, value) {
+      if (!state.currentGroupId) return;
+      const toggle = field === 'auto_send_enabled' ? document.getElementById('autoSendToggle') : document.getElementById('processingToggle');
+      toggle.disabled = true;
+      try {
+        const res = await fetch(`/api/admin/group-settings/${encodeURIComponent(state.currentGroupId)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ field, value })
+        });
+        if (!res.ok) throw new Error('failed');
+        const data = await res.json();
+        if (data.group) {
+          const idx = state.groups.findIndex(g => g.group_id === data.group.group_id);
+          if (idx >= 0) {
+            state.groups[idx] = { ...state.groups[idx], ...data.group };
+          } else {
+            state.groups.push(data.group);
+          }
+          renderGroupsSummary();
+          updateGroupDetailUI();
+        }
+      } catch (err) {
+        console.error('Erro ao atualizar configuração do grupo:', err);
+        alert('Erro ao salvar a configuração.');
+        const group = state.groups.find(g => g.group_id === state.currentGroupId);
+        if (group) {
+          toggle.checked = field === 'auto_send_enabled' ? !!group.auto_send_enabled : !!group.processing_enabled;
+        }
+      } finally {
+        toggle.disabled = false;
+      }
+    }
+
+    async function saveCommandPermission() {
+      if (!state.currentGroupId) {
+        alert('Selecione um grupo antes de salvar a permissão.');
+        return;
+      }
+      const commandInput = document.getElementById('commandName');
+      const allowedSelect = document.getElementById('allowed');
+      const command = commandInput.value.trim();
+      const allowed = allowedSelect.value === '1';
+      if (!command) {
+        alert('Informe o comando.');
+        return;
+      }
+      try {
+        const res = await fetch(`/api/admin/group-commands/${encodeURIComponent(state.currentGroupId)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command, allowed })
+        });
+        if (!res.ok) throw new Error('failed');
+        commandInput.value = '';
+        await loadGroupCommands();
+        await loadGroupSettings({ reloadCommands: false });
+      } catch (err) {
+        console.error('Erro ao salvar permissão:', err);
+        alert('Erro ao salvar a permissão do comando.');
+      }
+    }
+
+    async function deleteCommand(groupId, command) {
+      if (!groupId || !command) return;
+      if (!confirm('Remover permissão deste comando?')) return;
+      try {
+        const res = await fetch(`/api/admin/group-commands/${encodeURIComponent(groupId)}/${encodeURIComponent(command)}`, {
+          method: 'DELETE'
+        });
+        if (!res.ok) throw new Error('failed');
+        await loadGroupCommands();
+        await loadGroupSettings({ reloadCommands: false });
+      } catch (err) {
+        console.error('Erro ao remover permissão:', err);
+        alert('Erro ao remover a permissão do comando.');
+      }
+    }
+
+    document.getElementById('groupSelect').addEventListener('change', (event) => {
+      const selected = event.target.value;
+      state.currentGroupId = selected || null;
+      updateGroupDetailUI();
+      loadGroupCommands();
+    });
+
+    document.getElementById('reloadGroups').addEventListener('click', () => loadGroupSettings());
+    document.getElementById('autoSendToggle').addEventListener('change', (event) => updateGroupFlag('auto_send_enabled', event.target.checked));
+    document.getElementById('processingToggle').addEventListener('change', (event) => updateGroupFlag('processing_enabled', event.target.checked));
+    document.getElementById('saveCommandBtn').addEventListener('click', saveCommandPermission);
+
+    document.getElementById('commandsTableContainer').addEventListener('click', (event) => {
+      const target = event.target;
+      if (target && target.tagName === 'BUTTON' && target.classList.contains('delete-command')) {
+        const encoded = target.getAttribute('data-command');
+        if (!encoded) return;
+        const command = decodeURIComponent(encoded);
+        deleteCommand(state.currentGroupId, command);
+      }
+    });
+
+    window.addEventListener('DOMContentLoaded', () => {
+      loadGroupSettings();
+    });
+  </script>
+</body>
+</html>
