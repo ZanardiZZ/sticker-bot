@@ -18,6 +18,7 @@ const { handleTop5UsersCommand } = require('./commands/handlers/top5users');
 const { handleIdCommand } = require('./commands/handlers/id');
 const { handleForceCommand } = require('./commands/handlers/force');
 const { handleEditCommand } = require('./commands/handlers/edit');
+const { handleThemeCommand } = require('./commands/handlers/theme');
 const {
   saveMedia,
   getRandomMedia,
@@ -259,7 +260,8 @@ function isValidCommand(messageBody) {
     '#forçar',
     '#count',
     '#bot',
-    '#ping'
+    '#ping',
+    '#tema'
   ];
 
   if (!messageBody.startsWith('#')) return true; // não é comando
@@ -288,7 +290,8 @@ async function handleInvalidCommand(client, message, chatId) {
     '#forçar',
     '#count',
     '#bot',
-    '#ping'
+    '#ping',
+    '#tema'
   ];
 
   await safeReply(client, chatId,
@@ -392,6 +395,9 @@ async function handleCommand(client, message, chatId) {
           break;
         case '#editar':
           await handleEditCommand(client, message, chatId, taggingMap, MAX_TAGS_LENGTH);
+          break;
+        case '#tema':
+          await handleThemeCommand(client, message, chatId, params);
           break;
         case '#bot':
         case '#ping': {
