@@ -80,6 +80,16 @@ function initializeTables(db) {
         )
       `);
 
+      db.run(`
+        CREATE TABLE IF NOT EXISTS groups (
+          group_id TEXT PRIMARY KEY,
+          display_name TEXT,
+          last_interaction_ts INTEGER,
+          created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+          updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+        )
+      `);
+
       // Version tracking table for SemVer implementation
       db.run(`
         CREATE TABLE IF NOT EXISTS version_info (
@@ -158,6 +168,10 @@ function createIndexes(db) {
 
   // Tag-related indexes
   db.run(`CREATE INDEX IF NOT EXISTS idx_media_tags_tag_id ON media_tags(tag_id)`);
+
+  // Group metadata indexes
+  db.run(`CREATE INDEX IF NOT EXISTS idx_groups_display_name ON groups(display_name)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_groups_last_interaction ON groups(last_interaction_ts DESC)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_media_tags_media_id ON media_tags(media_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_tags_usage_count ON tags(usage_count DESC)`);

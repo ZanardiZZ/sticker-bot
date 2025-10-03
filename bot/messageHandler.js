@@ -5,7 +5,7 @@
 const { handleCommand, handleTaggingMode, taggingMap } = require('../commands');
 const { normalizeText } = require('../utils/commandNormalizer');
 const { logReceivedMessage } = require('./logging');
-const { upsertContactFromMessage } = require('./contacts');
+const { upsertContactFromMessage, upsertGroupFromMessage } = require('./contacts');
 const { processIncomingMedia } = require('../mediaProcessor');
 const { withTyping } = require('../utils/typingIndicator');
 const { safeReply } = require('../utils/safeMessaging');
@@ -47,8 +47,9 @@ async function handleMessage(client, message) {
   // Update contact information
   try { 
     upsertContactFromMessage(message);
+    upsertGroupFromMessage(message);
   } catch (e) {
-    console.error('[bot] upsertContactFromMessage error:', e);
+    console.error('[bot] upsert contact/group error:', e);
   }
   
   try {

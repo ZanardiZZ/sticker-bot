@@ -477,6 +477,73 @@ module.exports = {
   rankUsers,
   buildStickerURL,
 
+  // ====== Group Metadata ======
+  async listGroups({ limit = 1000, includeDormant = true } = {}) {
+    const cappedLimit = Math.min(5000, Math.max(1, limit));
+    const rows = await all(
+      `
+        WITH union_sources AS (
+          SELECT group_id, last_interaction_ts FROM groups
+          UNION
+          SELECT group_id, NULL AS last_interaction_ts FROM group_users
+          UNION
+          SELECT group_id, NULL AS last_interaction_ts FROM media WHERE group_id IS NOT NULL AND TRIM(group_id) != ''
+        )
+        SELECT
+          ids.group_id,
+          COALESCE(g.display_name, '') AS display_name,
+          g.last_interaction_ts
+        FROM (
+          SELECT DISTINCT group_id
+          FROM union_sources
+          WHERE group_id IS NOT NULL AND TRIM(group_id) != ''
+        ) ids
+        LEFT JOIN groups g ON g.group_id = ids.group_id
+        ${includeDormant ? '' : 'WHERE COALESCE(g.last_interaction_ts, 0) > 0'}
+        ORDER BY
+          CASE WHEN COALESCE(g.display_name, '') = '' THEN 1 ELSE 0 END,
+          LOWER(COALESCE(g.display_name, ids.group_id)),
+          ids.group_id
+        LIMIT $limit
+      `,
+      { $limit: cappedLimit }
+    );
+
+    return rows.map((row) => ({
+      id: row.group_id,
+      name: row.display_name || row.group_id,
+      lastInteractionTs: row.last_interaction_ts || null
+    }));
+  },
+
+  async upsertGroupMetadata({ groupId, displayName = null, lastInteractionTs = null }) {
+    if (!groupId) {
+      return { changes: 0 };
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    return run(
+      `
+        INSERT INTO groups (group_id, display_name, last_interaction_ts, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(group_id) DO UPDATE SET
+          display_name = CASE
+            WHEN COALESCE(excluded.display_name, '') = '' THEN groups.display_name
+            WHEN COALESCE(groups.display_name, '') = '' THEN excluded.display_name
+            WHEN excluded.display_name <> groups.display_name THEN excluded.display_name
+            ELSE groups.display_name
+          END,
+          last_interaction_ts = CASE
+            WHEN groups.last_interaction_ts IS NULL THEN excluded.last_interaction_ts
+            WHEN excluded.last_interaction_ts IS NULL THEN groups.last_interaction_ts
+            ELSE MAX(groups.last_interaction_ts, excluded.last_interaction_ts)
+          END,
+          updated_at = excluded.updated_at
+      `,
+      [groupId, displayName ? displayName.trim() : null, lastInteractionTs, now, now]
+    );
+  },
+
   // ====== Group Users Management ======
   async listGroupUsers(groupId) {
     return all(`SELECT * FROM group_users WHERE group_id = ?`, [groupId]);

@@ -1161,6 +1161,31 @@ document.addEventListener('click', (event) => {
   }
 });
 
+function renderAdminUserInfo(user) {
+  const infoEl = document.getElementById('adminUserInfo');
+  if (!infoEl) return;
+
+  if (user && user.username) {
+    const username = escapeHtml(user.username);
+    infoEl.innerHTML = `Logado como ${username} <button id="adminLogoutBtn" style="font-size:.75rem;">Logout</button>`;
+    const logoutBtn = document.getElementById('adminLogoutBtn');
+    if (logoutBtn && !logoutBtn.dataset.bound) {
+      logoutBtn.dataset.bound = 'true';
+      logoutBtn.addEventListener('click', async (event) => {
+        event.preventDefault();
+        try {
+          await fetchWithCSRF('/api/logout', { method: 'POST' });
+        } catch (error) {
+          console.warn('Falha ao realizar logout:', error);
+        }
+        window.location.reload();
+      });
+    }
+  } else {
+    infoEl.innerHTML = '<a href="/login">Login</a>';
+  }
+}
+
 // Check and update UI based on user role
 async function checkUserRole() {
   try {
@@ -1168,6 +1193,7 @@ async function checkUserRole() {
     if (response.ok) {
       const data = await response.json();
       currentUserRole = data.user?.role;
+      renderAdminUserInfo(data.user);
       
       if (currentUserRole === 'admin') {
         // Show admin-only elements
@@ -1175,9 +1201,12 @@ async function checkUserRole() {
           el.classList.add('visible');
         });
       }
+    } else {
+      renderAdminUserInfo(null);
     }
   } catch (error) {
     console.warn('Failed to check user role:', error);
+    renderAdminUserInfo(null);
   }
 }
 

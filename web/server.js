@@ -178,6 +178,8 @@ const {
   rankUsers,
   updateMediaMeta,
   setMediaTagsExact,
+  listGroups,
+  upsertGroupMetadata,
   listGroupUsers,
   getGroupUser,
   upsertGroupUser,
@@ -199,17 +201,63 @@ try {
 // ====== API: Listar grupos conectados ======
 app.get('/api/admin/connected-groups', requireAdmin, async (req, res) => {
   try {
-    let groups = [];
+    const archivedGroups = await listGroups({ includeDormant: true });
+    const groupMap = new Map();
+
+    archivedGroups.forEach((group) => {
+      groupMap.set(group.id, {
+        id: group.id,
+        name: group.name || group.id,
+        lastInteractionTs: group.lastInteractionTs || null
+      });
+    });
+
     if (global.getCurrentWhatsAppClient) {
       const client = global.getCurrentWhatsAppClient();
       if (client && typeof client.getAllChats === 'function') {
         const chats = await client.getAllChats();
-        groups = chats.filter(c => c.isGroup && c.id && c.name).map(c => ({
-          id: c.id,
-          name: c.name
-        }));
+        const whatsappGroups = chats.filter((c) => c?.isGroup && c?.id);
+
+        if (whatsappGroups.length) {
+          const upserts = [];
+
+          whatsappGroups.forEach((chat) => {
+            const id = chat.id;
+            const name = (chat.subject || chat.name || '').trim();
+            const displayName = name || id;
+            const existing = groupMap.get(id) || { id };
+
+            groupMap.set(id, {
+              id,
+              name: displayName,
+              lastInteractionTs: existing.lastInteractionTs || null
+            });
+
+            upserts.push(
+              upsertGroupMetadata({
+                groupId: id,
+                displayName: name || null,
+                lastInteractionTs: existing.lastInteractionTs || null
+              }).catch((err) => {
+                console.warn('[WEB] failed to persist group metadata', id, err?.message || err);
+                return null;
+              })
+            );
+          });
+
+          if (upserts.length) {
+            await Promise.allSettled(upserts);
+          }
+        }
       }
     }
+
+    const groups = Array.from(groupMap.values()).sort((a, b) => {
+      const nameA = (a.name || a.id || '').toLocaleLowerCase('pt-BR');
+      const nameB = (b.name || b.id || '').toLocaleLowerCase('pt-BR');
+      return nameA.localeCompare(nameB, 'pt-BR');
+    });
+
     res.json({ groups });
   } catch (err) {
     res.status(500).json({ error: 'failed_to_list_groups', details: err.message });

@@ -7,6 +7,7 @@ body { font-family: system-ui, sans-serif; background:var(--bg); color:var(--tex
 nav { background:var(--panel2); padding:.5rem 1rem; display:flex; gap:1rem; align-items:center; }
 nav a { color:#6c757d; text-decoration:none; }
 nav a:hover { color:var(--text); }
+.nav-divider { color:#94a3b8; }
 header { padding:1rem; display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; background:var(--panel2); }
 input, select, button, textarea { padding:.5rem; background:#ffffff; border:1px solid var(--border); color:var(--text); border-radius:4px; }
 button { cursor:pointer; }
@@ -106,7 +107,8 @@ button { cursor:pointer; }
 #editModal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); align-items:center; justify-content:center; }
 #editModal .box { background:#ffffff; border: 1px solid var(--border); padding:1rem; width:360px; border-radius:8px; display:flex; flex-direction:column; gap:.6rem; }
 .centered { display:flex; justify-content:center; align-items:center; height:100vh; }
-.panel { background:#ffffff; border: 1px solid var(--border); padding:2rem; border-radius:8px; width:320px; display:flex; flex-direction:column; gap:1rem; }
+.panel { background:#ffffff; border: 1px solid var(--border); padding:2rem; border-radius:8px; display:flex; flex-direction:column; gap:1rem; width:100%; max-width:100%; }
+.panel-compact { width:min(100%, 320px); }
 .panel-full-width { width: 100%; max-width: none; margin: 0; padding: 1.5rem; }
 .error { color:#dc3545; font-size:.85rem; min-height:1em; }
 a { color:#6fa8ff; text-decoration:none; font-size:.9rem; }
