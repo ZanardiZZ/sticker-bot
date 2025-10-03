@@ -8,7 +8,6 @@ yarn-debug.log*
 yarn-error.log*
 # Environment variables
 .env
-creds.json
 # Build outputs / Whisper build artifacts
 whisper.cpp/
 # OS files
@@ -65,7 +64,6 @@ tests/**/*.db
 tests/**/*.db-*
 open-wa-session.postman_collection.json
 open-wa-session.sw_col.json
-auth_info_baileys/
+auth_info_baileys/*
 auth_info_baileys/creds.json
 creds.json
-

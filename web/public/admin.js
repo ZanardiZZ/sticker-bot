@@ -876,6 +876,64 @@ function renderGroupUsersTable(users) {
   tableBody.innerHTML = rows;
 }
 
+// ====== DM Users (Direct Message Authorization) UI helpers ======
+async function loadDmUsers() {
+  const tableBody = document.querySelector('#dmUsersTable tbody');
+  const statusEl = document.getElementById('dmUsersStatus');
+  if (statusEl) statusEl.textContent = 'Carregando...';
+  try {
+    const data = await fetchJSON('/api/admin/dm-users');
+    const users = Array.isArray(data?.users) ? data.users : [];
+    renderDmUsersTable(users);
+    if (statusEl) statusEl.textContent = '';
+  } catch (err) {
+    console.error('Erro ao carregar DM users:', err);
+    if (statusEl) statusEl.textContent = 'Erro ao carregar DM users.';
+    if (tableBody) tableBody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#ef4444;">Erro ao carregar usuários.</td></tr>`;
+  }
+}
+
+function renderDmUsersTable(users) {
+  const tableBody = document.querySelector('#dmUsersTable tbody');
+  if (!tableBody) return;
+  if (!Array.isArray(users) || users.length === 0) {
+    tableBody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#94a3b8;">Nenhum usuário DM autorizado.</td></tr>`;
+    return;
+  }
+  const rows = users.map(u => {
+    const id = escapeHtml(u.user_id || '');
+    const allowed = u.allowed ? '<span style="color:#16a34a; font-weight:600;">Sim</span>' : 'Não';
+    const blocked = u.blocked ? '<span style="color:#dc2626; font-weight:600;">Sim</span>' : 'Não';
+    const last = u.last_activity ? formatDateTime(u.last_activity) : '—';
+    const note = escapeHtml(u.note || '');
+    return `
+      <tr>
+        <td>${id}</td>
+        <td>${allowed}</td>
+        <td>${blocked}</td>
+        <td>${last}</td>
+        <td>${note}</td>
+        <td><button class="btn-primary" style="padding:0.25rem 0.6rem; font-size:0.8rem;" data-dm-remove="${encodeURIComponent(u.user_id)}">Remover</button></td>
+      </tr>`;
+  }).join('');
+  tableBody.innerHTML = rows;
+}
+
+async function addDmUser(userId, allowed = false, blocked = false, note = '') {
+  const payload = { user_id: userId, allowed: allowed ? 1 : 0, blocked: blocked ? 1 : 0, note };
+  const resp = await fetchWithCSRF('/api/admin/dm-users', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+  });
+  if (!resp.ok) throw new Error('Falha ao adicionar usuário');
+  await loadDmUsers();
+}
+
+async function removeDmUser(userId) {
+  const resp = await fetchWithCSRF(`/api/admin/dm-users/${encodeURIComponent(userId)}`, { method: 'DELETE' });
+  if (!resp.ok) throw new Error('Falha ao remover usuário');
+  await loadDmUsers();
+}
+
 async function loadBotSchedule() {
   const statusEl = document.getElementById('botScheduleStatus');
   const cronEl = document.getElementById('botScheduleCron');
@@ -1145,7 +1203,7 @@ if (botScheduleSaveBtn && !botScheduleSaveBtn.dataset.bound) {
   });
 }
 
-document.addEventListener('click', (event) => {
+document.addEventListener('click', async (event) => {
   const openUsersBtn = event.target instanceof Element ? event.target.closest('[data-open-users]') : null;
   if (openUsersBtn) {
     setActiveMainTab('users', { updateHash: true });
@@ -1158,6 +1216,35 @@ document.addEventListener('click', (event) => {
     const command = commandAttr ? decodeURIComponent(commandAttr) : '';
     const groupId = groupAttr ? decodeURIComponent(groupAttr) : lastLoadedGroupCommandsId;
     deleteGroupCommand(groupId, command);
+  }
+  const dmRemoveBtn = event.target instanceof Element ? event.target.closest('[data-dm-remove]') : null;
+  if (dmRemoveBtn) {
+    const uid = dmRemoveBtn.getAttribute('data-dm-remove');
+    if (!uid) return;
+    if (!confirm('Remover usuário DM ' + uid + '?')) return;
+    try {
+      await removeDmUser(decodeURIComponent(uid));
+    } catch (err) {
+      alert('Falha ao remover: ' + (err.message || err));
+    }
+  }
+});
+
+// Add DM user button
+document.getElementById('addDmUserBtn')?.addEventListener('click', async (e) => {
+  e.preventDefault();
+  const id = document.getElementById('dmUserIdInput')?.value?.trim();
+  const allowed = !!document.getElementById('dmAllowedInput')?.checked;
+  const blocked = !!document.getElementById('dmBlockedInput')?.checked;
+  const statusEl = document.getElementById('dmUsersStatus');
+  if (!id) return alert('Informe o User ID');
+  if (statusEl) statusEl.textContent = 'Salvando...';
+  try {
+    await addDmUser(id, allowed, blocked, '');
+    if (statusEl) statusEl.textContent = 'Salvo.';
+  } catch (err) {
+    console.error('Erro ao adicionar DM user:', err);
+    if (statusEl) statusEl.textContent = 'Erro ao salvar.';
   }
 });
 

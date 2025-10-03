@@ -73,6 +73,19 @@ function initAnalyticsTables(db) {
   )`);
 }
 
+function initDmUsersTable(db) {
+  db.run(`CREATE TABLE IF NOT EXISTS dm_users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT UNIQUE NOT NULL,
+    allowed INTEGER DEFAULT 0,
+    blocked INTEGER DEFAULT 0,
+    note TEXT,
+    last_activity INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`);
+}
+
 function initUsersTable(db) {
   db.run(`CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -166,6 +179,7 @@ if (ENABLE_INTERNAL_ANALYTICS){
 }
 initUsersTable(db);
 ensureInitialAdmin().catch(err => console.error('[INIT] migration error:', err));
+initDmUsersTable(db);
 console.time('[BOOT] requires');
 const {
   listMedia,
@@ -188,6 +202,10 @@ const {
   listGroupCommandPermissions,
   setGroupCommandPermission,
   deleteGroupCommandPermission,
+  listDmUsers,
+  getDmUser,
+  upsertDmUser,
+  deleteDmUser,
   getBotConfig,
   setBotConfig
 } = require('./dataAccess.js');
@@ -713,6 +731,37 @@ app.delete('/api/admin/group-users/:groupId/:userId', requireAdmin, async (req, 
   try {
     const { groupId, userId } = req.params;
     await deleteGroupUser(groupId, userId);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'db_error', details: err.message });
+  }
+});
+
+// ====== DM Users Management (bot-level direct-message authorization) ======
+app.get('/api/admin/dm-users', requireAdmin, async (req, res) => {
+  try {
+    const users = await listDmUsers();
+    res.json({ users });
+  } catch (err) {
+    res.status(500).json({ error: 'db_error', details: err.message });
+  }
+});
+
+app.post('/api/admin/dm-users', requireAdmin, async (req, res) => {
+  try {
+    const { user_id, allowed, blocked, note } = req.body;
+    if (!user_id) return res.status(400).json({ error: 'missing_user_id' });
+    await upsertDmUser({ user_id, allowed: allowed ? 1 : 0, blocked: blocked ? 1 : 0, note: note || null });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'db_error', details: err.message });
+  }
+});
+
+app.delete('/api/admin/dm-users/:userId', requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    await deleteDmUser(userId);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: 'db_error', details: err.message });

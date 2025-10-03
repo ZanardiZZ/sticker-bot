@@ -213,6 +213,37 @@
             </div>
           </div>
 
+          <div class="tab-content" id="tab-dm-users">
+            <div class="panel">
+              <h3>Usuários - Mensagens Diretas (DM)</h3>
+              <div class="muted">Gerencie quais usuários podem enviar mensagens diretas ao bot. Por padrão, o bot não responde a DMs a menos que autorizado.</div>
+              <div style="margin-top:1rem; display:flex; gap:1rem; flex-wrap:wrap; align-items:end;">
+                <div style="flex:1 1 320px; display:flex; flex-direction:column; gap:.4rem;">
+                  <label class="muted">User ID (WhatsApp)</label>
+                  <input id="dmUserIdInput" type="text" placeholder="ex: 5511999999999@c.us">
+                </div>
+                <div style="display:flex; gap:.6rem; align-items:center;">
+                  <label style="display:flex; gap:.4rem; align-items:center;"><input id="dmAllowedInput" type="checkbox"> Permitido</label>
+                  <label style="display:flex; gap:.4rem; align-items:center;"><input id="dmBlockedInput" type="checkbox"> Bloqueado</label>
+                </div>
+                <div style="flex:0 0 auto;">
+                  <button id="addDmUserBtn" class="btn-primary">Adicionar/Atualizar</button>
+                </div>
+              </div>
+              <div id="dmUsersStatus" class="muted" style="margin-top:.6rem;"></div>
+              <div id="dmUsersTableWrapper" style="margin-top:1rem; overflow-x:auto;">
+                <table id="dmUsersTable">
+                  <thead>
+                    <tr><th>User ID</th><th>Permitido</th><th>Bloqueado</th><th>Última Atividade</th><th>Note</th><th>Ações</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr><td colspan="6" style="text-align:center; color:#94a3b8;">Nenhum usuário selecionado.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
           <div class="tab-content" id="tab-bot-frequency">
             <div class="panel">
               <h3>Frequência do Bot</h3>

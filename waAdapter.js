@@ -17,6 +17,7 @@ class BaileysWsAdapter {
     this._pendingMedia = new Map(); // messageId -> resolver
     this._pendingQuoted = new Map(); // messageId -> resolver
     this._pendingContacts = new Map(); // jid -> resolver
+  this._pendingAcks = new Map(); // requestId -> { resolve, reject, timeout }
   }
 
   async connect() {
@@ -33,6 +34,21 @@ class BaileysWsAdapter {
         this._ready = true;
         // subscribe confirm
         this._send({ type: 'subscribe', chats: this.chats });
+      } else if (msg.requestId) {
+        // Resolve/reject pending ack promises
+        const pending = this._pendingAcks.get(msg.requestId);
+        if (pending) {
+          clearTimeout(pending.timeout);
+          this._pendingAcks.delete(msg.requestId);
+          if (msg.type === 'ack') {
+            pending.resolve(msg);
+          } else if (msg.type === 'error') {
+            pending.reject(new Error(msg.error || 'server_error'));
+          } else {
+            // Other responses (like media) also resolve
+            pending.resolve(msg);
+          }
+        }
       } else if (msg.type === 'message' && msg.data) {
         const m = msg.data;
         for (const fn of this._anyListeners) fn(m);
@@ -104,6 +120,22 @@ class BaileysWsAdapter {
     return res; // { messageId, mimetype, dataUrl }
   }
 
+  // Helper to send RPC and wait for server ack. If server doesn't ack within timeout, rejects.
+  async _sendAndWaitForAck(obj, timeoutMs = 10000) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) throw new Error('ws_not_ready');
+    const requestId = `req_${Date.now()}_${Math.floor(Math.random()*100000)}`;
+    const payload = Object.assign({}, obj, { requestId });
+    const p = new Promise((resolve, reject) => {
+      const t = setTimeout(() => {
+        if (this._pendingAcks.has(requestId)) this._pendingAcks.delete(requestId);
+        reject(new Error('ack_timeout'));
+      }, timeoutMs);
+      this._pendingAcks.set(requestId, { resolve, reject, timeout: t });
+    });
+    this._send(payload);
+    return p;
+  }
+
   async getMediaBuffer(messageId) {
     const res = await this.downloadMedia(messageId);
     const m = /^data:([^;]+);base64,(.+)$/i.exec(res.dataUrl || '');
@@ -152,7 +184,8 @@ class BaileysWsAdapter {
 
   // Messaging primitives
   async sendText(chatId, text) {
-    this._send({ type: 'sendText', chatId, text });
+  // fire-and-forget text
+  this._send({ type: 'sendText', chatId, text });
   }
 
   async reply(chatId, text, quotedMessageId) {
@@ -177,7 +210,8 @@ class BaileysWsAdapter {
     viewOnce,
     requestConfig
   ) {
-    this._send({
+    // For file sends, wait for server ack before resolving so callers can rely on delivery ordering
+    return this._sendAndWaitForAck({
       type: 'sendFile',
       chatId,
       filePath,
@@ -194,19 +228,19 @@ class BaileysWsAdapter {
   }
 
   async sendRawWebpAsSticker(chatId, dataUrl, options = {}) {
-    this._send({ type: 'sendRawWebpAsSticker', chatId, dataUrl, options });
+    return this._sendAndWaitForAck({ type: 'sendRawWebpAsSticker', chatId, dataUrl, options });
   }
 
   async sendImageAsSticker(chatId, filePath, options = {}) {
-    this._send({ type: 'sendImageAsSticker', chatId, filePath, options });
+    return this._sendAndWaitForAck({ type: 'sendImageAsSticker', chatId, filePath, options });
   }
 
   async sendImageAsStickerGif(chatId, filePath, options = {}) {
-  this._send({ type: 'sendImageAsStickerGif', chatId, filePath, options });
+  return this._sendAndWaitForAck({ type: 'sendImageAsStickerGif', chatId, filePath, options });
   }
 
   async sendMp4AsSticker(chatId, filePath, options = {}) {
-  this._send({ type: 'sendMp4AsSticker', chatId, filePath, options });
+  return this._sendAndWaitForAck({ type: 'sendMp4AsSticker', chatId, filePath, options });
   }
 
   _send(obj) {
