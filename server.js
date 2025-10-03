@@ -667,8 +667,9 @@ async function start() {
 
     ws.on('message', async (data) => {
       let msg;
-      try { msg = JSON.parse(data.toString()); } catch { return; }
-      const { type } = msg || {};
+        try { msg = JSON.parse(data.toString()); } catch { return; }
+        const incomingRequestId = msg && msg.requestId;
+        const { type } = msg || {};
 
       if (type === 'register') {
         const { token, chats } = msg || {};
@@ -772,9 +773,9 @@ async function start() {
               fileName: name
             });
           }
-          send(ws, { type: 'ack', action: 'sendFile', chatId });
+          send(ws, { type: 'ack', action: 'sendFile', chatId, requestId: incomingRequestId });
         } catch (e) {
-          send(ws, { type: 'error', error: e.message });
+          send(ws, { type: 'error', error: e.message, requestId: incomingRequestId });
         }
         return;
       }
@@ -787,9 +788,9 @@ async function start() {
           if (!match) throw new Error('invalid_data_url');
           const buf = Buffer.from(match[1], 'base64');
           await sock.sendMessage(chatId, { sticker: buf });
-          send(ws, { type: 'ack', action: 'sendRawWebpAsSticker', chatId });
+          send(ws, { type: 'ack', action: 'sendRawWebpAsSticker', chatId, requestId: incomingRequestId });
         } catch (e) {
-          send(ws, { type: 'error', error: e.message });
+          send(ws, { type: 'error', error: e.message, requestId: incomingRequestId });
         }
         return;
       }
@@ -801,9 +802,9 @@ async function start() {
           // Expect already webp. If not, WhatsApp will likely reject.
           const buf = fs.readFileSync(filePath);
           await sock.sendMessage(chatId, { sticker: buf });
-          send(ws, { type: 'ack', action: 'sendImageAsSticker', chatId });
+          send(ws, { type: 'ack', action: 'sendImageAsSticker', chatId, requestId: incomingRequestId });
         } catch (e) {
-          send(ws, { type: 'error', error: e.message });
+          send(ws, { type: 'error', error: e.message, requestId: incomingRequestId });
         }
         return;
       }
@@ -814,9 +815,9 @@ async function start() {
         try {
           const stickerBuf = await convertToAnimatedWebp(filePath);
           await sock.sendMessage(chatId, { sticker: stickerBuf });
-          return send(ws, { type: 'ack', action: type, chatId });
+          return send(ws, { type: 'ack', action: type, chatId, requestId: incomingRequestId });
         } catch (e) {
-          return send(ws, { type: 'error', error: e.message || String(e) });
+          return send(ws, { type: 'error', error: e.message || String(e), requestId: incomingRequestId });
         }
       }
 
@@ -835,9 +836,9 @@ async function start() {
           const buf = await buildMediaBuffer(m);
           const mimetype = m.message?.imageMessage?.mimetype || m.message?.videoMessage?.mimetype || m.message?.stickerMessage?.mimetype || m.message?.audioMessage?.mimetype || m.message?.documentMessage?.mimetype || 'application/octet-stream';
           const dataUrl = `data:${mimetype};base64,${buf.toString('base64')}`;
-          return send(ws, { type: 'media', messageId, mimetype, dataUrl });
+          return send(ws, { type: 'media', messageId, mimetype, dataUrl, requestId: incomingRequestId });
         } catch (e) {
-          return send(ws, { type: 'error', action: 'downloadMedia', messageId, error: e.message || String(e) });
+          return send(ws, { type: 'error', action: 'downloadMedia', messageId, error: e.message || String(e), requestId: incomingRequestId });
         }
       }
 

@@ -599,4 +599,27 @@ module.exports = {
     return run(`INSERT INTO bot_config (key, value) VALUES (?, ?)
       ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [key, value]);
   }
+  ,
+  // ====== Direct-message (DM) users management for bot-level authorization ======
+  async listDmUsers() {
+    return all(`SELECT * FROM dm_users ORDER BY last_activity DESC`);
+  },
+  async getDmUser(userId) {
+    return get(`SELECT * FROM dm_users WHERE user_id = ? LIMIT 1`, [userId]);
+  },
+  async upsertDmUser({ user_id, allowed = 0, blocked = 0, note = null, last_activity = null }) {
+    const now = Math.floor(Date.now() / 1000);
+    return run(`INSERT INTO dm_users (user_id, allowed, blocked, note, last_activity, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(user_id) DO UPDATE SET allowed=excluded.allowed, blocked=excluded.blocked, note=excluded.note, last_activity=COALESCE(excluded.last_activity, dm_users.last_activity), updated_at=excluded.updated_at`,
+      [user_id, allowed, blocked, note, last_activity, now, now]);
+  },
+  async deleteDmUser(userId) {
+    return run(`DELETE FROM dm_users WHERE user_id = ?`, [userId]);
+  },
+  async updateDmUserField(user_id, field, value) {
+    const allowedFields = ['allowed', 'blocked', 'note', 'last_activity'];
+    if (!allowedFields.includes(field)) throw new Error(`Invalid field: ${field}`);
+    return run(`UPDATE dm_users SET ${field} = ? WHERE user_id = ?`, [value, user_id]);
+  }
 };
