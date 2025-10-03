@@ -2,7 +2,7 @@
  * Random command handler
  */
 
-const { processOldStickers, findById, getMediaWithLowestRandomCount, incrementRandomCount, getTagsForMedia } = require('../../database');
+const { processOldStickers, findById, getMediaWithLowestRandomCount, incrementRandomCount, getTagsForMedia } = require('../../database/index.js');
 const { sendMediaByType } = require('../media');
 const { renderInfoMessage } = require('../../utils/messageUtils');
 const { safeReply } = require('../../utils/safeMessaging');

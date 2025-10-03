@@ -3,7 +3,7 @@
  */
 
 const { downloadMediaForMessage } = require('../../utils/mediaDownload');
-const { getHashVisual, findByHashVisual } = require('../../database');
+const { getHashVisual, findByHashVisual } = require('../../database/index.js');
 const { normalizeText, parseCommand } = require('../../utils/commandNormalizer');
 const { safeReply } = require('../../utils/safeMessaging');
 

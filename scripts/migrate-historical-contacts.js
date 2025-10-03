@@ -19,7 +19,7 @@ try {
 }
 
 // Importa a função de migração
-const { migrateHistoricalContacts, getHistoricalContactsStats, db } = require('../database');
+const { migrateHistoricalContacts, getHistoricalContactsStats, db } = require('../database/index.js');
 
 async function runMigration() {
   try {

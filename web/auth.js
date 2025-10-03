@@ -2,7 +2,7 @@ const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
-const { db } = require('../database');
+const { db } = require('../database/index.js');
 
 const sessions = new Map(); // sid -> sessão
 const ADMIN_USERS = (process.env.ADMIN_USERS || '').split(',').map(s => s.trim()).filter(Boolean);

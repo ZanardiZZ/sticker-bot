@@ -164,8 +164,33 @@ class BaileysWsAdapter {
     this._send({ type: 'simulateTyping', chatId, on: !!on });
   }
 
-  async sendFile(chatId, filePath, fileName) {
-    this._send({ type: 'sendFile', chatId, filePath, fileName });
+  async sendFile(
+    chatId,
+    filePath,
+    fileName,
+    caption,
+    quotedMessageId,
+    waitForId,
+    ptt,
+    withoutPreview,
+    hideTags,
+    viewOnce,
+    requestConfig
+  ) {
+    this._send({
+      type: 'sendFile',
+      chatId,
+      filePath,
+      fileName,
+      caption,
+      quotedMessageId,
+      waitForId,
+      ptt,
+      withoutPreview,
+      hideTags,
+      viewOnce,
+      ...(requestConfig && typeof requestConfig === 'object' ? requestConfig : {})
+    });
   }
 
   async sendRawWebpAsSticker(chatId, dataUrl, options = {}) {

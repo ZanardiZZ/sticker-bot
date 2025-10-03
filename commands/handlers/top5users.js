@@ -2,7 +2,7 @@
  * Top 5 users command handler
  */
 
-const { getTop5UsersByStickerCount } = require('../../database');
+const { getTop5UsersByStickerCount } = require('../../database/index.js');
 const { safeReply } = require('../../utils/safeMessaging');
 
 /**

@@ -727,13 +727,51 @@ async function start() {
       }
 
       if (type === 'sendFile') {
-        const { chatId, filePath, fileName } = msg || {};
+        const {
+          chatId,
+          filePath,
+          fileName,
+          caption,
+          ptt,
+          withoutPreview,
+          mimetype: explicitMime,
+          asDocument
+        } = msg || {};
         if (!chatId || !canSendTo(chatId)) return send(ws, { type: 'error', error: 'forbidden' });
         try {
           const buf = fs.readFileSync(filePath);
-          const mime = mimeLookup(filePath) || 'application/octet-stream';
-          // Send as document to be generic
-          await sock.sendMessage(chatId, { document: buf, mimetype: mime, fileName: fileName || path.basename(filePath) });
+          const mime = explicitMime || mimeLookup(filePath) || 'application/octet-stream';
+          const name = fileName || path.basename(filePath);
+
+          if (!asDocument && mime.startsWith('video/')) {
+            await sock.sendMessage(chatId, {
+              video: buf,
+              mimetype: mime,
+              fileName: name,
+              caption: caption || ''
+            });
+          } else if (!asDocument && mime.startsWith('audio/')) {
+            await sock.sendMessage(chatId, {
+              audio: buf,
+              mimetype: mime,
+              fileName: name,
+              ptt: !!ptt
+            });
+          } else if (!asDocument && mime.startsWith('image/')) {
+            await sock.sendMessage(chatId, {
+              image: buf,
+              mimetype: mime,
+              fileName: name,
+              caption: caption || ''
+            });
+          } else {
+            // Fallback to document for unsupported/explicit document sends
+            await sock.sendMessage(chatId, {
+              document: buf,
+              mimetype: mime,
+              fileName: name
+            });
+          }
           send(ws, { type: 'ack', action: 'sendFile', chatId });
         } catch (e) {
           send(ws, { type: 'error', error: e.message });

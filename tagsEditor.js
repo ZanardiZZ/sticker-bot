@@ -1,4 +1,4 @@
-const { findById, updateMediaDescription, updateMediaTags, getTagsForMedia } = require('./database');
+const { findById, updateMediaDescription, updateMediaTags, getTagsForMedia } = require('./database/index.js');
 const { cleanDescriptionTags } = require('./utils/messageUtils');
 const { clearDescriptionCmds, MAX_TAGS_LENGTH } = require('./commands');
 

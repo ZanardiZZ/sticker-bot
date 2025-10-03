@@ -4,13 +4,189 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const crypto = require('crypto');
 const sharp = require('sharp');
-const os = require('os');
-const mime = require('mime-types');
+const { spawnSync } = require('child_process');
 const { getAiAnnotations } = require('../../services/ai');
-const { getMD5, getHashVisual, isFileProcessed, upsertProcessedFile } = require('../utils');
-const { findByHashVisual, saveMedia } = require('./media');
+const { getMD5, isFileProcessed, upsertProcessedFile, getDHash, getAnimatedDHashes } = require('../utils');
+const { findByHashVisual, findByHashMd5, saveMedia } = require('./media');
+
+const repoRoot = path.resolve(__dirname, '..', '..');
+const SANITIZED_OLD_STICKERS_DIR = path.join(repoRoot, 'media', 'old-stickers');
+
+let puppeteerCore = null;
+let chromeExecutablePath = null;
+let chromeDetectionAttempted = false;
+
+function ensureDir(dirPath) {
+  if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
+}
+
+function sanitizeBaseName(name) {
+  const base = String(name || '')
+    .replace(/\.[^.]+$/, '')
+    .replace(/[^a-z0-9_-]+/gi, '_')
+    .replace(/_{2,}/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase();
+  return base || 'sticker';
+}
+
+function buildSanitizedFilePath(originalName, hashMd5) {
+  const safeBase = sanitizeBaseName(originalName).slice(-80);
+  const suffix = (hashMd5 || '').slice(0, 12);
+  return path.join(
+    SANITIZED_OLD_STICKERS_DIR,
+    `${safeBase}${suffix ? `-${suffix}` : ''}.webp`
+  );
+}
+
+function deleteCorruptSticker(filePath, fileName) {
+  if (!filePath) return false;
+  try {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      console.warn(`[old-stickers] Arquivo corrompido removido: ${fileName}`);
+      return true;
+    }
+  } catch (err) {
+    console.warn(`[old-stickers] Falha ao remover arquivo corrompido ${fileName}: ${err.message}`);
+  }
+  return false;
+}
+
+function binaryExists(candidate) {
+  if (!candidate) return false;
+  if (path.isAbsolute(candidate)) {
+    return fs.existsSync(candidate);
+  }
+  const result = spawnSync('which', [candidate]);
+  return result.status === 0;
+}
+
+function collectChromeCandidates() {
+  const candidates = new Set([
+    process.env.OLD_STICKERS_CHROME_PATH,
+    process.env.CHROME_PATH,
+    process.env.PUPPETEER_EXECUTABLE_PATH
+  ].filter(Boolean));
+
+  const chromeDir = path.join(repoRoot, 'chrome');
+  if (fs.existsSync(chromeDir)) {
+    for (const entry of fs.readdirSync(chromeDir)) {
+      const candidate = path.join(chromeDir, entry, 'chrome-linux64', 'chrome');
+      if (fs.existsSync(candidate)) {
+        candidates.add(candidate);
+      }
+    }
+    const direct = path.join(chromeDir, 'chrome-linux64', 'chrome');
+    if (fs.existsSync(direct)) {
+      candidates.add(direct);
+    }
+  }
+
+  [
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+    '/usr/bin/chrome',
+    '/snap/bin/chromium',
+    'google-chrome-stable',
+    'google-chrome',
+    'chromium-browser',
+    'chromium'
+  ].forEach((item) => candidates.add(item));
+
+  return Array.from(candidates);
+}
+
+function getChromeBinary() {
+  if (!chromeDetectionAttempted) {
+    chromeDetectionAttempted = true;
+    for (const candidate of collectChromeCandidates()) {
+      if (binaryExists(candidate)) {
+        chromeExecutablePath = candidate;
+        break;
+      }
+    }
+    if (!chromeExecutablePath) {
+      console.warn('[old-stickers] Chromium executable not found. Chrome-based fallback disabled.');
+    }
+  }
+  return chromeExecutablePath;
+}
+
+function getPuppeteer() {
+  if (!puppeteerCore) {
+    try {
+      puppeteerCore = require('puppeteer-core');
+    } catch (err) {
+      console.warn('[old-stickers] puppeteer-core not available. Chrome fallback disabled:', err.message);
+      return null;
+    }
+  }
+  return puppeteerCore;
+}
+
+async function renderWithChromeFallback(buffer, fileName) {
+  const puppeteer = getPuppeteer();
+  const executablePath = getChromeBinary();
+  if (!puppeteer || !executablePath) {
+    return null;
+  }
+
+  let browser;
+  try {
+    browser = await puppeteer.launch({
+      executablePath,
+      headless: 'new',
+      args: [
+        '--no-sandbox',
+        '--disable-gpu',
+        '--disable-dev-shm-usage',
+        '--hide-scrollbars',
+        '--mute-audio'
+      ]
+    });
+
+    const page = await browser.newPage();
+    await page.setViewport({ width: 512, height: 512, deviceScaleFactor: 1 });
+    await page.setContent(`
+      <html>
+        <body style="margin:0;background:transparent;display:flex;align-items:center;justify-content:center;height:100vh;">
+          <img id="sticker" src="data:image/webp;base64,${buffer.toString('base64')}" style="max-width:100%;max-height:100%;object-fit:contain;" />
+        </body>
+      </html>
+    `, { waitUntil: 'domcontentloaded' });
+
+    await page.waitForSelector('#sticker', { timeout: 5000 });
+    await page.waitForFunction(() => {
+      const img = document.getElementById('sticker');
+      return img && img.complete;
+    }, { timeout: 5000 });
+
+    const element = await page.$('#sticker');
+    if (!element) {
+      throw new Error('Unable to locate rendered <img> element');
+    }
+
+    const pngBuffer = await element.screenshot({ omitBackground: true, type: 'png' });
+    return await sharp(pngBuffer).webp({ lossless: true }).toBuffer();
+  } catch (err) {
+    console.warn(`[old-stickers] Chrome fallback failed for ${fileName}: ${err.message}`);
+    return null;
+  } finally {
+    if (browser) {
+      try {
+        await browser.close();
+      } catch (closeError) {
+        console.warn('[old-stickers] Failed to close Chrome instance:', closeError.message);
+      }
+    }
+  }
+}
 
 // Conditional loading for FFmpeg - these may fail in some environments due to network restrictions
 let ffmpeg = null;
@@ -119,7 +295,17 @@ async function processWebpWithRepair(buffer, fileName) {
         console.warn(`[old-stickers] Frame extraction failed for ${fileName}: ${frameErr.message}`);
       }
       
-      // Final attempt: Return original buffer or throw error
+      // Final attempt: Try Chromium renderer fallback
+      try {
+        const chromeBuffer = await renderWithChromeFallback(buffer, fileName);
+        if (chromeBuffer) {
+          console.log(`[old-stickers] ✅ Recovered ${fileName} via Chromium renderer`);
+          return chromeBuffer;
+        }
+      } catch (chromeErr) {
+        console.warn(`[old-stickers] Chrome renderer threw for ${fileName}: ${chromeErr.message}`);
+      }
+
       console.error(`[old-stickers] ❌ All repair attempts failed for ${fileName}. Skipping.`);
       throw new Error(`Cannot process corrupted WebP file: ${fileName}`);
     }
@@ -176,57 +362,74 @@ async function processOldStickers() {
     for (const { file, filePath, lastModified } of filesToProcess) {
       try {
         const bufferOriginal = fs.readFileSync(filePath);
-
-        // Convert to webp before visual hash to standardize, with animated support
-        // Uses robust function to handle corrupted files
         const bufferWebp = await processWebpWithRepair(bufferOriginal, file);
+        const hashMd5 = getMD5(bufferWebp);
 
+        ensureDir(SANITIZED_OLD_STICKERS_DIR);
+        const sanitizedPath = buildSanitizedFilePath(file, hashMd5);
 
-        // Detecta animada pelo metadata
         let hashes = null;
+        let hashVisual = null;
         let isAnimated = false;
+
         try {
           const meta = await sharp(bufferWebp, { animated: true }).metadata();
-          isAnimated = meta.pages && meta.pages > 1;
-        } catch {}
-
-        if (isAnimated) {
-          hashes = await require('../utils').getAnimatedDHashes(bufferWebp);
-        } else {
-          const hash = await require('../utils').getDHash(bufferWebp);
-          hashes = hash ? [hash] : null;
+          isAnimated = Boolean(meta.pages && meta.pages > 1);
+          if (isAnimated) {
+            hashes = await getAnimatedDHashes(bufferWebp);
+          } else {
+            const hash = await getDHash(bufferWebp);
+            hashes = hash ? [hash] : null;
+          }
+        } catch (metaErr) {
+          console.warn(`[old-stickers] Falha ao obter metadata para ${file}: ${metaErr?.message || metaErr}`);
         }
 
-        if (!hashes) continue;
-
-        // Para animadas, busca por duplicidade considerando 2 de 3 hashes iguais
         let isDuplicate = false;
-        if (isAnimated) {
-          // Busca todos registros que tenham pelo menos 2 hashes iguais
-          const db = require('../connection').db;
-          const rows = await new Promise((resolve, reject) => {
-            db.all('SELECT hash_visual FROM media WHERE hash_visual IS NOT NULL', [], (err, rows) => {
-              if (err) reject(err);
-              else resolve(rows);
+        if (hashes && hashes.length > 0) {
+          hashVisual = isAnimated ? hashes.join(',') : hashes[0];
+
+          if (isAnimated) {
+            const db = require('../connection').db;
+            const rows = await new Promise((resolve, reject) => {
+              db.all('SELECT hash_visual FROM media WHERE hash_visual IS NOT NULL', [], (err, allRows) => {
+                if (err) reject(err);
+                else resolve(allRows);
+              });
             });
-          });
-          for (const row of rows) {
-            try {
-              const otherHashes = row.hash_visual.split(',');
-              let count = 0;
-              for (const h of hashes) {
-                if (otherHashes.includes(h)) count++;
-              }
-              if (count >= 2) {
-                isDuplicate = true;
-                break;
-              }
-            } catch {}
+
+            for (const row of rows) {
+              if (!row?.hash_visual) continue;
+              try {
+                const otherHashes = row.hash_visual.split(',');
+                let count = 0;
+                for (const h of hashes) {
+                  if (otherHashes.includes(h)) count++;
+                }
+                if (count >= 2) {
+                  isDuplicate = true;
+                  console.log(`[old-stickers] Ignorando duplicata animada (hash visual) para ${file}`);
+                  break;
+                }
+              } catch {}
+            }
+          } else {
+            const existing = await findByHashVisual(hashVisual);
+            if (existing) {
+              console.log(`[old-stickers] Ignorando duplicata visual para ${file}`);
+              isDuplicate = true;
+            }
           }
         } else {
-          // Estática: busca hash exato
-          const existing = await findByHashVisual(hashes[0]);
-          if (existing) isDuplicate = true;
+          console.warn(`[old-stickers] Visual hash indisponível para ${file}, utilizando verificação por MD5.`);
+        }
+
+        if (!isDuplicate) {
+          const existingByMd5 = await findByHashMd5(hashMd5);
+          if (existingByMd5) {
+            console.log(`[old-stickers] Ignorando duplicata por MD5 para ${file}`);
+            isDuplicate = true;
+          }
         }
 
         if (isDuplicate) {
@@ -234,10 +437,23 @@ async function processOldStickers() {
           continue;
         }
 
-        // Determine mimetype based on original extension
-        const mimetype = mime.lookup(filePath) || 'application/octet-stream';
+        try {
+          let shouldWrite = true;
+          if (fs.existsSync(sanitizedPath)) {
+            const existing = fs.readFileSync(sanitizedPath);
+            if (getMD5(existing) === hashMd5) {
+              shouldWrite = false;
+            }
+          }
+          if (shouldWrite) {
+            fs.writeFileSync(sanitizedPath, bufferWebp);
+          }
+        } catch (writeErr) {
+          throw new Error(`Falha ao salvar cópia sanitizada de ${file}: ${writeErr?.message || writeErr}`);
+        }
 
-        // Call AI to generate description and tags
+        const mimetype = 'image/webp';
+
         let description = null;
         let tags = null;
         try {
@@ -257,23 +473,24 @@ async function processOldStickers() {
         const mediaId = await saveMedia({
           chatId: 'old-stickers',
           groupId: null,
-          filePath,
+          filePath: sanitizedPath,
           mimetype,
           timestamp: Date.now(),
           description,
           tags,
           hashVisual,
-          hashMd5: getMD5(bufferWebp),
+          hashMd5,
           nsfw: 0,
         });
 
         await upsertProcessedFile(file, lastModified);
 
-        insertedMedias.push({ id: mediaId, filePath });
+        insertedMedias.push({ id: mediaId, filePath: sanitizedPath });
 
-        console.log(`Figurinha antiga processada e salva: ${file}`);
+        console.log(`[old-stickers] Figurinha antiga processada e salva: ${file}`);
       } catch (errFile) {
         console.warn(`[old-stickers] Ignorando arquivo inválido/corrompido: ${file} - Motivo: ${errFile?.message || errFile}`);
+        deleteCorruptSticker(filePath, file);
         continue;
       }
     }

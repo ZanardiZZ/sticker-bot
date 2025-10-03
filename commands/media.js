@@ -11,7 +11,6 @@ const { Sticker, StickerTypes } = (() => {
 })();
 
 const { PACK_NAME, AUTHOR_NAME } = require('../config/stickers');
-const { isGifLikeVideo } = require('../utils/gifDetection');
 
 /**
  * Sends media as appropriate type (sticker for images, file for others)
@@ -112,65 +111,53 @@ async function sendMediaAsOriginal(client, chatId, media) {
   const isGif = mimetype === 'image/gif' || filePath.endsWith('.gif');
   const isVideo = mimetype.startsWith('video/');
   const isImage = mimetype.startsWith('image/');
-
-  // Check if video is actually a GIF-like animation
-  let isGifLikeVideoFile = false;
-  if (isVideo && !isGif) {
-    try {
-      isGifLikeVideoFile = await isGifLikeVideo(filePath, mimetype);
-    } catch (error) {
-      console.warn(`[sendMediaAsOriginal] Erro ao detectar GIF-like video: ${error.message}`);
-      isGifLikeVideoFile = false;
-    }
-  }
-
-  const shouldSendAsGif = isGif || isGifLikeVideoFile;
+  const path = require('path');
 
   try {
-    // GIFs and GIF-like videos should be sent as animated stickers
-    if (shouldSendAsGif) {
+    // Real GIF files remain animated stickers for backwards compatibility
+    if (isGif) {
       if (typeof client.sendMp4AsSticker === 'function') {
         try {
           await client.sendMp4AsSticker(chatId, filePath, { pack: PACK_NAME, author: AUTHOR_NAME });
-          console.log('[sendMediaAsOriginal] GIF/GIF-like enviado via sendMp4AsSticker');
+          console.log('[sendMediaAsOriginal] GIF enviado via sendMp4AsSticker');
           return;
         } catch (e) {
           console.warn('sendMp4AsSticker falhou, tentando sendImageAsStickerGif (se existir):', e?.message || e);
         }
       }
-      if ((isGif || isGifLikeVideoFile) && typeof client.sendImageAsStickerGif === 'function') {
+      if (typeof client.sendImageAsStickerGif === 'function') {
         await client.sendImageAsStickerGif(chatId, filePath, { pack: PACK_NAME, author: AUTHOR_NAME });
-        console.log('[sendMediaAsOriginal] GIF/GIF-like enviado via sendImageAsStickerGif');
+        console.log('[sendMediaAsOriginal] GIF enviado via sendImageAsStickerGif');
         return;
       }
-      // Fallback for GIFs - send as media if it's actually a video file
-      if (isVideo) {
-        const path = require('path');
-        await client.sendFile(chatId, filePath, path.basename(filePath));
-        console.log('[sendMediaAsOriginal] GIF-like video enviado via sendFile como media (fallback)');
-      } else {
-        const path = require('path');
-        await client.sendFile(chatId, filePath, path.basename(filePath));
-        console.log('[sendMediaAsOriginal] GIF enviado via sendFile como media (fallback)');
-      }
+      await client.sendFile(chatId, filePath, path.basename(filePath));
+      console.log('[sendMediaAsOriginal] GIF enviado via sendFile como fallback');
       return;
     }
 
-    // Regular videos should be sent as files (not stickers)
+    // Videos from the archive must be delivered as videos, never converted to stickers
     if (isVideo) {
-      const path = require('path');
-      await client.sendFile(
-  chatId,
-  filePath,
-  path.basename(filePath),
-  undefined,   // caption
-  undefined,   // quotedMsgId
-  true,       // waitForId
-  false,       // ptt
-  true         // withoutPreview - send as attachment/file
-);
-      console.log('[sendMediaAsOriginal] Vídeo enviado via sendVideo');
-      return;
+      const filename = path.basename(filePath);
+
+      if (typeof client.sendFile === 'function') {
+        await client.sendFile(
+          chatId,
+          filePath,
+          filename,
+          undefined,   // caption
+          undefined,   // quotedMsgId
+          true,        // waitForId
+          false,       // ptt
+          false,       // withoutPreview
+          undefined,   // hideTags
+          undefined,   // viewOnce
+          { mimetype, asDocument: false }
+        );
+        console.log('[sendMediaAsOriginal] Vídeo enviado via sendFile');
+        return;
+      }
+
+      throw new Error('Cliente não suporta envio de vídeos');
     }
 
     // Images can still be sent as stickers since that's expected behavior
@@ -200,7 +187,6 @@ async function sendMediaAsOriginal(client, chatId, media) {
     }
 
     // Audio and others
-    const path = require('path');
     await client.sendFile(chatId, filePath, path.basename(filePath));
     console.log('[sendMediaAsOriginal] Arquivo enviado via sendFile');
     

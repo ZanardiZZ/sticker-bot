@@ -1,5 +1,5 @@
 // Helpers para armazenar nomes de usuários a partir do open-wa message.sender
-const { db } = require('../database');
+const { db } = require('../database/index.js');
 
 /**
  * Cria a tabela contacts caso não exista.
