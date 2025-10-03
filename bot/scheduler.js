@@ -9,7 +9,7 @@ const {
   incrementRandomCount,
   findById,
   getTagsForMedia 
-} = require('../database');
+} = require('../database/index.js');
 const { cleanDescriptionTags, renderInfoMessage } = require('../utils/messageUtils');
 const { withTyping } = require('../utils/typingIndicator');
 const { getBotConfig } = require('../web/dataAccess');

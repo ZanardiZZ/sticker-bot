@@ -2,7 +2,7 @@
  * Top 10 command handler
  */
 
-const { getTop10Media } = require('../../database');
+const { getTop10Media } = require('../../database/index.js');
 const { safeReply } = require('../../utils/safeMessaging');
 
 /**

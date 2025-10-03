@@ -17,7 +17,7 @@ if (fs.existsSync(testDbPath)) {
 process.env.DB_PATH = testDbPath;
 
 const sqlite3 = require('sqlite3').verbose();
-const { migrateHistoricalContacts } = require('../database');
+const { migrateHistoricalContacts } = require('../database/index.js');
 
 // Configura banco de teste
 const testDb = new sqlite3.Database(testDbPath);

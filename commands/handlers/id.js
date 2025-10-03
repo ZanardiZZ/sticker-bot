@@ -2,7 +2,7 @@
  * ID command handler
  */
 
-const { findById, incrementRandomCount, getTagsForMedia } = require('../../database');
+const { findById, incrementRandomCount, getTagsForMedia } = require('../../database/index.js');
 const { sendMediaAsOriginal } = require('../media');
 const { renderInfoMessage, cleanDescriptionTags } = require('../../utils/messageUtils');
 const { safeReply } = require('../../utils/safeMessaging');

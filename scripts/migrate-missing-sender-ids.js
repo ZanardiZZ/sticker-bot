@@ -21,7 +21,7 @@ try {
   // Ignora se dotenv não estiver disponível
 }
 
-const { migrateMediaWithMissingSenderId, getHistoricalContactsStats, db } = require('../database');
+const { migrateMediaWithMissingSenderId, getHistoricalContactsStats, db } = require('../database/index.js');
 
 async function runMigration() {
   try {

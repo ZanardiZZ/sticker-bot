@@ -157,6 +157,31 @@ const tests = [
         try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
       }
     }
+  },
+  {
+    name: 'sendMediaAsOriginal envia vídeos arquivados como vídeo (sem virar sticker)',
+    fn: async () => {
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'media-test-'));
+      const videoPath = path.join(tempDir, 'dummy.mp4');
+      fs.writeFileSync(videoPath, Buffer.from('fake video content'));
+
+      try {
+        await withMediaModule({ stickerModule: createStickerStub() }, async ({ sendMediaAsOriginal }) => {
+          const client = new MockBaileysClient();
+
+          await sendMediaAsOriginal(client, 'chat-video', {
+            file_path: videoPath,
+            mimetype: 'video/mp4'
+          });
+
+          assertEqual(client.sent.length, 1, 'Vídeo deve gerar apenas um envio');
+          assertEqual(client.sent[0].type, 'file', 'Vídeo deve ser entregue como arquivo/vídeo');
+        });
+      } finally {
+        try { fs.unlinkSync(videoPath); } catch {}
+        try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
+      }
+    }
   }
 ];
 

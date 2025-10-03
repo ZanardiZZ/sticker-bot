@@ -1,6 +1,6 @@
 const path = require('path');
 const { bus } = require('./eventBus.js');
-const { db } = require('../database');
+const { db } = require('../database/index.js');
 const fs = require('fs');
 
 // Ajuste o caminho raiz dos stickers se for diferente:

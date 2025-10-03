@@ -4,7 +4,7 @@
  */
 
 const { createTestDatabase, assert, assertEqual } = require('../helpers/testUtils');
-const { saveMedia, findById } = require('../../database');
+const { saveMedia, findById } = require('../../database/index.js');
 
 async function runMediaProcessorTests() {
   console.log('\n=== Media Processor Race Condition Fix Tests ===');

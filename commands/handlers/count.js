@@ -2,7 +2,7 @@
  * Count command handler
  */
 
-const { countMedia } = require('../../database');
+const { countMedia } = require('../../database/index.js');
 const { safeReply } = require('../../utils/safeMessaging');
 
 /**

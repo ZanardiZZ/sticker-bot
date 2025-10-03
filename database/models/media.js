@@ -55,6 +55,27 @@ function findByHashVisual(hashVisual) {
 }
 
 /**
+ * Finds media by MD5 hash
+ * @param {string} hashMd5 - MD5 hash string
+ * @returns {Promise<object|null>} Media object or null
+ */
+function findByHashMd5(hashMd5) {
+  return new Promise((resolve) => {
+    if (!hashMd5) {
+      resolve(null);
+      return;
+    }
+    db.get(
+      'SELECT * FROM media WHERE hash_md5 = ? LIMIT 1',
+      [hashMd5],
+      (err, row) => {
+        resolve(err ? null : row);
+      }
+    );
+  });
+}
+
+/**
  * Finds media by ID
  * @param {number} id - Media ID
  * @returns {Promise<object|null>} Media object or null
@@ -186,5 +207,6 @@ module.exports = {
   incrementRandomCount,
   updateMediaDescription,
   countMedia,
+  findByHashMd5,
   getTop10Media
 };

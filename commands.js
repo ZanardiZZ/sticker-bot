@@ -33,7 +33,7 @@ const {
   getTop10Media,
   getTop5UsersByStickerCount,
   countMedia
-} = require('./database');
+} = require('./database/index.js');
 const { isNSFW } = require('./services/nsfwFilter');
 const { getAiAnnotations, transcribeAudioBuffer, getAiAnnotationsFromPrompt } = require('./services/ai');
 const { processVideo } = require('./services/videoProcessor');

@@ -41,6 +41,9 @@ mediaProcessingQueue.on('jobCompleted', (jobId) => {
 async function handleMessage(client, message) {
   await logReceivedMessage(client, message);
   
+  // Ignore messages sent by the bot itself to avoid re-processing forwarded media
+  if (message.fromMe) return;
+
   // Update contact information
   try { 
     upsertContactFromMessage(message);

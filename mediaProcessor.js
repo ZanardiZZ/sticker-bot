@@ -9,12 +9,12 @@ const {
   findById,
   saveMedia,
   getTagsForMedia
-} = require('./database');
+} = require('./database/index.js');
 const { isNSFW } = require('./services/nsfwFilter');
 const { isVideoNSFW } = require('./services/nsfwVideoFilter');
 const { getAiAnnotations, transcribeAudioBuffer, getAiAnnotationsFromPrompt, getAiAnnotationsForGif } = require('./services/ai');
 const { processVideo, processGif, processAnimatedWebp } = require('./services/videoProcessor');
-const { updateMediaDescription, updateMediaTags } = require('./database');
+const { updateMediaDescription, updateMediaTags } = require('./database/index.js');
 const { forceMap, MAX_TAGS_LENGTH, clearDescriptionCmds } = require('./commands');
 const { cleanDescriptionTags } = require('./utils/messageUtils');
 const { generateResponseMessage } = require('./utils/responseMessage');

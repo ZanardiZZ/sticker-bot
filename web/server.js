@@ -46,7 +46,7 @@ console.time('[BOOT] total');
 const app = express();
 app.set('trust proxy', true);
 
-const { db, findDuplicateMedia, getDuplicateMediaDetails, deleteDuplicateMedia, deleteMediaByIds, getDuplicateStats } = require('../database');
+const { db, findDuplicateMedia, getDuplicateMediaDetails, deleteDuplicateMedia, deleteMediaByIds, getDuplicateStats } = require('../database/index.js');
 let whatsappClient = null;
 
 function initAnalyticsTables(db) {
