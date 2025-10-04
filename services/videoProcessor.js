@@ -333,8 +333,16 @@ async function processVideo(filePath) {
     // Duração vídeo
     let duration = await new Promise((res, rej) => {
       ffmpeg.ffprobe(filePath, (err, meta) => {
-        if (err) rej(err);
-        else res(meta.format.duration);
+        if (err) {
+          rej(err);
+        } else {
+          const fileDuration = meta.format?.duration;
+          if (fileDuration !== null && fileDuration !== undefined && !isNaN(parseFloat(fileDuration))) {
+            res(parseFloat(fileDuration));
+          } else {
+            rej(new Error(`Duração inválida ou não detectada: ${fileDuration}`));
+          }
+        }
       });
     });
 
@@ -345,7 +353,13 @@ async function processVideo(filePath) {
     }
 
     // Timestamps para frames: 10%, 50%, 90%
-  const timestamps = [duration * 0.1, duration * 0.5, duration * 0.9];
+    const timestamps = [duration * 0.1, duration * 0.5, duration * 0.9];
+    
+    // Final safety check to prevent NaN timestamps
+    const hasNaN = timestamps.some(t => !Number.isFinite(t) || t < 0);
+    if (hasNaN) {
+      throw new Error(`Timestamps inválidos calculados: ${timestamps.join(', ')}`);
+    }
 
     // Extrai frames
     const extractResult = await extractFrames(filePath, timestamps);
