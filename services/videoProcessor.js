@@ -579,6 +579,14 @@ async function processGif(filePath) {
       duration = 2; // Safe default duration
     }
 
+    // Additional safety check to ensure duration is a valid finite number before timestamp calculation
+    // This prevents NaN timestamps even in edge cases or concurrent processing scenarios
+    duration = Number(duration);
+    if (!Number.isFinite(duration) || duration <= 0) {
+      console.warn(`[VideoProcessor] Duração ainda inválida após validação (${duration}), forçando fallback`);
+      duration = 2;
+    }
+
     // Para GIFs curtos, usa timestamps mais próximos
     const rawTimestamps = duration > 3
       ? [duration * 0.1, duration * 0.5, duration * 0.9]
@@ -598,6 +606,13 @@ async function processGif(filePath) {
 
     if (sanitized.length === 0) {
       console.warn('[VideoProcessor] Todos os timestamps calculados são inválidos, usando timestamps padrão 0.05, 0.5, 0.9*dur');
+      
+      // Ensure duration is still valid before calculating fallback timestamps
+      if (!Number.isFinite(duration) || duration <= 0) {
+        console.warn(`[VideoProcessor] Duração inválida ao calcular timestamps de fallback (${duration}), forçando valor padrão`);
+        duration = 2;
+      }
+      
       sanitized = [
         Math.min(0.05, Math.max(0, duration - epsilon)),
         Math.min(0.5, Math.max(0, duration - epsilon)),
@@ -606,6 +621,15 @@ async function processGif(filePath) {
     }
 
     const finalTimestamps = sanitized;
+    
+    // Final safety check: ensure no NaN values in timestamps before extraction
+    // This is a defensive check to catch any edge cases that might slip through
+    const hasNaN = finalTimestamps.some(t => !Number.isFinite(t) || t < 0);
+    if (hasNaN) {
+      console.error('[VideoProcessor] ERRO CRÍTICO: Timestamps contêm valores inválidos:', finalTimestamps);
+      throw new Error('Timestamps inválidos detectados - possível problema de processamento concorrente');
+    }
+    
     console.log(`[VideoProcessor] Extraindo frames do GIF nos timestamps: ${finalTimestamps.join(', ')}s`);
 
     // Extrai frames - with better error handling for GIF format issues
