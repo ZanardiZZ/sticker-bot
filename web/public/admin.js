@@ -264,7 +264,7 @@ function renderUsersTable(users) {
   tbody.innerHTML = users.map(user => {
     const createdAt = new Date(user.created_at).toLocaleString('pt-BR');
     const statusBadge = getStatusBadge(user.status);
-    const actions = getActionButtons(user);
+  const actions = getActionButtons(user) + ` <button class="btn-user-delete" data-id="${user.id}" style="background:#6c757d;color:white;border:0;padding:0.2rem 0.4rem;border-radius:3px;font-size:0.8rem;cursor:pointer;margin-left:0.2rem;">Deletar</button>`;
     const phone = user.phone_number ? maskPhone(user.phone_number) : '—';
     const contactName = user.contact_display_name || '—';
     const canEdit = user.can_edit ? '✓' : '✗';
@@ -454,6 +454,19 @@ document.addEventListener('click', async (e) => {
     await toggleEditPermission(userId, false);
   } else if (e.target.classList.contains('btn-user-remove-edit')) {
     await toggleEditPermission(userId, true);
+  } else if (e.target.classList.contains('btn-user-delete')) {
+    if (!confirm('Deseja realmente deletar este usuário? Esta ação não pode ser desfeita.')) return;
+    try {
+      const resp = await fetchWithCSRF('/api/admin/users/' + encodeURIComponent(userId), { method: 'DELETE' });
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        return alert(getAdminErrorMessage(data, 'Falha ao deletar usuário'));
+      }
+      await loadUsers();
+    } catch (err) {
+      console.error('Erro ao deletar usuário:', err);
+      alert('Erro ao deletar usuário');
+    }
   }
 });
 
@@ -684,9 +697,38 @@ async function fetchConnectedGroups(force = false) {
   if (!force && Array.isArray(connectedGroupsCache)) {
     return connectedGroupsCache;
   }
+
+  function setGroupDebug(obj) {
+    try {
+      const el = document.getElementById('groupFetchDebug');
+      if (!el) return;
+      el.textContent = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
+    } catch (e) { /* ignore */ }
+  }
+
   try {
-    const response = await fetchJSON('/api/admin/connected-groups');
-    const groups = Array.isArray(response?.groups) ? response.groups : [];
+    const resp = await fetch('/api/admin/connected-groups', { credentials: 'same-origin' });
+    const text = await resp.text();
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch (e) { parsed = text; }
+
+    setGroupDebug({ status: resp.status, ok: resp.ok, body: parsed });
+
+    // If unauthenticated or forbidden, show a friendly notice with login link
+    if (resp.status === 401 || resp.status === 403) {
+      try {
+        const notice = document.getElementById('groupAuthNotice');
+        if (notice) {
+          const msg = resp.status === 401 ? 'Sessão não autenticada. Faça login para acessar.' : 'Acesso negado. Sua conta não tem permissões de administrador.';
+          const extra = (parsed && parsed.message) ? (' — ' + parsed.message) : '';
+          notice.innerHTML = `<div style="color:#fff;background:#dc2626;padding:8px;border-radius:4px;display:inline-block;">${escapeHtml(msg)}${escapeHtml(extra)} <a href="/login" style="color:#fff;text-decoration:underline;margin-left:8px;">Ir para login</a></div>`;
+        }
+      } catch (e) { /* ignore */ }
+      connectedGroupsCache = [];
+      return connectedGroupsCache;
+    }
+
+    const groups = Array.isArray(parsed?.groups) ? parsed.groups : [];
     connectedGroupsCache = groups.sort((a, b) => {
       const nameA = (a.name || a.subject || a.id || '').toLocaleLowerCase('pt-BR');
       const nameB = (b.name || b.subject || b.id || '').toLocaleLowerCase('pt-BR');
@@ -694,6 +736,7 @@ async function fetchConnectedGroups(force = false) {
     });
   } catch (error) {
     console.warn('Falha ao carregar grupos conectados:', error);
+    setGroupDebug({ error: String(error) });
     connectedGroupsCache = [];
   }
   return connectedGroupsCache;
@@ -735,11 +778,10 @@ function bindGroupInputs(selectEl, inputEl) {
   }
 }
 
-async function ensureGroupSelectPopulated(selectEl, placeholder) {
-  if (!selectEl || selectEl.dataset.populated === 'true') {
-    return;
-  }
-  const groups = await fetchConnectedGroups();
+async function ensureGroupSelectPopulated(selectEl, placeholder, force = false) {
+  if (!selectEl) return;
+  if (!force && selectEl.dataset.populated === 'true') return;
+  const groups = await fetchConnectedGroups(force);
   populateGroupSelect(selectEl, groups, placeholder);
   selectEl.dataset.populated = 'true';
 }
@@ -750,8 +792,59 @@ async function initializeGroupUsersTab() {
   const loadBtn = document.getElementById('loadGroupUsersBtn');
   if (!selectEl || !inputEl || !loadBtn) return;
 
+  // insert debug UI (only once)
+  if (!document.getElementById('groupFetchDebug')) {
+    try {
+      const wrapper = document.createElement('div');
+      wrapper.style.marginTop = '6px';
+      wrapper.innerHTML = `
+  <button id="refreshGroupsBtn" style="margin-right:8px;padding:6px 10px;font-size:0.85rem;">Atualizar grupos</button>
+  <button id="adminAutoLoginBtn" style="margin-right:8px;padding:6px 10px;font-size:0.85rem;background:#2563eb;color:#fff;border:0;border-radius:4px;">Auto-login (debug)</button>
+  <span id="groupAuthNotice" style="margin-right:8px;vertical-align:middle;"></span>
+  <pre id="groupFetchDebug" style="display:inline-block;background:#0f172a;color:#c7d2fe;padding:6px;border-radius:4px;max-width:720px;max-height:120px;overflow:auto;font-size:0.75rem;">Debug de grupos</pre>
+      `;
+      selectEl.parentElement?.insertBefore(wrapper, selectEl.nextSibling);
+    } catch (e) { /* ignore */ }
+  }
+
   await ensureGroupSelectPopulated(selectEl, 'Selecione um grupo...');
   bindGroupInputs(selectEl, inputEl);
+
+  // bind refresh control
+  const refreshBtn = document.getElementById('refreshGroupsBtn');
+  if (refreshBtn && !refreshBtn.dataset.bound) {
+    refreshBtn.dataset.bound = 'true';
+    refreshBtn.addEventListener('click', async (ev) => {
+      ev.preventDefault();
+      const dbg = document.getElementById('groupFetchDebug');
+      if (dbg) dbg.textContent = 'Recarregando grupos...';
+      await ensureGroupSelectPopulated(selectEl, 'Selecione um grupo...', true);
+    });
+  }
+  const autoBtn = document.getElementById('adminAutoLoginBtn');
+  if (autoBtn && !autoBtn.dataset.bound) {
+    autoBtn.dataset.bound = 'true';
+    autoBtn.addEventListener('click', async (ev) => {
+      ev.preventDefault();
+      const dbg = document.getElementById('groupFetchDebug');
+      if (dbg) dbg.textContent = 'Tentando auto-login...';
+      try {
+  const resp = await fetch('/api/admin/_debug/auto-login', { method: 'GET', credentials: 'same-origin' });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          const notice = document.getElementById('groupAuthNotice');
+          if (notice) notice.innerHTML = `<div style="color:#fff;background:#f97316;padding:8px;border-radius:4px;display:inline-block;">Auto-login falhou: ${escapeHtml(data.error || 'erro')}. Verifique ADMIN_AUTOLOGIN_DEBUG.</div>`;
+          if (dbg) dbg.textContent = JSON.stringify({ status: resp.status, body: data }, null, 2);
+          return;
+        }
+        if (dbg) dbg.textContent = JSON.stringify({ status: resp.status, body: data }, null, 2);
+        // After auto-login, force reload groups
+        await ensureGroupSelectPopulated(selectEl, 'Selecione um grupo...', true);
+      } catch (err) {
+        if (dbg) dbg.textContent = String(err);
+      }
+    });
+  }
 
   if (!loadBtn.dataset.bound) {
     loadBtn.dataset.bound = 'true';

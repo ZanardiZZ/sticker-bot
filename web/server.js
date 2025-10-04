@@ -112,6 +112,7 @@ function ensureUsersSchema(db) {
       if (!names.has('must_change_password')) stmts.push(`ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0`);
       if (!names.has('created_at')) stmts.push(`ALTER TABLE users ADD COLUMN created_at INTEGER DEFAULT (strftime('%s','now')*1000)`);
       if (!names.has('password_updated_at')) stmts.push(`ALTER TABLE users ADD COLUMN password_updated_at INTEGER`);
+  if (!names.has('token_version')) stmts.push(`ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0`);
       // New fields for user registration and management
       if (!names.has('phone_number')) stmts.push(`ALTER TABLE users ADD COLUMN phone_number TEXT`);
       if (!names.has('status')) stmts.push(`ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'pending'`);
@@ -145,9 +146,9 @@ async function ensureInitialAdmin() {
       const initialPass = process.env.ADMIN_INITIAL_PASSWORD || Math.random().toString(36).slice(-12);
       const hash = await bcrypt.hash(initialPass, 12);
       db.run(
-        `INSERT INTO users (username, password_hash, role, status, must_change_password, created_at, password_updated_at)
-         VALUES (?, ?, 'admin', 'approved', 1, ?, NULL)
-         ON CONFLICT(username) DO UPDATE SET role='admin', status='approved', must_change_password=1`,
+    `INSERT INTO users (username, password_hash, role, status, must_change_password, created_at, password_updated_at, token_version)
+     VALUES (?, ?, 'admin', 'approved', 1, ?, NULL, 0)
+     ON CONFLICT(username) DO UPDATE SET role='admin', status='approved', must_change_password=1`,
         [username, hash, Date.now()],
         (e2) => {
           if (e2) {
@@ -922,23 +923,39 @@ app.patch('/api/admin/users/:id/status', requireAdmin, (req, res) => {
   
   const now = Date.now();
   const approverId = req.user.id;
-  
+  // Allow admin to set status regardless of current value (override)
   db.run(`
     UPDATE users 
-    SET status = ?, approved_at = ?, approved_by = ?
-    WHERE id = ? AND status = 'pending'
-  `, [status, now, approverId, id], function(err) {
+    SET status = ?, approved_at = CASE WHEN ? = 'approved' THEN ? ELSE NULL END, approved_by = CASE WHEN ? = 'approved' THEN ? ELSE NULL END
+    WHERE id = ?
+  `, [status, status, now, status, approverId, id], function(err) {
     if (err) {
       console.error('[ADMIN] Error updating user status:', err);
       return res.status(500).json({ error: 'db_error' });
     }
     
     if (this.changes === 0) {
-      return res.status(404).json({ error: 'user_not_found_or_not_pending' });
+      return res.status(404).json({ error: 'user_not_found' });
     }
     
     console.log(`[ADMIN] User ${id} ${status} by ${req.user.username}`);
     res.json({ success: true, status, approved_at: now });
+  });
+});
+
+// Delete a user (admin only)
+app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
+  const { id } = req.params;
+  // Prevent deleting admin users via this endpoint
+  db.get(`SELECT role FROM users WHERE id = ?`, [id], (err, row) => {
+    if (err) return res.status(500).json({ error: 'db_error', details: err.message });
+    if (!row) return res.status(404).json({ error: 'user_not_found' });
+    if (row.role === 'admin') return res.status(403).json({ error: 'cannot_delete_admin' });
+
+    db.run(`DELETE FROM users WHERE id = ?`, [id], function(deleteErr) {
+      if (deleteErr) return res.status(500).json({ error: 'db_error', details: deleteErr.message });
+      res.json({ deleted: this.changes });
+    });
   });
 });
 
