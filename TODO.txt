@@ -4,3 +4,5 @@
 -Site: Verificar a questao do cadastro do site não estar funcionando
 -Site: capacidade de pedir nova descricao do sticker via ia
 -Bot: reavaliar os envios anteriores a tabela tag
+
+
