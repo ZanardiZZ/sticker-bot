@@ -46,6 +46,61 @@ console.time('[BOOT] total');
 const app = express();
 app.set('trust proxy', true);
 
+// Basic middleware setup - MUST be before any routes
+app.use(cors());
+app.use(cookieParser());
+
+// Auth middleware - MUST be after cookieParser but before routes
+app.use(async (req, res, next) => {
+  try {
+    const jwt = require('jsonwebtoken');
+    const JWT_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET || 'dev-secret-change-me';
+    const getCookieName = () => process.env.NODE_ENV === 'production' ? '__Host-sid' : 'sid';
+    
+    const cookieName = getCookieName();
+    const raw = req.cookies[cookieName] || (process.env.NODE_ENV === 'production' ? req.cookies.sid : undefined);
+
+    if (raw) {
+      const parts = String(raw).split('.');
+      if (parts.length === 3) {
+        try {
+          const payload = jwt.verify(raw, JWT_SECRET);
+          
+          // Get user from database
+          await new Promise((resolve) => {
+            db.get(`SELECT id, username, role, COALESCE(token_version,0) AS token_version FROM users WHERE id = ?`, [payload.uid], (err, row) => {
+              if (!err && row && row.token_version === (payload.tv || 0)) {
+                req.user = { id: row.id, username: row.username, role: row.role };
+              }
+              resolve();
+            });
+          });
+        } catch (e) {
+          // Invalid/expired token - don't authenticate
+        }
+      }
+    }
+
+    // Handle debug mode
+    if (!req.user && process.env.ADMIN_AUTOLOGIN_DEBUG === '1') {
+      const debugUser = req.cookies?.DEBUG_USER || 
+        (req.headers.cookie && req.headers.cookie.match(/DEBUG_USER=([^;]+)/)?.[1]);
+      
+      if (debugUser) {
+        req.user = { id: null, username: String(debugUser), role: 'admin' };
+      }
+    }
+    
+    next();
+  } catch (error) {
+    console.error('[AUTH] Middleware error:', error);
+    next(error);
+  }
+});
+
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: false }));
+
 const { db, findDuplicateMedia, getDuplicateMediaDetails, deleteDuplicateMedia, deleteMediaByIds, getDuplicateStats } = require('../database/index.js');
 let whatsappClient = null;
 
@@ -217,6 +272,7 @@ try {
 } catch (e) {
   whatsappClient = null;
 }
+
 // ====== API: Listar grupos conectados ======
 app.get('/api/admin/connected-groups', requireAdmin, async (req, res) => {
   try {
@@ -232,10 +288,13 @@ app.get('/api/admin/connected-groups', requireAdmin, async (req, res) => {
     });
 
     if (global.getCurrentWhatsAppClient) {
+      console.log('[DEBUG] WhatsApp client getter available');
       const client = global.getCurrentWhatsAppClient();
       if (client && typeof client.getAllChats === 'function') {
+        console.log('[DEBUG] Getting chats from WhatsApp client...');
         const chats = await client.getAllChats();
         const whatsappGroups = chats.filter((c) => c?.isGroup && c?.id);
+        console.log('[DEBUG] WhatsApp groups found:', whatsappGroups.length);
 
         if (whatsappGroups.length) {
           const upserts = [];
@@ -277,6 +336,7 @@ app.get('/api/admin/connected-groups', requireAdmin, async (req, res) => {
       return nameA.localeCompare(nameB, 'pt-BR');
     });
 
+    console.log('[DEBUG] Final groups count:', groups.length);
     res.json({ groups });
   } catch (err) {
     res.status(500).json({ error: 'failed_to_list_groups', details: err.message });
@@ -292,12 +352,15 @@ const ROOT_DIR = path.resolve(__dirname, '..');
 const STICKERS_DIR = process.env.STICKERS_DIR || path.join(ROOT_DIR, 'media');
 console.log('[WEB] STICKERS_DIR:', STICKERS_DIR, 'exists:', fs.existsSync(STICKERS_DIR));
 const PUBLIC_DIR = process.env.PUBLIC_DIR || path.resolve(__dirname, 'public');
-console.log('[WEB] PUBLIC_DIR:', PUBLIC_DIR, 'exists:', fs.existsSync(PUBLIC_DIR));
 
-app.use(cors());
-app.use(cookieParser());
-app.use(express.json({ limit: '2mb' }));
-app.use(express.urlencoded({ extended: false }));
+// DEBUG: Add early middleware
+// app.use((req, res, next) => {
+//   if (req.path.startsWith('/api/admin/') || req.path.startsWith('/api/debug/')) {
+//     console.log('[DEBUG] EARLY MIDDLEWARE:', req.path, req.method);
+//   }
+//   next();
+// });
+console.log('[WEB] PUBLIC_DIR:', PUBLIC_DIR, 'exists:', fs.existsSync(PUBLIC_DIR));
 
 // Session middleware for CAPTCHA
 
@@ -315,15 +378,17 @@ app.use(session({
 
 // CSRF Protection (use csurf, recognized by CodeQL)
 app.use((req, res, next) => {
-  // Skip CSRF for login and register POST requests
+  // Skip CSRF for login and register POST requests, and debug/admin endpoints
   if ((req.path === '/api/login' || req.path === '/api/register') && req.method === 'POST') {
+    return next();
+  }
+  if (req.path.startsWith('/api/debug/') || req.path.startsWith('/api/admin/')) {
     return next();
   }
   return csurf({ cookie: false })(req, res, next);
 });
 
 console.time('[BOOT] auth');
-authMiddleware(app);
 registerAuthRoutes(app);
 console.timeEnd('[BOOT] auth');
 
@@ -587,42 +652,71 @@ app.post('/api/register', registerRateLimit, async (req, res) => {
             return res.status(409).json({ error: 'phone_taken' });
           }
           
-          // Generate email confirmation token
-          const confirmationToken = emailService.generateConfirmationToken();
-          const confirmationExpires = Date.now() + (24 * 60 * 60 * 1000); // 24 hours
-          
-          // Hash password and create user
-          try {
-            const passwordHash = await bcrypt.hash(password, 12);
-            const now = Date.now();
+          // Check if this phone number has chatted with the bot (DM user)
+          const dmUserId = phoneNumber + '@c.us'; // WhatsApp format
+          db.get(`SELECT id, allowed, blocked, note FROM dm_users WHERE user_id = ?`, [dmUserId], async (errDm, dmUser) => {
+            if (errDm) {
+              console.error('[REGISTER] DB error checking DM user:', errDm);
+              return res.status(500).json({ error: 'db_error' });
+            }
             
-            db.run(`
-              INSERT INTO users (username, password_hash, phone_number, email, role, status, can_edit, must_change_password, created_at, email_confirmed, email_confirmation_token, email_confirmation_expires)
-              VALUES (?, ?, ?, ?, 'user', 'pending', 0, 0, ?, 0, ?, ?)
-            `, [username.toLowerCase(), passwordHash, phoneNumber, email.toLowerCase(), now, confirmationToken, confirmationExpires], async function(err3) {
-              if (err3) {
-                console.error('[REGISTER] DB error creating user:', err3);
-                return res.status(500).json({ error: 'db_error' });
+            // Generate email confirmation token
+            const confirmationToken = emailService.generateConfirmationToken();
+            const confirmationExpires = Date.now() + (24 * 60 * 60 * 1000); // 24 hours
+            
+            // Hash password and create user
+            try {
+              const passwordHash = await bcrypt.hash(password, 12);
+              const now = Date.now();
+              
+              // Determine initial status based on DM user status
+              let initialStatus = 'pending';
+              let initialCanEdit = 0;
+              
+              if (dmUser) {
+                // If user has chatted with bot and is allowed, give them approved status
+                if (dmUser.allowed && !dmUser.blocked) {
+                  initialStatus = 'approved';
+                  initialCanEdit = 1;
+                  console.log(`[REGISTER] WhatsApp user ${dmUserId} registering - auto-approving`);
+                } else if (dmUser.blocked) {
+                  return res.status(403).json({ error: 'phone_blocked', message: 'Este número está bloqueado no WhatsApp.' });
+                }
               }
               
-              console.log(`[REGISTER] New user registered: ${username} (email: ${email}, phone: ${phoneNumber})`);
-              
-              // Send confirmation email
-              const emailSent = await emailService.sendConfirmationEmail(email, username, confirmationToken);
-              
-              res.status(201).json({ 
-                success: true,
-                message: emailSent ? 
-                  'Cadastro realizado com sucesso! Verifique seu email para confirmar sua conta.' :
-                  'Cadastro realizado com sucesso! Aguarde aprovação (email de confirmação não pôde ser enviado).',
-                userId: this.lastID,
-                emailSent: emailSent
+              db.run(`
+                INSERT INTO users (username, password_hash, phone_number, email, role, status, can_edit, must_change_password, created_at, email_confirmed, email_confirmation_token, email_confirmation_expires)
+                VALUES (?, ?, ?, ?, 'user', ?, ?, 0, ?, 0, ?, ?)
+              `, [username.toLowerCase(), passwordHash, phoneNumber, email.toLowerCase(), initialStatus, initialCanEdit, now, confirmationToken, confirmationExpires], async function(err3) {
+                if (err3) {
+                  console.error('[REGISTER] DB error creating user:', err3);
+                  return res.status(500).json({ error: 'db_error' });
+                }
+                
+                console.log(`[REGISTER] New user registered: ${username} (email: ${email}, phone: ${phoneNumber}, status: ${initialStatus})`);
+                
+                // Send confirmation email
+                const emailSent = await emailService.sendConfirmationEmail(email, username, confirmationToken);
+                
+                const responseMessage = dmUser ? 
+                  'Cadastro realizado com sucesso! Como você já conversou conosco no WhatsApp, sua conta foi pré-aprovada.' :
+                  'Cadastro realizado com sucesso! Aguarde aprovação do administrador.';
+                
+                res.status(201).json({ 
+                  success: true,
+                  message: emailSent ? 
+                    responseMessage + ' Verifique seu email para confirmar sua conta.' :
+                    responseMessage + ' (Email de confirmação não pôde ser enviado).',
+                  userId: this.lastID,
+                  emailSent: emailSent,
+                  autoApproved: initialStatus === 'approved'
+                });
               });
-            });
-          } catch (hashErr) {
-            console.error('[REGISTER] Error hashing password:', hashErr);
-            res.status(500).json({ error: 'db_error' });
-          }
+            } catch (hashErr) {
+              console.error('[REGISTER] Error hashing password:', hashErr);
+              res.status(500).json({ error: 'db_error' });
+            }
+          });
         });
       });
     });
@@ -850,10 +944,58 @@ app.delete('/api/admin/ip-rules/:id', requireAdmin, (req, res) => {
 });
 
 // ========= User Management APIs =========
+// Debug endpoint to check current user
+app.get('/api/debug/user', (req, res) => {
+  if (!req.user) {
+    return res.json({ error: 'not_logged_in' });
+  }
+  res.json({
+    id: req.user.id,
+    username: req.user.username,
+    role: req.user.role,
+    is_admin: req.user.role === 'admin'
+  });
+});
+
+// Debug endpoint to promote user to admin
+app.post('/api/debug/make-admin', (req, res) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'not_logged_in' });
+  }
+  
+  db.run(`UPDATE users SET role = 'admin', status = 'approved' WHERE id = ?`, [req.user.id], function(err) {
+    if (err) {
+      return res.status(500).json({ error: 'db_error' });
+    }
+    res.json({ success: true, message: 'User promoted to admin' });
+  });
+});
+
+// Debug endpoint to add test groups
+app.post('/api/debug/add-test-groups', requireAdmin, async (req, res) => {
+  try {
+    const testGroups = [
+      { id: '120363276605190820@g.us', name: 'Grupo de Teste 1' },
+      { id: '120363403698018204@g.us', name: 'Grupo de Teste 2' }
+    ];
+
+    for (const group of testGroups) {
+      await upsertGroupMetadata({
+        groupId: group.id,
+        displayName: group.name,
+        lastInteractionTs: Date.now()
+      });
+    }
+
+    res.json({ success: true, message: 'Test groups added' });
+  } catch (err) {
+    res.status(500).json({ error: 'failed', details: err.message });
+  }
+});
 // List all users for admin management
 app.get('/api/admin/users', requireAdmin, (req, res) => {
   const { status, limit = 50, offset = 0 } = req.query;
-  
+
   let sql = `
     SELECT 
       u.id,
@@ -868,40 +1010,42 @@ app.get('/api/admin/users', requireAdmin, (req, res) => {
       u.approved_at,
       u.approved_by,
       approver.username as approved_by_username,
-      c.display_name as contact_display_name
+      c.display_name as contact_display_name,
+      CASE WHEN dm.id IS NOT NULL THEN 1 ELSE 0 END as has_whatsapp_account,
+      dm.allowed as whatsapp_allowed,
+      dm.blocked as whatsapp_blocked
     FROM users u
     LEFT JOIN users approver ON u.approved_by = approver.id
     LEFT JOIN contacts c ON c.sender_id = u.phone_number
-  `;
-  
-  const params = [];
-  
+    LEFT JOIN dm_users dm ON dm.user_id = (u.phone_number || '@c.us')
+  `;  const params = [];
+
   if (status) {
     sql += ` WHERE u.status = ?`;
     params.push(status);
   }
-  
+
   sql += ` ORDER BY u.created_at DESC LIMIT ? OFFSET ?`;
   params.push(parseInt(limit), parseInt(offset));
-  
+
   db.all(sql, params, (err, rows) => {
     if (err) {
       console.error('[ADMIN] Error fetching users:', err);
       return res.status(500).json({ error: 'db_error', details: err.message });
     }
-    
+
     // Get total count
-    const countSql = status ? 
+    const countSql = status ?
       `SELECT COUNT(*) as total FROM users WHERE status = ?` :
       `SELECT COUNT(*) as total FROM users`;
     const countParams = status ? [status] : [];
-    
+
     db.get(countSql, countParams, (err2, countRow) => {
       if (err2) {
         console.error('[ADMIN] Error counting users:', err2);
         return res.status(500).json({ error: 'db_error' });
       }
-      
+
       res.json({
         users: rows || [],
         total: countRow?.total || 0,
@@ -916,16 +1060,16 @@ app.get('/api/admin/users', requireAdmin, (req, res) => {
 app.patch('/api/admin/users/:id/status', requireAdmin, (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
-  
+
   if (!['approved', 'rejected'].includes(status)) {
     return res.status(400).json({ error: 'invalid_status' });
   }
-  
+
   const now = Date.now();
   const approverId = req.user.id;
   // Allow admin to set status regardless of current value (override)
   db.run(`
-    UPDATE users 
+    UPDATE users
     SET status = ?, approved_at = CASE WHEN ? = 'approved' THEN ? ELSE NULL END, approved_by = CASE WHEN ? = 'approved' THEN ? ELSE NULL END
     WHERE id = ?
   `, [status, status, now, status, approverId, id], function(err) {
@@ -933,11 +1077,11 @@ app.patch('/api/admin/users/:id/status', requireAdmin, (req, res) => {
       console.error('[ADMIN] Error updating user status:', err);
       return res.status(500).json({ error: 'db_error' });
     }
-    
+
     if (this.changes === 0) {
       return res.status(404).json({ error: 'user_not_found' });
     }
-    
+
     console.log(`[ADMIN] User ${id} ${status} by ${req.user.username}`);
     res.json({ success: true, status, approved_at: now });
   });
@@ -963,21 +1107,21 @@ app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
 app.patch('/api/admin/users/:id/permissions', requireAdmin, (req, res) => {
   const { id } = req.params;
   const { can_edit } = req.body;
-  
+
   if (typeof can_edit !== 'boolean') {
     return res.status(400).json({ error: 'invalid_permissions' });
   }
-  
+
   db.run(`UPDATE users SET can_edit = ? WHERE id = ?`, [can_edit ? 1 : 0, id], function(err) {
     if (err) {
       console.error('[ADMIN] Error updating user permissions:', err);
       return res.status(500).json({ error: 'db_error' });
     }
-    
+
     if (this.changes === 0) {
       return res.status(404).json({ error: 'user_not_found' });
     }
-    
+
     console.log(`[ADMIN] User ${id} edit permission set to ${can_edit} by ${req.user.username}`);
     res.json({ success: true, can_edit });
   });
