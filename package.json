@@ -8,7 +8,6 @@
     "test:integration": "node tests/integration/database.test.js",
     "test:unit": "node tests/runTests.js",
     "web": "node web/server.js",
-    "socket-server": "node socket-server.js",
     "bot": "USE_SOCKET_MODE=true node index.js",
     "bot-direct": "USE_SOCKET_MODE=false node index.js",
     "baileys:server": "node server.js"
