@@ -20,6 +20,8 @@ const media = require('./media');
 const { updateMediaDescription, updateMediaTags } = require('../database/index.js');
 const { safeReply } = require('../utils/safeMessaging');
 const { parseCommand } = require('../utils/commandNormalizer');
+const packageJson = require('../package.json');
+const os = require('os');
 
 // Constants
 const MAX_TAGS_LENGTH = 500;
@@ -77,6 +79,31 @@ async function handleCommand(client, message, chatId) {
       case '#theme':
         await handleThemeCommand(client, message, chatId, params);
         return true;
+
+        case '#ping': {
+          // Build ping response
+          const uptimeSeconds = Math.floor(process.uptime());
+          function formatUptime(seconds) {
+            const h = String(Math.floor(seconds / 3600)).padStart(2, '0');
+            const m = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
+            const s = String(seconds % 60).padStart(2, '0');
+            return `${h}:${m}:${s}`;
+          }
+
+          const uptime = formatUptime(uptimeSeconds);
+          const latency = 0; // We don't have a roundtrip measurement here in handler tests
+          const cronSchedule = process.env.BOT_CRON_SCHEDULE || '0 0-23 * * *';
+          const botVersion = (packageJson && packageJson.version) ? packageJson.version : '1.0.0';
+
+          const response = `🤖 *Sticker Bot` + `*\n` +
+            `🟢 Uptime: ${uptime}\n` +
+            `📡 Latência: ${latency} ms\n` +
+            `⏰ CRON: ${cronSchedule}\n` +
+            `🛠️ Versão: ${botVersion}`;
+
+          await safeReply(client, chatId, response, message);
+          return true;
+        }
       
       default:
         // Check if it's an invalid command

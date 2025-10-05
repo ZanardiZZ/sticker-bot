@@ -49,7 +49,7 @@ async function handleThemeCommand(client, message, chatId, params = []) {
       await safeReply(
         client,
         chatId,
-        'Usage: #theme <keywords> <quantity (1-10)>\nExample: #theme fun 5',
+        'Uso: #tema <palavras-chave> <quantidade>\nQuantidade: 1-10 (máximo 10 figurinhas)\nExemplo: #tema divertido 5',
         message.id
       );
       return;
@@ -61,7 +61,7 @@ async function handleThemeCommand(client, message, chatId, params = []) {
       await safeReply(
         client,
         chatId,
-        `No stickers found for theme "${keywords.join(' ')}".`,
+        `Nenhum sticker encontrado para o tema "${keywords.join(' ')}".`,
         message.id
       );
       return;
@@ -95,13 +95,13 @@ async function handleThemeCommand(client, message, chatId, params = []) {
       await safeReply(
         client,
         chatId,
-        `Only found ${deliveredCount} stickers for the requested theme.`,
+        `Achei apenas ${deliveredCount} stickers para o tema solicitado.`,
         message.id
       );
     }
   } catch (err) {
     console.error('Error in #theme command:', err);
-    await safeReply(client, chatId, 'Error searching for stickers by theme.', message.id);
+    await safeReply(client, chatId, 'Erro ao buscar stickers por tema.', message.id);
   }
 }
 
