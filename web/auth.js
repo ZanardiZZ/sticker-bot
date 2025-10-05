@@ -30,42 +30,56 @@ const getCookieName = () => {
 };
 
 function authMiddleware(app) {
-  app.use(cookieParser());
+  // cookieParser is already called in server.js
   app.use(async (req, _res, next) => {
-    const cookieName = getCookieName();
-    // Lê ambos para retrocompatibilidade
-    const raw = req.cookies[cookieName] || (process.env.NODE_ENV === 'production' ? req.cookies.sid : undefined);
+    try {
+      console.log('[DEBUG] Auth middleware - Path:', req.path, 'Cookies:', Object.keys(req.cookies || {}));
+      const cookieName = getCookieName();
+      console.log('[DEBUG] Looking for cookie:', cookieName);
+      // Lê ambos para retrocompatibilidade
+      const raw = req.cookies[cookieName] || (process.env.NODE_ENV === 'production' ? req.cookies.sid : undefined);
+      console.log('[DEBUG] Raw token found:', !!raw, raw ? 'Length: ' + raw.length : 'No token');
 
-    if (raw) {
-      // 1) Tenta interpretar como JWT novo
-      const parts = String(raw).split('.');
-      if (parts.length === 3) {
-        try {
-          const payload = jwt.verify(raw, JWT_SECRET);
-          // Busca usuário para confirmar role e (futuramente) token_version
-          await new Promise((resolve) => {
-            db.get(`SELECT id, username, role, COALESCE(token_version,0) AS token_version FROM users WHERE id = ?`, [payload.uid], (err, row) => {
-              if (!err && row && row.token_version === (payload.tv || 0)) {
-                req.user = { id: row.id, username: row.username, role: row.role };
-              }
-              resolve();
+      if (raw) {
+        // 1) Tenta interpretar como JWT novo
+        const parts = String(raw).split('.');
+        if (parts.length === 3) {
+          try {
+            const payload = jwt.verify(raw, JWT_SECRET);
+            // Busca usuário para confirmar role e (futuramente) token_version
+            await new Promise((resolve) => {
+              db.get(`SELECT id, username, role, COALESCE(token_version,0) AS token_version FROM users WHERE id = ?`, [payload.uid], (err, row) => {
+                if (!err && row && row.token_version === (payload.tv || 0)) {
+                  req.user = { id: row.id, username: row.username, role: row.role };
+                }
+                resolve();
+              });
             });
-          });
-        } catch (e) {
-          // Silencioso: token inválido/expirado => não autentica
+          } catch (e) {
+            // Silencioso: token inválido/expirado => não autentica
+          }
+        } else if (legacySessions.has(raw)) {
+          // 2) Sessão legado
+          const sess = legacySessions.get(raw);
+          sess.lastSeen = Date.now();
+          req.user = { id: sess.userId, username: sess.username, role: sess.role };
         }
-      } else if (legacySessions.has(raw)) {
-        // 2) Sessão legado
-        const sess = legacySessions.get(raw);
-        sess.lastSeen = Date.now();
-        req.user = { id: sess.userId, username: sess.username, role: sess.role };
       }
-    }
 
-    if (!req.user && process.env.ADMIN_AUTOLOGIN_DEBUG === '1' && req.cookies && req.cookies.DEBUG_USER) {
-      req.user = { id: null, username: String(req.cookies.DEBUG_USER), role: 'admin' };
+      if (!req.user && process.env.ADMIN_AUTOLOGIN_DEBUG === '1') {
+        // Check both parsed cookies and raw header
+        const debugUser = req.cookies?.DEBUG_USER || 
+          (req.headers.cookie && req.headers.cookie.match(/DEBUG_USER=([^;]+)/)?.[1]);
+        
+        if (debugUser) {
+          req.user = { id: null, username: String(debugUser), role: 'admin' };
+        }
+      }
+      next();
+    } catch (error) {
+      console.error('[AUTH] Middleware error:', error);
+      next(error);
     }
-    next();
   });
 }
 
@@ -76,6 +90,17 @@ function requireLogin(req, res, next) {
 
 function requireAdmin(req, res, next) {
   const u = req.user;
+  
+  // Handle ADMIN_AUTOLOGIN_DEBUG if req.user is not set
+  if (!u && process.env.ADMIN_AUTOLOGIN_DEBUG === '1') {
+    const debugUser = req.cookies?.DEBUG_USER || 
+      (req.headers.cookie && req.headers.cookie.match(/DEBUG_USER=([^;]+)/)?.[1]);
+    
+    if (debugUser === 'admin') {
+      return next();
+    }
+  }
+  
   if (u && (u.role === 'admin' || ADMIN_USERS.includes(u.username))) return next();
   return res.status(403).json({ error: 'forbidden' });
 }
