@@ -68,6 +68,10 @@
   - Runs on port 3000 by default
   - Provides user management, sticker browsing, and analytics
   - Default admin: username "admin" (password from ADMIN_INITIAL_PASSWORD or auto-generated)
+- **Tag synonym service**: `python3 app.py` (or `python app.py`)
+  - Runs on port 5000 by default
+  - Provides Portuguese synonyms for intelligent tag management and search
+  - Required for advanced tag features (avoiding duplicates, semantic search)
 
 ### Audio Transcription Setup (OpenAI Whisper API)
 - **AUDIO TRANSCRIPTION**: Now uses OpenAI's cloud-based Whisper API instead of local installation
@@ -141,6 +145,7 @@ After making changes, always validate through these scenarios:
 - `index.js` - Main WhatsApp bot entry point
 - `commands.js` - Bot command handlers
 - `database.js` - SQLite database operations
+- `app.py` - Flask microservice for Portuguese synonyms (WordNet) to enhance tag management
 - `package.json` - Dependencies and npm scripts
 - `.env` - Environment configuration
 
