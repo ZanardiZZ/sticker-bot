@@ -37,7 +37,6 @@ StickerBotSession.data.json
 *.bak
 *.old
 /Backup_*
-/chrome
 
 # managed by open-wa
 **.data.json
