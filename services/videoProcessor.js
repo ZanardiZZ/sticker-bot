@@ -266,14 +266,26 @@ async function processVideo(filePath) {
     // Duração vídeo
     const duration = await new Promise((res, rej) => {
       ffmpeg.ffprobe(filePath, (err, meta) => {
-        if (err) rej(err);
-        else res(meta.format.duration);
+        if (err) {
+          rej(err);
+        } else {
+          const fileDuration = meta.format?.duration;
+          if (fileDuration !== null && fileDuration !== undefined && !isNaN(parseFloat(fileDuration))) {res(parseFloat(fileDuration));
+          } else {
+            rej(new Error(`Duração inválida ou não detectada: ${fileDuration}`));
+          }
+        }
       });
     });
 
     // Timestamps para frames: 10%, 50%, 90%
-    const timestamps = [duration * 0.1, duration * 0.5, duration * 0.9];
-
+     const timestamps = [duration * 0.1, duration * 0.5, duration * 0.9];
+    
+    // Final safety check to prevent NaN timestamps
+    const hasNaN = timestamps.some(t => !Number.isFinite(t) || t < 0);
+    if (hasNaN) {
+      throw new Error(`Timestamps inválidos calculados: ${timestamps.join(', ')}`);
+    }
     // Extrai frames
     const extractResult = await extractFrames(filePath, timestamps);
     const framesPaths = Array.isArray(extractResult) ? extractResult : (extractResult.frames || []);
@@ -719,12 +731,14 @@ async function processAnimatedWebp(filePath) {
       if (aiResult && typeof aiResult === 'object' && (aiResult.description || aiResult.tags)) {
         return {
           description: aiResult.description || 'Sticker estático processado',
-          tags: Array.isArray(aiResult.tags) ? aiResult.tags : ['sticker', 'estatico']
+          tags: Array.isArray(aiResult.tags) ? aiResult.tags : ['sticker', 'estatico'],
+          text: aiResult.text || null
         };
       } else {
         return {
           description: 'Sticker estático detectado',
-          tags: ['sticker', 'estatico', 'sem-analise']
+          tags: ['sticker', 'estatico', 'sem-analise'],
+          text: null
         };
       }
     }
@@ -791,7 +805,8 @@ async function processAnimatedWebp(filePath) {
           frameAnalyses.push({
             frameIndex: i + 1,
             description: analysis.description,
-            tags: Array.isArray(analysis.tags) ? analysis.tags : []
+            tags: Array.isArray(analysis.tags) ? analysis.tags : [],
+            text: analysis.text || null
           });
           console.log(`[VideoProcessor] Frame ${i + 1} analyzed successfully`);
         }
@@ -816,7 +831,8 @@ async function processAnimatedWebp(filePath) {
       // Single frame analyzed
       return {
         description: frameAnalyses[0].description || 'Sticker animado processado',
-        tags: frameAnalyses[0].tags.length > 0 ? frameAnalyses[0].tags : ['sticker', 'animado']
+        tags: frameAnalyses[0].tags.length > 0 ? frameAnalyses[0].tags : ['sticker', 'animado'],
+        text: frameAnalyses[0].text || null
       };
     } else {
       // Multiple frames - create comprehensive description
@@ -830,6 +846,12 @@ async function processAnimatedWebp(filePath) {
         .filter(tag => tag && tag.trim());
 
       const topTags = getTopTags(allTags, 5);
+
+      // Collect all extracted texts from frames
+      const allTexts = frameAnalyses
+        .map(analysis => analysis.text)
+        .filter(text => text && text.trim())
+        .join(' | ');
       
       // Generate summary using AI
       const prompt = `
@@ -850,7 +872,8 @@ Por favor, forneça uma descrição única e concisa (máximo 50 palavras) que c
         if (summaryResult && summaryResult.description) {
           return {
             description: summaryResult.description,
-            tags: summaryResult.tags && summaryResult.tags.length > 0 ? summaryResult.tags : topTags
+            tags: summaryResult.tags && summaryResult.tags.length > 0 ? summaryResult.tags : topTags,
+            text: allTexts || null
           };
         }
       } catch (summaryError) {
@@ -860,7 +883,8 @@ Por favor, forneça uma descrição única e concisa (máximo 50 palavras) que c
       // Fallback: use first frame description with combined tags
       return {
         description: frameAnalyses[0].description || 'Sticker animado com múltiplos frames',
-        tags: topTags.length > 0 ? topTags : ['sticker', 'animado']
+        tags: topTags.length > 0 ? topTags : ['sticker', 'animado'],
+        text: allTexts || null
       };
     }
     
@@ -874,7 +898,8 @@ Por favor, forneça uma descrição única e concisa (máximo 50 palavras) que c
       console.warn('[VideoProcessor] WebP format not supported by Sharp version or corrupted file');
       return {
         description: 'Sticker animado detectado - formato não suportado para análise detalhada',
-        tags: ['sticker', 'animado', 'formato-nao-suportado']
+        tags: ['sticker', 'animado', 'formato-nao-suportado'],
+        text: null
       };
     }
     
@@ -882,14 +907,16 @@ Por favor, forneça uma descrição única e concisa (máximo 50 palavras) que c
       console.warn('[VideoProcessor] Frame extraction failed completely');
       return {
         description: 'Sticker animado detectado - análise de frames não disponível',
-        tags: ['sticker', 'animado', 'sem-analise']
+        tags: ['sticker', 'animado', 'sem-analise'],
+        text: null
       };
     }
     
     // Generic error fallback
     return { 
       description: `Sticker animado processado com limitações: ${error.message.slice(0, 50)}...`, 
-      tags: ['sticker', 'animado', 'erro-processamento'] 
+      tags: ['sticker', 'animado', 'erro-processamento'],
+      text: null
     };
   } finally {
     // Clean up temporary files

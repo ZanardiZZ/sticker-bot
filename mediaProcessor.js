@@ -58,6 +58,7 @@ async function processIncomingMedia(client, message) {
   await withTyping(client, chatId, async () => {
   let description = null;
   let tags = null;
+  let extractedText = null;
   try {
     const { buffer, mimetype: downloadedMimetype } = await downloadMediaForMessage(client, message);
     if (!message.mimetype && downloadedMimetype) {
@@ -331,11 +332,17 @@ async function processIncomingMedia(client, message) {
               const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
               description = clean.description;
               tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
+              extractedText = aiResult.text || null;
+              // Incorporate extracted text into description if available
+              if (extractedText && extractedText.trim()) {
+                description = `${description} [Texto: ${extractedText.trim()}]`;
+              }
               console.log('⚠️ GIF processed using fallback single-frame analysis');
             } else {
               console.warn('Resultado inválido do fallback para GIF:', aiResult);
               description = 'GIF detectado - análise de conteúdo não disponível';
               tags = 'gif,sem-analise';
+              extractedText = null;
             }
           } catch (fallbackErr) {
             console.error('Erro também no fallback de imagem para GIF:', fallbackErr.message);
@@ -369,11 +376,17 @@ async function processIncomingMedia(client, message) {
               const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
               description = clean.description;
               tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
+              extractedText = aiResult.text || null;
+              // Incorporate extracted text into description if available
+              if (extractedText && extractedText.trim()) {
+                description = `${description} [Texto: ${extractedText.trim()}]`;
+              }
               console.log('✅ Animated sticker processed using single-frame analysis (disabled multi-frame)');
             } else {
               console.warn('Resultado inválido do processamento de sticker animado (single-frame):', aiResult);
               description = 'Sticker animado detectado - análise de conteúdo não disponível';
               tags = 'sticker,animado,sem-analise';
+              extractedText = null;
             }
           } else {
             // Normal multi-frame processing using dedicated WebP processor
@@ -385,6 +398,11 @@ async function processIncomingMedia(client, message) {
                 const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
                 description = clean.description;
                 tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
+                extractedText = aiResult.text || null;
+                // Incorporate extracted text into description if available
+                if (extractedText && extractedText.trim()) {
+                  description = `${description} [Texto: ${extractedText.trim()}]`;
+                }
                 console.log(`✅ Animated WebP processed successfully: ${description ? description.slice(0, 50) : 'no description'}...`);
               } else {
                 console.warn('Resultado inválido do processamento de sticker animado:', aiResult);
@@ -417,10 +435,16 @@ async function processIncomingMedia(client, message) {
             const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
             description = clean.description;
             tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
+            extractedText = aiResult.text || null;
+            // Incorporate extracted text into description if available
+            if (extractedText && extractedText.trim()) {
+              description = `${description} [Texto: ${extractedText.trim()}]`;
+            }
           } else {
             console.warn('Resultado inválido do processamento de imagem:', aiResult);
             description = '';
             tags = '';
+            extractedText = null;
           }
         }
       } else if (message.mimetype.startsWith('audio/')) {
@@ -466,7 +490,8 @@ async function processIncomingMedia(client, message) {
       tags,
       hashVisual,
       hashMd5,
-      nsfw: nsfw ? 1 : 0
+      nsfw: nsfw ? 1 : 0,
+      extractedText
     });
 
     const savedMedia = await findById(mediaId);
