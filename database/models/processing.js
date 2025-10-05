@@ -11,6 +11,7 @@ const { spawnSync } = require('child_process');
 const { getAiAnnotations } = require('../../services/ai');
 const { getMD5, isFileProcessed, upsertProcessedFile, getDHash, getAnimatedDHashes } = require('../utils');
 const { findByHashVisual, findByHashMd5, saveMedia } = require('./media');
+const { updateMediaTags } = require('./tags');
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 const SANITIZED_OLD_STICKERS_DIR = path.join(repoRoot, 'media', 'old-stickers');
@@ -477,11 +478,16 @@ async function processOldStickers() {
           mimetype,
           timestamp: Date.now(),
           description,
-          tags,
           hashVisual,
           hashMd5,
           nsfw: 0,
         });
+
+        // Save tags if any were extracted from AI
+        if (tags && tags.trim()) {
+          console.log(`[old-stickers] Salvando tags para media ${mediaId}: "${tags}"`);
+          await updateMediaTags(mediaId, tags);
+        }
 
         await upsertProcessedFile(file, lastModified);
 
