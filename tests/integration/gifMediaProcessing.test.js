@@ -3,7 +3,7 @@
  * Tests the complete flow from mediaProcessor.js
  */
 
-const { processIncomingMedia } = require('../../mediaProcessor');
+const { processIncomingMedia } = require('../../../bot/mediaProcessor');
 const fs = require('fs');
 const path = require('path');
 const { createTestDatabase, createTestTables, runTest, assert, assertEqual } = require('../helpers/testUtils');
