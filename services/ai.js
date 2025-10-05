@@ -26,7 +26,7 @@ async function transcribeAudioBuffer(buffer) {
     }
 
     // Create a temporary file for the audio buffer (OpenAI API requires a file stream, not just a file)
-    const tmpDir = path.resolve(__dirname, '../tmp');
+    const tmpDir = path.resolve(__dirname, '../temp');
     if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
     const tmpFile = path.join(tmpDir, `audio-${Date.now()}-${Math.floor(Math.random()*10000)}.wav`);
     try {
