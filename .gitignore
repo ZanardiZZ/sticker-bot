@@ -64,6 +64,4 @@ tests/**/*.db
 tests/**/*.db-*
 open-wa-session.postman_collection.json
 open-wa-session.sw_col.json
-auth_info_baileys/*
-auth_info_baileys/creds.json
-creds.json
+auth_info_baileys/

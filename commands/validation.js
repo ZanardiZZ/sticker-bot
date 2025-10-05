@@ -15,7 +15,8 @@ const VALID_COMMANDS = [
   '#top5users',
   '#ID',
   '#forçar',
-  '#count'
+  '#count',
+  '#tema'
 ];
 
 /**
@@ -47,7 +48,7 @@ function isValidCommand(messageBody) {
 async function handleInvalidCommand(client, chatId) {
   await client.sendText(chatId,
     `Comando não reconhecido.\\nComandos disponíveis:\\n` +
-    VALID_COMMANDS.map(c => c.replace('ID', 'XXX')).join('\\n')
+    VALID_COMMANDS.join('\\n')
   );
 }
 
