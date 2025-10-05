@@ -17,6 +17,7 @@ const { handleTop5UsersCommand } = require('./commands/handlers/top5users');
 const { handleIdCommand } = require('./commands/handlers/id');
 const { handleForceCommand } = require('./commands/handlers/force');
 const { handleEditCommand } = require('./commands/handlers/edit');
+const { handleThemeCommand } = require('./commands/handlers/theme');
 const {
   saveMedia,
   getRandomMedia,
@@ -391,6 +392,9 @@ async function handleCommand(client, message, chatId) {
           break;
         case '#editar':
           await handleEditCommand(client, message, chatId, taggingMap, MAX_TAGS_LENGTH);
+          break;
+        case '#theme':
+          await handleThemeCommand(client, message, chatId, params);
           break;
         case '#bot':
         case '#ping': {

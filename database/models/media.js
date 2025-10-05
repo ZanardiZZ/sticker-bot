@@ -21,14 +21,15 @@ function saveMedia(mediaData) {
       description = null,
       hashVisual,
       hashMd5,
-      nsfw = 0
+      nsfw = 0,
+      extractedText = null
     } = mediaData;
 
     db.run(
       `INSERT INTO media (chat_id, group_id, sender_id, file_path, mimetype, timestamp, 
-                          description, hash_visual, hash_md5, nsfw)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [chatId, groupId, senderId, filePath, mimetype, timestamp, description, hashVisual, hashMd5, nsfw],
+                          description, hash_visual, hash_md5, nsfw, extracted_text)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [chatId, groupId, senderId, filePath, mimetype, timestamp, description, hashVisual, hashMd5, nsfw, extractedText],
       function (err) {
         if (err) reject(err);
         else resolve(this.lastID);
@@ -198,6 +199,54 @@ function getTop10Media() {
   });
 }
 
+/**
+ * Finds media by theme keywords in description and tags
+ * @param {string[]} keywords - Array of keywords to search for
+ * @param {number} limit - Maximum number of results to return
+ * @returns {Promise<object[]>} Array of media objects
+ */
+function findMediaByTheme(keywords, limit = 5) {
+  return new Promise((resolve) => {
+    if (!keywords || !keywords.length) {
+      resolve([]);
+      return;
+    }
+
+    // Build search conditions for keywords
+    const searchConditions = [];
+    const params = [];
+
+    keywords.forEach(keyword => {
+      const lowerKeyword = keyword.toLowerCase();
+      // Search in description
+      searchConditions.push('LOWER(m.description) LIKE ?');
+      params.push(`%${lowerKeyword}%`);
+      // Search in tags
+      searchConditions.push('LOWER(t.name) LIKE ?');
+      params.push(`%${lowerKeyword}%`);
+    });
+
+    const whereClause = searchConditions.join(' OR ');
+
+    // Query to find media matching any of the keywords in description or tags
+    const query = `
+      SELECT DISTINCT m.*
+      FROM media m
+      LEFT JOIN media_tags mt ON m.id = mt.media_id
+      LEFT JOIN tags t ON mt.tag_id = t.id
+      WHERE m.nsfw = 0 AND (${whereClause})
+      ORDER BY m.count_random ASC, RANDOM()
+      LIMIT ?
+    `;
+
+    params.push(limit);
+
+    db.all(query, params, (err, rows) => {
+      resolve(err ? [] : rows);
+    });
+  });
+}
+
 module.exports = {
   saveMedia,
   findByHashVisual,
@@ -208,5 +257,6 @@ module.exports = {
   updateMediaDescription,
   countMedia,
   findByHashMd5,
-  getTop10Media
+  getTop10Media,
+  findMediaByTheme
 };

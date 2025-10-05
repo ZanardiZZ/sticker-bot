@@ -16,7 +16,8 @@ const VALID_COMMANDS = [
   '#ID',
   '#forçar',
   '#count',
-  '#tema'
+  '#tema',
+  '#theme'
 ];
 
 /**
