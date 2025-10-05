@@ -104,6 +104,32 @@ app.use(express.urlencoded({ extended: false }));
 const { db, findDuplicateMedia, getDuplicateMediaDetails, deleteDuplicateMedia, deleteMediaByIds, getDuplicateStats } = require('../database/index.js');
 let whatsappClient = null;
 
+// Function to check if string contains WhatsApp group ID pattern
+function isGroupId(str) {
+  return str && typeof str === 'string' && str.includes('@g.us');
+}
+
+// Function to validate and clean group display names
+function cleanGroupDisplayName(name, groupId) {
+  if (!name || name.trim() === '') {
+    return null;
+  }
+  
+  const cleanName = name.trim();
+  
+  // If the name looks like a user name (contains full name pattern), 
+  // it's probably incorrect and should be flagged
+  const hasFullNamePattern = /^[A-Z][a-z]+ [A-Z][a-z]+$/.test(cleanName);
+  const isLikelyUserName = hasFullNamePattern && !cleanName.startsWith('#') && !cleanName.includes('Grupo');
+  
+  if (isLikelyUserName) {
+    console.warn(`[GROUP-SYNC] Suspicious group name "${cleanName}" for ${groupId} - appears to be a user name`);
+    return null; // Return null to indicate this name should not be trusted
+  }
+  
+  return cleanName;
+}
+
 function initAnalyticsTables(db) {
   db.run(`CREATE TABLE IF NOT EXISTS request_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -280,10 +306,15 @@ app.get('/api/admin/connected-groups', requireAdmin, async (req, res) => {
     const groupMap = new Map();
 
     archivedGroups.forEach((group) => {
+      // Validate and clean the group name from database
+      const cleanedName = cleanGroupDisplayName(group.name, group.id);
+      const displayName = cleanedName || group.id;
+      
       groupMap.set(group.id, {
         id: group.id,
-        name: group.name || group.id,
-        lastInteractionTs: group.lastInteractionTs || null
+        name: displayName,
+        lastInteractionTs: group.lastInteractionTs || null,
+        source: 'database'
       });
     });
 
@@ -301,44 +332,57 @@ app.get('/api/admin/connected-groups', requireAdmin, async (req, res) => {
 
           whatsappGroups.forEach((chat) => {
             const id = chat.id;
-            const name = (chat.subject || chat.name || '').trim();
-            const displayName = name || id;
+            const rawName = (chat.subject || chat.name || '').trim();
+            const cleanedName = cleanGroupDisplayName(rawName, id);
+            const displayName = cleanedName || rawName || id;
             const existing = groupMap.get(id) || { id };
 
+            // Update the group in our map with WhatsApp data
             groupMap.set(id, {
               id,
               name: displayName,
-              lastInteractionTs: existing.lastInteractionTs || null
+              lastInteractionTs: existing.lastInteractionTs || null,
+              source: 'whatsapp'
             });
 
-            upserts.push(
-              upsertGroupMetadata({
-                groupId: id,
-                displayName: name || null,
-                lastInteractionTs: existing.lastInteractionTs || null
-              }).catch((err) => {
-                console.warn('[WEB] failed to persist group metadata', id, err?.message || err);
-                return null;
-              })
-            );
+            // Only update database if we have a valid name
+            if (cleanedName) {
+              upserts.push(
+                upsertGroupMetadata({
+                  groupId: id,
+                  displayName: cleanedName,
+                  lastInteractionTs: existing.lastInteractionTs || null
+                }).catch((err) => {
+                  console.warn('[WEB] failed to persist group metadata', id, err?.message || err);
+                  return null;
+                })
+              );
+            }
           });
 
           if (upserts.length) {
             await Promise.allSettled(upserts);
           }
         }
+      } else {
+        console.log('[DEBUG] WhatsApp client not available or missing getAllChats method');
       }
+    } else {
+      console.log('[DEBUG] WhatsApp client getter not available - using database-only group data');
     }
 
-    const groups = Array.from(groupMap.values()).sort((a, b) => {
-      const nameA = (a.name || a.id || '').toLocaleLowerCase('pt-BR');
-      const nameB = (b.name || b.id || '').toLocaleLowerCase('pt-BR');
-      return nameA.localeCompare(nameB, 'pt-BR');
-    });
+    const groups = Array.from(groupMap.values())
+      .filter(group => isGroupId(group.id)) // Only include actual WhatsApp groups
+      .sort((a, b) => {
+        const nameA = (a.name || a.id || '').toLocaleLowerCase('pt-BR');
+        const nameB = (b.name || b.id || '').toLocaleLowerCase('pt-BR');
+        return nameA.localeCompare(nameB, 'pt-BR');
+      });
 
     console.log('[DEBUG] Final groups count:', groups.length);
     res.json({ groups });
   } catch (err) {
+    console.error('[ERROR] Failed to get connected groups:', err);
     res.status(500).json({ error: 'failed_to_list_groups', details: err.message });
   }
 });
@@ -421,6 +465,17 @@ const staticOpts = {
 };
 app.use('/stickers', express.static(STICKERS_DIR, staticOpts));
 app.use('/media', express.static(STICKERS_DIR, staticOpts));
+
+// Additional media directories for backward compatibility
+const BOT_MEDIA_DIR = path.join(ROOT_DIR, 'bot', 'media');
+const OLD_STICKERS_DIR = path.join(STICKERS_DIR, 'old-stickers');
+console.log('[WEB] BOT_MEDIA_DIR:', BOT_MEDIA_DIR, 'exists:', fs.existsSync(BOT_MEDIA_DIR));
+console.log('[WEB] OLD_STICKERS_DIR:', OLD_STICKERS_DIR, 'exists:', fs.existsSync(OLD_STICKERS_DIR));
+
+// Serve bot media files
+app.use('/bot/media', express.static(BOT_MEDIA_DIR, staticOpts));
+// Serve old stickers
+app.use('/media/old-stickers', express.static(OLD_STICKERS_DIR, staticOpts));
 
 // Setup middlewares using modularized components
 const ipRulesMiddleware = createIPRulesMiddleware(db, { enableAnalytics: ENABLE_INTERNAL_ANALYTICS });
@@ -1723,10 +1778,49 @@ function fixMediaUrl(row) {
         if (row.mimetype === 'image/webp') base += '.webp';
         else if (row.mimetype === 'video/mp4') base += '.mp4';
       }
+      
+      // Check main STICKERS_DIR first
       const abs = path.join(STICKERS_DIR, base);
       if (fs.existsSync(abs)) {
         row.url = '/media/' + base;
         return row;
+      }
+      
+      // Check if file is in bot/media directory
+      const botMediaPath = path.join(ROOT_DIR, 'bot', 'media', base);
+      if (fs.existsSync(botMediaPath)) {
+        row.url = '/bot/media/' + base;
+        return row;
+      }
+      
+      // Check if file is in old-stickers directory
+      const oldStickersPath = path.join(STICKERS_DIR, 'old-stickers', base);
+      if (fs.existsSync(oldStickersPath)) {
+        row.url = '/media/old-stickers/' + base;
+        return row;
+      }
+      
+      // If the original file_path contains directory structure, try to match it
+      if (c.includes('/')) {
+        // For paths like '/home/dev/work/sticker-bot2/bot/media/filename.webp'
+        if (c.includes('/bot/media/')) {
+          const filename = path.basename(c);
+          const botMediaFullPath = path.join(ROOT_DIR, 'bot', 'media', filename);
+          if (fs.existsSync(botMediaFullPath)) {
+            row.url = '/bot/media/' + filename;
+            return row;
+          }
+        }
+        
+        // For paths like '/home/dev/work/sticker-bot2/media/old-stickers/filename.webp'
+        if (c.includes('/old-stickers/')) {
+          const filename = path.basename(c);
+          const oldStickersFullPath = path.join(STICKERS_DIR, 'old-stickers', filename);
+          if (fs.existsSync(oldStickersFullPath)) {
+            row.url = '/media/old-stickers/' + filename;
+            return row;
+          }
+        }
       }
     }
 
