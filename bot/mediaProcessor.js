@@ -75,6 +75,7 @@ async function processIncomingMedia(client, message) {
   fs.writeFileSync(tmpFilePath, buffer);
   console.log('[MediaProcessor] Arquivo temporário salvo em:', tmpFilePath);
 
+    let wasProcessedAsGifLike = false;
     let bufferWebp = null;
     let extToSave = ext;
     let mimetypeToSave = message.mimetype;
@@ -197,7 +198,8 @@ async function processIncomingMedia(client, message) {
         mimetypeToSave = 'image/webp';
   // Salva análise para uso posterior (ex: descrição/tags)
   if (gifAnalysis && typeof gifAnalysis.description === 'string' && gifAnalysis.description) description = gifAnalysis.description;
-  if (gifAnalysis && Array.isArray(gifAnalysis.tags) && gifAnalysis.tags.length > 0) tags = gifAnalysis.tags;
+  if (gifAnalysis && Array.isArray(gifAnalysis.tags) && gifAnalysis.tags.length > 0) tags = gifAnalysis.tags.join(',');
+        wasProcessedAsGifLike = true;
       } else {
         // Não é GIF-like, não processa
         bufferWebp = null;
@@ -265,7 +267,7 @@ async function processIncomingMedia(client, message) {
   // description and tags are declared earlier; do not redeclare here to avoid TDZ errors
 
     if (!nsfw) {
-      if (message.mimetype.startsWith('video/')) {
+      if (message.mimetype.startsWith('video/') && !wasProcessedAsGifLike) {
         try {
           const aiResult = await processVideo(filePath);
           if (aiResult && typeof aiResult === 'object') {
@@ -279,6 +281,7 @@ async function processIncomingMedia(client, message) {
             const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(descBase, aiResult.tags);
             description = clean.description;
             tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
+            console.log(`[MediaProcessor] Tags extraídas para vídeo: "${tags}", aiResult.tags:`, aiResult.tags);
           } else {
             console.warn('Resultado inválido do processamento de vídeo:', aiResult);
             description = '';
@@ -361,7 +364,7 @@ async function processIncomingMedia(client, message) {
             console.log('🏷️ Usando tags básicas para GIF após falhas de processamento');
           }
         }
-      } else if (mimetypeToSave.startsWith('image/') && pngBuffer) {
+      } else if (mimetypeToSave.startsWith('image/') && pngBuffer && !wasProcessedAsGifLike) {
         // Check if this is an animated WebP (animated sticker) - should be analyzed as video (3 frames)
         if (mimetypeToSave === 'image/webp' && isAnimatedWebpBuffer(bufferWebp)) {
           
@@ -494,13 +497,22 @@ async function processIncomingMedia(client, message) {
       extractedText
     });
 
+    // Save tags if any were extracted
+    if (tags && tags.trim()) {
+      console.log(`[MediaProcessor] Salvando tags para media ${mediaId}: "${tags}"`);
+      await updateMediaTags(mediaId, tags);
+    } else {
+      console.log(`[MediaProcessor] Nenhuma tag para salvar para media ${mediaId}, tags: "${tags}"`);
+    }
+
     const savedMedia = await findById(mediaId);
     const savedTags = await getTagsForMedia(mediaId);
     const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(savedMedia.description, savedTags);
 
     // Check if this video is actually a GIF-like animation
-    let isGifLike = false;
-    if (mimetypeToSave.startsWith('video/')) {
+    let isGifLike = wasProcessedAsGifLike; // Use the flag from processing
+    //console.log(`[MediaProcessor] wasProcessedAsGifLike: ${wasProcessedAsGifLike}, mimetypeToSave: ${mimetypeToSave}`);
+    if (!isGifLike && mimetypeToSave.startsWith('video/')) {
       // Só tenta analisar se o arquivo realmente existe
       if (fs.existsSync(filePath)) {
         isGifLike = await isGifLikeVideo(filePath, mimetypeToSave);

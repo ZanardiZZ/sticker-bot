@@ -207,7 +207,7 @@ try {
 // Variable for old stickers path will be read from .env
 const OLD_STICKERS_PATH = process.env.OLD_STICKERS_PATH || null;
 // Limit of stickers to process at once
-const PROCESS_BATCH_SIZE = 5;
+const PROCESS_BATCH_SIZE = 1;
 
 /**
  * Robustly processes WebP files with corruption handling and repair attempts
