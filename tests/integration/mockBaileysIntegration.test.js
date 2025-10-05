@@ -170,7 +170,7 @@ const tests = [
         'utils/typingIndicator.js': mockTyping,
         'bot/logging.js': mockLogging,
         'bot/contacts.js': mockContacts,
-        'mediaProcessor.js': mockMediaProcessor,
+        'bot/mediaProcessor.js': mockMediaProcessor,
         'services/mediaQueue.js': ImmediateMediaQueue
       }, async ({ handleMessage, setupMessageHandler }) => {
         const client = new MockBaileysClient();

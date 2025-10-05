@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
-const { downloadMediaForMessage } = require('./utils/mediaDownload');
+const { downloadMediaForMessage } = require('../utils/mediaDownload');
 const {
   getMD5,
   getHashVisual,
@@ -9,19 +9,19 @@ const {
   findById,
   saveMedia,
   getTagsForMedia
-} = require('./database/index.js');
-const { isNSFW } = require('./services/nsfwFilter');
-const { isVideoNSFW } = require('./services/nsfwVideoFilter');
-const { getAiAnnotations, transcribeAudioBuffer, getAiAnnotationsFromPrompt, getAiAnnotationsForGif } = require('./services/ai');
-const { processVideo, processGif, processAnimatedWebp } = require('./services/videoProcessor');
-const { updateMediaDescription, updateMediaTags } = require('./database/index.js');
-const { forceMap, MAX_TAGS_LENGTH, clearDescriptionCmds } = require('./commands');
-const { cleanDescriptionTags } = require('./utils/messageUtils');
-const { generateResponseMessage } = require('./utils/responseMessage');
-const { safeReply } = require('./utils/safeMessaging');
-const { isAnimatedWebpBuffer, sendStickerForMediaRecord } = require('./bot/stickers');
-const { isGifLikeVideo } = require('./utils/gifDetection');
-const { withTyping } = require('./utils/typingIndicator');
+} = require('../database/index.js');
+const { isNSFW } = require('../services/nsfwFilter');
+const { isVideoNSFW } = require('../services/nsfwVideoFilter');
+const { getAiAnnotations, transcribeAudioBuffer, getAiAnnotationsFromPrompt, getAiAnnotationsForGif } = require('../services/ai');
+const { processVideo, processGif, processAnimatedWebp } = require('../services/videoProcessor');
+const { updateMediaDescription, updateMediaTags } = require('../database/index.js');
+const { forceMap, MAX_TAGS_LENGTH, clearDescriptionCmds } = require('../commands');
+const { cleanDescriptionTags } = require('../utils/messageUtils');
+const { generateResponseMessage } = require('../utils/responseMessage');
+const { safeReply } = require('../utils/safeMessaging');
+const { isAnimatedWebpBuffer, sendStickerForMediaRecord } = require('./stickers');
+const { isGifLikeVideo } = require('../utils/gifDetection');
+const { withTyping } = require('../utils/typingIndicator');
 
 // Fallback function if cleanDescriptionTags is not available
 function fallbackCleanDescriptionTags(description, tags) {

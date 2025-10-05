@@ -67,7 +67,7 @@ try {
 // Test 4: Check that mediaProcessor uses different messages for different media types
 try {
   const fs = require('fs');
-  const mediaProcessorContent = fs.readFileSync('./mediaProcessor.js', 'utf8');
+  const mediaProcessorContent = fs.readFileSync('./bot/mediaProcessor.js', 'utf8');
   
   // Check that it uses the shared utility function
   if (mediaProcessorContent.includes('generateResponseMessage')) {

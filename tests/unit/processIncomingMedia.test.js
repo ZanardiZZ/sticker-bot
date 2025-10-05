@@ -10,7 +10,7 @@ const { runTestSuite, assert, assertEqual } = require('../helpers/testUtils');
 const { MockBaileysClient } = require('../helpers/mockBaileysClient');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
-const PROCESSOR_PATH = path.join(PROJECT_ROOT, 'mediaProcessor.js');
+const PROCESSOR_PATH = path.join(PROJECT_ROOT, 'bot', 'mediaProcessor.js');
 
 function resolveModule(relativePath) {
   return require.resolve(path.join(PROJECT_ROOT, relativePath));
