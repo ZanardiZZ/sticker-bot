@@ -40,7 +40,6 @@
     "nodemailer": "^7.0.5",
     "nsfwjs": "^4.2.1",
     "openai": "^5.12.2",
-    "pino": "^9.12.0",
     "pm2": "^6.0.8",
     "qrcode-terminal": "^0.12.0",
     "sharp": "^0.32.6",
