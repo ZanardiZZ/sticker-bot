@@ -90,11 +90,15 @@ async function getDuplicateMediaDetails(hashVisual) {
  * @returns {Promise<number>} Number of deleted records
  */
 async function deleteDuplicateMedia(hashVisual, keepOldest = true) {
+  console.log(`[DELETE_DUPLICATES] Starting deletion for hash: ${hashVisual}, keepOldest: ${keepOldest}`);
+  
   const processDelete = async () => {
     // Get all media with this hash
     const duplicates = await getDuplicateMediaDetails(hashVisual);
+    console.log(`[DELETE_DUPLICATES] Found ${duplicates.length} media files with hash ${hashVisual}`);
     
     if (duplicates.length <= 1) {
+      console.log(`[DELETE_DUPLICATES] No duplicates to delete (count: ${duplicates.length})`);
       return 0; // No duplicates to delete
     }
     
@@ -105,6 +109,8 @@ async function deleteDuplicateMedia(hashVisual, keepOldest = true) {
     
     const toKeep = sorted[0];
     const toDelete = sorted.slice(1);
+    
+    console.log(`[DELETE_DUPLICATES] Will keep media ID ${toKeep.id}, will delete IDs: ${toDelete.map(d => d.id).join(', ')}`);
     
     let deletedCount = 0;
     
@@ -124,23 +130,42 @@ async function deleteDuplicateMedia(hashVisual, keepOldest = true) {
         params: [media.id]
       });
       
-      // Delete file from filesystem if it exists
-      if (media.file_path && fs.existsSync(media.file_path)) {
-        try {
-          fs.unlinkSync(media.file_path);
-        } catch (err) {
-          console.warn(`Failed to delete file ${media.file_path}:`, err.message);
-        }
-      }
-      
       deletedCount++;
     }
     
     if (operations.length > 0) {
-      await dbHandler.transaction(operations);
+      console.log(`[DELETE_DUPLICATES] Executing ${operations.length} database operations in transaction`);
+      try {
+        const results = await dbHandler.transaction(operations);
+        console.log(`[DELETE_DUPLICATES] Transaction completed successfully, results:`, results.map(r => r.changes));
+        
+        // Force WAL checkpoint to ensure data is written to main DB file
+        try {
+          await dbHandler.checkpointWAL();
+          console.log(`[DELETE_DUPLICATES] WAL checkpoint completed after deletion`);
+        } catch (walError) {
+          console.warn(`[DELETE_DUPLICATES] WAL checkpoint failed:`, walError.message);
+        }
+        
+        // Delete files from filesystem after successful DB transaction
+        for (const media of toDelete) {
+          if (media.file_path && fs.existsSync(media.file_path)) {
+            try {
+              fs.unlinkSync(media.file_path);
+              console.log(`[DELETE_DUPLICATES] Deleted file: ${media.file_path}`);
+            } catch (err) {
+              console.warn(`[DELETE_DUPLICATES] Failed to delete file ${media.file_path}:`, err.message);
+            }
+          }
+        }
+        
+      } catch (error) {
+        console.error(`[DELETE_DUPLICATES] Transaction failed:`, error);
+        throw error;
+      }
     }
     
-    console.log(`Deleted ${deletedCount} duplicate media files, kept media ID ${toKeep.id}`);
+    console.log(`[DELETE_DUPLICATES] Successfully deleted ${deletedCount} duplicate media files, kept media ID ${toKeep.id}`);
     return deletedCount;
   };
 
@@ -235,8 +260,8 @@ async function getDuplicateStats() {
   const sql = `
     SELECT 
       COUNT(DISTINCT hash_visual) as duplicate_groups,
-      COUNT(*) as total_duplicates,
-      SUM(CASE WHEN duplicate_count > 2 THEN duplicate_count - 1 ELSE 1 END) as potential_savings
+      SUM(duplicate_count) as total_duplicates,
+      SUM(duplicate_count - 1) as potential_savings
     FROM (
       SELECT hash_visual, COUNT(*) as duplicate_count
       FROM media 

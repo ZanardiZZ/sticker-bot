@@ -257,7 +257,7 @@ async function loadUsers() {
 function renderUsersTable(users) {
   const tbody = document.querySelector('#tblUsers tbody');
   if (!users || users.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="11" style="text-align: center; color: #999;">Nenhum usuário encontrado</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #999;">Nenhum usuário encontrado</td></tr>';
     return;
   }
   
@@ -271,18 +271,6 @@ function renderUsersTable(users) {
     const email = user.email || '—';
     const emailStatus = getEmailStatusBadge(user.email_confirmed);
     
-    // WhatsApp linkage indicator
-    let whatsappStatus = '—';
-    if (user.has_whatsapp_account) {
-      if (user.whatsapp_allowed && !user.whatsapp_blocked) {
-        whatsappStatus = '<span style="color:#4a9;" title="Conectado e permitido">●</span>';
-      } else if (user.whatsapp_blocked) {
-        whatsappStatus = '<span style="color:#f88;" title="Bloqueado">●</span>';
-      } else {
-        whatsappStatus = '<span style="color:#ffa500;" title="Conectado mas pendente">●</span>';
-      }
-    }
-    
     return `
       <tr data-user-id="${user.id}">
         <td>${user.id}</td>
@@ -291,7 +279,6 @@ function renderUsersTable(users) {
         <td>${emailStatus}</td>
         <td>${phone}</td>
         <td>${contactName}</td>
-        <td style="text-align:center;">${whatsappStatus}</td>
         <td>${statusBadge}</td>
         <td>${canEdit}</td>
         <td>${createdAt}</td>

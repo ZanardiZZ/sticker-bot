@@ -2,17 +2,9 @@ const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
-const jwt = require('jsonwebtoken');
 const { db } = require('../database/index.js');
 
-// JWT secret (fallback em desenvolvimento)
-const JWT_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET || 'dev-secret-change-me';
-// Tempo de expiração padrão (7 dias)
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
-
-// Implementação antiga usava Map em memória. Mantemos somente para tokens legados emitidos
-// antes da migração (se ainda houver). Assim evitamos quebrar sessões ativas durante deploy.
-const legacySessions = new Map(); // sid -> sessão (LEGADO)
+const sessions = new Map(); // sid -> sessão
 const ADMIN_USERS = (process.env.ADMIN_USERS || '').split(',').map(s => s.trim()).filter(Boolean);
 
 // Rate limiter for login endpoint
@@ -30,56 +22,28 @@ const getCookieName = () => {
 };
 
 function authMiddleware(app) {
-  // cookieParser is already called in server.js
-  app.use(async (req, _res, next) => {
-    try {
-      console.log('[DEBUG] Auth middleware - Path:', req.path, 'Cookies:', Object.keys(req.cookies || {}));
-      const cookieName = getCookieName();
-      console.log('[DEBUG] Looking for cookie:', cookieName);
-      // Lê ambos para retrocompatibilidade
-      const raw = req.cookies[cookieName] || (process.env.NODE_ENV === 'production' ? req.cookies.sid : undefined);
-      console.log('[DEBUG] Raw token found:', !!raw, raw ? 'Length: ' + raw.length : 'No token');
-
-      if (raw) {
-        // 1) Tenta interpretar como JWT novo
-        const parts = String(raw).split('.');
-        if (parts.length === 3) {
-          try {
-            const payload = jwt.verify(raw, JWT_SECRET);
-            // Busca usuário para confirmar role e (futuramente) token_version
-            await new Promise((resolve) => {
-              db.get(`SELECT id, username, role, COALESCE(token_version,0) AS token_version FROM users WHERE id = ?`, [payload.uid], (err, row) => {
-                if (!err && row && row.token_version === (payload.tv || 0)) {
-                  req.user = { id: row.id, username: row.username, role: row.role };
-                }
-                resolve();
-              });
-            });
-          } catch (e) {
-            // Silencioso: token inválido/expirado => não autentica
-          }
-        } else if (legacySessions.has(raw)) {
-          // 2) Sessão legado
-          const sess = legacySessions.get(raw);
-          sess.lastSeen = Date.now();
-          req.user = { id: sess.userId, username: sess.username, role: sess.role };
-        }
-      }
-
-      if (!req.user && process.env.ADMIN_AUTOLOGIN_DEBUG === '1') {
-        // Check both parsed cookies and raw header
-        const debugUser = req.cookies?.DEBUG_USER || 
-          (req.headers.cookie && req.headers.cookie.match(/DEBUG_USER=([^;]+)/)?.[1]);
-        
-        if (debugUser) {
-          req.user = { id: null, username: String(debugUser), role: 'admin' };
-        }
-      }
-      next();
-    } catch (error) {
-      console.error('[AUTH] Middleware error:', error);
-      next(error);
+  app.use(cookieParser());
+  app.use((req, _res, next) => {
+    // Read both cookie names for backward compatibility
+    const cookieName = getCookieName();
+    let sid = req.cookies[cookieName];
+    
+    // Fallback to 'sid' for backward compatibility in production
+    if (!sid && process.env.NODE_ENV === 'production') {
+      sid = req.cookies.sid;
     }
+    
+    if (sid && sessions.has(sid)) {
+      const sess = sessions.get(sid);
+      sess.lastSeen = Date.now();
+      req.user = { id: sess.userId, username: sess.username, role: sess.role };
+    }
+    // Debug fallback: when ADMIN_AUTOLOGIN_DEBUG=1 and a DEBUG_USER cookie is present,
+    // treat that user as an admin for development only.
+    if (!req.user && process.env.ADMIN_AUTOLOGIN_DEBUG === '1' && req.cookies && req.cookies.DEBUG_USER) {
+      req.user = { id: null, username: String(req.cookies.DEBUG_USER), role: 'admin' };
+    }
+    next();
   });
 }
 
@@ -90,17 +54,6 @@ function requireLogin(req, res, next) {
 
 function requireAdmin(req, res, next) {
   const u = req.user;
-  
-  // Handle ADMIN_AUTOLOGIN_DEBUG if req.user is not set
-  if (!u && process.env.ADMIN_AUTOLOGIN_DEBUG === '1') {
-    const debugUser = req.cookies?.DEBUG_USER || 
-      (req.headers.cookie && req.headers.cookie.match(/DEBUG_USER=([^;]+)/)?.[1]);
-    
-    if (debugUser === 'admin') {
-      return next();
-    }
-  }
-  
   if (u && (u.role === 'admin' || ADMIN_USERS.includes(u.username))) return next();
   return res.status(403).json({ error: 'forbidden' });
 }
@@ -111,7 +64,7 @@ function registerAuthRoutes(app) {
     if (!username || !password) return res.status(400).json({ error: 'missing_credentials' });
     
     db.get(
-      `SELECT id, username, password_hash, role, status, email_confirmed, COALESCE(must_change_password, 0) AS must_change_password, COALESCE(token_version,0) as token_version
+      `SELECT id, username, password_hash, role, status, email_confirmed, COALESCE(must_change_password, 0) AS must_change_password
        FROM users WHERE username = ?`,
       [username],
       async (err, row) => {
@@ -139,12 +92,28 @@ function registerAuthRoutes(app) {
         
         const ok = await bcrypt.compare(password, row.password_hash);
         if (!ok) return res.status(401).json({ error: 'invalid_credentials' });
-  const payload = { uid: row.id, username: row.username, role: row.role, tv: row.token_version || 0 };
-  const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
-  const cookieName = getCookieName();
-  const cookieOptions = { httpOnly: true, sameSite: 'lax', path: '/' };
-  if (process.env.NODE_ENV === 'production') cookieOptions.secure = true;
-  res.cookie(cookieName, token, cookieOptions);
+        const sid = uuidv4();
+        sessions.set(sid, {
+          userId: row.id,
+          username: row.username,
+          role: row.role,
+          createdAt: Date.now(),
+          lastSeen: Date.now()
+        });
+        
+        const cookieName = getCookieName();
+        const cookieOptions = {
+          httpOnly: true,
+          sameSite: 'lax',
+          path: '/'
+        };
+        
+        // Force secure in production
+        if (process.env.NODE_ENV === 'production') {
+          cookieOptions.secure = true;
+        }
+        
+        res.cookie(cookieName, sid, cookieOptions);
         res.json({ username: row.username, role: row.role, must_change_password: !!row.must_change_password });
       }
     );
@@ -152,18 +121,22 @@ function registerAuthRoutes(app) {
 
   app.post('/api/logout', (req, res) => {
     const cookieName = getCookieName();
-    // Invalidação baseada em versão: incrementa token_version do usuário autenticado
-    if (req.user && req.user.id) {
-      db.run(`UPDATE users SET token_version = COALESCE(token_version,0) + 1 WHERE id = ?`, [req.user.id], () => {
-        res.clearCookie(cookieName, { path: '/' });
-        if (process.env.NODE_ENV === 'production') res.clearCookie('sid', { path: '/' });
-        res.json({ ok: true });
-      });
-    } else {
-      res.clearCookie(cookieName, { path: '/' });
-      if (process.env.NODE_ENV === 'production') res.clearCookie('sid', { path: '/' });
-      res.json({ ok: true });
+    let sid = req.cookies[cookieName];
+    
+    // Fallback to 'sid' for backward compatibility in production
+    if (!sid && process.env.NODE_ENV === 'production') {
+      sid = req.cookies.sid;
     }
+    
+    if (sid) sessions.delete(sid);
+    
+    // Clear both cookies for safety
+    res.clearCookie(cookieName, { path: '/' });
+    if (process.env.NODE_ENV === 'production') {
+      res.clearCookie('sid', { path: '/' });
+    }
+    
+    res.json({ ok: true });
   });
 
   // Debug-only: auto-login as initial admin when enabled via env var
@@ -175,16 +148,25 @@ function registerAuthRoutes(app) {
     const adminUser = process.env.ADMIN_INITIAL_USERNAME || process.env.ADMIN_INITIAL_USERNAME;
     if (!adminUser) return res.status(400).json({ error: 'missing_admin_username' });
 
-    db.get(`SELECT id, username, role, COALESCE(token_version,0) AS token_version FROM users WHERE username = ? LIMIT 1`, [adminUser], (err, row) => {
+    db.get(`SELECT id, username, role FROM users WHERE username = ? LIMIT 1`, [adminUser], (err, row) => {
       if (err) return res.status(500).json({ error: 'db_error', details: err.message });
       if (!row) return res.status(404).json({ error: 'admin_not_found' });
       if (row.role !== 'admin') return res.status(403).json({ error: 'not_admin' });
-      const payload = { uid: row.id, username: row.username, role: row.role, tv: row.token_version || 0 };
-      const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+
+      const sid = uuidv4();
+      sessions.set(sid, {
+        userId: row.id,
+        username: row.username,
+        role: row.role,
+        createdAt: Date.now(),
+        lastSeen: Date.now()
+      });
+
       const cookieName = getCookieName();
       const cookieOptions = { httpOnly: true, sameSite: 'lax', path: '/' };
       if (process.env.NODE_ENV === 'production') cookieOptions.secure = true;
-      res.cookie(cookieName, token, cookieOptions);
+
+      res.cookie(cookieName, sid, cookieOptions);
       // Also set a DEBUG_USER cookie for client-side debug fallback
       try {
         res.cookie('DEBUG_USER', row.username, { path: '/', sameSite: 'lax' });
