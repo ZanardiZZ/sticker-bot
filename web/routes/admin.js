@@ -80,8 +80,8 @@ function createAdminRoutes(db) {
       res.status(500).json({ error: 'internal_error' });
     }
   });
-  // DELETE /api/admin/duplicates/:id - Deleta mídia duplicada
-  router.delete('/admin/duplicates/:id', requireAdmin, async (req, res) => {
+  // DELETE /api/admin/media/:id - Deleta mídia individual por ID
+  router.delete('/admin/media/:id', requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (!id) return res.status(400).json({ error: 'invalid_id' });

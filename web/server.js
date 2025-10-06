@@ -1225,12 +1225,33 @@ app.delete('/api/admin/duplicates/:hashVisual', requireAdmin, async (req, res) =
     const { hashVisual } = req.params;
     const keepOldest = req.query.keepOldest !== 'false'; // Default to true
     
-    console.log(`[ADMIN] User ${req.user.username} is deleting duplicates for hash ${hashVisual}`);
+    console.log(`[ADMIN] User ${req.user.username} is deleting duplicates for hash ${hashVisual}, keepOldest: ${keepOldest}`);
+    
+    // Check how many duplicates exist before deletion
+    const beforeDetails = await getDuplicateMediaDetails(hashVisual);
+    console.log(`[ADMIN] Found ${beforeDetails.length} media files with hash ${hashVisual} before deletion`);
     
     const deletedCount = await deleteDuplicateMedia(hashVisual, keepOldest);
     
-    console.log(`[ADMIN] Deleted ${deletedCount} duplicate media for hash ${hashVisual}`);
-    res.json({ deleted_count: deletedCount, hash_visual: hashVisual });
+    // Check remaining after deletion
+    const afterDetails = await getDuplicateMediaDetails(hashVisual);
+    console.log(`[ADMIN] After deletion: ${afterDetails.length} files remain, ${deletedCount} were deleted`);
+    
+    // Double-check by querying findDuplicateMedia to see if group still exists
+    const allDuplicates = await findDuplicateMedia(100);
+    const groupStillExists = allDuplicates.find(d => d.hash_visual === hashVisual);
+    if (groupStillExists) {
+      console.error(`[ADMIN] ERROR: Group ${hashVisual} still appears in duplicates list after deletion!`, groupStillExists);
+    } else {
+      console.log(`[ADMIN] Confirmed: Group ${hashVisual} no longer appears in duplicates list`);
+    }
+    
+    console.log(`[ADMIN] Completed deletion for hash ${hashVisual}: deleted ${deletedCount}, remaining ${afterDetails.length}`);
+    res.json({ 
+      deleted_count: deletedCount, 
+      hash_visual: hashVisual,
+      remaining_count: afterDetails.length 
+    });
     
   } catch (error) {
     console.error('[ADMIN] Error deleting duplicates:', error);

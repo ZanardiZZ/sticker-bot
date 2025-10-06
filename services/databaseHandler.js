@@ -94,40 +94,56 @@ class DatabaseHandler {
     return this.executeWithRetry(async () => {
       return new Promise((resolve, reject) => {
         this.db.serialize(() => {
-          this.db.run('BEGIN TRANSACTION');
-          
-          const executeOperations = async () => {
-            try {
-              const results = [];
-              
-              for (const op of operations) {
-                const result = await this.promisifyOperation(op.sql, op.params);
-                results.push(result);
-              }
-              this.db.run('COMMIT', (err) => {
-                if (err) {
-                  const formatError = require('../utils/formatError');
-                  console.error('[DB] Commit failed:', formatError(err));
-                  return reject(err);
-                }
-                resolve(results);
-              });
-              
-            } catch (error) {
-              // Attempt rollback and log any rollback errors as well
-              this.db.run('ROLLBACK', (rbErr) => {
-                const formatError = require('../utils/formatError');
-                if (rbErr) {
-                  console.error('[DB] Rollback failed after error:', formatError(rbErr), 'original error:', formatError(error));
-                } else {
-                  console.warn('[DB] Rolled back transaction due to error:', formatError(error));
-                }
-                reject(error);
-              });
+          this.db.run('BEGIN IMMEDIATE TRANSACTION', (beginErr) => {
+            if (beginErr) {
+              console.error('[DB] Failed to begin transaction:', beginErr);
+              return reject(beginErr);
             }
-          };
-          
-          executeOperations();
+            
+            const executeOperations = async () => {
+              try {
+                const results = [];
+                
+                for (const op of operations) {
+                  const result = await this.promisifyOperation(op.sql, op.params);
+                  results.push(result);
+                }
+                
+                this.db.run('COMMIT', (commitErr) => {
+                  if (commitErr) {
+                    const formatError = require('../utils/formatError');
+                    console.error('[DB] Commit failed:', formatError(commitErr));
+                    
+                    // Try to rollback after commit failure
+                    this.db.run('ROLLBACK', (rollbackErr) => {
+                      if (rollbackErr) {
+                        console.error('[DB] Rollback after commit failure also failed:', formatError(rollbackErr));
+                      }
+                    });
+                    
+                    return reject(commitErr);
+                  }
+                  
+                  console.log('[DB] Transaction committed successfully with', results.length, 'operations');
+                  resolve(results);
+                });
+                
+              } catch (error) {
+                // Attempt rollback and log any rollback errors as well
+                this.db.run('ROLLBACK', (rbErr) => {
+                  const formatError = require('../utils/formatError');
+                  if (rbErr) {
+                    console.error('[DB] Rollback failed after error:', formatError(rbErr), 'original error:', formatError(error));
+                  } else {
+                    console.log('[DB] Transaction rolled back due to error:', formatError(error));
+                  }
+                  reject(error);
+                });
+              }
+            };
+            
+            executeOperations();
+          });
         });
       });
     });
