@@ -25,17 +25,16 @@
     th { color: #1e293b; background: #f8fafc; font-weight: 600; }
     
     /* Optimize column widths for better space usage on full page spanning panel */
-    #tblUsers th:nth-child(1) { width: 2.5%; }    /* ID */
-    #tblUsers th:nth-child(2) { width: 10%; }    /* Usuário */
-    #tblUsers th:nth-child(3) { width: 16%; }    /* Email */
-    #tblUsers th:nth-child(4) { width: 8%; }     /* Status Email */
-    #tblUsers th:nth-child(5) { width: 12%; }    /* Telefone */
-    #tblUsers th:nth-child(6) { width: 13%; }    /* Nome Contato */
-    #tblUsers th:nth-child(7) { width: 6%; }     /* WhatsApp */
-    #tblUsers th:nth-child(8) { width: 7%; }     /* Status */
-    #tblUsers th:nth-child(9) { width: 6%; }     /* Pode Editar */
-    #tblUsers th:nth-child(10) { width: 8%; }    /* Criado em */
-    #tblUsers th:nth-child(11) { width: 9%; }    /* Ações */
+    #tblUsers th:nth-child(1) { width: 3%; }    /* ID */
+    #tblUsers th:nth-child(2) { width: 12%; }    /* Usuário */
+    #tblUsers th:nth-child(3) { width: 18%; }    /* Email */
+    #tblUsers th:nth-child(4) { width: 10%; }    /* Status Email */
+    #tblUsers th:nth-child(5) { width: 14%; }    /* Telefone */
+    #tblUsers th:nth-child(6) { width: 15%; }    /* Nome Contato */
+    #tblUsers th:nth-child(7) { width: 8%; }     /* WhatsApp */
+    #tblUsers th:nth-child(8) { width: 8%; }     /* Status */
+    #tblUsers th:nth-child(9) { width: 8%; }     /* Pode Editar */
+    #tblUsers th:nth-child(10) { width: 10%; }    /* Criado em */
     
     /* Fix table overflow issue - responsive table sizing */
     #usersContainer { margin-top: 1rem; width: 100%; }
@@ -100,6 +99,28 @@
     .tab-content { display: none; }
     .tab-content.active { display: block; }
     
+    /* User edit modal styles */
+    .status-btn, .permission-btn {
+      padding: 0.5rem 1rem;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      background: #ffffff;
+      color: #374151;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .status-btn:hover, .permission-btn:hover {
+      border-color: #3b82f6;
+    }
+    .status-btn.active, .permission-btn.active {
+      background: #3b82f6;
+      color: #ffffff;
+      border-color: #3b82f6;
+    }
+    .user-row:hover {
+      background: #f8fafc;
+    }
+    
     /* Admin-only elements */
     .admin-only { display: none; }
     .admin-only.visible { display: block; }
@@ -108,7 +129,7 @@
     
     /* Main tab content visibility - higher specificity */
     .main-tab-content.admin-only { display: none; }
-    .main-tab-content.admin-only.visible { display: none; } /* Still hidden by default */
+    .main-tab-content.admin-only.visible { display: block; } /* Show when visible */
     .main-tab-content.active { display: block !important; } /* Only active tab shows */
   </style>
 
@@ -148,18 +169,19 @@
             <button class="tab-button" data-tab="group-config">Configurações de Grupo</button>
           </div>
 
-          <div class="tab-content active" id="tab-account">
+                    <div class="tab-content active" id="tab-account">
             <div class="panel">
               <h3>Minha conta</h3>
-              <div class="row">
-                <input id="cp_current" type="password" placeholder="Senha atual">
-                <input id="cp_new" type="password" placeholder="Nova senha (mín. 8)">
-                <input id="cp_new2" type="password" placeholder="Confirmar nova senha">
-              </div>
-              <div style="display:flex; gap:.5rem; justify-content:flex-end; margin-top:.6rem;">
-                <button id="btnChangePass" class="btn-primary">Alterar senha</button>
-              </div>
-              <div id="cp_msg" class="muted"></div>
+              <form id="changePasswordForm">
+                <div class="row">
+                  <input id="cp_current" type="password" placeholder="Senha atual" autocomplete="current-password">
+                  <input id="cp_new" type="password" placeholder="Nova senha (mín. 8)" autocomplete="new-password">
+                  <input id="cp_new2" type="password" placeholder="Confirmar nova senha" autocomplete="new-password">
+                </div>
+                <div style="display:flex; gap:.5rem; justify-content:flex-end; margin-top:.6rem;">
+                  <button type="submit" id="changePassBtn" class="btn-primary">Alterar Senha</button>
+                </div>
+              </form>
             </div>
 
             <div class="panel admin-only" id="admin-bot-control">
@@ -499,7 +521,6 @@
                   <th>Status</th>
                   <th>Pode Editar</th>
                   <th>Criado em</th>
-                  <th>Ações</th>
                 </tr>
               </thead>
               <tbody></tbody>
@@ -561,3 +582,49 @@
   <script src="/admin.js" defer></script>
 </body>
 </html>
+
+<!-- User Edit Modal -->
+<div id="userEditModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; z-index: 1000;">
+  <div class="box" style="background: #ffffff; border: 1px solid #e2e8f0; padding: 1.5rem; width: 500px; border-radius: 8px; display: flex; flex-direction: column; gap: 1rem; max-height: 80vh; overflow-y: auto;">
+    <h3 style="margin: 0; color: #1e293b;">Editar Usuário</h3>
+    
+    <div id="userInfo" style="background: #f8fafc; padding: 1rem; border-radius: 6px; border: 1px solid #e2e8f0;">
+      <!-- User info will be populated here -->
+    </div>
+    
+    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+      <label for="editContactName" style="font-weight: 500; color: #374151;">Nome de Contato:</label>
+      <input type="text" id="editContactName" style="padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+    </div>
+    
+    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+      <label for="editPhone" style="font-weight: 500; color: #374151;">Telefone:</label>
+      <input type="text" id="editPhone" style="padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+    </div>
+    
+    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+      <label for="editEmail" style="font-weight: 500; color: #374151;">Email:</label>
+      <input type="email" id="editEmail" style="padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+    </div>
+    
+    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+      <label style="font-weight: 500; color: #374151;">Status:</label>
+      <div id="statusButtons" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <!-- Status buttons will be populated here -->
+      </div>
+    </div>
+    
+    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+      <label style="font-weight: 500; color: #374151;">Permissões:</label>
+      <div id="permissionButtons" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <!-- Permission buttons will be populated here -->
+      </div>
+    </div>
+    
+    <div style="display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1rem;">
+      <button id="saveUserChanges" class="btn-primary" style="padding: 0.5rem 1rem;">Salvar</button>
+      <button id="cancelUserEdit" class="btn-danger" style="padding: 0.5rem 1rem; background: #6c757d;">Cancelar</button>
+      <button id="deleteUser" class="btn-danger" style="padding: 0.5rem 1rem;">Deletar Usuário</button>
+    </div>
+  </div>
+</div>

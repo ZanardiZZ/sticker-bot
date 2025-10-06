@@ -19,7 +19,7 @@ async function getCSRFToken() {
 
 async function fetchWithCSRF(url, options = {}) {
   // Add CSRF token for POST/PUT/DELETE requests
-  if (options.method && ['POST', 'PUT', 'DELETE'].includes(options.method.toUpperCase())) {
+  if (options.method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method.toUpperCase())) {
     const token = await getCSRFToken();
     if (token) {
       options.headers = options.headers || {};
@@ -133,7 +133,7 @@ async function fetchMe(){
         painelLink = '<a href="/painel.html" style="margin-right:1rem;">Painel</a>';
       }
       ui.innerHTML = painelLink + 'Logado como ' + CURRENT_USER.username + ' <button id="logoutBtn" style="font-size:.65rem;">Logout</button>';
-      document.getElementById('logoutBtn').onclick = async () => { await fetch('/api/logout',{method:'POST'}); location.reload(); };
+      document.getElementById('logoutBtn').onclick = async () => { await fetchWithCSRF('/api/logout',{method:'POST'}); location.reload(); };
     } else {
       ui.innerHTML = '<a href="/login">Login</a>';
     }
@@ -311,8 +311,8 @@ function showReadOnlyDetails(data) {
   const detailsEl = document.getElementById('stickerDetails');
   const timestamp = data.timestamp ? new Date(data.timestamp).toLocaleString('pt-BR') : 'N/A';
   const senderInfo = data.sender_id ? `Usuário: ${data.sender_id}` : 'Usuário: N/A';
-  const hashVisual = data.hash_visual ? `Hash Visual: ${data.hash_visual.slice(0, 12)}...` : '';
-  const hashMd5 = data.hash_md5 ? `MD5: ${data.hash_md5.slice(0, 12)}...` : '';
+  const hashVisual = data.hash_visual ? `Hash Visual: ${data.hash_visual}` : '';
+  const hashMd5 = data.hash_md5 ? `MD5: ${data.hash_md5}` : '';
   const nsfwStatus = data.nsfw ? 'NSFW: Sim' : 'NSFW: Não';
   const randomCount = data.count_random || 0;
   const tags = data.tags || [];
@@ -339,6 +339,8 @@ function showReadOnlyDetails(data) {
   editTags.style.display = 'none';
   document.getElementById('saveEdit').style.display = 'none';
   document.getElementById('cancelEdit').textContent = 'Fechar';
+  const genBtnRO = document.getElementById('generateAi');
+  if (genBtnRO) genBtnRO.style.display = 'none';
   editMsg.textContent = '';
   
   modal.style.display = 'flex';
@@ -364,9 +366,9 @@ async function openEdit(id){
   // Display additional information
   const detailsEl = document.getElementById('stickerDetails');
   const timestamp = data.timestamp ? new Date(data.timestamp).toLocaleString('pt-BR') : 'N/A';
-  const senderInfo = data.sender_id ? `Usuário: ${data.sender_id}` : 'Usuário: N/A';
-  const hashVisual = data.hash_visual ? `Hash Visual: ${data.hash_visual.slice(0, 12)}...` : '';
-  const hashMd5 = data.hash_md5 ? `MD5: ${data.hash_md5.slice(0, 12)}...` : '';
+    const senderInfo = data.sender_id ? `Usuário: ${data.sender_id}` : 'Usuário: N/A';
+    const hashVisual = data.hash_visual ? `Hash Visual: ${data.hash_visual}` : '';
+    const hashMd5 = data.hash_md5 ? `MD5: ${data.hash_md5}` : '';
   const nsfwStatus = data.nsfw ? 'NSFW: Sim' : 'NSFW: Não';
   const randomCount = data.count_random || 0;
   
@@ -379,6 +381,8 @@ async function openEdit(id){
   `;
   
   modal.style.display = 'flex';
+  const genBtn = document.getElementById('generateAi');
+  if (genBtn) genBtn.style.display = '';
 }
 
 document.getElementById('saveEdit').onclick = async () => {
@@ -400,12 +404,12 @@ document.getElementById('saveEdit').onclick = async () => {
     
     // Execute both requests in parallel for better performance
     const [r1, r2] = await Promise.all([
-      fetch('/api/stickers/' + id, { 
+      fetchWithCSRF('/api/stickers/' + id, { 
         method:'PATCH', 
         headers:{'Content-Type':'application/json'}, 
         body:JSON.stringify(metaBody) 
       }),
-      fetch('/api/stickers/' + id + '/tags', { 
+      fetchWithCSRF('/api/stickers/' + id + '/tags', { 
         method:'PUT', 
         headers:{'Content-Type':'application/json'}, 
         body:JSON.stringify({ tags }) 
@@ -431,6 +435,48 @@ document.getElementById('saveEdit').onclick = async () => {
     saveBtn.textContent = originalText;
     saveBtn.disabled = false;
     saveBtn.classList.remove('btn-loading');
+  }
+};
+
+// Handler for Generate via AI button
+document.getElementById('generateAi').onclick = async () => {
+  const id = editIdEl.textContent;
+  if (!id) return;
+  const btn = document.getElementById('generateAi');
+  const orig = btn.textContent;
+  btn.textContent = 'Gerando...';
+  btn.disabled = true;
+  editMsg.textContent = 'Gerando descrição via IA...';
+  editMsg.style.color = '#007bff';
+  try {
+    const r = await fetchWithCSRF('/api/stickers/' + id + '/generate-description', { method: 'POST' });
+    let data = null;
+    try {
+      data = await r.json();
+    } catch (e) {
+      throw new Error('Resposta inválida da IA');
+    }
+    if (!r.ok) {
+      const msg = data && data.error ? data.error : 'IA falhou';
+      throw new Error(msg);
+    }
+    if (data && data.suggestion) {
+      const s = data.suggestion;
+      if (s.description) editDesc.value = s.description;
+      if (s.tags && Array.isArray(s.tags)) editTags.value = s.tags.join(', ');
+      editMsg.textContent = 'Sugestão recebida. Revise antes de salvar.';
+      editMsg.style.color = '#28a745';
+    } else {
+      editMsg.textContent = 'IA retornou sem sugestão.';
+      editMsg.style.color = '#dc3545';
+    }
+  } catch (err) {
+    console.error('Erro ao gerar via IA:', err);
+    editMsg.textContent = 'Erro ao gerar descrição via IA.';
+    editMsg.style.color = '#dc3545';
+  } finally {
+    btn.textContent = orig;
+    btn.disabled = false;
   }
 };
 

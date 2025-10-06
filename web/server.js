@@ -407,15 +407,15 @@ const PUBLIC_DIR = process.env.PUBLIC_DIR || path.resolve(__dirname, 'public');
 console.log('[WEB] PUBLIC_DIR:', PUBLIC_DIR, 'exists:', fs.existsSync(PUBLIC_DIR));
 
 // Session middleware for CAPTCHA
-
 app.use(session({
   secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
   resave: false,
-  saveUninitialized: false,
+  saveUninitialized: true, // Changed to true to ensure session is created
   cookie: {
     secure: process.env.NODE_ENV === 'production',
-    maxAge: 10 * 60 * 1000, // 10 minutes
-    httpOnly: true
+    maxAge: 15 * 60 * 1000, // 15 minutes (longer than CAPTCHA expiry)
+    httpOnly: true,
+    sameSite: 'lax' // Add sameSite for better compatibility
   }
 }));
 
@@ -433,6 +433,7 @@ app.use((req, res, next) => {
 });
 
 console.time('[BOOT] auth');
+authMiddleware(app);
 registerAuthRoutes(app);
 console.timeEnd('[BOOT] auth');
 
@@ -635,13 +636,29 @@ app.post('/api/register', registerRateLimit, async (req, res) => {
   }
   
   // Validate CAPTCHA first
+  console.log(`[CAPTCHA] Validating session ${captchaSession}`);
+  console.log(`[CAPTCHA] Has session:`, !!req.session);
+  console.log(`[CAPTCHA] Has captcha:`, !!req.session?.captcha);
+  console.log(`[CAPTCHA] Session matches:`, req.session?.captcha?.session === captchaSession);
+  
   if (!req.session || !req.session.captcha || req.session.captcha.session !== captchaSession) {
+    console.log(`[CAPTCHA] Invalid session. Expected: ${req.session?.captcha?.session}, Got: ${captchaSession}`);
     return res.status(400).json({ error: 'invalid_captcha_session' });
   }
   
+  // Check if CAPTCHA has expired
+  if (Date.now() > req.session.captcha.expires) {
+    console.log(`[CAPTCHA] Expired. Now: ${Date.now()}, Expires: ${req.session.captcha.expires}`);
+    delete req.session.captcha;
+    return res.status(400).json({ error: 'invalid_captcha_session' });
+  }
+  
+  console.log(`[CAPTCHA] Checking answer. Expected: ${req.session.captcha.answer}, Got: ${parseInt(captchaAnswer)}`);
   if (parseInt(captchaAnswer) !== req.session.captcha.answer) {
     return res.status(400).json({ error: 'invalid_captcha' });
   }
+  
+  console.log(`[CAPTCHA] Validation successful`);
   
   // Clear CAPTCHA after validation
   delete req.session.captcha;
@@ -1065,7 +1082,7 @@ app.get('/api/admin/users', requireAdmin, (req, res) => {
       u.approved_at,
       u.approved_by,
       approver.username as approved_by_username,
-      c.display_name as contact_display_name,
+      u.contact_display_name,
       CASE WHEN dm.id IS NOT NULL THEN 1 ELSE 0 END as has_whatsapp_account,
       dm.allowed as whatsapp_allowed,
       dm.blocked as whatsapp_blocked
@@ -1179,6 +1196,60 @@ app.patch('/api/admin/users/:id/permissions', requireAdmin, (req, res) => {
 
     console.log(`[ADMIN] User ${id} edit permission set to ${can_edit} by ${req.user.username}`);
     res.json({ success: true, can_edit });
+  });
+});
+
+// Update user profile data
+app.patch('/api/admin/users/:id', requireAdmin, (req, res) => {
+  const { id } = req.params;
+  const { contact_display_name, phone_number, email } = req.body;
+
+  // Validate input
+  if (contact_display_name !== undefined && typeof contact_display_name !== 'string') {
+    return res.status(400).json({ error: 'invalid_contact_name' });
+  }
+  if (phone_number !== undefined && typeof phone_number !== 'string') {
+    return res.status(400).json({ error: 'invalid_phone' });
+  }
+  if (email !== undefined && typeof email !== 'string') {
+    return res.status(400).json({ error: 'invalid_email' });
+  }
+
+  // Build update query dynamically
+  const updates = [];
+  const values = [];
+  
+  if (contact_display_name !== undefined) {
+    updates.push('contact_display_name = ?');
+    values.push(contact_display_name);
+  }
+  if (phone_number !== undefined) {
+    updates.push('phone_number = ?');
+    values.push(phone_number);
+  }
+  if (email !== undefined) {
+    updates.push('email = ?');
+    values.push(email);
+  }
+  
+  if (updates.length === 0) {
+    return res.status(400).json({ error: 'no_updates' });
+  }
+  
+  values.push(id);
+  
+  db.run(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, values, function(err) {
+    if (err) {
+      console.error('[ADMIN] Error updating user data:', err);
+      return res.status(500).json({ error: 'db_error' });
+    }
+
+    if (this.changes === 0) {
+      return res.status(404).json({ error: 'user_not_found' });
+    }
+
+    console.log(`[ADMIN] User ${id} data updated by ${req.user.username}`);
+    res.json({ success: true });
   });
 });
 
@@ -1514,6 +1585,52 @@ app.patch('/api/stickers/:id', requireLogin, async (req, res) => {
     bus.emit('media:updated', { id, fields: ['description','nsfw'] });
     res.json({ ok: true, media: updated });
   } catch {
+    res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Gerar descrição via IA para um sticker (usuários logados)
+app.post('/api/stickers/:id/generate-description', requireLogin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!id) return res.status(400).json({ error: 'invalid_id' });
+    const media = await getMediaById(id);
+    if (!media) return res.status(404).json({ error: 'not_found' });
+
+    const filePath = media.file_path;
+    if (!filePath) return res.status(400).json({ error: 'no_file_path' });
+
+    // Load file buffer
+    const absPath = filePath.startsWith('/') ? filePath : path.join(STICKERS_DIR || process.cwd(), filePath);
+    if (!fs.existsSync(absPath)) {
+      // Try located in STICKERS_DIR by basename
+      const alt = path.join(STICKERS_DIR || process.cwd(), path.basename(filePath));
+      if (fs.existsSync(alt)) {
+        // use alt
+        buffer = fs.readFileSync(alt);
+      } else {
+        return res.status(404).json({ error: 'file_not_found' });
+      }
+    }
+    let buffer = fs.readFileSync(absPath);
+
+    const aiService = require('../services/ai.js');
+    let aiResult = null;
+    try {
+      if (media.mimetype && media.mimetype.includes('gif')) {
+        aiResult = await aiService.getAiAnnotationsForGif(buffer);
+      } else {
+        aiResult = await aiService.getAiAnnotations(buffer);
+      }
+    } catch (aiErr) {
+      console.error('[API] IA erro:', aiErr);
+      return res.status(500).json({ error: 'ai_error', message: aiErr.message });
+    }
+
+    // Return suggestion (description, tags, text)
+    res.json({ ok: true, suggestion: aiResult });
+  } catch (e) {
+    console.error('[API] /api/stickers/:id/generate-description ERRO:', e);
     res.status(500).json({ error: 'internal_error' });
   }
 });

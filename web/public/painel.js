@@ -26,6 +26,35 @@ async function fetchMyStickers() {
   }
 }
 fetchMyStickers();
+// CSRF token management
+let csrfToken = null;
+
+async function getCSRFToken() {
+  if (!csrfToken) {
+    try {
+      const response = await fetch('/api/csrf-token', { credentials: 'same-origin' });
+      const data = await response.json();
+      csrfToken = data.csrfToken;
+    } catch (e) {
+      console.warn('Failed to fetch CSRF token:', e);
+    }
+  }
+  return csrfToken;
+}
+
+async function fetchWithCSRF(url, options = {}) {
+  // Add CSRF token for POST/PUT/DELETE/PATCH requests
+  if (options.method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method.toUpperCase())) {
+    const token = await getCSRFToken();
+    if (token) {
+      options.headers = options.headers || {};
+      options.headers['X-CSRF-Token'] = token;
+    }
+  }
+  options.credentials = options.credentials || 'same-origin';
+  return fetch(url, options);
+}
+
 // painel.js - Lógica do painel do usuário comum
 
 async function fetchAccountInfo() {
@@ -62,7 +91,7 @@ document.getElementById('btnChangePass').onclick = async function() {
   if (n1 !== n2) { msg.textContent = 'Nova senha e confirmação não conferem.'; return; }
   if (n1.length < 8) { msg.textContent = 'A senha deve ter pelo menos 8 caracteres.'; return; }
   try {
-    const r = await fetch('/api/account/change-password', {
+    const r = await fetchWithCSRF('/api/account/change-password', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ current_password: cur, new_password: n1 })
