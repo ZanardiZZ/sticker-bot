@@ -29,8 +29,8 @@ async function refreshCSRFToken() {
 window.refreshCSRFToken = refreshCSRFToken;
 
 async function fetchWithCSRF(url, options = {}) {
-  // Add CSRF token for POST/PUT/DELETE requests
-  if (options.method && ['POST', 'PUT', 'DELETE'].includes(options.method.toUpperCase())) {
+  // Add CSRF token for POST/PUT/DELETE/PATCH requests
+  if (options.method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method.toUpperCase())) {
     const token = await getCSRFToken();
     if (token) {
       options.headers = options.headers || {};
@@ -42,8 +42,8 @@ async function fetchWithCSRF(url, options = {}) {
 }
 
 async function fetchJSON(url, options = {}){
-  // Add CSRF token for POST/PUT/DELETE requests
-  if (options.method && ['POST', 'PUT', 'DELETE'].includes(options.method.toUpperCase())) {
+  // Add CSRF token for POST/PUT/DELETE/PATCH requests
+  if (options.method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method.toUpperCase())) {
     const token = await getCSRFToken();
     if (token) {
       // Add token to headers
@@ -224,7 +224,10 @@ document.addEventListener('click', async (e) => {
   }
   await loadRules();
 });
-document.getElementById('btnChangePass').addEventListener('click', changePassword);
+document.getElementById('changePasswordForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  changePassword();
+});
 
 // ========= User Management Functions =========
 let currentUsersPage = 0;
@@ -250,39 +253,39 @@ async function loadUsers() {
   } catch (error) {
     console.error('Error loading users:', error);
     document.querySelector('#tblUsers tbody').innerHTML = 
-      '<tr><td colspan="8">Erro ao carregar usuários</td></tr>';
+      '<tr><td colspan="10">Erro ao carregar usuários</td></tr>';
   }
 }
 
 function renderUsersTable(users) {
   const tbody = document.querySelector('#tblUsers tbody');
   if (!users || users.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #999;">Nenhum usuário encontrado</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: #999;">Nenhum usuário encontrado</td></tr>';
     return;
   }
   
   tbody.innerHTML = users.map(user => {
     const createdAt = new Date(user.created_at).toLocaleString('pt-BR');
     const statusBadge = getStatusBadge(user.status);
-  const actions = getActionButtons(user) + ` <button class="btn-user-delete" data-id="${user.id}" style="background:#6c757d;color:white;border:0;padding:0.2rem 0.4rem;border-radius:3px;font-size:0.8rem;cursor:pointer;margin-left:0.2rem;">Deletar</button>`;
     const phone = user.phone_number ? maskPhone(user.phone_number) : '—';
     const contactName = user.contact_display_name || '—';
     const canEdit = user.can_edit ? '✓' : '✗';
     const email = user.email || '—';
     const emailStatus = getEmailStatusBadge(user.email_confirmed);
+    const whatsappStatus = user.has_whatsapp_account ? '✓' : '—';
     
     return `
-      <tr data-user-id="${user.id}">
+      <tr data-user-id="${user.id}" class="user-row" style="cursor: pointer;">
         <td>${user.id}</td>
         <td>${user.username}</td>
         <td>${email}</td>
         <td>${emailStatus}</td>
         <td>${phone}</td>
         <td>${contactName}</td>
+        <td>${whatsappStatus}</td>
         <td>${statusBadge}</td>
         <td>${canEdit}</td>
         <td>${createdAt}</td>
-        <td>${actions}</td>
       </tr>
     `;
   }).join('');
@@ -467,6 +470,189 @@ document.addEventListener('click', async (e) => {
       console.error('Erro ao deletar usuário:', err);
       alert('Erro ao deletar usuário');
     }
+  }
+});
+
+// Handle user row clicks to open edit modal
+document.addEventListener('click', (e) => {
+  const row = e.target.closest('.user-row');
+  if (row) {
+    const userId = row.dataset.userId;
+    if (userId) {
+      openUserEditModal(userId);
+    }
+  }
+});
+
+// User edit modal functions
+async function openUserEditModal(userId) {
+  try {
+    const data = await fetchJSON('/api/admin/users?limit=1000'); // Get all users to find the one we want
+    const user = data.users.find(u => u.id == userId);
+    if (!user) {
+      alert('Usuário não encontrado');
+      return;
+    }
+    
+    // Populate modal with user data
+    document.getElementById('userInfo').innerHTML = `
+      <div><strong>ID:</strong> ${user.id}</div>
+      <div><strong>Usuário:</strong> ${user.username}</div>
+      <div><strong>Criado em:</strong> ${new Date(user.created_at).toLocaleString('pt-BR')}</div>
+      <div><strong>WhatsApp Conectado:</strong> ${user.has_whatsapp_account ? 'Sim' : 'Não'}</div>
+    `;
+    
+    document.getElementById('editContactName').value = user.contact_display_name || '';
+    document.getElementById('editPhone').value = user.phone_number || '';
+    document.getElementById('editEmail').value = user.email || '';
+    
+    // Status buttons
+    const statusButtons = document.getElementById('statusButtons');
+    statusButtons.innerHTML = `
+      <button class="status-btn ${user.status === 'pending' ? 'active' : ''}" data-status="pending">Pendente</button>
+      <button class="status-btn ${user.status === 'approved' ? 'active' : ''}" data-status="approved">Aprovado</button>
+      <button class="status-btn ${user.status === 'rejected' ? 'active' : ''}" data-status="rejected">Rejeitado</button>
+    `;
+    
+    // Permission buttons
+    const permissionButtons = document.getElementById('permissionButtons');
+    permissionButtons.innerHTML = `
+      <button class="permission-btn ${user.can_edit ? 'active' : ''}" data-permission="can_edit">
+        ${user.can_edit ? 'Pode Editar (Ativo)' : 'Pode Editar (Inativo)'}
+      </button>
+    `;
+    
+    // Store current user data for comparison
+    document.getElementById('userEditModal').dataset.userId = userId;
+    document.getElementById('userEditModal').dataset.originalData = JSON.stringify(user);
+    
+    // Show modal
+    document.getElementById('userEditModal').style.display = 'flex';
+  } catch (error) {
+    console.error('Error opening user edit modal:', error);
+    alert('Erro ao carregar dados do usuário');
+  }
+}
+
+function closeUserEditModal() {
+  document.getElementById('userEditModal').style.display = 'none';
+}
+
+// Handle modal close
+document.getElementById('userEditModal').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('userEditModal')) {
+    closeUserEditModal();
+  }
+});
+
+document.getElementById('cancelUserEdit').addEventListener('click', closeUserEditModal);
+
+// Handle status button clicks
+document.addEventListener('click', (e) => {
+  if (e.target.classList.contains('status-btn')) {
+    // Remove active class from all status buttons
+    document.querySelectorAll('.status-btn').forEach(btn => btn.classList.remove('active'));
+    // Add active class to clicked button
+    e.target.classList.add('active');
+  }
+});
+
+// Handle permission button clicks
+document.addEventListener('click', (e) => {
+  if (e.target.classList.contains('permission-btn')) {
+    e.target.classList.toggle('active');
+    const isActive = e.target.classList.contains('active');
+    e.target.textContent = isActive ? 'Pode Editar (Ativo)' : 'Pode Editar (Inativo)';
+  }
+});
+
+// Handle save changes
+document.getElementById('saveUserChanges').addEventListener('click', async () => {
+  const modal = document.getElementById('userEditModal');
+  const userId = modal.dataset.userId;
+  const originalData = JSON.parse(modal.dataset.originalData);
+  
+  const newData = {
+    contact_display_name: document.getElementById('editContactName').value.trim(),
+    phone_number: document.getElementById('editPhone').value.trim(),
+    email: document.getElementById('editEmail').value.trim(),
+    status: document.querySelector('.status-btn.active').dataset.status,
+    can_edit: document.querySelector('.permission-btn').classList.contains('active') ? 1 : 0
+  };
+  
+  // Check if anything changed
+  const hasChanges = 
+    newData.contact_display_name !== (originalData.contact_display_name || '') ||
+    newData.phone_number !== (originalData.phone_number || '') ||
+    newData.email !== (originalData.email || '') ||
+    newData.status !== originalData.status ||
+    newData.can_edit !== originalData.can_edit;
+  
+  if (!hasChanges) {
+    closeUserEditModal();
+    return;
+  }
+  
+  try {
+    // Update user data
+    const updateData = {};
+    if (newData.contact_display_name !== (originalData.contact_display_name || '')) updateData.contact_display_name = newData.contact_display_name;
+    if (newData.phone_number !== (originalData.phone_number || '')) updateData.phone_number = newData.phone_number;
+    if (newData.email !== (originalData.email || '')) updateData.email = newData.email;
+    
+    if (Object.keys(updateData).length > 0) {
+      await fetchJSON(`/api/admin/users/${userId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updateData)
+      });
+    }
+    
+    // Update status if changed
+    if (newData.status !== originalData.status) {
+      await fetchJSON(`/api/admin/users/${userId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newData.status })
+      });
+    }
+    
+    // Update permissions if changed
+    if (newData.can_edit !== originalData.can_edit) {
+      await fetchJSON(`/api/admin/users/${userId}/permissions`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ can_edit: newData.can_edit })
+      });
+    }
+    
+    closeUserEditModal();
+    await loadUsers();
+    alert('Usuário atualizado com sucesso!');
+  } catch (error) {
+    console.error('Error saving user changes:', error);
+    alert('Erro ao salvar alterações do usuário');
+  }
+});
+
+// Handle delete user
+document.getElementById('deleteUser').addEventListener('click', async () => {
+  if (!confirm('Deseja realmente deletar este usuário? Esta ação não pode ser desfeita.')) return;
+  
+  const userId = document.getElementById('userEditModal').dataset.userId;
+  
+  try {
+    const resp = await fetchWithCSRF('/api/admin/users/' + encodeURIComponent(userId), { method: 'DELETE' });
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      return alert(getAdminErrorMessage(data, 'Falha ao deletar usuário'));
+    }
+    closeUserEditModal();
+    await loadUsers();
+    alert('Usuário deletado com sucesso!');
+  } catch (err) {
+    console.error('Erro ao deletar usuário:', err);
+    alert('Erro ao deletar usuário');
   }
 });
 

@@ -24,15 +24,21 @@ function createCaptchaRoutes() {
       answer = num1 - num2;
     }
     
+    // Generate a unique session identifier for this CAPTCHA
+    const sessionId = Date.now().toString(36) + Math.random().toString(36).substr(2);
+    
     // Store in session with expiration
     req.session.captcha = {
       answer,
+      session: sessionId,
       expires: Date.now() + (10 * 60 * 1000) // 10 minutes
     };
     
+    console.log(`[CAPTCHA] Generated session ${sessionId} with answer ${answer}`);
+    
     res.json({
       question,
-      session: req.session.id
+      session: sessionId
     });
   });
 
