@@ -33,23 +33,27 @@
       <div id="verificationStatus" class="muted">Verificando status...</div>
       <div id="verificationForm" style="display:none;">
         <p class="muted">Para verificar sua conta e poder editar figurinhas, envie <strong>#verificar</strong> para o bot no WhatsApp e digite o código aqui:</p>
-        <div class="row">
-          <input id="verificationCode" type="text" placeholder="Código de 8 caracteres" maxlength="8" style="text-transform:uppercase;">
-          <button id="btnVerifyWhatsApp" class="btn-primary">Verificar</button>
-        </div>
+        <form id="whatsappVerificationForm" onsubmit="return false;">
+          <div class="row">
+            <input id="verificationCode" type="text" placeholder="Código de 8 caracteres" maxlength="8" style="text-transform:uppercase;" autocomplete="one-time-code">
+            <button id="btnVerifyWhatsApp" type="button" class="btn-primary">Verificar</button>
+          </div>
+        </form>
         <div id="verification_msg" class="muted"></div>
       </div>
     </div>
     <hr style="margin:2rem 0;">
     <h3>Alterar Senha</h3>
-    <div class="row">
-      <input id="cp_current" type="password" placeholder="Senha atual">
-      <input id="cp_new" type="password" placeholder="Nova senha (mín. 8)">
-      <input id="cp_new2" type="password" placeholder="Confirmar nova senha">
-    </div>
-    <div style="display:flex; gap:.5rem; justify-content:flex-end; margin-top:.6rem;">
-      <button id="btnChangePass" class="btn-primary">Alterar senha</button>
-    </div>
+    <form id="changePasswordForm" onsubmit="return false;">
+      <div class="row">
+        <input id="cp_current" type="password" placeholder="Senha atual" autocomplete="current-password">
+        <input id="cp_new" type="password" placeholder="Nova senha (mín. 8)" autocomplete="new-password">
+        <input id="cp_new2" type="password" placeholder="Confirmar nova senha" autocomplete="new-password">
+      </div>
+      <div style="display:flex; gap:.5rem; justify-content:flex-end; margin-top:.6rem;">
+        <button id="btnChangePass" type="button" class="btn-primary">Alterar senha</button>
+      </div>
+    </form>
     <div id="cp_msg" class="muted"></div>
   </div>
   <script src="/app.js"></script>
