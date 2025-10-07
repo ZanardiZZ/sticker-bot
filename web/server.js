@@ -885,6 +885,70 @@ app.get('/api/admin/group-users/:groupId/:userId', requireAdmin, async (req, res
   }
 });
 
+// ========= WhatsApp Verification API =========
+app.post('/api/verify-whatsapp', requireLogin, async (req, res) => {
+  try {
+    const { code } = req.body;
+    const userId = req.user.id;
+
+    if (!code || typeof code !== 'string' || code.length !== 8) {
+      return res.status(400).json({ error: 'invalid_code' });
+    }
+
+    // Import verification functions
+    const { linkVerificationCode, getUserVerificationStatus } = require('../database/index');
+
+    // Check if user is already verified
+    const verificationStatus = await getUserVerificationStatus(db, userId);
+    if (verificationStatus.whatsapp_verified) {
+      return res.status(409).json({ 
+        error: 'already_verified',
+        message: 'Sua conta já está verificada via WhatsApp'
+      });
+    }
+
+    // Try to link the verification code
+    const success = await linkVerificationCode(db, code.toUpperCase(), userId);
+    
+    if (!success) {
+      return res.status(400).json({ 
+        error: 'invalid_or_expired_code',
+        message: 'Código inválido ou expirado. Gere um novo código enviando #verificar para o bot.'
+      });
+    }
+
+    console.log(`[VERIFY] User ${req.user.username} (ID: ${userId}) successfully verified WhatsApp`);
+    
+    res.json({ 
+      success: true,
+      message: 'WhatsApp verificado com sucesso! Agora você pode editar figurinhas.'
+    });
+    
+  } catch (error) {
+    console.error('[VERIFY] Error in WhatsApp verification endpoint:', error);
+    res.status(500).json({ 
+      error: 'server_error',
+      message: 'Erro interno do servidor'
+    });
+  }
+});
+
+app.get('/api/verify-whatsapp/status', requireLogin, async (req, res) => {
+  try {
+    const { getUserVerificationStatus } = require('../database/index');
+    const status = await getUserVerificationStatus(db, req.user.id);
+    
+    res.json({
+      whatsapp_verified: !!status.whatsapp_verified,
+      whatsapp_jid: status.whatsapp_jid || null
+    });
+    
+  } catch (error) {
+    console.error('[VERIFY] Error getting verification status:', error);
+    res.status(500).json({ error: 'server_error' });
+  }
+});
+
 app.post('/api/admin/group-users/:groupId/:userId', requireAdmin, async (req, res) => {
   try {
     const { groupId, userId } = req.params;

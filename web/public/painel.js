@@ -80,6 +80,82 @@ async function fetchAccountInfo() {
 
 fetchAccountInfo();
 
+// WhatsApp Verification
+async function checkWhatsAppVerificationStatus() {
+  try {
+    const r = await fetch('/api/verify-whatsapp/status');
+    const d = await r.json();
+    const statusEl = document.getElementById('verificationStatus');
+    const formEl = document.getElementById('verificationForm');
+    
+    if (d.whatsapp_verified) {
+      statusEl.innerHTML = `<span style="color:#059669">✅ <strong>WhatsApp verificado!</strong></span><br>
+        <small>Você pode editar figurinhas no site.</small>`;
+      formEl.style.display = 'none';
+    } else {
+      statusEl.innerHTML = `<span style="color:#dc2626">❌ WhatsApp não verificado</span><br>
+        <small>Verifique sua conta para poder editar figurinhas.</small>`;
+      formEl.style.display = 'block';
+    }
+  } catch (e) {
+    document.getElementById('verificationStatus').innerHTML = '<span style="color:#dc2626">Erro ao verificar status</span>';
+  }
+}
+
+async function verifyWhatsAppCode() {
+  const code = document.getElementById('verificationCode').value.trim().toUpperCase();
+  const btn = document.getElementById('btnVerifyWhatsApp');
+  const msg = document.getElementById('verification_msg');
+  
+  msg.textContent = '';
+  
+  if (!code || code.length !== 8) {
+    msg.textContent = 'Digite um código de 8 caracteres.';
+    return;
+  }
+  
+  btn.disabled = true;
+  btn.textContent = 'Verificando...';
+  
+  try {
+    const r = await fetchWithCSRF('/api/verify-whatsapp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code })
+    });
+    
+    const result = await r.json();
+    
+    if (r.ok && result.success) {
+      msg.innerHTML = '<span style="color:#059669">✅ ' + result.message + '</span>';
+      document.getElementById('verificationCode').value = '';
+      // Refresh verification status
+      setTimeout(checkWhatsAppVerificationStatus, 1000);
+    } else {
+      msg.innerHTML = '<span style="color:#dc2626">❌ ' + (result.message || 'Erro ao verificar código') + '</span>';
+    }
+  } catch (e) {
+    msg.innerHTML = '<span style="color:#dc2626">❌ Erro de conexão</span>';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Verificar';
+  }
+}
+
+// Event listeners for WhatsApp verification
+document.getElementById('btnVerifyWhatsApp').onclick = verifyWhatsAppCode;
+document.getElementById('verificationCode').onkeypress = function(e) {
+  if (e.key === 'Enter') verifyWhatsAppCode();
+};
+
+// Auto uppercase verification code input
+document.getElementById('verificationCode').oninput = function(e) {
+  e.target.value = e.target.value.toUpperCase();
+};
+
+// Check verification status on page load
+checkWhatsAppVerificationStatus();
+
 // Troca de senha (reaproveita lógica do admin.js)
 document.getElementById('btnChangePass').onclick = async function() {
   const cur = document.getElementById('cp_current').value;
