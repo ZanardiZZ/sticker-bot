@@ -37,7 +37,7 @@
     "jsonwebtoken": "^9.0.2",
     "mime-types": "^2.1.35",
     "node-cron": "^3.0.2",
-    "nodemailer": "^7.0.5",
+    "nodemailer": "^7.0.7",
     "nsfwjs": "^4.2.1",
     "openai": "^5.12.2",
     "pm2": "^6.0.8",
