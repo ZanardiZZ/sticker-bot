@@ -464,6 +464,13 @@ async function start() {
   sock.ev.on('groups.upsert', mergeGroups);
   sock.ev.on('groups.update', mergeGroups);
 
+  // LID mapping event listener
+  sock.ev.on('lid-mapping.update', (mapping) => {
+    console.log('[LID] Novo mapeamento LID ↔ PN recebido:', Object.keys(mapping).length, 'mapeamentos');
+    // Store mappings in database if needed
+    // The actual storage will be handled by the client applications
+  });
+
   sock.ev.on('creds.update', saveCreds);
 
   let restartScheduled = false;

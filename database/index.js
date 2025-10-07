@@ -22,6 +22,7 @@ const duplicatesModel = require('./models/duplicates');
 const maintenanceModel = require('./models/maintenance');
 const processingModel = require('./models/processing');
 const versionModel = require('./models/version');
+const lidMappingModel = require('./models/lidMapping');
 
 // Utilities
 const utils = require('./utils');
@@ -68,6 +69,9 @@ module.exports = {
   
   // Version operations
   ...versionModel,
+  
+  // LID mapping operations
+  ...lidMappingModel,
   
   // Utilities  
   ...utils

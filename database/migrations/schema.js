@@ -2,6 +2,8 @@
  * Database schema initialization and migrations
  */
 
+const { initializeLidMappingTable } = require('../models/lidMapping');
+
 function initializeTables(db) {
   return new Promise((resolve, reject) => {
     db.serialize(() => {
@@ -138,15 +140,21 @@ function initializeTables(db) {
       // Create indexes for performance
       createIndexes(db);
 
-      // Check media count after tables are created
-      db.get('SELECT COUNT(*) as total FROM media', (err, row) => {
-        if (err) {
-          console.error("[DB] ERRO ao acessar tabela 'media':", err);
-          reject(err);
-        } else {
-          console.log(`[DB] Tabela 'media' tem ${row.total} registros.`);
-          resolve();
-        }
+      // Initialize LID mapping table
+      initializeLidMappingTable(db).then(() => {
+        // Check media count after tables are created
+        db.get('SELECT COUNT(*) as total FROM media', (err, row) => {
+          if (err) {
+            console.error("[DB] ERRO ao acessar tabela 'media':", err);
+            reject(err);
+          } else {
+            console.log(`[DB] Tabela 'media' tem ${row.total} registros.`);
+            resolve();
+          }
+        });
+      }).catch((error) => {
+        console.error('[DB] Erro ao inicializar tabela LID mapping:', error);
+        reject(error);
       });
     });
   });

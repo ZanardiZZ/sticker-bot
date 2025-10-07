@@ -246,6 +246,36 @@ class BaileysWsAdapter {
   _send(obj) {
     try { this.ws && this.ws.readyState === WebSocket.OPEN && this.ws.send(JSON.stringify(obj)); } catch {}
   }
+
+  // Simulate Baileys socket interface for LID functionality
+  get sock() {
+    return {
+      signalRepository: {
+        lidMapping: {
+          getLIDForPN: async (pn) => {
+            // Request LID for PN from server
+            return this._sendAndWaitForAck({ type: 'getLIDForPN', pn });
+          },
+          getPNForLID: async (lid) => {
+            // Request PN for LID from server
+            return this._sendAndWaitForAck({ type: 'getPNForLID', lid });
+          },
+          getLIDsForPNs: async (pns) => {
+            // Request LIDs for multiple PNs from server
+            return this._sendAndWaitForAck({ type: 'getLIDsForPNs', pns });
+          },
+          storeLIDPNMapping: (lid, pn) => {
+            // Store LID-PN mapping on server
+            this._send({ type: 'storeLIDPNMapping', lid, pn });
+          },
+          storeLIDPNMappings: (mappings) => {
+            // Store multiple LID-PN mappings on server
+            this._send({ type: 'storeLIDPNMappings', mappings });
+          }
+        }
+      }
+    };
+  }
 }
 
 async function createAdapter(opts = {}) {
