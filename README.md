@@ -160,6 +160,7 @@ Send these commands to the bot in WhatsApp:
 | `#123` | Get sticker by ID | `#456` |
 | `#editar 123` | Edit sticker tags/description | `#editar 456` |
 | `#forçar` | Force save next media (admin) | `#forçar` |
+| `#verificar` | Generate WhatsApp verification code | `#verificar` |
 
 ### Tag Editing Mode
 After using `#editar ID`, send:
@@ -170,6 +171,22 @@ Or just tags:
 ```
 funny, cat, meme
 ```
+
+### 🔐 WhatsApp Verification
+
+To link your WhatsApp account to your web account and enable editing privileges:
+
+1. **Register** on the website (if you haven't already)
+2. **Generate verification code** - Send `#verificar` to the bot in WhatsApp (private message only)
+3. **Enter code** - Go to your account panel on the website and enter the 8-character code
+4. **Verify** - Click "Verify" to link your accounts
+
+**Benefits of verification:**
+- ✅ Ability to edit sticker tags and descriptions on the website
+- ✅ Enhanced account privileges and trust level
+- ✅ Seamless integration between WhatsApp and web interface
+
+**Note:** Verification is optional but recommended for full functionality.
 
 ## 🌐 Web Interface
 

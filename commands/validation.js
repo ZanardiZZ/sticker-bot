@@ -18,6 +18,8 @@ const VALID_COMMANDS = [
   '#count',
   '#tema',
   '#theme',
+  '#verificar',
+  '#verify',
   '#ping'
 ];
 

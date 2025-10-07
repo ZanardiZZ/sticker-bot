@@ -11,6 +11,7 @@ const { handleIdCommand } = require('./handlers/id');
 const { handleForceCommand } = require('./handlers/force');
 const { handleEditCommand } = require('./handlers/edit');
 const { handleThemeCommand } = require('./handlers/theme');
+const { handleVerifyCommand } = require('./handlers/verify');
 
 // Utilities
 const validation = require('./validation');
@@ -78,6 +79,11 @@ async function handleCommand(client, message, chatId) {
       case '#tema':
       case '#theme':
         await handleThemeCommand(client, message, chatId, params);
+        return true;
+
+      case '#verificar':
+      case '#verify':
+        await handleVerifyCommand(client, message, chatId);
         return true;
 
         case '#ping': {

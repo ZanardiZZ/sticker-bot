@@ -69,7 +69,25 @@ function initializeTables(db) {
           email TEXT,
           email_confirmed INTEGER DEFAULT 0,
           email_confirmation_token TEXT,
-          email_confirmation_expires INTEGER
+          email_confirmation_expires INTEGER,
+          whatsapp_verified INTEGER DEFAULT 0,
+          whatsapp_jid TEXT,
+          can_edit INTEGER DEFAULT 0
+        )
+      `);
+
+      // WhatsApp verification codes table
+      db.run(`
+        CREATE TABLE IF NOT EXISTS whatsapp_verification_codes (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          code TEXT UNIQUE NOT NULL,
+          user_id INTEGER,
+          whatsapp_jid TEXT,
+          status TEXT DEFAULT 'pending',
+          created_at INTEGER NOT NULL,
+          expires_at INTEGER NOT NULL,
+          verified_at INTEGER,
+          FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         )
       `);
 
@@ -230,6 +248,13 @@ function createIndexes(db) {
   db.run(`CREATE INDEX IF NOT EXISTS idx_pending_edits_status ON pending_edits(status)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_edit_votes_pending_edit_id ON edit_votes(pending_edit_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_edit_votes_user_id ON edit_votes(user_id)`);
+  
+  // WhatsApp verification indexes
+  db.run(`CREATE INDEX IF NOT EXISTS idx_whatsapp_verification_code ON whatsapp_verification_codes(code)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_whatsapp_verification_jid ON whatsapp_verification_codes(whatsapp_jid)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_whatsapp_verification_status ON whatsapp_verification_codes(status)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_users_whatsapp_jid ON users(whatsapp_jid)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_users_whatsapp_verified ON users(whatsapp_verified)`);
 }
 
 module.exports = { initializeTables };
