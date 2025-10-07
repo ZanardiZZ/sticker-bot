@@ -26,34 +26,9 @@ async function fetchMyStickers() {
   }
 }
 fetchMyStickers();
-// CSRF token management
-let csrfToken = null;
 
-async function getCSRFToken() {
-  if (!csrfToken) {
-    try {
-      const response = await fetch('/api/csrf-token', { credentials: 'same-origin' });
-      const data = await response.json();
-      csrfToken = data.csrfToken;
-    } catch (e) {
-      console.warn('Failed to fetch CSRF token:', e);
-    }
-  }
-  return csrfToken;
-}
-
-async function fetchWithCSRF(url, options = {}) {
-  // Add CSRF token for POST/PUT/DELETE/PATCH requests
-  if (options.method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method.toUpperCase())) {
-    const token = await getCSRFToken();
-    if (token) {
-      options.headers = options.headers || {};
-      options.headers['X-CSRF-Token'] = token;
-    }
-  }
-  options.credentials = options.credentials || 'same-origin';
-  return fetch(url, options);
-}
+// Use CSRF functions from app.js (already loaded)
+// Remove duplicate CSRF token management
 
 // painel.js - Lógica do painel do usuário comum
 

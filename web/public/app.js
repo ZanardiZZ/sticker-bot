@@ -125,17 +125,22 @@ async function fetchMe(){
     const d = await r.json();
     CURRENT_USER = d.user;
     const ui = document.getElementById('userInfo');
-    if (CURRENT_USER) {
-      let painelLink = '';
-      if (CURRENT_USER.role === 'admin') {
-        painelLink = '<a href="/admin.html" style="margin-right:1rem;">Painel</a>';
+    if (ui) {
+      if (CURRENT_USER) {
+        let painelLink = '';
+        if (CURRENT_USER.role === 'admin') {
+          painelLink = '<a href="/admin.html" style="margin-right:1rem;">Painel</a>';
+        } else {
+          painelLink = '<a href="/painel.html" style="margin-right:1rem;">Painel</a>';
+        }
+        ui.innerHTML = painelLink + 'Logado como ' + CURRENT_USER.username + ' <button id="logoutBtn" style="font-size:.65rem;">Logout</button>';
+        const logoutBtn = document.getElementById('logoutBtn');
+        if (logoutBtn) {
+          logoutBtn.onclick = async () => { await fetchWithCSRF('/api/logout',{method:'POST'}); location.reload(); };
+        }
       } else {
-        painelLink = '<a href="/painel.html" style="margin-right:1rem;">Painel</a>';
+        ui.innerHTML = '<a href="/login">Login</a>';
       }
-      ui.innerHTML = painelLink + 'Logado como ' + CURRENT_USER.username + ' <button id="logoutBtn" style="font-size:.65rem;">Logout</button>';
-      document.getElementById('logoutBtn').onclick = async () => { await fetchWithCSRF('/api/logout',{method:'POST'}); location.reload(); };
-    } else {
-      ui.innerHTML = '<a href="/login">Login</a>';
     }
     
     // Refresh cards if login status changed
@@ -191,20 +196,23 @@ function initializeLazyLoading() {
 }
 
 async function load(reset = false){
+  // Only run if we're on a page with a grid element
+  if (!grid) return;
+  
   if (loading) return;
   if (reset) { page = 1; done = false; grid.innerHTML = ''; }
   if (done) return;
   loading = true;
 
   try {
-    const tags = tagEl.value.trim();
-    const anyTag = anyTagEl.value.trim();
+    const tags = tagEl?.value?.trim() || '';
+    const anyTag = anyTagEl?.value?.trim() || '';
     const params = new URLSearchParams({ 
       page, 
       per_page: perPage, 
-      q: qEl.value.trim(), 
-      sort: sortEl.value, 
-      nsfw: nsfwEl.value 
+      q: qEl?.value?.trim() || '', 
+      sort: sortEl?.value || 'newest', 
+      nsfw: nsfwEl?.value || 'hide' 
     });
     
     if (tags) params.set('tags', tags.split(/[,\s]+/).join(','));
@@ -215,7 +223,9 @@ async function load(reset = false){
     
     const data = await r.json();
     
-    countEl.textContent = (data.total ?? 0) + ' itens';
+    if (countEl) {
+      countEl.textContent = (data.total ?? 0) + ' itens';
+    }
     
     if (!data.results || data.results.length === 0) {
       done = true;
@@ -254,7 +264,7 @@ function refreshCurrentView() {
   }
 }
 
-[qEl, tagEl, anyTagEl, nsfwEl, sortEl].forEach(el => {
+[qEl, tagEl, anyTagEl, nsfwEl, sortEl].filter(el => el !== null).forEach(el => {
   el.addEventListener('change', () => load(true));
   el.addEventListener('input', () => {
     if (el === qEl) {
@@ -263,11 +273,19 @@ function refreshCurrentView() {
     }
   });
 });
-reloadBtn.addEventListener('click', () => load(true));
+if (reloadBtn) {
+  reloadBtn.addEventListener('click', () => load(true));
+}
 
-// Infinite scroll
-const sentinel = document.createElement('div'); sentinel.style.height = '1px'; document.body.appendChild(sentinel);
-new IntersectionObserver(entries => { if (entries.some(e => e.isIntersecting)) load(); }).observe(sentinel);
+// Infinite scroll (only if grid exists)
+if (grid) {
+  const sentinel = document.createElement('div'); 
+  sentinel.style.height = '1px'; 
+  document.body.appendChild(sentinel);
+  new IntersectionObserver(entries => { 
+    if (entries.some(e => e.isIntersecting)) load(); 
+  }).observe(sentinel);
+}
 
 // SSE
 try{
