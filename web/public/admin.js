@@ -672,7 +672,7 @@ let hashUpdateInProgress = false;
 let lastLoadedGroupUsersId = '';
 let lastLoadedGroupCommandsId = '';
 
-const mainTabIds = new Set(['settings', 'logs', 'network', 'users', 'duplicates']);
+const mainTabIds = new Set(['settings', 'logs', 'network', 'users', 'pending-edits', 'duplicates']);
 const subTabLoaders = {
   'group-users': initializeGroupUsersTab,
   'bot-frequency': loadBotSchedule,
@@ -722,6 +722,10 @@ function setActiveMainTab(tabId, options = {}) {
 
   if (tabId === 'duplicates' && !duplicatesLoaded) {
     loadDuplicatesTab();
+  }
+
+  if (tabId === 'pending-edits') {
+    loadPendingEditsTab();
   }
 
   if (tabId === 'logs') {
@@ -1319,6 +1323,15 @@ async function initializeGroupCommandsTab() {
     });
   }
 
+  const testBtn = document.getElementById('runGroupCommandTestBtn');
+  if (testBtn && !testBtn.dataset.bound) {
+    testBtn.dataset.bound = 'true';
+    testBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      runGroupCommandTest();
+    });
+  }
+
   const payload = consumeTabPayload('group-config');
   if (payload) {
     inputEl.value = payload;
@@ -1349,17 +1362,25 @@ async function loadGroupCommands(groupId) {
   if (!groupId) return;
   const statusEl = document.getElementById('groupCommandsStatus');
   const tableBody = document.querySelector('#groupCommandsTable tbody');
+  const summaryEl = document.getElementById('groupCommandsSummary');
+  const resultEl = document.getElementById('groupCommandTestResult');
   if (!tableBody) return;
 
   lastLoadedGroupCommandsId = groupId;
 
   if (statusEl) statusEl.textContent = 'Carregando permissões...';
+  if (summaryEl) {
+    summaryEl.style.display = 'none';
+    summaryEl.textContent = '';
+  }
+  if (resultEl) resultEl.textContent = '';
   tableBody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:#94a3b8;">Carregando permissões...</td></tr>`;
 
   try {
     const data = await fetchJSON(`/api/admin/group-commands/${encodeURIComponent(groupId)}`);
     const permissions = Array.isArray(data?.permissions) ? data.permissions : [];
     renderGroupCommandsTable(permissions, groupId);
+    renderGroupCommandSummary(data?.summary || null, groupId);
     if (statusEl) {
       statusEl.textContent = permissions.length
         ? `Exibindo ${permissions.length} comando(s) configurado(s) para ${groupId}`
@@ -1370,6 +1391,7 @@ async function loadGroupCommands(groupId) {
     }
   } catch (error) {
     console.error('Erro ao carregar permissões de grupo:', error);
+    renderGroupCommandSummary(null);
     if (statusEl) statusEl.textContent = 'Erro ao carregar permissões do grupo.';
     tableBody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:#ef4444;">Erro ao carregar permissões.</td></tr>`;
   }
@@ -1404,6 +1426,106 @@ function renderGroupCommandsTable(permissions, groupId) {
   }).join('');
 
   tableBody.innerHTML = rows;
+}
+
+function renderGroupCommandSummary(summary, groupId) {
+  const summaryEl = document.getElementById('groupCommandsSummary');
+  if (!summaryEl) return;
+  if (!summary) {
+    summaryEl.style.display = 'none';
+    summaryEl.textContent = '';
+    return;
+  }
+
+  const parts = [];
+  if (summary.defaultBehavior === 'deny') {
+    parts.push('Comandos bloqueados por padrão; libere manualmente os que desejar permitir.');
+  } else {
+    parts.push('Sem regra global de bloqueio: comandos liberados por padrão.');
+  }
+  parts.push(`Regras específicas: ${summary.allowRules || 0} permitidas / ${summary.denyRules || 0} bloqueadas.`);
+  if (summary.defaultRule) {
+    parts.push(`Regra padrão configurada por "${escapeHtml(summary.defaultRule.command || '*')}" (${summary.defaultRule.allowed ? 'permite' : 'bloqueia'}).`);
+  }
+  if (groupId) {
+    parts.push(`Grupo: ${escapeHtml(groupId)}`);
+  }
+
+  summaryEl.textContent = parts.join(' ');
+  summaryEl.style.display = 'block';
+}
+
+function describeAppliedRule(rule, meta = {}) {
+  if (!rule || !rule.type) return 'Sem regra específica aplicada.';
+  switch (rule.type) {
+    case 'user_block':
+      return 'Usuário marcado como bloqueado para este grupo.';
+    case 'user_restriction':
+      return `Usuário possui restrição direta para o comando ${meta.command || ''}.`;
+    case 'user_allowlist':
+      return 'Usuário não está na lista de liberação configurada.';
+    case 'group_rule':
+      return `Regra do grupo para "${rule.command}" (${rule.allowed ? 'permitido' : 'bloqueado'}).`;
+    case 'group_default_block':
+      return `Regra padrão do grupo (${rule.command || '*'}) bloqueando comandos não listados.`;
+    case 'allowed':
+      return 'Nenhuma restrição encontrada — comando permitido.';
+    default:
+      return `Regra ${rule.type} aplicada.`;
+  }
+}
+
+async function runGroupCommandTest() {
+  const resultEl = document.getElementById('groupCommandTestResult');
+  if (!resultEl) return;
+  const selectEl = document.getElementById('groupCommandsSelect');
+  const inputEl = document.getElementById('groupCommandsGroupId');
+  const commandEl = document.getElementById('groupCommandTestCommand');
+  const userEl = document.getElementById('groupCommandTestUser');
+
+  const groupId = ((inputEl && inputEl.value) || (selectEl && selectEl.value) || '').trim();
+  if (!groupId) {
+    resultEl.innerHTML = '<span style="color:#dc2626;">Informe um grupo antes de testar.</span>';
+    return;
+  }
+
+  const command = commandEl && commandEl.value ? commandEl.value.trim() : '';
+  if (!command) {
+    resultEl.innerHTML = '<span style="color:#dc2626;">Informe um comando para testar.</span>';
+    return;
+  }
+
+  const userId = userEl && userEl.value ? userEl.value.trim() : '';
+  resultEl.innerHTML = '<span style="color:#64748b;">Testando permissões...</span>';
+
+  try {
+    const params = new URLSearchParams({ command });
+    if (userId) params.set('userId', userId);
+    const evaluation = await fetchJSON(`/api/admin/group-commands/${encodeURIComponent(groupId)}/check?${params.toString()}`);
+    const allowed = evaluation?.allowed;
+    const detail = evaluation?.detail || (allowed ? 'Permissão concedida.' : 'Permissão negada.');
+    const badge = allowed
+      ? '<span style="color:#16a34a; font-weight:600;">Permitido</span>'
+      : '<span style="color:#dc2626; font-weight:600;">Bloqueado</span>';
+
+    let html = `${badge} — ${escapeHtml(detail)}`;
+    if (evaluation?.reasonCode) {
+      html += `<br><span class="muted">Motivo: ${escapeHtml(evaluation.reasonCode)}</span>`;
+    }
+    const meta = evaluation?.meta || {};
+    if (meta.summary) {
+      const summary = meta.summary;
+      const behavior = summary.defaultBehavior === 'deny' ? 'Bloquear' : 'Permitir';
+      html += `<br><span class="muted">Padrão: ${behavior} · Regras específicas: ${summary.allowRules || 0}/${summary.denyRules || 0}</span>`;
+    }
+    if (meta.ruleApplied) {
+      html += `<br><span class="muted">Regra aplicada: ${escapeHtml(describeAppliedRule(meta.ruleApplied, meta))}</span>`;
+    }
+    resultEl.innerHTML = html;
+  } catch (error) {
+    console.error('Erro ao testar permissão de comando:', error);
+    resultEl.innerHTML = `<span style="color:#dc2626;">Erro ao testar permissão: ${escapeHtml(error.message || 'falha inesperada')}.</span>`;
+  }
 }
 
 async function saveGroupCommand() {
@@ -2142,3 +2264,229 @@ document.getElementById('nextLogs')?.addEventListener('click', () => {
     loadLogs({ offset: logsCurrentOffset });
   }
 });
+
+// === PENDING EDITS FUNCTIONALITY ===
+
+let currentPendingEditsUser = null;
+
+// Load pending edits for the tab
+async function loadPendingEditsTab() {
+  const statusFilter = document.getElementById('pendingEditsStatusFilter').value;
+  
+  try {
+    const response = await fetchJSON('/api/pending-edits?status=' + statusFilter);
+    if (!response.ok) throw new Error('Failed to load pending edits');
+    
+    const data = await response.json();
+    displayPendingEditsInTab(data.pending_edits);
+  } catch (error) {
+    console.error('Error loading pending edits:', error);
+    document.getElementById('pendingEditsTabBody').innerHTML = 
+      '<tr><td colspan="9" style="text-align: center; color: #ef4444;">Erro ao carregar edições pendentes</td></tr>';
+  }
+}
+
+// Display pending edits in the admin tab
+function displayPendingEditsInTab(edits) {
+  const tbody = document.getElementById('pendingEditsTabBody');
+  tbody.innerHTML = '';
+
+  if (edits.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #64748b;">Nenhuma edição encontrada</td></tr>';
+    return;
+  }
+
+  edits.forEach(edit => {
+    const row = document.createElement('tr');
+    row.style.borderBottom = '1px solid #e2e8f0';
+    
+    // Format values for display
+    const oldValue = formatEditValueForTab(edit.edit_type, edit.old_value);
+    const newValue = formatEditValueForTab(edit.edit_type, edit.new_value);
+    const createdAt = new Date(edit.created_at).toLocaleString('pt-BR');
+    
+    // Get vote counts from the API call later
+    const approveVotes = edit.approve_votes || 0;
+    const rejectVotes = edit.reject_votes || 0;
+    
+    row.innerHTML = `
+      <td style="padding:.5rem .6rem; font-size:.9rem;">${edit.id}</td>
+      <td style="padding:.5rem .6rem; font-size:.9rem; text-transform: capitalize;">${translateEditTypeToPortuguese(edit.edit_type)}</td>
+      <td style="padding:.5rem .6rem; font-size:.9rem;">${edit.editor_username}</td>
+      <td style="padding:.5rem .6rem; font-size:.9rem; max-width: 200px; word-wrap: break-word; white-space: normal;">${oldValue}</td>
+      <td style="padding:.5rem .6rem; font-size:.9rem; max-width: 200px; word-wrap: break-word; white-space: normal;">${newValue}</td>
+      <td style="padding:.5rem .6rem; font-size:.9rem; text-align: center;">${approveVotes}</td>
+      <td style="padding:.5rem .6rem; font-size:.9rem; text-align: center;">${rejectVotes}</td>
+      <td style="padding:.5rem .6rem; font-size:.9rem;">${createdAt}</td>
+      <td style="padding:.5rem .6rem; font-size:.9rem;">${generateActionButtonsForTab(edit)}</td>
+    `;
+    
+    tbody.appendChild(row);
+  });
+  
+  // Load vote counts for each pending edit
+  loadVoteCountsForEdits(edits);
+}
+
+// Load vote counts for pending edits
+async function loadVoteCountsForEdits(edits) {
+  for (const edit of edits) {
+    if (edit.status === 'pending') {
+      try {
+        // We need to create an endpoint to get vote counts
+        // For now, we'll skip this and implement it if needed
+      } catch (error) {
+        console.error('Error loading vote counts for edit', edit.id, error);
+      }
+    }
+  }
+}
+
+// Format edit values for display in tab
+function formatEditValueForTab(editType, value) {
+  if (value === null || value === undefined) {
+    return '<em style="color: #9ca3af;">vazio</em>';
+  }
+  
+  if (editType === 'tags') {
+    return Array.isArray(value) ? value.join(', ') : value;
+  } else if (editType === 'nsfw') {
+    return value ? 'NSFW' : 'SFW';
+  } else {
+    return String(value).length > 50 ? String(value).substring(0, 50) + '...' : String(value);
+  }
+}
+
+// Translate edit type to Portuguese
+function translateEditTypeToPortuguese(editType) {
+  const translations = {
+    'tags': 'Tags',
+    'description': 'Descrição',
+    'nsfw': 'NSFW'
+  };
+  return translations[editType] || editType;
+}
+
+// Generate action buttons for each edit in tab
+function generateActionButtonsForTab(edit) {
+  if (edit.status !== 'pending') {
+    const statusText = edit.status === 'approved' ? 'Aprovada' : 'Rejeitada';
+    const statusColor = edit.status === 'approved' ? '#10b981' : '#ef4444';
+    return `<span style="color: ${statusColor}; font-weight: 600;">${statusText}</span>`;
+  }
+
+  const isOwnEdit = currentPendingEditsUser && currentPendingEditsUser.id === edit.user_id;
+  
+  if (isOwnEdit) {
+    return '<em style="color: #9ca3af;">Sua edição</em>';
+  }
+
+  let buttons = '';
+  
+  // Regular user vote buttons
+  if (!isOwnEdit) {
+    buttons += `
+      <button onclick="voteOnEditFromTab(${edit.id}, 'approve')" 
+              style="padding: 0.25rem 0.5rem; margin: 0 0.125rem; font-size: 0.75rem; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer; min-width: 50px;">
+        👍
+      </button>
+      <button onclick="voteOnEditFromTab(${edit.id}, 'reject')" 
+              style="padding: 0.25rem 0.5rem; margin: 0 0.125rem; font-size: 0.75rem; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer; min-width: 50px;">
+        👎
+      </button>
+    `;
+  }
+  
+  // Admin buttons
+  if (currentPendingEditsUser && currentPendingEditsUser.role === 'admin') {
+    buttons += `
+      <button onclick="adminDecisionFromTab(${edit.id}, 'approve')" 
+              style="padding: 0.25rem 0.5rem; margin: 0 0.125rem; font-size: 0.75rem; background: #6366f1; color: white; border: none; border-radius: 4px; cursor: pointer; min-width: 60px;">
+        🛡️ A
+      </button>
+      <button onclick="adminDecisionFromTab(${edit.id}, 'reject')" 
+              style="padding: 0.25rem 0.5rem; margin: 0 0.125rem; font-size: 0.75rem; background: #8b5cf6; color: white; border: none; border-radius: 4px; cursor: pointer; min-width: 60px;">
+        🛡️ R
+      </button>
+    `;
+  }
+  
+  return buttons;
+}
+
+// Vote on pending edit from tab
+async function voteOnEditFromTab(editId, vote) {
+  try {
+    const response = await fetchJSON(`/api/pending-edits/${editId}/vote`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ vote })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to vote');
+    }
+
+    const result = await response.json();
+    
+    if (result.auto_processed) {
+      alert(`Edição ${result.auto_processed === 'approved' ? 'aprovada' : 'rejeitada'} automaticamente!`);
+    } else {
+      alert('Voto registrado com sucesso!');
+    }
+    
+    loadPendingEditsTab(); // Reload to show updated data
+  } catch (error) {
+    console.error('Error voting:', error);
+    alert(`Erro ao votar: ${error.message}`);
+  }
+}
+
+// Admin decision on pending edit from tab
+async function adminDecisionFromTab(editId, decision) {
+  const reason = decision === 'reject' ? prompt('Motivo da rejeição (opcional):') : null;
+  if (decision === 'reject' && reason === null) return; // User cancelled
+  
+  try {
+    const response = await fetchJSON(`/api/pending-edits/${editId}/admin-decision`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ decision, reason })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to process decision');
+    }
+
+    alert(`Edição ${decision === 'approve' ? 'aprovada' : 'rejeitada'} com sucesso!`);
+    loadPendingEditsTab(); // Reload table
+  } catch (error) {
+    console.error('Error in admin decision:', error);
+    alert(`Erro: ${error.message}`);
+  }
+}
+
+// Initialize pending edits functionality when the page loads
+document.addEventListener('DOMContentLoaded', function() {
+  // Add event listener for status filter
+  document.getElementById('pendingEditsStatusFilter')?.addEventListener('change', loadPendingEditsTab);
+  
+  // Store current user info for pending edits functionality
+  fetch('/auth/me')
+    .then(response => response.json())
+    .then(user => {
+      currentPendingEditsUser = user;
+    })
+    .catch(error => {
+      console.error('Failed to get current user info:', error);
+    });
+});
+
+// Expose the function globally so it can be called from HTML
+window.loadPendingEditsTab = loadPendingEditsTab;

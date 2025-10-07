@@ -156,6 +156,7 @@
         <button class="main-tab-button admin-only" data-tab="logs">Logs</button>
         <button class="main-tab-button admin-only" data-tab="network">Rede</button>
         <button class="main-tab-button admin-only" data-tab="users">Usuários</button>
+        <button class="main-tab-button" data-tab="pending-edits">Aprovações</button>
         <button class="main-tab-button admin-only" data-tab="duplicates">Mídias Duplicadas</button>
       </div>
       
@@ -373,6 +374,7 @@
                 </div>
               </div>
               <div id="groupCommandsStatus" class="muted" style="margin-top:.8rem;"></div>
+              <div id="groupCommandsSummary" class="muted" style="margin-top:.4rem; display:none;"></div>
               <div id="groupCommandsTableWrapper" style="margin-top:1rem; overflow-x:auto;">
                 <table id="groupCommandsTable">
                   <thead>
@@ -404,6 +406,24 @@
                 <div style="flex:0 0 auto;">
                   <button id="saveGroupCommandBtn" class="btn-primary">Salvar</button>
                 </div>
+              </div>
+              <div id="groupCommandsTester" style="margin-top:1.5rem; padding:1rem; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;">
+                <h4 style="margin:0 0 .6rem 0; color:#1e293b; font-size:1rem;">Testar permissões efetivas</h4>
+                <div class="muted" style="margin-bottom:.8rem;">Informe um comando e, opcionalmente, um usuário para verificar como o bot irá responder.</div>
+                <div class="row" style="gap:1rem; flex-wrap:wrap; align-items:flex-end;">
+                  <div style="flex:2 1 220px; display:flex; flex-direction:column; gap:.4rem;">
+                    <label for="groupCommandTestCommand" class="muted">Comando</label>
+                    <input id="groupCommandTestCommand" type="text" placeholder="#comando a testar">
+                  </div>
+                  <div style="flex:2 1 220px; display:flex; flex-direction:column; gap:.4rem;">
+                    <label for="groupCommandTestUser" class="muted">Usuário (opcional)</label>
+                    <input id="groupCommandTestUser" type="text" placeholder="ex: 5511999999999@s.whatsapp.net">
+                  </div>
+                  <div style="flex:0 0 auto;">
+                    <button id="runGroupCommandTestBtn" class="btn-primary">Testar</button>
+                  </div>
+                </div>
+                <div id="groupCommandTestResult" class="muted" style="margin-top:.8rem;"></div>
               </div>
             </div>
           </div>
@@ -535,7 +555,54 @@
           </div>
         </div>
       </div>
-      
+
+      <!-- Pending Edits Tab Content -->
+      <div class="main-tab-content" id="main-tab-pending-edits">
+        <div class="panel">
+          <h3>🏛️ Aprovações Pendentes</h3>
+          <div class="muted">Gerencie edições pendentes de figurinhas que necessitam aprovação.</div>
+          
+          <div class="info" style="background:#dbeafe; color:#1e40af; padding:.6rem; border:1px solid #93c5fd; border-radius:6px; margin:1rem 0;">
+            <strong>Como funciona:</strong> Edições feitas por usuários (exceto admins e autores originais) precisam de 3 votos de aprovação ou 1 aprovação de admin.
+          </div>
+
+          <div style="display: flex; gap: 1rem; margin: 1rem 0; align-items: center;">
+            <label>
+              Status:
+              <select id="pendingEditsStatusFilter" style="padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px; margin-left: 0.5rem;">
+                <option value="pending">Pendentes</option>
+                <option value="approved">Aprovadas</option>
+                <option value="rejected">Rejeitadas</option>
+              </select>
+            </label>
+            <button onclick="loadPendingEditsTab()" class="btn-primary">🔄 Atualizar</button>
+          </div>
+        </div>
+
+        <div class="panel panel-full-width">
+          <div id="pendingEditsTabContainer">
+            <table style="width:100%; border-collapse:collapse; color: #334155;">
+              <thead>
+                <tr style="background: #f8fafc;">
+                  <th style="text-align:left; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; width: 5%;">ID</th>
+                  <th style="text-align:left; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; width: 10%;">Tipo</th>
+                  <th style="text-align:left; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; width: 12%;">Editor</th>
+                  <th style="text-align:left; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; width: 20%;">Valor Antigo</th>
+                  <th style="text-align:left; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; width: 20%;">Valor Novo</th>
+                  <th style="text-align:center; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; width: 8%;">👍</th>
+                  <th style="text-align:center; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; width: 8%;">👎</th>
+                  <th style="text-align:left; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; width: 12%;">Criado</th>
+                  <th style="text-align:left; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; width: 15%;">Ações</th>
+                </tr>
+              </thead>
+              <tbody id="pendingEditsTabBody">
+                <!-- Data will be loaded here -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       <!-- Duplicates Tab Content -->
       <div class="main-tab-content admin-only" id="main-tab-duplicates">
         <div class="panel">

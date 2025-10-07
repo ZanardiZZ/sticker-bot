@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Aprovações Pendentes – Configurações</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    /* Light Dark Mode - Softer and more pleasant colors */
+    body { background: #f1f5f9 !important; }
+    .dash { padding: 1rem; max-width: 95%; width: 95%; margin: auto; color: #334155; }
+    .panel { background:#ffffff; border: 1px solid #e2e8f0; border-radius:8px; padding:1.5rem; margin-bottom:12px; color: #334155; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1); }
+    .panel-full-width { max-width: 100vw; width: calc(100vw - 2rem); margin-left: calc(-50vw + 50%); }
+    .panel h3 { margin:.2rem 0 .6rem 0; font-size:1rem; color: #1e293b; }
+    .muted { color:#64748b; font-size:.9rem; }
+    .warn { background:#fef3c7; color:#92400e; padding:.6rem; border:1px solid #fde68a; border-radius:6px; margin-bottom:10px; }
+    .info { background:#dbeafe; color:#1e40af; padding:.6rem; border:1px solid #93c5fd; border-radius:6px; margin-bottom:10px; }
+    .success { background:#dcfce7; color:#166534; padding:.6rem; border:1px solid #86efac; border-radius:6px; margin-bottom:10px; }
+    .row { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; }
+    .row > * { flex: 1 1 220px; }
+    
+    table { width:100%; border-collapse:collapse; color: #334155; table-layout: fixed; }
+    th, td { text-align:left; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    th { color: #1e293b; background: #f8fafc; font-weight: 600; }
+    
+    /* Column widths for pending edits table */
+    #tblPendingEdits th:nth-child(1) { width: 5%; }    /* ID */
+    #tblPendingEdits th:nth-child(2) { width: 10%; }   /* Tipo */
+    #tblPendingEdits th:nth-child(3) { width: 12%; }   /* Editor */
+    #tblPendingEdits th:nth-child(4) { width: 15%; }   /* Valor Antigo */
+    #tblPendingEdits th:nth-child(5) { width: 15%; }   /* Valor Novo */
+    #tblPendingEdits th:nth-child(6) { width: 8%; }    /* Votos Aprovar */
+    #tblPendingEdits th:nth-child(7) { width: 8%; }    /* Votos Rejeitar */
+    #tblPendingEdits th:nth-child(8) { width: 12%; }   /* Criado em */
+    #tblPendingEdits th:nth-child(9) { width: 15%; }   /* Ações */
+
+    .vote-btn { padding: 0.25rem 0.5rem; margin: 0 0.125rem; font-size: 0.8rem; min-width: 60px; }
+    .approve-btn { background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    .reject-btn { background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    .approve-btn:hover { background: #059669; }
+    .reject-btn:hover { background: #dc2626; }
+    .vote-btn:disabled { background: #9ca3af; cursor: not-allowed; }
+    
+    .edit-value { max-width: 200px; word-wrap: break-word; white-space: normal; }
+    .edit-type { text-transform: capitalize; }
+    
+    /* Filters */
+    .filters { display: flex; gap: 1rem; margin-bottom: 1rem; align-items: center; }
+    .filters select { padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px; }
+    
+    /* Status indicator */
+    .status-pending { color: #f59e0b; font-weight: 600; }
+    .status-approved { color: #10b981; font-weight: 600; }
+    .status-rejected { color: #ef4444; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="dash">
+    <h1>🏛️ Aprovações Pendentes</h1>
+    <p class="muted">Gerencie edições pendentes de figurinhas que necessitam aprovação.</p>
+    
+    <div class="info">
+      <strong>Como funciona:</strong> Edições feitas por usuários (exceto admins e autores originais) precisam de 3 votos de aprovação ou 1 aprovação de admin.
+    </div>
+
+    <div class="panel">
+      <div class="filters">
+        <label>
+          Status:
+          <select id="statusFilter">
+            <option value="pending">Pendentes</option>
+            <option value="approved">Aprovadas</option>
+            <option value="rejected">Rejeitadas</option>
+          </select>
+        </label>
+        <button onclick="loadPendingEdits()" class="btn">🔄 Atualizar</button>
+      </div>
+    </div>
+
+    <div class="panel panel-full-width">
+      <h3>📋 Edições Pendentes</h3>
+      <div id="pendingEditsContainer">
+        <table id="tblPendingEdits">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Tipo</th>
+              <th>Editor</th>
+              <th>Valor Antigo</th>
+              <th>Valor Novo</th>
+              <th>👍 Aprovar</th>
+              <th>👎 Rejeitar</th>
+              <th>Criado em</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody id="pendingEditsBody">
+            <!-- Data will be loaded here -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>🔗 Navegação</h3>
+      <div class="row">
+        <a href="/admin.html" class="btn">← Voltar ao Admin</a>
+        <a href="/painel.html" class="btn">📊 Painel Principal</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentUser = null;
+
+    // Check authentication and load user info
+    async function checkAuth() {
+      try {
+        const response = await fetch('/auth/me');
+        if (response.ok) {
+          currentUser = await response.json();
+          if (currentUser.role !== 'admin') {
+            // Non-admins can view but have limited actions
+            console.log('Non-admin user detected');
+          }
+        } else {
+          window.location.href = '/login.html';
+        }
+      } catch (error) {
+        console.error('Auth check failed:', error);
+        window.location.href = '/login.html';
+      }
+    }
+
+    // Load pending edits based on status filter
+    async function loadPendingEdits() {
+      const statusFilter = document.getElementById('statusFilter').value;
+      
+      try {
+        const response = await fetch(`/api/pending-edits?status=${statusFilter}`);
+        if (!response.ok) throw new Error('Failed to load pending edits');
+        
+        const data = await response.json();
+        displayPendingEdits(data.pending_edits);
+      } catch (error) {
+        console.error('Error loading pending edits:', error);
+        alert('Erro ao carregar edições pendentes');
+      }
+    }
+
+    // Display pending edits in table
+    function displayPendingEdits(edits) {
+      const tbody = document.getElementById('pendingEditsBody');
+      tbody.innerHTML = '';
+
+      if (edits.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #64748b;">Nenhuma edição encontrada</td></tr>';
+        return;
+      }
+
+      edits.forEach(edit => {
+        const row = document.createElement('tr');
+        
+        // Format values for display
+        const oldValue = formatEditValue(edit.edit_type, edit.old_value);
+        const newValue = formatEditValue(edit.edit_type, edit.new_value);
+        const createdAt = new Date(edit.created_at).toLocaleString('pt-BR');
+        
+        // Determine status class
+        const statusClass = `status-${edit.status}`;
+        
+        row.innerHTML = `
+          <td>${edit.id}</td>
+          <td class="edit-type">${translateEditType(edit.edit_type)}</td>
+          <td>${edit.editor_username}</td>
+          <td class="edit-value">${oldValue}</td>
+          <td class="edit-value">${newValue}</td>
+          <td style="text-align: center;">${edit.approve_votes || 0}</td>
+          <td style="text-align: center;">${edit.reject_votes || 0}</td>
+          <td>${createdAt}</td>
+          <td>${generateActionButtons(edit)}</td>
+        `;
+        
+        tbody.appendChild(row);
+      });
+    }
+
+    // Format edit values for display
+    function formatEditValue(editType, value) {
+      if (value === null || value === undefined) {
+        return '<em>vazio</em>';
+      }
+      
+      if (editType === 'tags') {
+        return Array.isArray(value) ? value.join(', ') : value;
+      } else if (editType === 'nsfw') {
+        return value ? 'NSFW' : 'SFW';
+      } else {
+        return String(value);
+      }
+    }
+
+    // Translate edit type to Portuguese
+    function translateEditType(editType) {
+      const translations = {
+        'tags': 'Tags',
+        'description': 'Descrição',
+        'nsfw': 'NSFW'
+      };
+      return translations[editType] || editType;
+    }
+
+    // Generate action buttons for each edit
+    function generateActionButtons(edit) {
+      if (edit.status !== 'pending') {
+        return `<span class="${'status-' + edit.status}">${edit.status === 'approved' ? 'Aprovada' : 'Rejeitada'}</span>`;
+      }
+
+      const isAdmin = currentUser && currentUser.role === 'admin';
+      const isOwnEdit = currentUser && currentUser.id === edit.user_id;
+      
+      if (isOwnEdit) {
+        return '<em>Sua edição</em>';
+      }
+
+      let buttons = '';
+      
+      if (!isOwnEdit) {
+        buttons += `
+          <button class="vote-btn approve-btn" onclick="voteOnEdit(${edit.id}, 'approve')">👍 Aprovar</button>
+          <button class="vote-btn reject-btn" onclick="voteOnEdit(${edit.id}, 'reject')">👎 Rejeitar</button>
+        `;
+      }
+      
+      if (isAdmin) {
+        buttons += `
+          <button class="vote-btn approve-btn" onclick="adminDecision(${edit.id}, 'approve')" style="background: #6366f1;">🛡️ Admin Aprovar</button>
+          <button class="vote-btn reject-btn" onclick="adminDecision(${edit.id}, 'reject')" style="background: #8b5cf6;">🛡️ Admin Rejeitar</button>
+        `;
+      }
+      
+      return buttons;
+    }
+
+    // Vote on pending edit
+    async function voteOnEdit(editId, vote) {
+      try {
+        const response = await fetch(`/api/pending-edits/${editId}/vote`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ vote })
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || 'Failed to vote');
+        }
+
+        const result = await response.json();
+        
+        if (result.auto_processed) {
+          alert(`Edição ${result.auto_processed === 'approved' ? 'aprovada' : 'rejeitada'} automaticamente!`);
+        } else {
+          alert('Voto registrado com sucesso!');
+        }
+        
+        loadPendingEdits(); // Reload to show updated vote counts
+      } catch (error) {
+        console.error('Error voting:', error);
+        alert(`Erro ao votar: ${error.message}`);
+      }
+    }
+
+    // Admin decision on pending edit
+    async function adminDecision(editId, decision) {
+      const reason = decision === 'reject' ? prompt('Motivo da rejeição (opcional):') : null;
+      
+      try {
+        const response = await fetch(`/api/pending-edits/${editId}/admin-decision`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ decision, reason })
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || 'Failed to process decision');
+        }
+
+        alert(`Edição ${decision === 'approve' ? 'aprovada' : 'rejeitada'} com sucesso!`);
+        loadPendingEdits(); // Reload table
+      } catch (error) {
+        console.error('Error in admin decision:', error);
+        alert(`Erro: ${error.message}`);
+      }
+    }
+
+    // Initialize page
+    document.addEventListener('DOMContentLoaded', async () => {
+      await checkAuth();
+      
+      // Add event listener for status filter
+      document.getElementById('statusFilter').addEventListener('change', loadPendingEdits);
+      
+      // Load initial data
+      loadPendingEdits();
+    });
+  </script>
+</body>
+</html>
