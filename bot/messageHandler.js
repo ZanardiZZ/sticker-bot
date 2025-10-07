@@ -9,6 +9,8 @@ const { upsertContactFromMessage, upsertGroupFromMessage } = require('./contacts
 const { processIncomingMedia } = require('./mediaProcessor');
 const { withTyping } = require('../utils/typingIndicator');
 const { safeReply } = require('../utils/safeMessaging');
+const { isJidGroup, normalizeJid } = require('../utils/jidUtils');
+const { resolveSenderId } = require('../database');
 const MediaQueue = require('../services/mediaQueue');
 const { getDmUser, upsertDmUser } = require('../web/dataAccess');
 // Rate-limited auto-reply tracker for DM request notifications
@@ -58,39 +60,55 @@ async function handleMessage(client, message) {
   
   try {
     const chatId = message.from;
+    
+    // Determine sender ID using new LID system
+    let senderId;
+    const messageKey = message.key || {};
+    const remoteJid = messageKey.remoteJid || message.from;
+    
+    if (isJidGroup(remoteJid)) {
+      // In groups, use participant or participantAlt
+      senderId = messageKey.participant || messageKey.participantAlt || message.sender?.id || message.author;
+    } else {
+      // In DMs, use remoteJid or remoteJidAlt
+      senderId = messageKey.remoteJid || messageKey.remoteJidAlt || message.sender?.id || message.author || message.from;
+    }
+    
+    // Resolve the preferred sender ID (LID if available, PN otherwise)
+    const resolvedSenderId = await resolveSenderId(client?.sock || client, senderId);
+    
     // Enforce DM authorization: if message is not from a group, only respond if
     // the sender is allowed (or is admin number configured via ENV).
-    const senderId = message.sender?.id || message.author || message.from;
-    const isGroup = !!message.isGroupMsg || !!message.isGroup;
+    const isGroup = !!message.isGroupMsg || !!message.isGroup || isJidGroup(remoteJid);
     const adminNumber = process.env.ADMIN_NUMBER;
 
     if (!isGroup) {
       try {
         // Allow admin number always
-        if (adminNumber && senderId === adminNumber) {
+        if (adminNumber && (resolvedSenderId === adminNumber || senderId === adminNumber)) {
           // update last activity
-          await upsertDmUser({ user_id: senderId, allowed: 1, blocked: 0, last_activity: Math.floor(Date.now() / 1000) });
+          await upsertDmUser({ user_id: resolvedSenderId, allowed: 1, blocked: 0, last_activity: Math.floor(Date.now() / 1000) });
         } else {
-          const dmUserRow = await getDmUser(senderId);
+          const dmUserRow = await getDmUser(resolvedSenderId);
           const allowed = dmUserRow && dmUserRow.allowed;
           const blocked = dmUserRow && dmUserRow.blocked;
           if (!allowed) {
             // Record the request (ensure admin sees the user in admin panel)
             const now = Math.floor(Date.now() / 1000);
             try {
-              await upsertDmUser({ user_id: senderId, allowed: 0, blocked: blocked ? 1 : 0, note: dmUserRow && dmUserRow.note ? dmUserRow.note : 'requested', last_activity: now });
+              await upsertDmUser({ user_id: resolvedSenderId, allowed: 0, blocked: blocked ? 1 : 0, note: dmUserRow && dmUserRow.note ? dmUserRow.note : 'requested', last_activity: now });
             } catch (e) {
               console.error('[DM AUTH] falha ao registrar pedido DM:', e?.message || e);
             }
 
             // Rate-limit auto-reply so we don't spam the user
-            const lastAuto = dmAutoReplyMap.get(senderId) || 0;
+            const lastAuto = dmAutoReplyMap.get(resolvedSenderId) || 0;
             const nowTs = Math.floor(Date.now() / 1000);
             if (nowTs - lastAuto < DM_AUTO_REPLY_TTL) {
               return; // recently informed
             }
 
-            dmAutoReplyMap.set(senderId, nowTs);
+            dmAutoReplyMap.set(resolvedSenderId, nowTs);
 
             // Send a friendly, localized notice and return without further processing
             try {
@@ -104,11 +122,11 @@ async function handleMessage(client, message) {
               console.error('[DM AUTH] falha ao enviar mensagem de aguardando autorização:', err?.message || err);
             }
 
-            console.log('[DM REQUEST] usuário solicitou acesso via DM:', senderId);
+            console.log('[DM REQUEST] usuário solicitou acesso via DM:', resolvedSenderId);
             return;
           }
           // If allowed, update last activity stamp
-          await upsertDmUser({ user_id: senderId, allowed: 1, blocked: 0, last_activity: Math.floor(Date.now() / 1000) });
+          await upsertDmUser({ user_id: resolvedSenderId, allowed: 1, blocked: 0, last_activity: Math.floor(Date.now() / 1000) });
         }
       } catch (err) {
         console.error('[DM AUTH] erro ao checar permissoes de DM:', err);

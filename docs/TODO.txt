@@ -3,7 +3,11 @@
 -Site: Verificar a questao do cadastro do site não estar funcionando
 -Site: capacidade de pedir nova descricao do sticker via ia
 -Bot: reavaliar os envios anteriores a tabela tag
--Site: diferenciar usuário de grupo através do seguinte :/** is the jid a user */
+
+✅ CONCLUÍDO: Sistema LID (Local Identifier) implementado
+✅ CONCLUÍDO: Implementação do jidDecode e funções de identificação JID
+✅ CONCLUÍDO: Diferenciação usuário/grupo através de:
+/** is the jid a user */
 export const areJidsSameUser = (jid1: string | undefined, jid2: string | undefined) =>
 	jidDecode(jid1)?.user === jidDecode(jid2)?.user
 /** is the jid Meta AI */
@@ -25,6 +29,9 @@ export const isJidHostedPnUser = (jid: string | undefined) => jid?.endsWith('@ho
 /** is the jid a hosted LID */
 export const isJidHostedLidUser = (jid: string | undefined) => jid?.endsWith('@hosted.lid')
 
+✅ CONCLUÍDO: Sistema de mapeamento LID ↔ PN implementado
+✅ CONCLUÍDO: Migração de dados existentes para suportar LIDs
+✅ CONCLUÍDO: Testes completos do sistema LID
+✅ CONCLUÍDO: Documentação LID_MIGRATION.md criada
 
--bot/site:Implementar o jidDecode também, para facilitar
 -bot: deletar gif depois que enviarem, para evitar poluir o grupo
