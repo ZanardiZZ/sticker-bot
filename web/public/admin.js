@@ -716,8 +716,8 @@ function updateWorkspaceHeader(tabId) {
 
   const button = mainTabButtons.find((btn) => btn.dataset.tab === tabId);
   const content = document.getElementById(`main-tab-${tabId}`);
-  const title = button?.dataset.title || content?.dataset.title || (button?.textContent?.trim() ?? 'Administração');
-  const description = button?.dataset.description || content?.dataset.description || '';
+  const title = button?.dataset.title ?? content?.dataset.title ?? (button?.textContent?.trim() ?? 'Administração');
+  const description = button?.dataset.description ?? content?.dataset.description ?? '';
 
   if (workspaceTitleEl) {
     workspaceTitleEl.textContent = title;
