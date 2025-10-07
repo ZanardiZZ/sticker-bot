@@ -661,6 +661,9 @@ document.getElementById('deleteUser').addEventListener('click', async () => {
 let duplicatesLoaded = false;
 let currentUserRole = null;
 
+const workspaceTitleEl = document.getElementById('workspaceTitle');
+const workspaceDescriptionEl = document.getElementById('workspaceDescription');
+
 let mainTabButtons = [];
 let mainTabContents = [];
 let tabButtons = [];
@@ -691,6 +694,8 @@ function initializeMainTabs() {
       setActiveMainTab(tabId, { updateHash: true });
     });
   });
+
+  setActiveMainTab(currentMainTab, { updateHash: false });
 }
 
 function initializeTabs() {
@@ -704,31 +709,68 @@ function initializeTabs() {
   });
 }
 
-function setActiveMainTab(tabId, options = {}) {
-  const { updateHash = false } = options;
-  if (!mainTabIds.has(tabId)) {
-    tabId = 'settings';
+function updateWorkspaceHeader(tabId) {
+  if (!workspaceTitleEl || !workspaceDescriptionEl) {
+    return;
   }
 
-  currentMainTab = tabId;
+  const button = mainTabButtons.find((btn) => btn.dataset.tab === tabId);
+  const content = document.getElementById(`main-tab-${tabId}`);
+  const title = button?.dataset.title ?? content?.dataset.title ?? (button?.textContent?.trim() ?? 'Administração');
+  const description = button?.dataset.description ?? content?.dataset.description ?? '';
+
+  if (workspaceTitleEl) {
+    workspaceTitleEl.textContent = title;
+  }
+
+  if (workspaceDescriptionEl) {
+    workspaceDescriptionEl.textContent = description;
+    workspaceDescriptionEl.style.display = description ? '' : 'none';
+  }
+}
+
+function setActiveMainTab(tabId, options = {}) {
+  const { updateHash = false } = options;
+  let targetTab = mainTabIds.has(tabId) ? tabId : 'settings';
+
+  const requestedButton = mainTabButtons.find((btn) => btn.dataset.tab === targetTab);
+  if (requestedButton && requestedButton.classList.contains('admin-only') && !requestedButton.classList.contains('visible')) {
+    targetTab = 'settings';
+  }
+
+  currentMainTab = targetTab;
 
   mainTabButtons.forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.tab === tabId);
+    const isActive = btn.dataset.tab === currentMainTab;
+    const canSeeButton = !btn.classList.contains('admin-only') || btn.classList.contains('visible');
+    const shouldBeActive = isActive && canSeeButton;
+    btn.classList.toggle('active', shouldBeActive);
+    if (btn.hasAttribute('aria-selected')) {
+      btn.setAttribute('aria-selected', shouldBeActive ? 'true' : 'false');
+    }
+    if (btn.hasAttribute('tabindex')) {
+      btn.setAttribute('tabindex', shouldBeActive ? '0' : '-1');
+    }
   });
 
   mainTabContents.forEach((content) => {
-    content.classList.toggle('active', content.id === `main-tab-${tabId}`);
+    const canShowContent = !content.classList.contains('admin-only') || content.classList.contains('visible');
+    const isActive = content.id === `main-tab-${currentMainTab}` && canShowContent;
+    content.classList.toggle('active', isActive);
+    content.setAttribute('aria-hidden', isActive ? 'false' : 'true');
   });
 
-  if (tabId === 'duplicates' && !duplicatesLoaded) {
+  updateWorkspaceHeader(currentMainTab);
+
+  if (currentMainTab === 'duplicates' && !duplicatesLoaded) {
     loadDuplicatesTab();
   }
 
-  if (tabId === 'pending-edits') {
+  if (currentMainTab === 'pending-edits') {
     loadPendingEditsTab();
   }
 
-  if (tabId === 'logs') {
+  if (currentMainTab === 'logs') {
     loadLogs({ offset: 0 });
     logsCurrentOffset = 0;
     if (document.getElementById('autoRefreshLogs')?.checked) {
@@ -738,7 +780,7 @@ function setActiveMainTab(tabId, options = {}) {
     stopLogsSSE();
   }
 
-  if (tabId === 'settings') {
+  if (currentMainTab === 'settings') {
     setActiveSubTab(currentSubTab, { updateHash: false });
   }
 
