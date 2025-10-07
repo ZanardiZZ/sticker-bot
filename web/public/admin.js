@@ -710,7 +710,7 @@ function initializeTabs() {
 }
 
 function updateWorkspaceHeader(tabId) {
-  if (!workspaceTitleEl && !workspaceDescriptionEl) {
+  if (!workspaceTitleEl || !workspaceDescriptionEl) {
     return;
   }
 
