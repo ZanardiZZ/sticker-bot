@@ -3,7 +3,7 @@
  */
 
 const { handleCommand, handleTaggingMode, taggingMap } = require('../commands');
-const { normalizeText } = require('../utils/commandNormalizer');
+const { parseCommand } = require('../utils/commandNormalizer');
 const { logReceivedMessage } = require('./logging');
 const { upsertContactFromMessage, upsertGroupFromMessage } = require('./contacts');
 const { processIncomingMedia } = require('./mediaProcessor');
@@ -11,11 +11,28 @@ const { withTyping } = require('../utils/typingIndicator');
 const { safeReply } = require('../utils/safeMessaging');
 const { isJidGroup, normalizeJid } = require('../utils/jidUtils');
 const { resolveSenderId } = require('../database');
+const { evaluateGroupCommandPermission } = require('../services/permissionEvaluator');
 const MediaQueue = require('../services/mediaQueue');
 const { getDmUser, upsertDmUser } = require('../web/dataAccess');
 // Rate-limited auto-reply tracker for DM request notifications
 const dmAutoReplyMap = new Map();
 const DM_AUTO_REPLY_TTL = Number(process.env.DM_AUTO_REPLY_TTL_SECONDS) || 60 * 60; // default 1 hour
+const groupPermissionNoticeMap = new Map();
+const GROUP_PERMISSION_NOTICE_TTL = Number(process.env.GROUP_PERMISSION_NOTICE_TTL_SECONDS) || 60;
+
+function shouldThrottleGroupNotice(groupId, userId, commandKey) {
+  const key = `${groupId || 'unknown'}::${userId || 'unknown'}::${commandKey || 'unknown'}`;
+  const now = Date.now();
+  const last = groupPermissionNoticeMap.get(key) || 0;
+  if (now - last < GROUP_PERMISSION_NOTICE_TTL * 1000) {
+    return true;
+  }
+  groupPermissionNoticeMap.set(key, now);
+  if (groupPermissionNoticeMap.size > 1000) {
+    groupPermissionNoticeMap.clear();
+  }
+  return false;
+}
 
 // Create a shared media processing queue with higher retry attempts for media processing
 const mediaProcessingQueue = new MediaQueue({ 
@@ -136,6 +153,47 @@ async function handleMessage(client, message) {
     }
     
     // 1) Try to handle command via commands module (includes validation)
+    if (isGroup && message.body && message.body.startsWith('#')) {
+      const { command } = parseCommand(message.body);
+      if (command) {
+        const adminNumber = process.env.ADMIN_NUMBER;
+        const bypassAdmin = adminNumber && (resolvedSenderId === adminNumber || senderId === adminNumber);
+        if (!bypassAdmin) {
+          try {
+            const permission = await evaluateGroupCommandPermission({
+              groupId: chatId,
+              userId: resolvedSenderId,
+              command
+            });
+            if (!permission.allowed) {
+              const meta = permission.meta || {};
+              const logContext = {
+                group: meta.groupId || chatId,
+                user: meta.userId || resolvedSenderId,
+                command: command,
+                reason: permission.reasonCode,
+                detail: permission.detail
+              };
+              console.warn('[PERMISSIONS] Comando bloqueado:', logContext);
+              const notify = permission.userMessage || '🚫 Este comando não está disponível para você neste grupo.';
+              if (!shouldThrottleGroupNotice(logContext.group, logContext.user, meta.commandKey || command)) {
+                try {
+                  await safeReply(client, chatId, notify, message);
+                } catch (sendErr) {
+                  console.error('[PERMISSIONS] Falha ao avisar usuário sobre bloqueio de comando:', sendErr);
+                }
+              }
+              return;
+            }
+          } catch (permErr) {
+            console.error('[PERMISSIONS] Erro ao verificar permissões do grupo:', permErr);
+            // Fail safe: se não for possível validar permissões, não processar o comando
+            return;
+          }
+        }
+      }
+    }
+
     const commandHandled = await handleCommand(client, message, chatId);
     if (commandHandled) return;
 

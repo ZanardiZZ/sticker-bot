@@ -32,6 +32,12 @@ const {
   createIPRulesMiddleware
 } = require('./middlewares');
 const { registerRoutes } = require('./routes');
+const {
+  getGroupPermissionSummary,
+  evaluateGroupCommandPermission,
+  invalidateGroupPermissionCache,
+  invalidateGroupUserCache
+} = require('../services/permissionEvaluator');
 const UMAMI_ORIGIN = process.env.UMAMI_ORIGIN || 'https://analytics.zanardizz.uk';
 const ALLOW_CF_INSIGHTS = process.env.ALLOW_CF_INSIGHTS === '1';
 process.on('unhandledRejection', (err) => {
@@ -291,6 +297,21 @@ const {
   getBotConfig,
   setBotConfig
 } = require('./dataAccess.js');
+
+// Approval system imports
+const {
+  createPendingEdit,
+  getPendingEdits,
+  getPendingEditsForMedia,
+  voteOnEdit,
+  getVoteCounts,
+  approvePendingEdit,
+  getPendingEditById,
+  getUserVote,
+  isOriginalSender
+} = require('../database');
+
+const { canEditDirectly, hasEnoughVotesToApprove, hasEnoughVotesToReject } = require('../utils/approvalUtils');
 
 // Tenta obter o client WhatsApp da instância principal
 try {
@@ -876,6 +897,7 @@ app.post('/api/admin/group-users/:groupId/:userId', requireAdmin, async (req, re
       allowed_commands: allowed_commands ? JSON.stringify(allowed_commands) : null,
       restricted_commands: restricted_commands ? JSON.stringify(restricted_commands) : null
     });
+    invalidateGroupUserCache(groupId, userId);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: 'db_error', details: err.message });
@@ -888,6 +910,7 @@ app.patch('/api/admin/group-users/:groupId/:userId', requireAdmin, async (req, r
     const { field, value } = req.body;
     // Field validation is now enforced in updateGroupUserField for defense in depth
     await updateGroupUserField(groupId, userId, field, field.endsWith('_commands') ? JSON.stringify(value) : value);
+    invalidateGroupUserCache(groupId, userId);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: 'db_error', details: err.message });
@@ -898,6 +921,7 @@ app.delete('/api/admin/group-users/:groupId/:userId', requireAdmin, async (req, 
   try {
     const { groupId, userId } = req.params;
     await deleteGroupUser(groupId, userId);
+    invalidateGroupUserCache(groupId, userId);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: 'db_error', details: err.message });
@@ -940,7 +964,8 @@ app.get('/api/admin/group-commands/:groupId', requireAdmin, async (req, res) => 
   try {
     const groupId = req.params.groupId;
     const permissions = await listGroupCommandPermissions(groupId);
-    res.json({ permissions });
+    const summary = await getGroupPermissionSummary(groupId);
+    res.json({ permissions, summary });
   } catch (err) {
     res.status(500).json({ error: 'db_error', details: err.message });
   }
@@ -952,9 +977,29 @@ app.post('/api/admin/group-commands/:groupId', requireAdmin, async (req, res) =>
     const { command, allowed } = req.body;
     if (!command) return res.status(400).json({ error: 'missing_command' });
     await setGroupCommandPermission(groupId, command, allowed ? 1 : 0);
+    invalidateGroupPermissionCache(groupId);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: 'db_error', details: err.message });
+  }
+});
+
+app.get('/api/admin/group-commands/:groupId/check', requireAdmin, async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const { command, userId } = req.query;
+    if (!command) {
+      return res.status(400).json({ error: 'missing_command' });
+    }
+    const evaluation = await evaluateGroupCommandPermission({
+      groupId,
+      userId: userId || undefined,
+      command
+    });
+    res.json(evaluation);
+  } catch (err) {
+    console.error('[ADMIN] Erro ao avaliar permissão de comando:', err);
+    res.status(500).json({ error: 'evaluation_failed', details: err.message });
   }
 });
 
@@ -962,6 +1007,7 @@ app.delete('/api/admin/group-commands/:groupId/:command', requireAdmin, async (r
   try {
     const { groupId, command } = req.params;
     await deleteGroupCommandPermission(groupId, command);
+    invalidateGroupPermissionCache(groupId);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: 'db_error', details: err.message });
@@ -1565,11 +1611,32 @@ app.put('/api/stickers/:id/tags', requireLogin, async (req, res) => {
     const id = parseInt(req.params.id, 10);
     const { tags } = req.body || {};
     if (!Array.isArray(tags)) return res.status(400).json({ error: 'tags_array_required' });
-    const result = await setMediaTagsExact(id, tags);
+    
     const media = await getMediaById(id);
-    bus.emit('media:tagsUpdated', { media_id: id, set: media.tags });
-    res.json({ ok: true, ...result, media });
-  } catch {
+    if (!media) return res.status(404).json({ error: 'media_not_found' });
+    
+    // Check if user can edit directly (admin or original sender)
+    const canEdit = await canEditDirectly(req.user, id, req.user.id);
+    
+    if (canEdit) {
+      // Direct edit - no approval needed
+      const result = await setMediaTagsExact(id, tags);
+      const updatedMedia = await getMediaById(id);
+      bus.emit('media:tagsUpdated', { media_id: id, set: updatedMedia.tags });
+      res.json({ ok: true, ...result, media: updatedMedia, direct_edit: true });
+    } else {
+      // Create pending edit request
+      const currentTags = media.tags || [];
+      const pendingEditId = await createPendingEdit(id, req.user.id, 'tags', currentTags, tags);
+      res.json({ 
+        ok: true, 
+        pending_edit_id: pendingEditId, 
+        requires_approval: true,
+        message: 'Edit submitted for approval. Need 3 user votes or 1 admin approval.' 
+      });
+    }
+  } catch (error) {
+    console.error('Error in tags edit:', error);
     res.status(500).json({ error: 'internal_error' });
   }
 });
@@ -1579,12 +1646,47 @@ app.patch('/api/stickers/:id', requireLogin, async (req, res) => {
     const id = parseInt(req.params.id, 10);
     const { description, nsfw } = req.body || {};
     const nsfwVal = (nsfw === 0 || nsfw === 1) ? nsfw : undefined;
-    const r = await updateMediaMeta(id, { description, nsfw: nsfwVal });
-    if (!r.updated) return res.status(400).json({ error: 'nothing_to_update' });
-    const updated = await getMediaById(id);
-    bus.emit('media:updated', { id, fields: ['description','nsfw'] });
-    res.json({ ok: true, media: updated });
-  } catch {
+    
+    const media = await getMediaById(id);
+    if (!media) return res.status(404).json({ error: 'media_not_found' });
+    
+    // Check if user can edit directly (admin or original sender)
+    const canEdit = await canEditDirectly(req.user, id, req.user.id);
+    
+    if (canEdit) {
+      // Direct edit - no approval needed
+      const r = await updateMediaMeta(id, { description, nsfw: nsfwVal });
+      if (!r.updated) return res.status(400).json({ error: 'nothing_to_update' });
+      const updated = await getMediaById(id);
+      bus.emit('media:updated', { id, fields: ['description','nsfw'] });
+      res.json({ ok: true, media: updated, direct_edit: true });
+    } else {
+      // Create pending edit requests for each field that's being changed
+      const pendingEdits = [];
+      
+      if (description !== undefined && description !== media.description) {
+        const pendingEditId = await createPendingEdit(id, req.user.id, 'description', media.description, description);
+        pendingEdits.push({ field: 'description', pending_edit_id: pendingEditId });
+      }
+      
+      if (nsfwVal !== undefined && nsfwVal !== media.nsfw) {
+        const pendingEditId = await createPendingEdit(id, req.user.id, 'nsfw', media.nsfw, nsfwVal);
+        pendingEdits.push({ field: 'nsfw', pending_edit_id: pendingEditId });
+      }
+      
+      if (pendingEdits.length === 0) {
+        return res.status(400).json({ error: 'nothing_to_update' });
+      }
+      
+      res.json({ 
+        ok: true, 
+        pending_edits: pendingEdits,
+        requires_approval: true,
+        message: 'Edits submitted for approval. Need 3 user votes or 1 admin approval for each change.' 
+      });
+    }
+  } catch (error) {
+    console.error('Error in media edit:', error);
     res.status(500).json({ error: 'internal_error' });
   }
 });
@@ -1634,6 +1736,136 @@ app.post('/api/stickers/:id/generate-description', requireLogin, async (req, res
     res.status(500).json({ error: 'internal_error' });
   }
 });
+
+// === APPROVAL SYSTEM ENDPOINTS ===
+
+// Get pending edits (for approval interface)
+app.get('/api/pending-edits', requireLogin, async (req, res) => {
+  try {
+    const { status = 'pending' } = req.query;
+    const pendingEdits = await getPendingEdits(status);
+    res.json({ ok: true, pending_edits: pendingEdits });
+  } catch (error) {
+    console.error('Error getting pending edits:', error);
+    res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Get pending edits for a specific media item
+app.get('/api/stickers/:id/pending-edits', requireLogin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const pendingEdits = await getPendingEditsForMedia(id);
+    res.json({ ok: true, pending_edits: pendingEdits });
+  } catch (error) {
+    console.error('Error getting pending edits for media:', error);
+    res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Vote on a pending edit
+app.post('/api/pending-edits/:id/vote', requireLogin, async (req, res) => {
+  try {
+    const pendingEditId = parseInt(req.params.id, 10);
+    const { vote } = req.body || {};
+    
+    if (!['approve', 'reject'].includes(vote)) {
+      return res.status(400).json({ error: 'invalid_vote' });
+    }
+    
+    const pendingEdit = await getPendingEditById(pendingEditId);
+    if (!pendingEdit) {
+      return res.status(404).json({ error: 'pending_edit_not_found' });
+    }
+    
+    if (pendingEdit.status !== 'pending') {
+      return res.status(400).json({ error: 'edit_already_processed' });
+    }
+    
+    // Users can't vote on their own edits
+    if (pendingEdit.user_id === req.user.id) {
+      return res.status(400).json({ error: 'cannot_vote_own_edit' });
+    }
+    
+    await voteOnEdit(pendingEditId, req.user.id, vote);
+    const voteCounts = await getVoteCounts(pendingEditId);
+    
+    // Check if we have enough votes to auto-approve/reject
+    let autoProcessed = false;
+    if (hasEnoughVotesToApprove(voteCounts)) {
+      await approvePendingEdit(pendingEditId, req.user.id, 'approved');
+      await applyPendingEdit(pendingEdit);
+      autoProcessed = 'approved';
+    } else if (hasEnoughVotesToReject(voteCounts)) {
+      await approvePendingEdit(pendingEditId, req.user.id, 'rejected', 'Rejected by community votes');
+      autoProcessed = 'rejected';
+    }
+    
+    res.json({ 
+      ok: true, 
+      vote_counts: voteCounts,
+      auto_processed: autoProcessed
+    });
+  } catch (error) {
+    console.error('Error voting on pending edit:', error);
+    res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Admin approve/reject pending edit
+app.post('/api/pending-edits/:id/admin-decision', requireAdmin, async (req, res) => {
+  try {
+    const pendingEditId = parseInt(req.params.id, 10);
+    const { decision, reason } = req.body || {};
+    
+    if (!['approve', 'reject'].includes(decision)) {
+      return res.status(400).json({ error: 'invalid_decision' });
+    }
+    
+    const pendingEdit = await getPendingEditById(pendingEditId);
+    if (!pendingEdit) {
+      return res.status(404).json({ error: 'pending_edit_not_found' });
+    }
+    
+    if (pendingEdit.status !== 'pending') {
+      return res.status(400).json({ error: 'edit_already_processed' });
+    }
+    
+    const status = decision === 'approve' ? 'approved' : 'rejected';
+    await approvePendingEdit(pendingEditId, req.user.id, status, reason);
+    
+    if (status === 'approved') {
+      await applyPendingEdit(pendingEdit);
+    }
+    
+    res.json({ ok: true, status });
+  } catch (error) {
+    console.error('Error in admin decision:', error);
+    res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Helper function to apply approved edits
+async function applyPendingEdit(pendingEdit) {
+  const { media_id, edit_type, new_value } = pendingEdit;
+  
+  try {
+    if (edit_type === 'tags') {
+      await setMediaTagsExact(media_id, new_value);
+      const media = await getMediaById(media_id);
+      bus.emit('media:tagsUpdated', { media_id, set: media.tags });
+    } else if (edit_type === 'description') {
+      await updateMediaMeta(media_id, { description: new_value });
+      bus.emit('media:updated', { id: media_id, fields: ['description'] });
+    } else if (edit_type === 'nsfw') {
+      await updateMediaMeta(media_id, { nsfw: new_value });
+      bus.emit('media:updated', { id: media_id, fields: ['nsfw'] });
+    }
+  } catch (error) {
+    console.error('Error applying pending edit:', error);
+    throw error;
+  }
+}
 
 app.delete('/api/stickers/:id', requireAdmin, async (req, res) => {
   try {

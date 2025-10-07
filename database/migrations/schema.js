@@ -137,6 +137,39 @@ function initializeTables(db) {
         )
       `);
 
+      // Approval system tables
+      db.run(`
+        CREATE TABLE IF NOT EXISTS pending_edits (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          media_id INTEGER NOT NULL,
+          user_id INTEGER NOT NULL,
+          edit_type TEXT NOT NULL,
+          old_value TEXT,
+          new_value TEXT,
+          status TEXT DEFAULT 'pending',
+          created_at INTEGER NOT NULL,
+          approved_by INTEGER,
+          approved_at INTEGER,
+          reason TEXT,
+          FOREIGN KEY(media_id) REFERENCES media(id) ON DELETE CASCADE,
+          FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+          FOREIGN KEY(approved_by) REFERENCES users(id) ON DELETE SET NULL
+        )
+      `);
+
+      db.run(`
+        CREATE TABLE IF NOT EXISTS edit_votes (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          pending_edit_id INTEGER NOT NULL,
+          user_id INTEGER NOT NULL,
+          vote TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          UNIQUE(pending_edit_id, user_id),
+          FOREIGN KEY(pending_edit_id) REFERENCES pending_edits(id) ON DELETE CASCADE,
+          FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+      `);
+
       // Create indexes for performance
       createIndexes(db);
 
@@ -190,6 +223,13 @@ function createIndexes(db) {
   // Version indexes
   db.run(`CREATE INDEX IF NOT EXISTS idx_version_info_current ON version_info(is_current)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_version_info_created_at ON version_info(created_at DESC)`);
+  
+  // Approval system indexes
+  db.run(`CREATE INDEX IF NOT EXISTS idx_pending_edits_media_id ON pending_edits(media_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_pending_edits_user_id ON pending_edits(user_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_pending_edits_status ON pending_edits(status)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_edit_votes_pending_edit_id ON edit_votes(pending_edit_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_edit_votes_user_id ON edit_votes(user_id)`);
 }
 
 module.exports = { initializeTables };
