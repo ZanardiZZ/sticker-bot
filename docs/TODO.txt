@@ -1,4 +1,3 @@
-✅ Site: Edição por usuários necessita aprovação de outros 3 para ser validada (ou de 1 admin confirmando a edição). Ou se a figurinha foi o próprio usuário que enviou, não necessita confirmação de ninguém.
 -Bot: Adicionar novas funções com base nos outros bots existentes para whatsapp, ver o que é interessante e Adicionar
 -Bot: reavaliar os envios anteriores a tabela tag
 -bot: deletar gif depois que enviarem, para evitar poluir o grupo
