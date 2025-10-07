@@ -81,15 +81,141 @@
       box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); 
     }
     
-    /* Main Tab styles */
-    .main-tab-container { margin-bottom: 1rem; }
-    .main-tab-nav { display: flex; border-bottom: 2px solid #e2e8f0; margin-bottom: 1.5rem; background: #ffffff; border-radius: 8px 8px 0 0; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1); }
-    .main-tab-button { background: none; border: none; color: #64748b; padding: 1rem 2rem; cursor: pointer; font-size: 1.1rem; border-bottom: 2px solid transparent; transition: all 0.3s; font-weight: 500; }
-    .main-tab-button:hover { color: #1e293b; background: #f8fafc; }
-    .main-tab-button.active { color: #3b82f6; border-bottom-color: #3b82f6; background: #fefefe; }
+    /* Main navigation and workspace */
+    .admin-layout {
+      display: flex;
+      gap: 1.5rem;
+      align-items: flex-start;
+      margin-bottom: 2rem;
+      flex-wrap: wrap;
+    }
+
+    .admin-menu {
+      flex: 0 0 260px;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.08);
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      position: sticky;
+      top: 1.5rem;
+    }
+
+    .admin-menu-header {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .admin-menu h2 {
+      margin: 0;
+      font-size: 1.2rem;
+      color: #1f2937;
+    }
+
+    .admin-menu p {
+      margin: 0;
+      color: #6b7280;
+      font-size: 0.9rem;
+    }
+
+    .main-tab-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      border: none;
+      margin: 0;
+      background: transparent;
+      box-shadow: none;
+    }
+
+    .main-tab-button {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      color: #1e293b;
+      padding: 0.85rem 1rem;
+      cursor: pointer;
+      font-size: 1rem;
+      border-radius: 10px;
+      transition: all 0.2s ease;
+      font-weight: 500;
+      text-align: left;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .main-tab-button .tab-label {
+      flex: 1 1 auto;
+    }
+
+    .main-tab-button:hover {
+      background: #eef2ff;
+      border-color: #c7d2fe;
+      color: #1d4ed8;
+      transform: translateX(4px);
+    }
+
+    .main-tab-button.active {
+      background: #3b82f6;
+      border-color: #2563eb;
+      color: #ffffff;
+      box-shadow: 0 10px 15px -10px rgba(59, 130, 246, 0.7);
+      transform: none;
+    }
+
+    .admin-workspace {
+      flex: 1 1 0;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .workspace-header {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.08);
+    }
+
+    .workspace-header h1 {
+      margin: 0;
+      font-size: 1.6rem;
+      color: #0f172a;
+    }
+
+    .workspace-header p {
+      margin-top: 0.5rem;
+      color: #64748b;
+      font-size: 0.95rem;
+    }
+
+    .workspace-content {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    @media (max-width: 1024px) {
+      .admin-layout { flex-direction: column; }
+      .admin-menu { position: static; width: 100%; }
+      .main-tab-nav { flex-direction: row; flex-wrap: wrap; overflow-x: auto; padding-bottom: 0.5rem; }
+      .main-tab-button { flex: 1 1 180px; justify-content: center; text-align: center; }
+    }
+
+    @media (max-width: 640px) {
+      .main-tab-nav { flex-direction: column; }
+      .main-tab-button { flex: 1 1 auto; }
+    }
+
     .main-tab-content { display: none; }
     .main-tab-content.active { display: block; }
-    
+
     /* Legacy tab styles for backwards compatibility */
     .tab-container { margin-bottom: 1rem; }
     .tab-nav { display: flex; border-bottom: 2px solid #e2e8f0; margin-bottom: 1rem; }
@@ -125,7 +251,7 @@
     .admin-only { display: none; }
     .admin-only.visible { display: block; }
     .main-tab-button.admin-only { display: none; }
-    .main-tab-button.admin-only.visible { display: inline-block; }
+    .main-tab-button.admin-only.visible { display: flex; }
     
     /* Main tab content visibility - higher specificity */
     .main-tab-content.admin-only { display: none; }
@@ -149,19 +275,31 @@
       Por segurança, altere sua senha inicial agora.
     </div>
 
-    <!-- Main Tab Navigation -->
-    <div class="main-tab-container">
-      <div class="main-tab-nav">
-        <button class="main-tab-button active" data-tab="settings">Configurações</button>
-        <button class="main-tab-button admin-only" data-tab="logs">Logs</button>
-        <button class="main-tab-button admin-only" data-tab="network">Rede</button>
-        <button class="main-tab-button admin-only" data-tab="users">Usuários</button>
-        <button class="main-tab-button" data-tab="pending-edits">Aprovações</button>
-        <button class="main-tab-button admin-only" data-tab="duplicates">Mídias Duplicadas</button>
-      </div>
-      
+    <div class="admin-layout">
+      <aside class="admin-menu">
+        <div class="admin-menu-header">
+          <h2>Painel administrativo</h2>
+          <p>Acesse rapidamente as principais seções do bot.</p>
+        </div>
+        <div class="main-tab-nav" role="tablist">
+          <button id="main-tab-button-settings" type="button" role="tab" class="main-tab-button active" data-tab="settings" data-title="Configurações" data-description="Gerencie sua conta, grupos e preferências do bot." aria-controls="main-tab-settings" aria-selected="true" tabindex="0"><span class="tab-label">Configurações</span></button>
+          <button id="main-tab-button-logs" type="button" role="tab" class="main-tab-button admin-only" data-tab="logs" data-title="Logs" data-description="Acompanhe eventos recentes e monitore atividades técnicas." aria-controls="main-tab-logs" aria-selected="false" tabindex="-1"><span class="tab-label">Logs</span></button>
+          <button id="main-tab-button-network" type="button" role="tab" class="main-tab-button admin-only" data-tab="network" data-title="Rede" data-description="Controle listas de IP e regras de acesso à plataforma." aria-controls="main-tab-network" aria-selected="false" tabindex="-1"><span class="tab-label">Rede</span></button>
+          <button id="main-tab-button-users" type="button" role="tab" class="main-tab-button admin-only" data-tab="users" data-title="Usuários" data-description="Administre contas cadastradas e permissões do painel." aria-controls="main-tab-users" aria-selected="false" tabindex="-1"><span class="tab-label">Usuários</span></button>
+          <button id="main-tab-button-pending-edits" type="button" role="tab" class="main-tab-button" data-tab="pending-edits" data-title="Aprovações" data-description="Revise e aprove contribuições enviadas pela comunidade." aria-controls="main-tab-pending-edits" aria-selected="false" tabindex="-1"><span class="tab-label">Aprovações</span></button>
+          <button id="main-tab-button-duplicates" type="button" role="tab" class="main-tab-button admin-only" data-tab="duplicates" data-title="Mídias Duplicadas" data-description="Identifique e limpe arquivos duplicados do acervo." aria-controls="main-tab-duplicates" aria-selected="false" tabindex="-1"><span class="tab-label">Mídias Duplicadas</span></button>
+        </div>
+      </aside>
+
+      <div class="admin-workspace">
+        <header class="workspace-header">
+          <h1 id="workspaceTitle">Configurações</h1>
+          <p id="workspaceDescription">Gerencie sua conta, grupos e preferências do bot.</p>
+        </header>
+
+        <div class="workspace-content">
       <!-- Settings Tab Content -->
-      <div class="main-tab-content active" id="main-tab-settings">
+      <div class="main-tab-content active" id="main-tab-settings" data-title="Configurações" data-description="Gerencie sua conta, grupos e preferências do bot." role="tabpanel" aria-labelledby="main-tab-button-settings" aria-hidden="false">
         <div class="tab-container">
           <div class="tab-nav">
             <button class="tab-button active" data-tab="account">Minha Conta</button>
@@ -431,7 +569,7 @@
       </div>
       
       <!-- Logs Tab Content -->
-      <div class="main-tab-content admin-only" id="main-tab-logs">
+      <div class="main-tab-content admin-only" id="main-tab-logs" data-title="Logs" data-description="Acompanhe eventos recentes e monitore atividades técnicas." role="tabpanel" aria-labelledby="main-tab-button-logs" aria-hidden="true">
         <div class="panel panel-full-width">
           <h3>Visualizador de Logs</h3>
           <div class="warn">
@@ -494,7 +632,7 @@
       </div>
       
       <!-- Network Tab Content -->
-      <div class="main-tab-content admin-only" id="main-tab-network">
+      <div class="main-tab-content admin-only" id="main-tab-network" data-title="Rede" data-description="Controle listas de IP e regras de acesso à plataforma." role="tabpanel" aria-labelledby="main-tab-button-network" aria-hidden="true">
         <div class="panel">
           <h3>Regras de IP</h3>
           <div class="row">
@@ -515,7 +653,7 @@
       </div>
       
       <!-- Users Tab Content -->
-      <div class="main-tab-content admin-only" id="main-tab-users">
+      <div class="main-tab-content admin-only" id="main-tab-users" data-title="Usuários" data-description="Administre contas cadastradas e permissões do painel." role="tabpanel" aria-labelledby="main-tab-button-users" aria-hidden="true">
         <div class="panel panel-full-width">
           <h3>Gerenciamento de Usuários</h3>
           <div class="row" style="margin-bottom: 1.5rem; gap: 1rem;">
@@ -557,7 +695,7 @@
       </div>
 
       <!-- Pending Edits Tab Content -->
-      <div class="main-tab-content" id="main-tab-pending-edits">
+      <div class="main-tab-content" id="main-tab-pending-edits" data-title="Aprovações" data-description="Revise e aprove contribuições enviadas pela comunidade." role="tabpanel" aria-labelledby="main-tab-button-pending-edits" aria-hidden="true">
         <div class="panel">
           <h3>🏛️ Aprovações Pendentes</h3>
           <div class="muted">Gerencie edições pendentes de figurinhas que necessitam aprovação.</div>
@@ -604,7 +742,7 @@
       </div>
 
       <!-- Duplicates Tab Content -->
-      <div class="main-tab-content admin-only" id="main-tab-duplicates">
+      <div class="main-tab-content admin-only" id="main-tab-duplicates" data-title="Mídias Duplicadas" data-description="Identifique e limpe arquivos duplicados do acervo." role="tabpanel" aria-labelledby="main-tab-button-duplicates" aria-hidden="true">
         <div class="panel">
           <h3>Gerenciamento de Mídias Duplicadas</h3>
           <div class="warn">
@@ -639,6 +777,7 @@
               </div>
             </div>
           </div>
+        </div>
         </div>
       </div>
     </div>
