@@ -114,7 +114,8 @@ const tests = [
       };
 
       const mockContacts = {
-        upsertContactFromMessage() {/* no-op for tests */}
+        upsertContactFromMessage() {/* no-op for tests */},
+        upsertGroupFromMessage() {/* no-op for tests */}
       };
 
       const mockMediaProcessor = {
@@ -164,6 +165,9 @@ const tests = [
         }
       }
 
+      const groupJid = '123456@g.us';
+      const participantJid = 'participant@c.us';
+
       await withMockedMessageHandler({
         'commands.js': mockCommands,
         'utils/safeMessaging.js': mockSafeMessaging,
@@ -171,7 +175,23 @@ const tests = [
         'bot/logging.js': mockLogging,
         'bot/contacts.js': mockContacts,
         'bot/mediaProcessor.js': mockMediaProcessor,
-        'services/mediaQueue.js': ImmediateMediaQueue
+        'services/mediaQueue.js': ImmediateMediaQueue,
+        'web/dataAccess.js': {
+          async getDmUser() {
+            return { user_id: participantJid, allowed: 1, blocked: 0 };
+          },
+          async upsertDmUser() { /* noop */ }
+        },
+        'database/index.js': {
+          async resolveSenderId(_client, sender) {
+            return sender || participantJid;
+          }
+        },
+        'services/permissionEvaluator.js': {
+          async evaluateGroupCommandPermission() {
+            return { allowed: true, meta: { groupId: groupJid, userId: participantJid } };
+          }
+        }
       }, async ({ handleMessage, setupMessageHandler }) => {
         const client = new MockBaileysClient();
         const messagesHandled = [];
@@ -182,11 +202,12 @@ const tests = [
         });
 
         const baseMessage = {
-          from: '123@c.us',
+          from: groupJid,
           id: 'ABC',
-          chatId: '123@c.us',
-          sender: { id: '123@c.us' },
-          isGroupMsg: false
+          chatId: groupJid,
+          sender: { id: participantJid },
+          key: { remoteJid: groupJid, participant: participantJid },
+          isGroupMsg: true
         };
 
         await client.emitIncoming({ ...baseMessage, body: '#handled', type: 'chat', isMedia: false });

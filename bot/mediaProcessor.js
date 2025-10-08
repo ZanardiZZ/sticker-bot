@@ -684,16 +684,17 @@ async function processIncomingMedia(client, message) {
       }
     }
 
-    // Check if this is a GIF (either image/gif or GIF-like video)
-    const isGif = mimetypeToSave === 'image/gif' || isGifLike;
+    // Send sticker before textual description for any image-based media
+    const isImageBasedMedia = typeof mimetypeToSave === 'string' && mimetypeToSave.startsWith('image/');
+    const treatedAsGif = isGifLike || message?.mimetype === 'image/gif';
 
-    // For GIFs, send the animated sticker first, then the description
-    if (isGif) {
-      console.log('🎞️ Enviando GIF como sticker animado...');
+    if (isImageBasedMedia) {
+      console.log(treatedAsGif ? '🎞️ Enviando GIF como sticker animado...' : '🖼️ Enviando imagem como sticker...');
       try {
         await sendStickerForMediaRecord(client, chatId, savedMedia);
       } catch (stickerError) {
-        console.warn('Erro ao enviar sticker do GIF, continuando com resposta de texto:', stickerError.message);
+        const contextLabel = treatedAsGif ? 'GIF' : 'imagem';
+        console.warn(`Erro ao enviar sticker da ${contextLabel}, continuando com resposta de texto:`, stickerError.message);
       }
     }
 

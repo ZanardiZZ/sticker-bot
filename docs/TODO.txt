@@ -1,3 +1,4 @@
 -Bot: Adicionar novas funções com base nos outros bots existentes para whatsapp, ver o que é interessante e Adicionar
 -Bot: reavaliar os envios anteriores a tabela tag
 -bot: deletar gif depois que enviarem, para evitar poluir o grupo
+-Bot: permitir marcar com #forçar para o bot reler o sticker e processar novamente também, para os casos que ele não ler na primeira passada.
