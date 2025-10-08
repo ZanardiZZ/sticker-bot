@@ -102,12 +102,18 @@ async function convertToMp4ForSticker(inputPath) {
  * @param {string} chatId - Chat ID
  * @param {string} filePath - WebP file path
  */
-async function sendRawWebp(client, chatId, filePath) {
-  const base64 = (await fsp.readFile(filePath)).toString('base64');
+async function sendRawWebp(client, chatId, filePath, extraOptions = {}) {
+  const buf = await fsp.readFile(filePath);
+  const base64 = buf.toString('base64');
   const withHeader = `data:image/webp;base64,${base64}`;
+  const animatedFlag = typeof extraOptions.animated === 'boolean'
+    ? extraOptions.animated
+    : isAnimatedWebpBuffer(buf);
   await client.sendRawWebpAsSticker(chatId, withHeader, {
     pack: PACK_NAME,
     author: AUTHOR_NAME,
+    ...extraOptions,
+    animated: animatedFlag,
   });
 }
 
@@ -130,13 +136,20 @@ async function sendStickerForMediaRecord(client, chatId, media) {
   const isVideo = mimetype.startsWith('video/');
 
   try {
-    // 1) Animado WebP → enviar como sticker animado (raw webp)
-    if (isWebp && await isAnimatedWebpFile(filePath)) {
-      await sendRawWebp(client, chatId, filePath);
+    // 1) WebP → enviar utilizando caminho otimizado
+    if (isWebp) {
+      const animated = await isAnimatedWebpFile(filePath);
+      if (animated) {
+        await sendRawWebp(client, chatId, filePath, { animated: true });
+        return;
+      }
+
+      // WebP estático: reenvia diretamente mantendo metadata
+      await sendRawWebp(client, chatId, filePath, { animated: false });
       return;
     }
 
-    // 2) GIF/Video → tentar sticker animado via open-wa
+    // 2) GIF/Video → tentar sticker animado via conversão
     if (isGif || isVideo) {
       // Preferir mp4 como fonte
       let mp4Path = filePath;
