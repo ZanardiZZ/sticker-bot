@@ -1,6 +1,33 @@
 let CURRENT_USER = null;
 let BOT_CONFIG = null;
 
+const grid = document.getElementById('grid');
+const countEl = document.getElementById('count');
+const qEl = document.getElementById('q');
+const tagEl = document.getElementById('tag');
+const anyTagEl = document.getElementById('anyTag');
+const nsfwEl = document.getElementById('nsfw');
+const sortEl = document.getElementById('sort');
+const reloadBtn = document.getElementById('reload');
+let page = 1, loading = false, done = false, perPage = 20; // Reduced from 30 to 20 for faster loading
+
+function updateNsfwSelectorState(lockOnlySafe = false) {
+  if (!nsfwEl) return;
+  const options = Array.from(nsfwEl.options || []);
+  if (CURRENT_USER && !lockOnlySafe) {
+    nsfwEl.disabled = false;
+    options.forEach(opt => { opt.disabled = false; });
+  } else {
+    options.forEach(opt => {
+      opt.disabled = opt.value !== '0';
+    });
+    nsfwEl.value = '0';
+    nsfwEl.disabled = false;
+  }
+}
+
+updateNsfwSelectorState();
+
 // CSRF token management (copied from admin.js)
 let csrfToken = null;
 
@@ -142,6 +169,7 @@ async function fetchMe(){
         ui.innerHTML = '<a href="/login">Login</a>';
       }
     }
+    updateNsfwSelectorState();
     
     // Refresh cards if login status changed
     if ((!!prevUser) !== (!!CURRENT_USER)) {
@@ -151,16 +179,6 @@ async function fetchMe(){
 }
 fetchMe();
 fetchBotConfig();
-
-const grid = document.getElementById('grid');
-const countEl = document.getElementById('count');
-const qEl = document.getElementById('q');
-const tagEl = document.getElementById('tag');
-const anyTagEl = document.getElementById('anyTag');
-const nsfwEl = document.getElementById('nsfw');
-const sortEl = document.getElementById('sort');
-const reloadBtn = document.getElementById('reload');
-let page = 1, loading = false, done = false, perPage = 20; // Reduced from 30 to 20 for faster loading
 
 // Lazy loading implementation
 function initializeLazyLoading() {
@@ -222,6 +240,17 @@ async function load(reset = false){
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     
     const data = await r.json();
+
+    if (nsfwEl && typeof data.nsfw_filter === 'string') {
+      if (data.nsfw_locked) {
+        updateNsfwSelectorState(true);
+      } else {
+        updateNsfwSelectorState();
+      }
+      if (!CURRENT_USER) {
+        nsfwEl.value = data.nsfw_filter;
+      }
+    }
     
     if (countEl) {
       countEl.textContent = (data.total ?? 0) + ' itens';

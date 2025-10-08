@@ -8,7 +8,7 @@ A comprehensive WhatsApp bot for managing, automatically sending, and administer
 - **Automatic sticker sending** - Hourly stickers from 08:00-21:00
 - **Smart media processing** - Handles images, videos, GIFs, and audio
 - **AI-powered tagging** - Automatic content analysis and tagging
-- **NSFW filtering** - Content safety with automatic filtering
+- **NSFW filtering** - External moderation support and gated NSFW access
 - **Rich commands** - Comprehensive command system for users
 
 ### 🌐 Web Administration Interface

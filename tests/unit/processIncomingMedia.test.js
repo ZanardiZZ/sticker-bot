@@ -147,7 +147,7 @@ const tests = [
 
       await withProcessIncomingMedia({
         modules: {
-          'database.js': {
+          'database/index.js': {
             getMD5: () => 'md5-dup',
             getHashVisual: async () => 'hash-dup',
             findByHashVisual: async () => ({ id: 999 }),
@@ -202,7 +202,7 @@ const tests = [
 
       await withProcessIncomingMedia({
         modules: {
-          'database.js': {
+          'database/index.js': {
             getMD5: () => 'md5-new',
             getHashVisual: async () => 'hash-new',
             findByHashVisual: async () => null,
@@ -284,7 +284,7 @@ const tests = [
 
       await withProcessIncomingMedia({
         modules: {
-          'database.js': {
+          'database/index.js': {
             getMD5: () => 'md5-nsfw',
             getHashVisual: async () => 'hash-nsfw',
             findByHashVisual: async () => null,
@@ -353,6 +353,7 @@ const tests = [
       const findByIdCalls = [];
       const stickerCalls = [];
       let processVideoCalled = 0;
+      let processGifCalled = 0;
       let videoNsfwChecks = 0;
 
       const mediaDir = path.join(PROJECT_ROOT, 'media');
@@ -360,7 +361,7 @@ const tests = [
 
       await withProcessIncomingMedia({
         modules: {
-          'database.js': {
+          'database/index.js': {
             getMD5: () => 'md5-video',
             getHashVisual: async () => 'hash-video',
             findByHashVisual: async () => null,
@@ -388,7 +389,10 @@ const tests = [
               processVideoCalled++;
               return { description: 'video-desc', text: 'captions', tags: ['video-tag'] };
             },
-            processGif: async () => ({ description: 'gif-desc', tags: ['gif-tag'] }),
+            processGif: async () => {
+              processGifCalled++;
+              return { description: 'gif-desc', tags: ['gif-tag'] };
+            },
             processAnimatedWebp: async () => ({ description: 'webp-desc', tags: ['webp-tag'] })
           },
           'services/nsfwVideoFilter.js': {
@@ -434,15 +438,16 @@ const tests = [
       });
 
       assertEqual(downloadCalls.length, 1, 'Video should be downloaded once');
-      assertEqual(processVideoCalled, 1, 'Video processor should run');
+      assertEqual(processVideoCalled, 0, 'Video processor should not run for gif-like videos');
+      assertEqual(processGifCalled, 1, 'Gif-like videos should use GIF processor');
       assertEqual(videoNsfwChecks, 0, 'Video NSFW check should not run after conversion to webp');
       assertEqual(saveMediaCalls.length, 1, 'Converted video should be saved');
       const payload = saveMediaCalls[0];
       assertEqual(payload.mimetype, 'image/webp', 'Converted media should be stored as webp');
-      assert(payload.description.includes('video-desc'), 'Video description should derive from processor result');
-      assertEqual(payload.tags, 'video-tag', 'Video tags should join into string');
+      assert(payload.description.includes('gif-desc'), 'Gif-like description should derive from GIF processor');
+      assertEqual(payload.tags, 'gif-tag', 'Gif-like tags should join into string');
       assertEqual(findByIdCalls[0], 88, 'Should fetch saved media by ID');
-      assertEqual(stickerCalls.length, 0, 'Converted webp should be handled without explicit sticker resend');
+      assertEqual(stickerCalls.length, 1, 'Gif-like conversion should send sticker response before text');
       assertEqual(safeReplies.length, 1, 'Video flow should reply once');
       const reply = safeReplies[0].text;
       assert(reply.includes('#giflike #converted'), 'Reply should include tag list');
@@ -472,7 +477,7 @@ const tests = [
 
       await withProcessIncomingMedia({
         modules: {
-          'database.js': {
+          'database/index.js': {
             getMD5: () => 'md5-audio',
             getHashVisual: async () => 'hash-audio',
             findByHashVisual: async () => null,
@@ -551,7 +556,7 @@ const tests = [
 
       await withProcessIncomingMedia({
         modules: {
-          'database.js': {
+          'database/index.js': {
             getMD5: () => 'md5-audio-fail',
             getHashVisual: async () => 'hash-audio-fail',
             findByHashVisual: async () => null,

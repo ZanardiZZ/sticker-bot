@@ -1548,20 +1548,23 @@ bus.on('media:new', () => {
 // ====================== APIs ======================
 app.get('/api/stickers', async (req, res) => {
   try {
-    const cacheKey = getCacheKey(req);
-    
-    // Check cache first for non-random sorts
-    if (req.query.sort !== 'random') {
-      const cached = getFromCache(cacheKey);
-      if (cached) {
-        return res.json(cached);
-      }
-    }
-    
     const {
       q = '', page = '1', per_page = '60',
       tags = '', any_tag = '', nsfw = 'all', sort = 'newest'
     } = req.query;
+
+    const allowNsfw = Boolean(req.user);
+    const effectiveNsfw = allowNsfw ? nsfw : '0';
+
+    const cacheKey = getCacheKey({ query: { ...req.query, nsfw: effectiveNsfw } });
+
+    // Check cache first for non-random sorts
+    if (sort !== 'random') {
+      const cached = getFromCache(cacheKey);
+      if (cached) {
+        return res.json({ ...cached, nsfw_filter: effectiveNsfw, nsfw_locked: !allowNsfw });
+      }
+    }
 
     const result = await listMedia({
       q,
@@ -1569,7 +1572,7 @@ app.get('/api/stickers', async (req, res) => {
       perPage: parseInt(per_page, 10),
       tags: tags ? tags.split(',').map(s => s.trim()).filter(Boolean) : [],
       anyTag: any_tag ? any_tag.split(',').map(s => s.trim()).filter(Boolean) : [],
-      nsfw,
+      nsfw: effectiveNsfw,
       sort
     });
 
@@ -1582,7 +1585,7 @@ app.get('/api/stickers', async (req, res) => {
       setCache(cacheKey, result);
     }
 
-    res.json(result);
+    res.json({ ...result, nsfw_filter: effectiveNsfw, nsfw_locked: !allowNsfw });
   } catch (e) {
     console.error('[API] /api/stickers ERRO:', e);
     res.status(500).json({ error: 'internal_error', msg: e?.message });
@@ -1593,6 +1596,9 @@ app.get('/api/stickers/:id', async (req, res) => {
   try {
     const row = await getMediaById(parseInt(req.params.id, 10));
     if (!row) return res.status(404).json({ error: 'not_found' });
+    if (row.nsfw && !req.user) {
+      return res.status(403).json({ error: 'login_required', message: 'Sticker NSFW requer usuário autenticado' });
+    }
     fixMediaUrl(row);
     
     // Fetch tags for this sticker using db directly
@@ -1625,10 +1631,12 @@ app.get('/api/stickers/:id', async (req, res) => {
 app.get('/api/random', async (req, res) => {
   try {
     const { q = '', tag = null, nsfw = 'all' } = req.query;
-    const row = await getRandomMedia({ q, tag, nsfw });
+    const allowNsfw = Boolean(req.user);
+    const effectiveNsfw = allowNsfw ? nsfw : '0';
+    const row = await getRandomMedia({ q, tag, nsfw: effectiveNsfw });
     if (!row) return res.status(404).json({ error: 'no_results' });
     fixMediaUrl(row);
-    res.json(row);
+    res.json({ ...row, nsfw_filter: effectiveNsfw, nsfw_locked: !allowNsfw });
   } catch (e) {
     console.error('[API] /api/random ERRO:', e);
     res.status(500).json({ error: 'internal_error' });
