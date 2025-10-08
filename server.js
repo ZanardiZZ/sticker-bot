@@ -170,11 +170,11 @@ function getChatFromStore(store, jid) {
   return getFromStore(store?.chats, jid) || getFromStore(store?.groupMetadata, jid);
 }
 
-function normalizeOpenWAMessage(msg, opts = {}) {
+function normalizeOpenWAMessage(rawMessage, opts = {}) {
   const { store, userId, rememberMessage, rememberQuoted } = opts;
 
   // Convert Baileys message to an OpenWA-like shape used by current code
-  const m = msg?.messages?.[0];
+  const m = rawMessage;
   if (!m) return null;
 
   const remoteJid = m.key?.remoteJid || '';
@@ -623,6 +623,21 @@ async function start() {
 
   function buildContactPayload(jid) {
     return buildOpenWAContact(store, jid);
+  }
+
+  function markMessageAsRead(m) {
+    try {
+      if (typeof sock?.readMessages !== 'function') return;
+      const key = m?.key;
+      if (!key || key.fromMe) return;
+      if (!key.remoteJid || !key.id) return;
+      Promise.resolve(sock.readMessages([key]))
+        .catch((err) => {
+          console.warn('[Baileys] Failed to mark message as read:', err?.message || err);
+        });
+    } catch (err) {
+      console.warn('[Baileys] Failed to mark message as read:', err?.message || err);
+    }
   }
 
   function broadcastAuthorized(openwaMsg) {
@@ -1088,22 +1103,28 @@ async function start() {
 
   // Forwarding incoming messages to authorized clients
   sock.ev.on('messages.upsert', (evt) => {
-    if (!evt?.messages) return;
-    const wrapped = normalizeOpenWAMessage(evt, {
-      store,
-      userId: sock?.user?.id,
-      rememberMessage,
-      rememberQuoted
-    });
-    if (wrapped) {
-      // remember media for later download
-      const m = evt.messages?.[0];
+    if (!Array.isArray(evt?.messages) || !evt.messages.length) return;
+    for (const m of evt.messages) {
+      const wrapped = normalizeOpenWAMessage(m, {
+        store,
+        userId: sock?.user?.id,
+        rememberMessage,
+        rememberQuoted
+      });
+      if (!wrapped) continue;
       try {
-        if (m?.message?.imageMessage || m?.message?.videoMessage || m?.message?.stickerMessage || m?.message?.audioMessage || m?.message?.documentMessage) {
+        if (
+          m?.message?.imageMessage
+          || m?.message?.videoMessage
+          || m?.message?.stickerMessage
+          || m?.message?.audioMessage
+          || m?.message?.documentMessage
+        ) {
           rememberMedia(m);
         }
       } catch {}
       broadcastAuthorized(wrapped);
+      markMessageAsRead(m);
     }
   });
 
