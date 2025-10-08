@@ -1,12 +1,17 @@
 const nsfwjs = require('nsfwjs');
 const tf = require('@tensorflow/tfjs-node');
-const { createCanvas, loadImage } = require('canvas');
 const sharp = require('sharp');
 
 let model;
+const MODEL_INPUT_WIDTH = 224;
+const MODEL_INPUT_HEIGHT = 224;
+const MODEL_INPUT_QUALITY = 80;
 
 async function loadModel() {
   if (!model) {
+    if (typeof tf.enableProdMode === 'function') {
+      tf.enableProdMode();
+    }
     model = await nsfwjs.load('MobileNetV2'); // Default model
   }
   return model;
@@ -27,8 +32,8 @@ async function isNSFW(buffer) {
       return false;
     }
 
-    // Converte imagem para png de forma mais robusta
-    let pngBuffer;
+    // Converte imagem para um formato menor e estável antes da inferência
+    let processedBuffer;
     try {
       // Primeiro tenta detectar o formato e converter
       const metadata = await sharp(buffer).metadata();
@@ -36,20 +41,18 @@ async function isNSFW(buffer) {
         console.warn('Formato de imagem não detectado, assumindo como segura');
         return false;
       }
-      
-      pngBuffer = await sharp(buffer).png().toBuffer();
+      processedBuffer = await sharp(buffer)
+        .resize(MODEL_INPUT_WIDTH, MODEL_INPUT_HEIGHT, { fit: 'cover', position: 'center' })
+        .jpeg({ quality: MODEL_INPUT_QUALITY })
+        .toBuffer();
     } catch (sharpErr) {
       console.warn('Erro ao processar imagem com sharp:', sharpErr.message);
       return false;
     }
 
-    const img = await loadImage(`data:image/png;base64,${pngBuffer.toString('base64')}`);
-
-    const canvas = createCanvas(img.width, img.height);
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0);
-
-    const predictions = await model.classify(canvas);
+    const imageTensor = tf.node.decodeImage(processedBuffer, 3);
+    const predictions = await model.classify(imageTensor);
+    imageTensor.dispose();
     // labels típicos: 'Porn', 'Hentai', 'Sexy', 'Neutral', 'Drawing'
     // Consideramos NSFW se Porn ou Hentai > 0.7
 

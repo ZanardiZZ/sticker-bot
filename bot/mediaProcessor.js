@@ -23,6 +23,8 @@ const { isAnimatedWebpBuffer, sendStickerForMediaRecord } = require('./stickers'
 const { isGifLikeVideo } = require('../utils/gifDetection');
 const { withTyping } = require('../utils/typingIndicator');
 
+const MAX_STICKER_BYTES = 1024 * 1024; // WhatsApp animated sticker limit ≈1MB
+
 // Fallback function if cleanDescriptionTags is not available
 function fallbackCleanDescriptionTags(description, tags) {
   const badPhrases = [
@@ -59,6 +61,8 @@ async function processIncomingMedia(client, message) {
   let description = null;
   let tags = null;
   let extractedText = null;
+  let tmpFilePath = null;
+  let gifSourceForAnalysis = null;
   try {
     const { buffer, mimetype: downloadedMimetype } = await downloadMediaForMessage(client, message);
     if (!message.mimetype && downloadedMimetype) {
@@ -71,7 +75,7 @@ async function processIncomingMedia(client, message) {
     const ext = (effectiveMimetype.split('/')[1]) || 'bin';
   const tmpDir = path.resolve(__dirname, 'temp');
   if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
-  const tmpFilePath = path.join(tmpDir, `media-tmp-${Date.now()}-${Math.floor(Math.random()*10000)}.${ext}`);
+  tmpFilePath = path.join(tmpDir, `media-tmp-${Date.now()}-${Math.floor(Math.random()*10000)}.${ext}`);
   fs.writeFileSync(tmpFilePath, buffer);
   console.log('[MediaProcessor] Arquivo temporário salvo em:', tmpFilePath);
 
@@ -87,10 +91,22 @@ async function processIncomingMedia(client, message) {
     let pngBuffer = null;
     let hashVisual = null;
     let hashMd5 = null;
-    if (mimetypeToSave.startsWith('image/')) {
+    if (message.mimetype === 'image/gif') {
       try {
-        pngBuffer = await sharp(tmpFilePath).png().toBuffer();
-        hashVisual = await getHashVisual(await fs.promises.readFile(tmpFilePath));
+        pngBuffer = await sharp(tmpFilePath, { animated: true, page: 0 }).png().toBuffer();
+        hashMd5 = getMD5(await fs.promises.readFile(tmpFilePath));
+        gifSourceForAnalysis = tmpFilePath;
+      } catch (err) {
+        console.warn('Erro ao preparar GIF para hash visual:', err.message);
+        pngBuffer = null;
+        hashVisual = null;
+        hashMd5 = null;
+      }
+    } else if (mimetypeToSave.startsWith('image/')) {
+      try {
+        const sharpSource = sharp(tmpFilePath);
+        pngBuffer = await sharpSource.png().toBuffer();
+        hashVisual = await getHashVisual(pngBuffer);
         hashMd5 = getMD5(await fs.promises.readFile(tmpFilePath));
       } catch (err) {
         console.warn('Erro ao processar mídia com sharp (formato não suportado):', err.message);
@@ -107,11 +123,73 @@ async function processIncomingMedia(client, message) {
       }
     }
 
+    async function ensureVisualHashFromBuffer(buffer, contextLabel = '') {
+      if (!buffer || hashVisual) return;
+
+      const sampleHashes = [];
+      try {
+        const animatedProbe = sharp(buffer, { animated: true });
+        const meta = await animatedProbe.metadata();
+        const totalFrames = Number(meta.pages && meta.pages > 0 ? meta.pages : 1) || 1;
+        const hasAnimation = totalFrames > 1;
+
+        if (hasAnimation) {
+          const sampleCount = Math.min(totalFrames, 5);
+          for (let i = 0; i < sampleCount; i++) {
+            const frameIndex = sampleCount === 1 ? 0 : Math.round((i * (totalFrames - 1)) / (sampleCount - 1));
+            try {
+              const frameBuffer = await sharp(buffer, { animated: true, page: frameIndex })
+                .png()
+                .toBuffer();
+
+              if (!pngBuffer) pngBuffer = frameBuffer;
+
+              const frameHash = await getHashVisual(frameBuffer);
+              if (frameHash) sampleHashes.push(frameHash);
+            } catch (frameErr) {
+              console.warn(`[MediaProcessor] Falha ao extrair frame ${frameIndex} para hash (${contextLabel || 'sem contexto'}):`, frameErr.message);
+            }
+          }
+        }
+
+        if (sampleHashes.length > 0) {
+          hashVisual = sampleHashes.join(':');
+          return;
+        }
+
+        if (!pngBuffer) {
+          try {
+            pngBuffer = await sharp(buffer, { animated: true, page: 0 }).png().toBuffer();
+          } catch (pngErr) {
+            console.warn(`[MediaProcessor] Falha ao gerar PNG base para hash (${contextLabel || 'sem contexto'}):`, pngErr.message);
+            pngBuffer = null;
+          }
+        }
+      } catch (probeErr) {
+        console.warn(`[MediaProcessor] Falha ao analisar buffer para hash (${contextLabel || 'sem contexto'}):`, probeErr.message);
+      }
+
+      if (!hashVisual && pngBuffer) {
+        try {
+          hashVisual = await getHashVisual(pngBuffer);
+        } catch (hashErr) {
+          console.warn(`[MediaProcessor] Falha ao calcular hash visual (${contextLabel || 'sem contexto'}):`, hashErr.message);
+          hashVisual = null;
+        }
+      }
+    }
+
     // Se o arquivo não for suportado por Sharp, interrompe e avisa o usuário
+    const requiresImmediateHash = message.mimetype.startsWith('image/') && message.mimetype !== 'image/gif';
     if (
-      (message.mimetype.startsWith('image/') && (pngBuffer === null || hashVisual === null || hashMd5 === null))
+      (requiresImmediateHash && (pngBuffer === null || hashVisual === null || hashMd5 === null))
     ) {
       await safeReply(client, chatId, 'Erro: formato de imagem não suportado para processamento de sticker.', message.id);
+      try { fs.unlinkSync(tmpFilePath); } catch (e) {}
+      return;
+    }
+    if (message.mimetype === 'image/gif' && (pngBuffer === null || hashMd5 === null)) {
+      await safeReply(client, chatId, 'Erro: não foi possível processar este GIF para sticker.', message.id);
       try { fs.unlinkSync(tmpFilePath); } catch (e) {}
       return;
     }
@@ -140,9 +218,48 @@ async function processIncomingMedia(client, message) {
       mimetypeToSave = 'image/webp';
     } else if (message.mimetype === 'image/gif') {
       try {
-        // O processamento (NSFW, AI, etc.) já foi feito com tmpFilePath
-        bufferWebp = await sharp(tmpFilePath).webp().toBuffer();
+        const gifSharp = sharp(tmpFilePath, { animated: true });
+        const { pageHeight, height } = await gifSharp.metadata();
+        const animatedBase = {
+          loop: 0,
+          effort: 6,
+          smartSubsample: true,
+        };
+        const targetPageHeight = pageHeight || height;
+        if (targetPageHeight) {
+          animatedBase.pageHeight = targetPageHeight;
+        }
+
+        const gifAttempts = [
+          { lossless: false, quality: 85, nearLossless: 60 },
+          { lossless: false, quality: 75, nearLossless: 50 },
+          { lossless: false, quality: 65 }
+        ];
+
+        let lastBuffer = null;
+        for (const attempt of gifAttempts) {
+          try {
+            const candidate = await gifSharp
+              .clone()
+              .webp({ ...animatedBase, ...attempt })
+              .toBuffer();
+            lastBuffer = candidate;
+            if (candidate.length <= MAX_STICKER_BYTES) {
+              break;
+            }
+          } catch (attemptErr) {
+            console.warn('[MediaProcessor] GIF WebP attempt falhou:', attemptErr.message);
+          }
+        }
+
+        bufferWebp = lastBuffer;
+        await ensureVisualHashFromBuffer(bufferWebp, 'gif');
+        gifSourceForAnalysis = tmpFilePath;
+        if (bufferWebp && bufferWebp.length > MAX_STICKER_BYTES) {
+          console.warn('[MediaProcessor] GIF convertido excede 1MB mesmo após tentativas de compressão. Tamanho:', bufferWebp.length);
+        }
       } catch (e) {
+        console.warn('[MediaProcessor] Erro ao converter GIF para webp animado:', e.message);
         bufferWebp = null;
       }
       extToSave = 'webp';
@@ -156,49 +273,78 @@ async function processIncomingMedia(client, message) {
         console.warn('[MediaProcessor] Erro ao detectar GIF-like:', e.message);
       }
       if (isGifLike) {
-        // 1. Analisa o GIF-like (mp4) original para descrição/tags
-        let gifAnalysis = null;
-        try {
-          gifAnalysis = await processGif(tmpFilePath);
-        } catch (e) {
-          console.warn('[MediaProcessor] Erro ao analisar GIF-like:', e.message);
-        }
-        // 2. Converte vídeo GIF-like para webp animado usando ffmpeg
+        // Converte vídeo GIF-like para webp animado usando ffmpeg
+        gifSourceForAnalysis = tmpFilePath;
         try {
           const ffmpeg = require('fluent-ffmpeg');
           const ffmpegPath = require('ffmpeg-static');
           if (ffmpegPath) ffmpeg.setFfmpegPath(ffmpegPath);
           const outPath = tmpFilePath.replace(/\.[^.]+$/, '.webp');
-          await new Promise((resolve, reject) => {
-            ffmpeg(tmpFilePath)
-              .outputOptions([
+          const ffmpegAttempts = [
+            { fps: 15, quality: 80 },
+            { fps: 12, quality: 70 },
+            { fps: 10, quality: 60 }
+          ];
+
+          let convertedBuffer = null;
+          let ffmpegError = null;
+
+          for (const attempt of ffmpegAttempts) {
+            try {
+              if (fs.existsSync(outPath)) {
+                try { fs.unlinkSync(outPath); } catch {}
+              }
+
+              const filter = `fps=${attempt.fps},scale=512:512:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000,setsar=1`;
+              const outputOptions = [
                 '-vcodec', 'libwebp',
-                '-vf', 'scale=512:512:force_original_aspect_ratio=decrease,fps=15',
+                '-vf', filter,
                 '-loop', '0',
                 '-preset', 'default',
                 '-an',
                 '-vsync', '0',
-                '-lossless', '1',
-                '-qscale', '80',
+                '-quality', String(attempt.quality),
+                '-lossless', '0',
                 '-compression_level', '6',
                 '-pix_fmt', 'yuva420p'
-              ])
-              .toFormat('webp')
-              .save(outPath)
-              .on('end', resolve)
-              .on('error', reject);
-          });
-          bufferWebp = require('fs').readFileSync(outPath);
-          try { require('fs').unlinkSync(outPath); } catch {}
+              ];
+
+              await new Promise((resolve, reject) => {
+                ffmpeg(tmpFilePath)
+                  .outputOptions(outputOptions)
+                  .toFormat('webp')
+                  .save(outPath)
+                  .on('end', resolve)
+                  .on('error', reject);
+              });
+
+              const candidate = fs.readFileSync(outPath);
+              convertedBuffer = candidate;
+              if (candidate.length <= MAX_STICKER_BYTES) {
+                break;
+              }
+            } catch (attemptErr) {
+              ffmpegError = attemptErr;
+              console.warn('[MediaProcessor] WebP via ffmpeg falhou:', attemptErr.message);
+            }
+          }
+
+          if (!convertedBuffer) {
+            throw ffmpegError || new Error('ffmpeg_failed');
+          }
+
+          bufferWebp = convertedBuffer;
+          await ensureVisualHashFromBuffer(bufferWebp, 'gif-like');
+          if (bufferWebp.length > MAX_STICKER_BYTES) {
+            console.warn('[MediaProcessor] GIF-like convertido continua acima de 1MB. Tamanho:', bufferWebp.length);
+          }
+          try { fs.unlinkSync(outPath); } catch {}
         } catch (e) {
           console.warn('[MediaProcessor] Erro ao converter GIF-like para webp:', e.message);
           bufferWebp = null;
         }
         extToSave = 'webp';
         mimetypeToSave = 'image/webp';
-  // Salva análise para uso posterior (ex: descrição/tags)
-  if (gifAnalysis && typeof gifAnalysis.description === 'string' && gifAnalysis.description) description = gifAnalysis.description;
-  if (gifAnalysis && Array.isArray(gifAnalysis.tags) && gifAnalysis.tags.length > 0) tags = gifAnalysis.tags.join(',');
         wasProcessedAsGifLike = true;
       } else {
         // Não é GIF-like, não processa
@@ -207,10 +353,6 @@ async function processIncomingMedia(client, message) {
         mimetypeToSave = 'image/webp';
       }
     }
-
-    // Remove o arquivo temporário após o processamento completo
-    try { fs.unlinkSync(tmpFilePath); } catch (e) {}
-    
 
   // ...
 
@@ -267,7 +409,28 @@ async function processIncomingMedia(client, message) {
   // description and tags are declared earlier; do not redeclare here to avoid TDZ errors
 
     if (!nsfw) {
-      if (message.mimetype.startsWith('video/') && !wasProcessedAsGifLike) {
+      if (wasProcessedAsGifLike) {
+        try {
+          const aiResult = await processGif(gifSourceForAnalysis || filePath);
+          if (aiResult && typeof aiResult === 'object') {
+            let descBase = aiResult.description || '';
+            if (aiResult.text && typeof aiResult.text === 'string' && aiResult.text.trim()) {
+              const trimmed = aiResult.text.trim();
+              if (!descBase.includes(trimmed)) {
+                descBase = descBase ? `${descBase} | Texto: ${trimmed}` : trimmed;
+              }
+            }
+            const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(descBase, aiResult.tags);
+            description = clean.description;
+            tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
+            console.log(`[MediaProcessor] Tags extraídas para GIF-like: "${tags}"`);
+          } else {
+            console.warn('Resultado inválido do processamento de GIF-like:', aiResult);
+          }
+        } catch (err) {
+          console.warn('Erro ao processar GIF-like após deduplicação:', err.message);
+        }
+      } else if (message.mimetype.startsWith('video/') && !wasProcessedAsGifLike) {
         try {
           const aiResult = await processVideo(filePath);
           if (aiResult && typeof aiResult === 'object') {
@@ -547,6 +710,16 @@ async function processIncomingMedia(client, message) {
         console.error('Detalhes do erro de resposta:', e.response.data);
       }
       await safeReply(client, message.from, 'Erro ao processar sua mídia.', message.id);
+    } finally {
+      if (tmpFilePath) {
+        try {
+          fs.unlinkSync(tmpFilePath);
+        } catch (cleanupErr) {
+          if (cleanupErr && cleanupErr.code !== 'ENOENT') {
+            console.warn('[MediaProcessor] Falha ao remover arquivo temporário:', cleanupErr.message);
+          }
+        }
+      }
     }
   });
 }
