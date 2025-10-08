@@ -128,14 +128,14 @@ async function getAiAnnotations(buffer) {
 
     const messages = [
       { role: 'system', content:
-        `Você é um assistente de análise de imagens. Para cada imagem, sempre:
-1) Descreva a imagem de forma concisa (≤${DESC_MAX} chars).
+        `Você é um assistente de análise de imagens. Para cada imagem, siga SEMPRE:
+1) Descreva a imagem de forma concisa (≤${DESC_MAX} chars), mencionando explicitamente o nome de toda pessoa/personagem/celebridade reconhecível. Se o nome não for conhecido, escreva "nome desconhecido". Inclua também o filme/série/anime/jogo ou contexto da obra quando aplicável.
 2) Identifique e extraia TODO o texto visível na imagem (caso exista). Se não houver texto, retorne "".
-3) Gere CINCO hashtags únicas e relevantes (começando com #).
+3) Gere CINCO hashtags únicas e relevantes (começando com #), incluindo hashtags para os nomes e obras sempre que conhecidos.
 Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",...] }`
       },
       { role: 'user', content: [
-          { type: 'text', text: `Descreva a imagem (≤${DESC_MAX} chars), identifique TODO o texto presente (caso exista) e gere CINCO hashtags.` },
+          { type: 'text', text: `Descreva a imagem (≤${DESC_MAX} chars), identifique TODO o texto presente (caso exista) e gere CINCO hashtags. Certifique-se de manter na descrição e nas hashtags os nomes de pessoas/personagens reconhecíveis e o contexto de obras quando existir.` },
           { type: 'image_url', image_url: { url: `data:image/webp;base64,${b64}` } }
         ]
       }
