@@ -675,7 +675,7 @@ let hashUpdateInProgress = false;
 let lastLoadedGroupUsersId = '';
 let lastLoadedGroupCommandsId = '';
 
-const mainTabIds = new Set(['settings', 'logs', 'network', 'users', 'pending-edits', 'duplicates']);
+const mainTabIds = new Set(['settings', 'group-users', 'bot-frequency', 'group-config', 'logs', 'network', 'users', 'pending-edits', 'duplicates']);
 const subTabLoaders = {
   'group-users': initializeGroupUsersTab,
   'bot-frequency': loadBotSchedule,
@@ -782,6 +782,11 @@ function setActiveMainTab(tabId, options = {}) {
 
   if (currentMainTab === 'settings') {
     setActiveSubTab(currentSubTab, { updateHash: false });
+  } else if (subTabLoaders[currentMainTab] && !initializedSubTabs.has(currentMainTab)) {
+    initializedSubTabs.add(currentMainTab);
+    Promise.resolve(subTabLoaders[currentMainTab]()).catch((error) => {
+      console.warn(`Failed to initialize main tab "${currentMainTab}":`, error);
+    });
   }
 
   if (updateHash) {
@@ -832,6 +837,13 @@ function updateLocationHash() {
     if (currentSubTab === 'group-config' && lastLoadedGroupCommandsId) {
       parts.push(encodeURIComponent(lastLoadedGroupCommandsId));
     }
+  } else {
+    if (currentMainTab === 'group-users' && lastLoadedGroupUsersId) {
+      parts.push(encodeURIComponent(lastLoadedGroupUsersId));
+    }
+    if (currentMainTab === 'group-config' && lastLoadedGroupCommandsId) {
+      parts.push(encodeURIComponent(lastLoadedGroupCommandsId));
+    }
   }
   const hashValue = parts.filter(Boolean).join('/');
   const targetHash = hashValue ? `#${hashValue}` : '';
@@ -865,22 +877,25 @@ function applyHashNavigation() {
 
   if (rawHash) {
     const parts = rawHash.split('/');
-    if (parts.length === 1) {
-      const single = parts[0];
-      if (mainTabIds.has(single)) {
-        mainTab = single;
+    if (parts.length >= 1) {
+      const first = parts[0];
+      if (mainTabIds.has(first)) {
+        mainTab = first;
+        if (mainTab === 'settings') {
+          if (parts[1]) {
+            subTab = parts[1];
+          }
+          if (parts.length > 2) {
+            payload = decodeHashSegment(parts.slice(2).join('/'));
+          }
+        } else if (parts.length > 1) {
+          payload = decodeHashSegment(parts.slice(1).join('/'));
+        }
       } else {
-        subTab = single;
-      }
-    } else {
-      if (mainTabIds.has(parts[0])) {
-        mainTab = parts[0];
-      }
-      if (parts[1]) {
-        subTab = parts[1];
-      }
-      if (parts.length > 2) {
-        payload = decodeHashSegment(parts.slice(2).join('/'));
+        subTab = first;
+        if (parts.length > 1) {
+          payload = decodeHashSegment(parts.slice(1).join('/'));
+        }
       }
     }
   } else if (params.has('tab')) {
@@ -892,17 +907,25 @@ function applyHashNavigation() {
     }
   }
 
+  if (mainTab === 'settings' && ['group-users', 'bot-frequency', 'group-config'].includes(subTab)) {
+    mainTab = subTab;
+    subTab = 'account';
+  }
+
   if (!payload) {
-    if (subTab === 'group-users' && (params.get('group') || params.get('groupId'))) {
+    if ((mainTab === 'group-users' || subTab === 'group-users') && (params.get('group') || params.get('groupId'))) {
       payload = params.get('group') || params.get('groupId') || '';
     }
-    if (subTab === 'group-config' && (params.get('group') || params.get('groupId'))) {
+    if ((mainTab === 'group-config' || subTab === 'group-config') && (params.get('group') || params.get('groupId'))) {
       payload = params.get('group') || params.get('groupId') || '';
     }
   }
 
   if (payload) {
-    tabPayload[subTab] = payload;
+    const payloadKey = mainTab === 'settings' ? subTab : mainTab;
+    if (payloadKey) {
+      tabPayload[payloadKey] = payload;
+    }
   }
 
   setActiveMainTab(mainTab, { updateHash: false });

@@ -255,7 +255,7 @@
     
     /* Main tab content visibility - higher specificity */
     .main-tab-content.admin-only { display: none; }
-    .main-tab-content.admin-only.visible { display: block; } /* Show when visible */
+    .main-tab-content.admin-only.visible { display: none; } /* Permanecem ocultas até serem ativadas */
     .main-tab-content.active { display: block !important; } /* Only active tab shows */
   </style>
 
@@ -283,6 +283,9 @@
         </div>
         <div class="main-tab-nav" role="tablist">
           <button id="main-tab-button-settings" type="button" role="tab" class="main-tab-button active" data-tab="settings" data-title="Configurações" data-description="Gerencie sua conta, grupos e preferências do bot." aria-controls="main-tab-settings" aria-selected="true" tabindex="0"><span class="tab-label">Configurações</span></button>
+          <button id="main-tab-button-group-users" type="button" role="tab" class="main-tab-button admin-only" data-tab="group-users" data-title="Usuários do Grupo" data-description="Visualize e gerencie os membros dos grupos conectados." aria-controls="main-tab-group-users" aria-selected="false" tabindex="-1"><span class="tab-label">Usuários do Grupo</span></button>
+          <button id="main-tab-button-bot-frequency" type="button" role="tab" class="main-tab-button admin-only" data-tab="bot-frequency" data-title="Frequência do Bot" data-description="Defina a janela diária de envio automático e o intervalo entre disparos." aria-controls="main-tab-bot-frequency" aria-selected="false" tabindex="-1"><span class="tab-label">Frequência do Bot</span></button>
+          <button id="main-tab-button-group-config" type="button" role="tab" class="main-tab-button admin-only" data-tab="group-config" data-title="Configurações de Grupo" data-description="Ajuste permissões e comportamentos específicos de cada grupo." aria-controls="main-tab-group-config" aria-selected="false" tabindex="-1"><span class="tab-label">Configurações de Grupo</span></button>
           <button id="main-tab-button-logs" type="button" role="tab" class="main-tab-button admin-only" data-tab="logs" data-title="Logs" data-description="Acompanhe eventos recentes e monitore atividades técnicas." aria-controls="main-tab-logs" aria-selected="false" tabindex="-1"><span class="tab-label">Logs</span></button>
           <button id="main-tab-button-network" type="button" role="tab" class="main-tab-button admin-only" data-tab="network" data-title="Rede" data-description="Controle listas de IP e regras de acesso à plataforma." aria-controls="main-tab-network" aria-selected="false" tabindex="-1"><span class="tab-label">Rede</span></button>
           <button id="main-tab-button-users" type="button" role="tab" class="main-tab-button admin-only" data-tab="users" data-title="Usuários" data-description="Administre contas cadastradas e permissões do painel." aria-controls="main-tab-users" aria-selected="false" tabindex="-1"><span class="tab-label">Usuários</span></button>
@@ -300,274 +303,260 @@
         <div class="workspace-content">
       <!-- Settings Tab Content -->
       <div class="main-tab-content active" id="main-tab-settings" data-title="Configurações" data-description="Gerencie sua conta, grupos e preferências do bot." role="tabpanel" aria-labelledby="main-tab-button-settings" aria-hidden="false">
-        <div class="tab-container">
-          <div class="tab-nav">
-            <button class="tab-button active" data-tab="account">Minha Conta</button>
-            <button class="tab-button" data-tab="group-users">Usuários do Grupo</button>
-            <button class="tab-button" data-tab="bot-frequency">Frequência do Bot</button>
-            <button class="tab-button" data-tab="group-config">Configurações de Grupo</button>
-          </div>
-
-                    <div class="tab-content active" id="tab-account">
-            <div class="panel">
-              <h3>Minha conta</h3>
-              <form id="changePasswordForm">
-                <div class="row">
-                  <input id="cp_current" type="password" placeholder="Senha atual" autocomplete="current-password">
-                  <input id="cp_new" type="password" placeholder="Nova senha (mín. 8)" autocomplete="new-password">
-                  <input id="cp_new2" type="password" placeholder="Confirmar nova senha" autocomplete="new-password">
-                </div>
-                <div style="display:flex; gap:.5rem; justify-content:flex-end; margin-top:.6rem;">
-                  <button type="submit" id="changePassBtn" class="btn-primary">Alterar Senha</button>
-                </div>
-              </form>
+        <div class="panel">
+          <h3>Minha conta</h3>
+          <form id="changePasswordForm">
+            <div class="row">
+              <input id="cp_current" type="password" placeholder="Senha atual" autocomplete="current-password">
+              <input id="cp_new" type="password" placeholder="Nova senha (mín. 8)" autocomplete="new-password">
+              <input id="cp_new2" type="password" placeholder="Confirmar nova senha" autocomplete="new-password">
             </div>
-
-            <div class="panel admin-only" id="admin-bot-control">
-              <h3>Gerenciar Sticker Client</h3>
-              <div class="muted">Reinicie o processo do bot (gerenciado por PM2) quando necessário. Use com cuidado.</div>
-              <div style="display:flex; gap:.6rem; align-items:center; margin-top:.6rem;">
-                <button id="restartClientBtn" class="btn-danger">Reiniciar Bot</button>
-                <div id="restartStatus" class="muted">&nbsp;</div>
-              </div>
+            <div style="display:flex; gap:.5rem; justify-content:flex-end; margin-top:.6rem;">
+              <button type="submit" id="changePassBtn" class="btn-primary">Alterar Senha</button>
             </div>
-          </div>
+          </form>
+        </div>
 
-          <div class="tab-content" id="tab-group-users">
-            <div class="panel">
-              <h3>Usuários por Grupo</h3>
-              <div class="muted">Visualize membros, funções e bloqueios dos grupos conectados.</div>
-              <div class="row" style="align-items:flex-end; gap:1rem; margin-top:1rem; flex-wrap:wrap;">
-                <div style="flex:2 1 280px; display:flex; flex-direction:column; gap:.4rem;">
-                  <label for="groupUsersSelect" class="muted">Grupos conectados</label>
-                  <select id="groupUsersSelect">
-                    <option value="">Selecione um grupo...</option>
-                  </select>
-                </div>
-                <div style="flex:1 1 240px; display:flex; flex-direction:column; gap:.4rem;">
-                  <label for="groupUsersId" class="muted">ID manual (opcional)</label>
-                  <input id="groupUsersId" type="text" placeholder="ex: 123456@g.us">
-                </div>
-                <div style="flex:0 0 auto;">
-                  <button id="loadGroupUsersBtn" class="btn-primary">Carregar</button>
-                </div>
-              </div>
-              <div id="groupUsersStatus" class="muted" style="margin-top:.8rem;"></div>
-              <div id="groupUsersTableWrapper" style="margin-top:1rem; overflow-x:auto;">
-                <table id="groupUsersTable">
-                  <thead>
-                    <tr>
-                      <th>User ID</th>
-                      <th>Função</th>
-                      <th>Bloqueado</th>
-                      <th>Última Atividade</th>
-                      <th>Interações</th>
-                      <th>Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td colspan="6" style="text-align:center; color:#94a3b8;">Selecione um grupo para exibir os usuários.</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-
-          <div class="tab-content" id="tab-dm-users">
-            <div class="panel">
-              <h3>Usuários - Mensagens Diretas (DM)</h3>
-              <div class="muted">Gerencie quais usuários podem enviar mensagens diretas ao bot. Por padrão, o bot não responde a DMs a menos que autorizado.</div>
-              <div style="margin-top:1rem; display:flex; gap:1rem; flex-wrap:wrap; align-items:end;">
-                <div style="flex:1 1 320px; display:flex; flex-direction:column; gap:.4rem;">
-                  <label class="muted">User ID (WhatsApp)</label>
-                  <input id="dmUserIdInput" type="text" placeholder="ex: 5511999999999@c.us">
-                </div>
-                <div style="display:flex; gap:.6rem; align-items:center;">
-                  <label style="display:flex; gap:.4rem; align-items:center;"><input id="dmAllowedInput" type="checkbox"> Permitido</label>
-                  <label style="display:flex; gap:.4rem; align-items:center;"><input id="dmBlockedInput" type="checkbox"> Bloqueado</label>
-                </div>
-                <div style="flex:0 0 auto;">
-                  <button id="addDmUserBtn" class="btn-primary">Adicionar/Atualizar</button>
-                </div>
-              </div>
-              <div id="dmUsersStatus" class="muted" style="margin-top:.6rem;"></div>
-              <div id="dmUsersTableWrapper" style="margin-top:1rem; overflow-x:auto;">
-                <table id="dmUsersTable">
-                  <thead>
-                    <tr><th>User ID</th><th>Permitido</th><th>Bloqueado</th><th>Última Atividade</th><th>Note</th><th>Ações</th></tr>
-                  </thead>
-                  <tbody>
-                    <tr><td colspan="6" style="text-align:center; color:#94a3b8;">Nenhum usuário selecionado.</td></tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-
-          <div class="tab-content" id="tab-bot-frequency">
-            <div class="panel">
-              <h3>Frequência do Bot</h3>
-              <div class="muted">Defina a janela diária de envio automático e o intervalo entre disparos.</div>
-              <div class="row" style="margin-top:1rem; gap:1rem; flex-wrap:wrap;">
-                <div style="flex:1 1 160px; display:flex; flex-direction:column; gap:.4rem;">
-                  <label for="botScheduleStart" class="muted">Horário de início</label>
-                  <select id="botScheduleStart">
-                    <option value="00:00">00:00</option>
-                    <option value="01:00">01:00</option>
-                    <option value="02:00">02:00</option>
-                    <option value="03:00">03:00</option>
-                    <option value="04:00">04:00</option>
-                    <option value="05:00">05:00</option>
-                    <option value="06:00">06:00</option>
-                    <option value="07:00">07:00</option>
-                    <option value="08:00">08:00</option>
-                    <option value="09:00">09:00</option>
-                    <option value="10:00">10:00</option>
-                    <option value="11:00">11:00</option>
-                    <option value="12:00">12:00</option>
-                    <option value="13:00">13:00</option>
-                    <option value="14:00">14:00</option>
-                    <option value="15:00">15:00</option>
-                    <option value="16:00">16:00</option>
-                    <option value="17:00">17:00</option>
-                    <option value="18:00">18:00</option>
-                    <option value="19:00">19:00</option>
-                    <option value="20:00">20:00</option>
-                    <option value="21:00">21:00</option>
-                    <option value="22:00">22:00</option>
-                    <option value="23:00">23:00</option>
-                  </select>
-                </div>
-                <div style="flex:1 1 160px; display:flex; flex-direction:column; gap:.4rem;">
-                  <label for="botScheduleEnd" class="muted">Horário de término</label>
-                  <select id="botScheduleEnd">
-                    <option value="00:00">00:00</option>
-                    <option value="01:00">01:00</option>
-                    <option value="02:00">02:00</option>
-                    <option value="03:00">03:00</option>
-                    <option value="04:00">04:00</option>
-                    <option value="05:00">05:00</option>
-                    <option value="06:00">06:00</option>
-                    <option value="07:00">07:00</option>
-                    <option value="08:00">08:00</option>
-                    <option value="09:00">09:00</option>
-                    <option value="10:00">10:00</option>
-                    <option value="11:00">11:00</option>
-                    <option value="12:00">12:00</option>
-                    <option value="13:00">13:00</option>
-                    <option value="14:00">14:00</option>
-                    <option value="15:00">15:00</option>
-                    <option value="16:00">16:00</option>
-                    <option value="17:00">17:00</option>
-                    <option value="18:00">18:00</option>
-                    <option value="19:00">19:00</option>
-                    <option value="20:00">20:00</option>
-                    <option value="21:00">21:00</option>
-                    <option value="22:00">22:00</option>
-                    <option value="23:00">23:00</option>
-                  </select>
-                </div>
-                <div style="flex:1 1 200px; display:flex; flex-direction:column; gap:.4rem;">
-                  <label for="botScheduleInterval" class="muted">Intervalo (minutos)</label>
-                  <select id="botScheduleInterval">
-                    <option value="5">A cada 5 minutos</option>
-                    <option value="10">A cada 10 minutos</option>
-                    <option value="15">A cada 15 minutos</option>
-                    <option value="30">A cada 30 minutos</option>
-                    <option value="45">A cada 45 minutos</option>
-                    <option value="60" selected>A cada 60 minutos</option>
-                  </select>
-                </div>
-                <div style="flex:0 0 auto;">
-                  <button id="botScheduleSave" class="btn-primary">Salvar</button>
-                </div>
-              </div>
-              <div id="botScheduleStatus" class="muted" style="margin-top:.8rem;"></div>
-              <div style="margin-top:1rem;">
-                <strong>Expressão CRON atual:</strong>
-                <div id="botScheduleCron" style="font-family:monospace; margin-top:.5rem;">carregando...</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="tab-content" id="tab-group-config">
-            <div class="panel">
-              <h3>Configurações de Comandos por Grupo</h3>
-              <div class="muted">Controle quais comandos estão liberados ou bloqueados em cada grupo.</div>
-              <div class="row" style="align-items:flex-end; gap:1rem; margin-top:1rem; flex-wrap:wrap;">
-                <div style="flex:2 1 280px; display:flex; flex-direction:column; gap:.4rem;">
-                  <label for="groupCommandsSelect" class="muted">Grupos conectados</label>
-                  <select id="groupCommandsSelect">
-                    <option value="">Selecione um grupo...</option>
-                  </select>
-                </div>
-                <div style="flex:1 1 240px; display:flex; flex-direction:column; gap:.4rem;">
-                  <label for="groupCommandsGroupId" class="muted">ID manual (opcional)</label>
-                  <input id="groupCommandsGroupId" type="text" placeholder="ex: 123456@g.us">
-                </div>
-                <div style="flex:0 0 auto;">
-                  <button id="loadGroupCommandsBtn" class="btn-primary">Carregar</button>
-                </div>
-              </div>
-              <div id="groupCommandsStatus" class="muted" style="margin-top:.8rem;"></div>
-              <div id="groupCommandsSummary" class="muted" style="margin-top:.4rem; display:none;"></div>
-              <div id="groupCommandsTableWrapper" style="margin-top:1rem; overflow-x:auto;">
-                <table id="groupCommandsTable">
-                  <thead>
-                    <tr>
-                      <th>Comando</th>
-                      <th>Permitido?</th>
-                      <th>Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td colspan="3" style="text-align:center; color:#94a3b8;">Selecione um grupo para visualizar as permissões.</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <div class="row" style="margin-top:1rem; gap:1rem; flex-wrap:wrap; align-items:flex-end;">
-                <div style="flex:2 1 240px; display:flex; flex-direction:column; gap:.4rem;">
-                  <label for="groupCommandsCommandName" class="muted">Comando</label>
-                  <input id="groupCommandsCommandName" type="text" placeholder="#comando">
-                </div>
-                <div style="flex:1 1 160px; display:flex; flex-direction:column; gap:.4rem;">
-                  <label for="groupCommandsAllowed" class="muted">Ação</label>
-                  <select id="groupCommandsAllowed">
-                    <option value="allow">Permitir</option>
-                    <option value="deny">Bloquear</option>
-                  </select>
-                </div>
-                <div style="flex:0 0 auto;">
-                  <button id="saveGroupCommandBtn" class="btn-primary">Salvar</button>
-                </div>
-              </div>
-              <div id="groupCommandsTester" style="margin-top:1.5rem; padding:1rem; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;">
-                <h4 style="margin:0 0 .6rem 0; color:#1e293b; font-size:1rem;">Testar permissões efetivas</h4>
-                <div class="muted" style="margin-bottom:.8rem;">Informe um comando e, opcionalmente, um usuário para verificar como o bot irá responder.</div>
-                <div class="row" style="gap:1rem; flex-wrap:wrap; align-items:flex-end;">
-                  <div style="flex:2 1 220px; display:flex; flex-direction:column; gap:.4rem;">
-                    <label for="groupCommandTestCommand" class="muted">Comando</label>
-                    <input id="groupCommandTestCommand" type="text" placeholder="#comando a testar">
-                  </div>
-                  <div style="flex:2 1 220px; display:flex; flex-direction:column; gap:.4rem;">
-                    <label for="groupCommandTestUser" class="muted">Usuário (opcional)</label>
-                    <input id="groupCommandTestUser" type="text" placeholder="ex: 5511999999999@s.whatsapp.net">
-                  </div>
-                  <div style="flex:0 0 auto;">
-                    <button id="runGroupCommandTestBtn" class="btn-primary">Testar</button>
-                  </div>
-                </div>
-                <div id="groupCommandTestResult" class="muted" style="margin-top:.8rem;"></div>
-              </div>
-            </div>
+        <div class="panel admin-only" id="admin-bot-control">
+          <h3>Gerenciar Sticker Client</h3>
+          <div class="muted">Reinicie o processo do bot (gerenciado por PM2) quando necessário. Use com cuidado.</div>
+          <div style="display:flex; gap:.6rem; align-items:center; margin-top:.6rem;">
+            <button id="restartClientBtn" class="btn-danger">Reiniciar Bot</button>
+            <div id="restartStatus" class="muted">&nbsp;</div>
           </div>
         </div>
       </div>
-      
+      <div class="main-tab-content admin-only" id="main-tab-group-users" data-title="Usuários do Grupo" data-description="Visualize membros, funções e bloqueios dos grupos conectados." role="tabpanel" aria-labelledby="main-tab-button-group-users" aria-hidden="true">
+        <div class="panel">
+          <h3>Usuários por Grupo</h3>
+          <div class="muted">Visualize membros, funções e bloqueios dos grupos conectados.</div>
+          <div class="row" style="align-items:flex-end; gap:1rem; margin-top:1rem; flex-wrap:wrap;">
+            <div style="flex:2 1 280px; display:flex; flex-direction:column; gap:.4rem;">
+              <label for="groupUsersSelect" class="muted">Grupos conectados</label>
+              <select id="groupUsersSelect">
+                <option value="">Selecione um grupo...</option>
+              </select>
+            </div>
+            <div style="flex:1 1 240px; display:flex; flex-direction:column; gap:.4rem;">
+              <label for="groupUsersId" class="muted">ID manual (opcional)</label>
+              <input id="groupUsersId" type="text" placeholder="ex: 123456@g.us">
+            </div>
+            <div style="flex:0 0 auto;">
+              <button id="loadGroupUsersBtn" class="btn-primary">Carregar</button>
+            </div>
+          </div>
+          <div id="groupUsersStatus" class="muted" style="margin-top:.8rem;"></div>
+          <div id="groupUsersTableWrapper" style="margin-top:1rem; overflow-x:auto;">
+            <table id="groupUsersTable">
+              <thead>
+                <tr>
+                  <th>User ID</th>
+                  <th>Função</th>
+                  <th>Bloqueado</th>
+                  <th>Última Atividade</th>
+                  <th>Interações</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td colspan="6" style="text-align:center; color:#94a3b8;">Selecione um grupo para exibir os usuários.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="main-tab-content admin-only" id="main-tab-bot-frequency" data-title="Frequência do Bot" data-description="Defina a janela diária de envio automático e o intervalo entre disparos." role="tabpanel" aria-labelledby="main-tab-button-bot-frequency" aria-hidden="true">
+        <div class="panel">
+          <h3>Frequência do Bot</h3>
+          <div class="muted">Defina a janela diária de envio automático e o intervalo entre disparos.</div>
+          <div class="row" style="margin-top:1rem; gap:1rem; flex-wrap:wrap;">
+            <div style="flex:1 1 160px; display:flex; flex-direction:column; gap:.4rem;">
+              <label for="botScheduleStart" class="muted">Horário de início</label>
+              <select id="botScheduleStart">
+                <option value="00:00">00:00</option>
+                <option value="01:00">01:00</option>
+                <option value="02:00">02:00</option>
+                <option value="03:00">03:00</option>
+                <option value="04:00">04:00</option>
+                <option value="05:00">05:00</option>
+                <option value="06:00">06:00</option>
+                <option value="07:00">07:00</option>
+                <option value="08:00">08:00</option>
+                <option value="09:00">09:00</option>
+                <option value="10:00">10:00</option>
+                <option value="11:00">11:00</option>
+                <option value="12:00">12:00</option>
+                <option value="13:00">13:00</option>
+                <option value="14:00">14:00</option>
+                <option value="15:00">15:00</option>
+                <option value="16:00">16:00</option>
+                <option value="17:00">17:00</option>
+                <option value="18:00">18:00</option>
+                <option value="19:00">19:00</option>
+                <option value="20:00">20:00</option>
+                <option value="21:00">21:00</option>
+                <option value="22:00">22:00</option>
+                <option value="23:00">23:00</option>
+              </select>
+            </div>
+            <div style="flex:1 1 160px; display:flex; flex-direction:column; gap:.4rem;">
+              <label for="botScheduleEnd" class="muted">Horário de término</label>
+              <select id="botScheduleEnd">
+                <option value="00:00">00:00</option>
+                <option value="01:00">01:00</option>
+                <option value="02:00">02:00</option>
+                <option value="03:00">03:00</option>
+                <option value="04:00">04:00</option>
+                <option value="05:00">05:00</option>
+                <option value="06:00">06:00</option>
+                <option value="07:00">07:00</option>
+                <option value="08:00">08:00</option>
+                <option value="09:00">09:00</option>
+                <option value="10:00">10:00</option>
+                <option value="11:00">11:00</option>
+                <option value="12:00">12:00</option>
+                <option value="13:00">13:00</option>
+                <option value="14:00">14:00</option>
+                <option value="15:00">15:00</option>
+                <option value="16:00">16:00</option>
+                <option value="17:00">17:00</option>
+                <option value="18:00">18:00</option>
+                <option value="19:00">19:00</option>
+                <option value="20:00">20:00</option>
+                <option value="21:00">21:00</option>
+                <option value="22:00">22:00</option>
+                <option value="23:00">23:00</option>
+              </select>
+            </div>
+            <div style="flex:1 1 200px; display:flex; flex-direction:column; gap:.4rem;">
+              <label for="botScheduleInterval" class="muted">Intervalo (minutos)</label>
+              <select id="botScheduleInterval">
+                <option value="5">A cada 5 minutos</option>
+                <option value="10">A cada 10 minutos</option>
+                <option value="15">A cada 15 minutos</option>
+                <option value="30">A cada 30 minutos</option>
+                <option value="45">A cada 45 minutos</option>
+                <option value="60" selected>A cada 60 minutos</option>
+              </select>
+            </div>
+            <div style="flex:0 0 auto;">
+              <button id="botScheduleSave" class="btn-primary">Salvar</button>
+            </div>
+          </div>
+          <div id="botScheduleStatus" class="muted" style="margin-top:.8rem;"></div>
+          <div style="margin-top:1rem;">
+            <strong>Expressão CRON atual:</strong>
+            <div id="botScheduleCron" style="font-family:monospace; margin-top:.5rem;">carregando...</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="main-tab-content admin-only" id="main-tab-group-config" data-title="Configurações de Grupo" data-description="Ajuste permissões e comportamentos específicos de cada grupo." role="tabpanel" aria-labelledby="main-tab-button-group-config" aria-hidden="true">
+        <div class="panel">
+          <h3>Usuários - Mensagens Diretas (DM)</h3>
+          <div class="muted">Gerencie quais usuários podem enviar mensagens diretas ao bot. Por padrão, o bot não responde a DMs a menos que autorizado.</div>
+          <div style="margin-top:1rem; display:flex; gap:1rem; flex-wrap:wrap; align-items:end;">
+            <div style="flex:1 1 320px; display:flex; flex-direction:column; gap:.4rem;">
+              <label class="muted">User ID (WhatsApp)</label>
+              <input id="dmUserIdInput" type="text" placeholder="ex: 5511999999999@c.us">
+            </div>
+            <div style="display:flex; gap:.6rem; align-items:center;">
+              <label style="display:flex; gap:.4rem; align-items:center;"><input id="dmAllowedInput" type="checkbox"> Permitido</label>
+              <label style="display:flex; gap:.4rem; align-items:center;"><input id="dmBlockedInput" type="checkbox"> Bloqueado</label>
+            </div>
+            <div style="flex:0 0 auto;">
+              <button id="addDmUserBtn" class="btn-primary">Adicionar/Atualizar</button>
+            </div>
+          </div>
+          <div id="dmUsersStatus" class="muted" style="margin-top:.6rem;"></div>
+          <div id="dmUsersTableWrapper" style="margin-top:1rem; overflow-x:auto;">
+            <table id="dmUsersTable">
+              <thead>
+                <tr><th>User ID</th><th>Permitido</th><th>Bloqueado</th><th>Última Atividade</th><th>Note</th><th>Ações</th></tr>
+              </thead>
+              <tbody>
+                <tr><td colspan="6" style="text-align:center; color:#94a3b8;">Nenhum usuário selecionado.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h3>Configurações de Comandos por Grupo</h3>
+          <div class="muted">Controle quais comandos estão liberados ou bloqueados em cada grupo.</div>
+          <div class="row" style="align-items:flex-end; gap:1rem; margin-top:1rem; flex-wrap:wrap;">
+            <div style="flex:2 1 280px; display:flex; flex-direction:column; gap:.4rem;">
+              <label for="groupCommandsSelect" class="muted">Grupos conectados</label>
+              <select id="groupCommandsSelect">
+                <option value="">Selecione um grupo...</option>
+              </select>
+            </div>
+            <div style="flex:1 1 240px; display:flex; flex-direction:column; gap:.4rem;">
+              <label for="groupCommandsGroupId" class="muted">ID manual (opcional)</label>
+              <input id="groupCommandsGroupId" type="text" placeholder="ex: 123456@g.us">
+            </div>
+            <div style="flex:0 0 auto;">
+              <button id="loadGroupCommandsBtn" class="btn-primary">Carregar</button>
+            </div>
+          </div>
+          <div id="groupCommandsStatus" class="muted" style="margin-top:.8rem;"></div>
+          <div id="groupCommandsSummary" class="muted" style="margin-top:.4rem; display:none;"></div>
+          <div id="groupCommandsTableWrapper" style="margin-top:1rem; overflow-x:auto;">
+            <table id="groupCommandsTable">
+              <thead>
+                <tr>
+                  <th>Comando</th>
+                  <th>Permitido?</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td colspan="3" style="text-align:center; color:#94a3b8;">Selecione um grupo para visualizar as permissões.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="row" style="margin-top:1rem; gap:1rem; flex-wrap:wrap; align-items:flex-end;">
+            <div style="flex:2 1 240px; display:flex; flex-direction:column; gap:.4rem;">
+              <label for="groupCommandsCommandName" class="muted">Comando</label>
+              <input id="groupCommandsCommandName" type="text" placeholder="#comando">
+            </div>
+            <div style="flex:1 1 160px; display:flex; flex-direction:column; gap:.4rem;">
+              <label for="groupCommandsAllowed" class="muted">Ação</label>
+              <select id="groupCommandsAllowed">
+                <option value="allow">Permitir</option>
+                <option value="deny">Bloquear</option>
+              </select>
+            </div>
+            <div style="flex:0 0 auto;">
+              <button id="saveGroupCommandBtn" class="btn-primary">Salvar</button>
+            </div>
+          </div>
+          <div id="groupCommandsTester" style="margin-top:1.5rem; padding:1rem; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;">
+            <h4 style="margin:0 0 .6rem 0; color:#1e293b; font-size:1rem;">Testar permissões efetivas</h4>
+            <div class="muted" style="margin-bottom:.8rem;">Informe um comando e, opcionalmente, um usuário para verificar como o bot irá responder.</div>
+            <div class="row" style="gap:1rem; flex-wrap:wrap; align-items:flex-end;">
+              <div style="flex:2 1 220px; display:flex; flex-direction:column; gap:.4rem;">
+                <label for="groupCommandTestCommand" class="muted">Comando</label>
+                <input id="groupCommandTestCommand" type="text" placeholder="#comando a testar">
+              </div>
+              <div style="flex:2 1 220px; display:flex; flex-direction:column; gap:.4rem;">
+                <label for="groupCommandTestUser" class="muted">Usuário (opcional)</label>
+                <input id="groupCommandTestUser" type="text" placeholder="ex: 5511999999999@s.whatsapp.net">
+              </div>
+              <div style="flex:0 0 auto;">
+                <button id="runGroupCommandTestBtn" class="btn-primary">Testar</button>
+              </div>
+            </div>
+            <div id="groupCommandTestResult" class="muted" style="margin-top:.8rem;"></div>
+          </div>
+        </div>
+      </div>
+
       <!-- Logs Tab Content -->
       <div class="main-tab-content admin-only" id="main-tab-logs" data-title="Logs" data-description="Acompanhe eventos recentes e monitore atividades técnicas." role="tabpanel" aria-labelledby="main-tab-button-logs" aria-hidden="true">
         <div class="panel panel-full-width">
