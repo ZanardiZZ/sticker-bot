@@ -194,26 +194,37 @@ async function processIncomingMedia(client, message) {
       return;
     }
     if (message.mimetype.startsWith('image/') && message.mimetype !== 'image/gif') {
-      // Ajuste de aspect ratio: centraliza a imagem em um canvas quadrado com fundo transparente
-      const image = sharp(tmpFilePath);
-      const metadata = await image.metadata();
-      const { width, height } = metadata;
-      if (width !== height) {
-        const size = Math.max(width, height);
-        bufferWebp = await image
-          .extend({
-            top: Math.floor((size - height) / 2),
-            bottom: Math.ceil((size - height) / 2),
-            left: Math.floor((size - width) / 2),
-            right: Math.ceil((size - width) / 2),
-            background: { r: 0, g: 0, b: 0, alpha: 0 }
-          })
-          .resize(size, size)
-          .webp()
-          .toBuffer();
-      } else {
-        bufferWebp = await image.webp().toBuffer();
+      const TARGET_STICKER_SIZE = 512;
+      const maintainAlphaBackground = { r: 0, g: 0, b: 0, alpha: 0 };
+      const webpOptions = {
+        quality: 90,
+        alphaQuality: 100,
+        smartSubsample: true,
+        effort: 6
+      };
+
+      // Replica a estratégia usada nos GIFs animados: mantêm aspecto original,
+      // centraliza em canvas 512x512 e evita cortes ou distorções.
+      bufferWebp = await sharp(tmpFilePath)
+        .resize(TARGET_STICKER_SIZE, TARGET_STICKER_SIZE, {
+          fit: 'contain',
+          position: 'centre',
+          background: maintainAlphaBackground,
+          withoutEnlargement: true
+        })
+        .webp(webpOptions)
+        .toBuffer();
+
+      // Garante compatibilidade com stickers muito pequenos preservando dimensões originais
+      // quando nenhuma transformação é necessária.
+      if (!bufferWebp || bufferWebp.length === 0) {
+        bufferWebp = await sharp(tmpFilePath).webp(webpOptions).toBuffer();
       }
+
+      if (!bufferWebp || bufferWebp.length === 0) {
+        throw new Error('Falha ao converter imagem estática para WebP padronizado');
+      }
+
       extToSave = 'webp';
       mimetypeToSave = 'image/webp';
     } else if (message.mimetype === 'image/gif') {
