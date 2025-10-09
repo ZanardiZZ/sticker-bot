@@ -24,6 +24,18 @@ const { isGifLikeVideo } = require('../utils/gifDetection');
 const { withTyping } = require('../utils/typingIndicator');
 
 const MAX_STICKER_BYTES = 1024 * 1024; // WhatsApp animated sticker limit ≈1MB
+let ffmpegFactory = null;
+
+function setFfmpegFactory(factory) {
+  ffmpegFactory = typeof factory === 'function' ? factory : null;
+}
+
+function loadFfmpeg() {
+  if (ffmpegFactory) {
+    return ffmpegFactory();
+  }
+  return require('fluent-ffmpeg');
+}
 
 // Fallback function if cleanDescriptionTags is not available
 function fallbackCleanDescriptionTags(description, tags) {
@@ -287,7 +299,7 @@ async function processIncomingMedia(client, message) {
         // Converte vídeo GIF-like para webp animado usando ffmpeg
         gifSourceForAnalysis = tmpFilePath;
         try {
-          const ffmpeg = require('fluent-ffmpeg');
+          const ffmpeg = loadFfmpeg();
           const ffmpegPath = require('ffmpeg-static');
           if (ffmpegPath) ffmpeg.setFfmpegPath(ffmpegPath);
           const outPath = tmpFilePath.replace(/\.[^.]+$/, '.webp');
@@ -299,6 +311,7 @@ async function processIncomingMedia(client, message) {
 
           let convertedBuffer = null;
           let ffmpegError = null;
+          let compressionNoticeSent = false;
 
           for (const attempt of ffmpegAttempts) {
             try {
@@ -331,7 +344,29 @@ async function processIncomingMedia(client, message) {
 
               const candidate = fs.readFileSync(outPath);
               convertedBuffer = candidate;
-              if (candidate.length <= MAX_STICKER_BYTES) {
+
+              const withinStickerLimit = candidate.length <= MAX_STICKER_BYTES;
+              if (!withinStickerLimit && !compressionNoticeSent) {
+                const sizeInMb = (candidate.length / MAX_STICKER_BYTES).toFixed(2);
+                const noticeMessage = `Recebi um GIF curtinho mas grandinho (~${sizeInMb}MB). Estou compactando para caber como figurinha animada, aguarde só um instante...`;
+                try {
+                  await safeReply(client, chatId, noticeMessage, message.id);
+                } catch (noticeErr) {
+                  console.warn('[MediaProcessor] Aviso de compactação falhou:', noticeErr.message);
+                }
+
+                if (typeof client?.simulateTyping === 'function') {
+                  try {
+                    await client.simulateTyping(chatId, true);
+                  } catch (typingErr) {
+                    console.warn('[MediaProcessor] Falha ao manter indicador de digitação ativo durante compactação:', typingErr.message);
+                  }
+                }
+
+                compressionNoticeSent = true;
+              }
+
+              if (withinStickerLimit) {
                 break;
               }
             } catch (attemptErr) {
@@ -737,5 +772,6 @@ async function processIncomingMedia(client, message) {
 }
 
 module.exports = {
-  processIncomingMedia
+  processIncomingMedia,
+  __setFfmpegFactory: setFfmpegFactory
 };

@@ -60,7 +60,7 @@ async function isGifLikeVideo(filePath, mimetype) {
     }
     
     // Only for videos without audio: check additional GIF-like characteristics
-    // 1. Very short duration (typically < 15 seconds for GIFs)  
+    // 1. Very short duration (typically < 15 seconds for GIFs)
     // 2. Low resolution (GIFs are usually small)
     // 3. Small file size for the duration
     
@@ -68,22 +68,28 @@ async function isGifLikeVideo(filePath, mimetype) {
     const isLowRes = videoStream && (videoStream.width <= 600 || videoStream.height <= 600); // More conservative resolution
     const isSmallFile = size <= 5 * 1024 * 1024; // More conservative: max 5MB for GIFs
     
-    // For audio-less videos, require ALL remaining characteristics for GIF detection
+    // Keep heuristics for awareness, but automatically convert low-res audio-free videos to stickers
     let score = 0;
     if (isVeryShortDuration) score++;
     if (isLowRes) score++;
     if (isSmallFile) score++;
-    
-    const isLikelyGif = score >= 3; // All 3 remaining criteria required (audio already confirmed absent)
-    
+
+    const autoGifByLowRes = Boolean(isLowRes); // Low resolution videos without audio can safely become stickers
+    const passedThreshold = score >= 3; // All 3 remaining criteria required (audio already confirmed absent)
+    const autoRuleApplied = autoGifByLowRes && !passedThreshold;
+    const isLikelyGif = autoRuleApplied || passedThreshold;
+
     console.log(`[GIF Detection] Analyzing ${path.basename(filePath)}:`);
     console.log(`  Duration: ${duration}s (very short: ${isVeryShortDuration})`);
     console.log(`  Has audio: false (confirmed no audio track)`);
     console.log(`  Resolution: ${videoStream?.width}x${videoStream?.height} (low res: ${isLowRes})`);
     console.log(`  Size: ${Math.round(size / 1024)}KB (small: ${isSmallFile})`);
-    console.log(`  GIF-like score: ${score}/3 (all criteria required for audio-less videos)`);
+    if (autoRuleApplied) {
+      console.log('  Auto rule applied: low resolution + no audio -> treat as GIF/sticker');
+    }
+    console.log(`  GIF-like score: ${score}/3 (${passedThreshold ? 'threshold met' : 'threshold not met'})`);
     console.log(`  Conclusion: ${isLikelyGif ? 'LIKELY GIF' : 'LIKELY VIDEO'}`);
-    
+
     return isLikelyGif;
     
   } catch (error) {

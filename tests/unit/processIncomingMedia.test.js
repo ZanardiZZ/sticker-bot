@@ -11,6 +11,7 @@ const { MockBaileysClient } = require('../helpers/mockBaileysClient');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 const PROCESSOR_PATH = path.join(PROJECT_ROOT, 'bot', 'mediaProcessor.js');
+const MAX_STICKER_BYTES = 1024 * 1024;
 
 function resolveModule(relativePath) {
   return require.resolve(path.join(PROJECT_ROOT, relativePath));
@@ -20,6 +21,41 @@ function createSharpStub() {
   return function sharp(filePath) {
     return new SharpMock(filePath);
   };
+}
+
+function createFfmpegStub(buffers) {
+  const queue = buffers.slice();
+  const fallback = buffers.length > 0 ? buffers[buffers.length - 1] : Buffer.alloc(0);
+
+  const stub = function ffmpegStub() {
+    const handlers = { end: null, error: null };
+
+    return {
+      outputOptions() { return this; },
+      toFormat() { return this; },
+      save(outPath) {
+        setTimeout(() => {
+          const buffer = queue.length > 0 ? queue.shift() : fallback;
+          if (!buffer || buffer.length === 0) {
+            if (handlers.error) handlers.error(new Error('ffmpeg_no_output'));
+            return;
+          }
+          fs.writeFileSync(outPath, buffer);
+          if (handlers.end) handlers.end();
+        }, 0);
+        return this;
+      },
+      on(event, handler) {
+        if (event === 'end') handlers.end = handler;
+        if (event === 'error') handlers.error = handler;
+        return this;
+      }
+    };
+  };
+
+  stub.setFfmpegPath = () => {};
+
+  return stub;
 }
 
 class SharpMock {
@@ -99,6 +135,7 @@ function withProcessIncomingMedia(overrides, testFn) {
 
   const modulesToMock = { ...defaultModules, ...overrides.modules };
 
+  let moduleExports = null;
   try {
     for (const [relative, exportsValue] of Object.entries(modulesToMock)) {
       const moduleId =
@@ -109,10 +146,13 @@ function withProcessIncomingMedia(overrides, testFn) {
 
     cacheSnapshots.set(PROCESSOR_PATH, require.cache[PROCESSOR_PATH]);
     delete require.cache[PROCESSOR_PATH];
-    const { processIncomingMedia } = require(PROCESSOR_PATH);
+    moduleExports = require(PROCESSOR_PATH);
 
-    return testFn(processIncomingMedia);
+    return testFn(moduleExports.processIncomingMedia, moduleExports);
   } finally {
+    if (moduleExports && typeof moduleExports.__setFfmpegFactory === 'function') {
+      moduleExports.__setFfmpegFactory(null);
+    }
     for (const [moduleId, snapshot] of cacheSnapshots.entries()) {
       if (snapshot) {
         require.cache[moduleId] = snapshot;
@@ -425,7 +465,7 @@ const tests = [
             }
           }
         }
-      }, async (processIncomingMedia) => {
+      }, async (processIncomingMedia, moduleExports) => {
         const client = new MockBaileysClient();
         const message = {
           from: 'video@c.us',
@@ -434,7 +474,27 @@ const tests = [
           sender: { id: 'author@c.us' }
         };
 
-        await processIncomingMedia(client, message);
+        if (moduleExports && typeof moduleExports.__setFfmpegFactory === 'function') {
+          const ffmpegStubModule = createFfmpegStub([
+            Buffer.alloc(MAX_STICKER_BYTES + 200000),
+            Buffer.alloc(MAX_STICKER_BYTES - 50000)
+          ]);
+          moduleExports.__setFfmpegFactory(() => ffmpegStubModule);
+        }
+
+        const originalReadFileSync = fs.readFileSync;
+        fs.readFileSync = (pathToRead, ...args) => {
+          if (typeof pathToRead === 'string' && pathToRead.endsWith('.webp')) {
+            return Buffer.alloc(MAX_STICKER_BYTES + 200000);
+          }
+          return originalReadFileSync(pathToRead, ...args);
+        };
+
+        try {
+          await processIncomingMedia(client, message);
+        } finally {
+          fs.readFileSync = originalReadFileSync;
+        }
       });
 
       assertEqual(downloadCalls.length, 1, 'Video should be downloaded once');
@@ -448,8 +508,9 @@ const tests = [
       assertEqual(payload.tags, 'gif-tag', 'Gif-like tags should join into string');
       assertEqual(findByIdCalls[0], 88, 'Should fetch saved media by ID');
       assertEqual(stickerCalls.length, 1, 'Gif-like conversion should send sticker response before text');
-      assertEqual(safeReplies.length, 1, 'Video flow should reply once');
-      const reply = safeReplies[0].text;
+      assertEqual(safeReplies.length, 2, 'Gif-like flow should notify compression and send final reply');
+      const [notice, reply] = safeReplies.map((entry) => entry.text);
+      assert(notice.toLowerCase().includes('compactando'), 'Compression notice should mention compactação');
       assert(reply.includes('#giflike #converted'), 'Reply should include tag list');
       assert(reply.includes('🆔 88'), 'Reply should include media ID');
 
