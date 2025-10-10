@@ -23,8 +23,6 @@ const maintenanceModel = require('./models/maintenance');
 const processingModel = require('./models/processing');
 const versionModel = require('./models/version');
 const lidMappingModel = require('./models/lidMapping');
-const pendingEditsModel = require('./models/pendingEdits');
-const whatsappVerificationModel = require('./models/whatsappVerification');
 
 // Utilities
 const utils = require('./utils');
@@ -74,12 +72,6 @@ module.exports = {
   
   // LID mapping operations
   ...lidMappingModel,
-  
-  // Pending edits operations
-  ...pendingEditsModel,
-  
-  // WhatsApp verification operations
-  ...whatsappVerificationModel,
   
   // Utilities  
   ...utils
