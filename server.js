@@ -13,13 +13,6 @@ const { WebSocketServer } = require('ws');
 const mime = require('mime-types');
 const qrcode = require('qrcode-terminal')
 const {
-  storeLidPnMapping,
-  getPnForLid,
-  getLidForPn
-} = require('./database/models/lidMapping');
-const { normalizeJid } = require('./utils/jidUtils');
-const { isAnimatedWebpBuffer } = require('./bot/stickers');
-const {
   default: makeWASocket,
   DisconnectReason,
   useMultiFileAuthState,
@@ -55,8 +48,6 @@ const ALLOWED_TOKENS = (process.env.BAILEYS_ALLOWED_TOKENS || '')
 // In-memory registry of connected clients
 // token -> { ws, allowedChats: Set<string> }
 const clientsByToken = new Map();
-
-const MAX_STICKER_BYTES = 1024 * 1024;
 
 function createSimpleStore() {
   return {
@@ -170,11 +161,11 @@ function getChatFromStore(store, jid) {
   return getFromStore(store?.chats, jid) || getFromStore(store?.groupMetadata, jid);
 }
 
-function normalizeOpenWAMessage(rawMessage, opts = {}) {
+function normalizeOpenWAMessage(msg, opts = {}) {
   const { store, userId, rememberMessage, rememberQuoted } = opts;
 
   // Convert Baileys message to an OpenWA-like shape used by current code
-  const m = rawMessage;
+  const m = msg?.messages?.[0];
   if (!m) return null;
 
   const remoteJid = m.key?.remoteJid || '';
@@ -625,21 +616,6 @@ async function start() {
     return buildOpenWAContact(store, jid);
   }
 
-  function markMessageAsRead(m) {
-    try {
-      if (typeof sock?.readMessages !== 'function') return;
-      const key = m?.key;
-      if (!key || key.fromMe) return;
-      if (!key.remoteJid || !key.id) return;
-      Promise.resolve(sock.readMessages([key]))
-        .catch((err) => {
-          console.warn('[Baileys] Failed to mark message as read:', err?.message || err);
-        });
-    } catch (err) {
-      console.warn('[Baileys] Failed to mark message as read:', err?.message || err);
-    }
-  }
-
   function broadcastAuthorized(openwaMsg) {
     if (!openwaMsg) return;
     const chatId = openwaMsg.chatId;
@@ -669,65 +645,28 @@ async function start() {
     if (!fs.existsSync(inputPath)) throw new Error('input_not_found');
     const unique = `${Date.now()}_${Math.random().toString(36).slice(2,10)}`;
     const outPath = path.resolve(path.dirname(inputPath), `tmp_${unique}.webp`);
-    const ffmpegAttempts = [
-      { fps: 15, quality: 80 },
-      { fps: 12, quality: 70 },
-      { fps: 10, quality: 60 }
-    ];
-
-    let converted = null;
-    let conversionError = null;
-
-    for (const attempt of ffmpegAttempts) {
-      try {
-        if (fs.existsSync(outPath)) {
-          try { fs.unlinkSync(outPath); } catch {}
-        }
-
-        const filter = `fps=${attempt.fps},scale=512:512:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000,setsar=1`;
-        const options = [
+    await new Promise((resolve, reject) => {
+      ffmpeg(inputPath)
+        .outputOptions([
           '-vcodec', 'libwebp',
-          '-vf', filter,
+          '-vf', 'scale=512:512:force_original_aspect_ratio=decrease,fps=15',
           '-loop', '0',
           '-preset', 'default',
           '-an',
           '-vsync', '0',
-          '-quality', String(attempt.quality),
-          '-lossless', '0',
+          '-lossless', '1',
+          '-qscale', '80',
           '-compression_level', '6',
           '-pix_fmt', 'yuva420p'
-        ];
-
-        await new Promise((resolve, reject) => {
-          ffmpeg(inputPath)
-            .outputOptions(options)
-            .toFormat('webp')
-            .save(outPath)
-            .on('end', resolve)
-            .on('error', reject);
-        });
-
-        const candidate = fs.readFileSync(outPath);
-        converted = candidate;
-        if (candidate.length <= MAX_STICKER_BYTES) {
-          break;
-        }
-      } catch (err) {
-        conversionError = err;
-        console.warn('[WS] convertToAnimatedWebp attempt falhou:', err.message);
-      }
-    }
-
-    if (!converted) {
-      try { fs.unlinkSync(outPath); } catch {}
-      throw conversionError || new Error('ffmpeg_failed');
-    }
-
+        ])
+        .toFormat('webp')
+        .save(outPath)
+        .on('end', resolve)
+        .on('error', reject);
+    });
+    const buf = fs.readFileSync(outPath);
     try { fs.unlinkSync(outPath); } catch {}
-    if (converted.length > MAX_STICKER_BYTES) {
-      console.warn('[WS] convertToAnimatedWebp result excede 1MB. size=', converted.length);
-    }
-    return converted;
+    return buf;
   }
 
   wss.on('connection', (ws) => {
@@ -849,20 +788,13 @@ async function start() {
       }
 
       if (type === 'sendRawWebpAsSticker') {
-        const { chatId, dataUrl, options = {} } = msg || {};
+        const { chatId, dataUrl } = msg || {};
         if (!chatId || !canSendTo(chatId)) return send(ws, { type: 'error', error: 'forbidden' });
         try {
           const match = /^data:image\/webp;base64,(.+)$/i.exec(String(dataUrl || ''));
           if (!match) throw new Error('invalid_data_url');
           const buf = Buffer.from(match[1], 'base64');
-          const animated = typeof options.animated === 'boolean'
-            ? options.animated
-            : isAnimatedWebpBuffer(buf);
-          const stickerPayload = { sticker: buf };
-          if (animated) {
-            stickerPayload.isAnimated = true;
-          }
-          await sock.sendMessage(chatId, stickerPayload);
+          await sock.sendMessage(chatId, { sticker: buf });
           send(ws, { type: 'ack', action: 'sendRawWebpAsSticker', chatId, requestId: incomingRequestId });
         } catch (e) {
           send(ws, { type: 'error', error: e.message, requestId: incomingRequestId });
@@ -894,138 +826,6 @@ async function start() {
         } catch (e) {
           return send(ws, { type: 'error', error: e.message || String(e), requestId: incomingRequestId });
         }
-      }
-
-      if (type === 'getLIDForPN') {
-        const { pn } = msg || {};
-        if (!pn) {
-          return send(ws, { type: 'error', action: 'getLIDForPN', error: 'pn_required', requestId: incomingRequestId });
-        }
-
-        const normalizedPn = normalizeJid(pn);
-        console.log(`[LID] Resolving LID for PN ${normalizedPn}`);
-        try {
-          const lid = await getLidForPn(normalizedPn);
-          console.log(`[LID] Result for PN ${normalizedPn}:`, lid ? `LID=${lid}` : 'not_found');
-          return send(ws, {
-            type: 'ack',
-            action: 'getLIDForPN',
-            pn: normalizedPn,
-            lid: lid || null,
-            requestId: incomingRequestId
-          });
-        } catch (e) {
-          console.error(`[LID] Failed to resolve LID for PN ${normalizedPn}:`, e);
-          return send(ws, {
-            type: 'error',
-            action: 'getLIDForPN',
-            error: e.message || 'lid_lookup_failed',
-            requestId: incomingRequestId
-          });
-        }
-      }
-
-      if (type === 'getPNForLID') {
-        const { lid } = msg || {};
-        if (!lid) {
-          return send(ws, { type: 'error', action: 'getPNForLID', error: 'lid_required', requestId: incomingRequestId });
-        }
-
-        const normalizedLid = normalizeJid(lid);
-        console.log(`[LID] Resolving PN for LID ${normalizedLid}`);
-        try {
-          const pn = await getPnForLid(normalizedLid);
-          console.log(`[LID] Result for LID ${normalizedLid}:`, pn ? `PN=${pn}` : 'not_found');
-          return send(ws, {
-            type: 'ack',
-            action: 'getPNForLID',
-            lid: normalizedLid,
-            pn: pn || null,
-            requestId: incomingRequestId
-          });
-        } catch (e) {
-          console.error(`[LID] Failed to resolve PN for LID ${normalizedLid}:`, e);
-          return send(ws, {
-            type: 'error',
-            action: 'getPNForLID',
-            error: e.message || 'pn_lookup_failed',
-            requestId: incomingRequestId
-          });
-        }
-      }
-
-      if (type === 'getLIDsForPNs') {
-        const { pns } = msg || {};
-        if (!Array.isArray(pns) || pns.length === 0) {
-          return send(ws, { type: 'error', action: 'getLIDsForPNs', error: 'pns_required', requestId: incomingRequestId });
-        }
-
-        const normalizedPns = [...new Set(pns.map(normalizeJid).filter(Boolean))];
-        console.log(`[LID] Batch resolving ${normalizedPns.length} PN(s)`);
-        const mappings = {};
-        for (const pn of normalizedPns) {
-          try {
-            mappings[pn] = await getLidForPn(pn);
-            if (mappings[pn]) {
-              console.log(`[LID] Batch item ${pn}: LID=${mappings[pn]}`);
-            } else {
-              console.log(`[LID] Batch item ${pn}: not_found`);
-            }
-          } catch (e) {
-            mappings[pn] = null;
-            console.error(`[LID] Failed to resolve LID for PN ${pn}:`, e);
-          }
-        }
-
-        return send(ws, {
-          type: 'ack',
-          action: 'getLIDsForPNs',
-          mappings,
-          requestId: incomingRequestId
-        });
-      }
-
-      if (type === 'storeLIDPNMapping') {
-        const { lid, pn } = msg || {};
-        if (!lid || !pn) {
-          console.warn('[LID] storeLIDPNMapping received invalid payload', msg);
-          return;
-        }
-
-        const normalizedLid = normalizeJid(lid);
-        const normalizedPn = normalizeJid(pn);
-        console.log(`[LID] Persisting mapping ${normalizedLid} ↔ ${normalizedPn}`);
-        try {
-          storeLidPnMapping(normalizedLid, normalizedPn);
-        } catch (e) {
-          console.error(`[LID] Failed to persist mapping ${normalizedLid} ↔ ${normalizedPn}:`, e);
-        }
-        return;
-      }
-
-      if (type === 'storeLIDPNMappings') {
-        const { mappings } = msg || {};
-        if (!Array.isArray(mappings) || mappings.length === 0) {
-          console.warn('[LID] storeLIDPNMappings received empty payload');
-          return;
-        }
-
-        console.log(`[LID] Persisting batch of ${mappings.length} mapping(s)`);
-        for (const entry of mappings) {
-          const normalizedLid = normalizeJid(entry?.lid);
-          const normalizedPn = normalizeJid(entry?.pn);
-          if (!normalizedLid || !normalizedPn) {
-            console.warn('[LID] Skipping invalid batch mapping entry', entry);
-            continue;
-          }
-          try {
-            storeLidPnMapping(normalizedLid, normalizedPn);
-            console.log(`[LID] Persisted batch mapping ${normalizedLid} ↔ ${normalizedPn}`);
-          } catch (e) {
-            console.error(`[LID] Failed to persist batch mapping ${normalizedLid} ↔ ${normalizedPn}:`, e);
-          }
-        }
-        return;
       }
 
       if (type === 'downloadMedia') {
@@ -1103,28 +903,22 @@ async function start() {
 
   // Forwarding incoming messages to authorized clients
   sock.ev.on('messages.upsert', (evt) => {
-    if (!Array.isArray(evt?.messages) || !evt.messages.length) return;
-    for (const m of evt.messages) {
-      const wrapped = normalizeOpenWAMessage(m, {
-        store,
-        userId: sock?.user?.id,
-        rememberMessage,
-        rememberQuoted
-      });
-      if (!wrapped) continue;
+    if (!evt?.messages) return;
+    const wrapped = normalizeOpenWAMessage(evt, {
+      store,
+      userId: sock?.user?.id,
+      rememberMessage,
+      rememberQuoted
+    });
+    if (wrapped) {
+      // remember media for later download
+      const m = evt.messages?.[0];
       try {
-        if (
-          m?.message?.imageMessage
-          || m?.message?.videoMessage
-          || m?.message?.stickerMessage
-          || m?.message?.audioMessage
-          || m?.message?.documentMessage
-        ) {
+        if (m?.message?.imageMessage || m?.message?.videoMessage || m?.message?.stickerMessage || m?.message?.audioMessage || m?.message?.documentMessage) {
           rememberMedia(m);
         }
       } catch {}
       broadcastAuthorized(wrapped);
-      markMessageAsRead(m);
     }
   });
 

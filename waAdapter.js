@@ -254,18 +254,15 @@ class BaileysWsAdapter {
         lidMapping: {
           getLIDForPN: async (pn) => {
             // Request LID for PN from server
-            const res = await this._sendAndWaitForAck({ type: 'getLIDForPN', pn });
-            return res && typeof res.lid === 'string' ? res.lid : res?.lid || null;
+            return this._sendAndWaitForAck({ type: 'getLIDForPN', pn });
           },
           getPNForLID: async (lid) => {
             // Request PN for LID from server
-            const res = await this._sendAndWaitForAck({ type: 'getPNForLID', lid });
-            return res && typeof res.pn === 'string' ? res.pn : res?.pn || null;
+            return this._sendAndWaitForAck({ type: 'getPNForLID', lid });
           },
           getLIDsForPNs: async (pns) => {
             // Request LIDs for multiple PNs from server
-            const res = await this._sendAndWaitForAck({ type: 'getLIDsForPNs', pns });
-            return res?.mappings || {};
+            return this._sendAndWaitForAck({ type: 'getLIDsForPNs', pns });
           },
           storeLIDPNMapping: (lid, pn) => {
             // Store LID-PN mapping on server

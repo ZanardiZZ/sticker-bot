@@ -12,6 +12,7 @@ const { handleForceCommand } = require('./handlers/force');
 const { handleEditCommand } = require('./handlers/edit');
 const { handleThemeCommand } = require('./handlers/theme');
 const { handleVerifyCommand } = require('./handlers/verify');
+const { handleCriarMemeCommand, handleExportarMemesCommand } = require('./handlers/meme');
 
 // Utilities
 const validation = require('./validation');
@@ -40,11 +41,12 @@ const clearDescriptionCmds = [];
  * @returns {boolean} True if command was handled
  */
 async function handleCommand(client, message, chatId) {
-  if (!message.body || !message.body.startsWith('#')) {
+  const rawCommand = message.body || message.caption || '';
+  if (!rawCommand || !rawCommand.startsWith('#')) {
     return false;
   }
 
-  const { command, params } = parseCommand(message.body);
+  const { command, params } = parseCommand(rawCommand);
 
   try {
     switch (command) {
@@ -86,7 +88,15 @@ async function handleCommand(client, message, chatId) {
         await handleVerifyCommand(client, message, chatId);
         return true;
 
-        case '#ping': {
+      case '#criar':
+        await safeReply(client, chatId, '🚧 Pipeline de memes temporariamente indisponível. Tente novamente mais tarde.', message);
+        return true;
+
+      case '#exportarmemes':
+        await handleExportarMemesCommand(client, message, chatId);
+        return true;
+
+      case '#ping': {
           // Build ping response
           const uptimeSeconds = Math.floor(process.uptime());
           function formatUptime(seconds) {
@@ -113,7 +123,7 @@ async function handleCommand(client, message, chatId) {
       
       default:
         // Check if it's an invalid command
-        if (validation.isValidCommand(message.body) === false) {
+        if (validation.isValidCommand(rawCommand) === false) {
           await validation.handleInvalidCommand(client, chatId);
           return true;
         }
