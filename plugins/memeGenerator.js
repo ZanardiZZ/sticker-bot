@@ -316,6 +316,17 @@ async function processarAudioParaMeme(client, audioMessage) {
   }
 }
 
+function normalizeMensagemId(value) {
+  if (!value) return null;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object') {
+    if (typeof value.messageId === 'string') return value.messageId;
+    if (typeof value.id === 'string') return value.id;
+    if (value.key && typeof value.key.id === 'string') return value.key.id;
+  }
+  return null;
+}
+
 async function registrarMeme({
   userJid,
   tipo = 'texto',
@@ -326,13 +337,14 @@ async function registrarMeme({
   mensagemId = null
 }) {
   const db = await getDb();
+  const mensagemIdClean = normalizeMensagemId(mensagemId);
   const result = await run(db, `INSERT INTO memes (user_jid, tipo, texto_original, prompt_final, caminho_imagem, sucesso, mensagem_id)
     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  [userJid || null, tipo, textoOriginal || null, promptFinal || null, caminhoImagem || null, sucesso ? 1 : 0, mensagemId]);
+  [userJid || null, tipo, textoOriginal || null, promptFinal || null, caminhoImagem || null, sucesso ? 1 : 0, mensagemIdClean]);
   const memeId = result.lastID;
-  if (mensagemId) {
+  if (mensagemIdClean) {
     try {
-      await run(db, `INSERT OR REPLACE INTO meme_messages (mensagem_id, meme_id) VALUES (?, ?)`, [mensagemId, memeId]);
+      await run(db, `INSERT OR REPLACE INTO meme_messages (mensagem_id, meme_id) VALUES (?, ?)`, [mensagemIdClean, memeId]);
     } catch (err) {
       console.warn('[MemeGen] registrarMeme - falha ao mapear mensagem:', err.message);
     }

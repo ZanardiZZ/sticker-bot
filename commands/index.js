@@ -89,7 +89,7 @@ async function handleCommand(client, message, chatId) {
         return true;
 
       case '#criar':
-        await safeReply(client, chatId, '🚧 Pipeline de memes temporariamente indisponível. Tente novamente mais tarde.', message);
+        await handleCriarMemeCommand(client, message, chatId, params);
         return true;
 
       case '#exportarmemes':
