@@ -10,17 +10,76 @@ const { normalizeText } = require('../utils/commandNormalizer');
 const VALID_COMMANDS = [
   '#random',
   '#editar',
-  '#editar ID', 
   '#top10',
   '#top5users',
-  '#ID',
+  '#id',
   '#forçar',
   '#count',
   '#tema',
   '#theme',
   '#verificar',
   '#verify',
-  '#ping'
+  '#ping',
+  '#criar',
+  '#exportarmemes'
+];
+
+const HELP_ENTRIES = [
+  {
+    command: '#criar <descrição ou áudio>',
+    description: 'Gera um meme inteligente. Use "texto em cima" / "texto em baixo" para legendar.',
+    example: '#criar usuário nerd reclamando, texto em cima MIMIMIMI, texto em baixo ODEIO STICKERS'
+  },
+  {
+    command: '#tema <palavras-chave> <quantidade opcional>',
+    description: 'Busca stickers existentes pelo tema informado.',
+    example: '#tema carros futuristas 3'
+  },
+  {
+    command: '#random',
+    description: 'Envia uma figurinha aleatória do acervo.',
+    example: '#random'
+  },
+  {
+    command: '#top10',
+    description: 'Mostra as 10 figurinhas mais usadas.',
+    example: '#top10'
+  },
+  {
+    command: '#top5users',
+    description: 'Ranking dos usuários que mais enviaram figurinhas.',
+    example: '#top5users'
+  },
+  {
+    command: '#id <número>',
+    description: 'Resgata uma figurinha específica pelo ID.',
+    example: '#id 5120'
+  },
+  {
+    command: '#editar',
+    description: 'Responde a uma figurinha para atualizar descrição e tags.',
+    example: '#editar'
+  },
+  {
+    command: '#forçar',
+    description: 'Salva uma figurinha semelhante mesmo com duplicidade.',
+    example: '#forçar'
+  },
+  {
+    command: '#count',
+    description: 'Informa quantas figurinhas existem no acervo.',
+    example: '#count'
+  },
+  {
+    command: '#exportarmemes',
+    description: 'Exporta os memes bem avaliados e o dataset de treinamento.',
+    example: '#exportarmemes'
+  },
+  {
+    command: '#ping',
+    description: 'Exibe informações de status do bot.',
+    example: '#ping'
+  }
 ];
 
 /**
@@ -50,10 +109,13 @@ function isValidCommand(messageBody) {
  * @param {string} chatId - Chat ID
  */
 async function handleInvalidCommand(client, chatId) {
-  await client.sendText(chatId,
-    `Comando não reconhecido.\nComandos disponíveis:\n` +
-    VALID_COMMANDS.join('\n')
-  );
+  const header = '╭══════════════════════╗\n' +
+                 '┃  🤖 Comandos do Sticker Bot\n' +
+                 '╰══════════════════════╯';
+  const body = HELP_ENTRIES.map(({ command, description, example }) =>
+    [`╭ ${command}`, `├ ${description}`, example ? `╰ Exemplo: ${example}` : '╰ '].join('\n')
+  ).join('\n\n');
+  await client.sendText(chatId, `${header}\n${body}`);
 }
 
 /**
@@ -90,6 +152,7 @@ function cleanDescriptionTags(description, tags) {
 
 module.exports = {
   VALID_COMMANDS,
+  HELP_ENTRIES,
   isValidCommand,
   handleInvalidCommand,
   cleanDescriptionTags

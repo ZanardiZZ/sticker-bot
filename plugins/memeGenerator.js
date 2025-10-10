@@ -10,7 +10,7 @@ const { downloadMediaForMessage } = require('../utils/mediaDownload');
 require('dotenv').config();
 
 const DATA_DIR = path.resolve(__dirname, '..', 'data');
-const IMAGE_DIR = path.join(DATA_DIR, 'memes');
+const STICKER_DIR = path.resolve(__dirname, '..', 'bot', 'media');
 const DB_PATH = path.join(DATA_DIR, 'memes.sqlite');
 const DATASET_PATH = path.join(DATA_DIR, 'prompt_training_set.json');
 const EXPORT_PATH = path.join(DATA_DIR, 'memes_best.json');
@@ -28,7 +28,7 @@ let promptCache = [];
 
 function ensureDataDirs() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (!fs.existsSync(IMAGE_DIR)) fs.mkdirSync(IMAGE_DIR, { recursive: true });
+  if (!fs.existsSync(STICKER_DIR)) fs.mkdirSync(STICKER_DIR, { recursive: true });
 }
 
 function ensureOpenAiClient() {
@@ -259,8 +259,8 @@ async function gerarImagemMeme(prompt, tipo = 'texto') {
   const tmpOriginalPath = path.join('/tmp', `meme-${Date.now()}-${Math.floor(Math.random() * 10_000)}.png`);
   await fsp.writeFile(tmpOriginalPath, rawBuffer);
 
-  const filename = `meme-${Date.now()}-${Math.floor(Math.random() * 10_000)}.webp`;
-  const finalPath = path.join(IMAGE_DIR, filename);
+  const filename = `media-${Date.now()}-${Math.floor(Math.random() * 10_000)}.webp`;
+  const finalPath = path.join(STICKER_DIR, filename);
   await sharp(rawBuffer)
     .resize(512, 512, { fit: 'cover' })
     .webp({ quality: 88 })
