@@ -65,3 +65,4 @@ open-wa-session.sw_col.json
 auth_info_baileys/
 bot/temp
 data/
+data/memes.sqlite*
