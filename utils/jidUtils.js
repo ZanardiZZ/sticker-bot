@@ -153,9 +153,33 @@ async function getPhoneNumberForLid(sock, lid) {
  */
 function normalizeJid(jid) {
     if (!jid) return null;
-    
-    // Remove caracteres extras e normaliza formato
-    return jid.trim().toLowerCase();
+
+    let raw = jid;
+
+    if (typeof raw === 'object') {
+        // Baileys pode retornar objetos com diferentes propriedades contendo o JID real
+        if (typeof raw.jid === 'string') {
+            raw = raw.jid;
+        } else if (typeof raw.id === 'string') {
+            raw = raw.id;
+        } else if (typeof raw.user === 'string') {
+            const server = typeof raw.server === 'string' ? raw.server : (typeof raw.domain === 'string' ? raw.domain : '');
+            raw = server ? `${raw.user}@${server}` : raw.user;
+        } else if (typeof raw.toString === 'function' && raw.toString !== Object.prototype.toString) {
+            raw = raw.toString();
+        } else {
+            return null;
+        }
+    }
+
+    if (typeof raw !== 'string') {
+        raw = String(raw);
+    }
+
+    const cleaned = raw.trim();
+    if (!cleaned) return null;
+
+    return cleaned.toLowerCase();
 }
 
 module.exports = {
