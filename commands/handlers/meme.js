@@ -331,13 +331,13 @@ async function handleCriarMemeCommand(client, message, chatId, params = '') {
     }
 
     const display = formatPromptForDisplay(promptInfo.prompt);
-    await sendStatusMessage(client, chatId, `🧠 Prompt criado: ${display}`);
+    //await sendStatusMessage(client, chatId, `🧠 Prompt criado: ${display}`);
 
     if (!imagemInfo) {
       imagemInfo = await withTyping(client, chatId, async () => gerarImagemMeme(promptInfo.prompt, tipo));
     }
 
-    await sendStatusMessage(client, chatId, '🖼️ Enviando figurinha...');
+    //await sendStatusMessage(client, chatId, '🖼️ Enviando figurinha...');
 
     if (captions.topText || captions.bottomText) {
       try {
