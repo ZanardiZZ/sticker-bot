@@ -49,6 +49,19 @@ const ALLOWED_TOKENS = (process.env.BAILEYS_ALLOWED_TOKENS || '')
 // token -> { ws, allowedChats: Set<string> }
 const clientsByToken = new Map();
 
+function isAnimatedWebpBuffer(buf) {
+  try {
+    if (!buf || buf.length < 21) return false;
+    const riff = buf.slice(0, 4).toString('ascii') === 'RIFF';
+    const webp = buf.slice(8, 12).toString('ascii') === 'WEBP';
+    const vp8x = buf.slice(12, 16).toString('ascii') === 'VP8X';
+    const animBit = (buf[20] & 0x10) === 0x10;
+    return riff && webp && vp8x && animBit;
+  } catch {
+    return false;
+  }
+}
+
 function createSimpleStore() {
   return {
     contacts: new Map(),
@@ -161,6 +174,105 @@ function getChatFromStore(store, jid) {
   return getFromStore(store?.chats, jid) || getFromStore(store?.groupMetadata, jid);
 }
 
+const MEDIA_MESSAGE_TYPES = new Set([
+  'imageMessage',
+  'videoMessage',
+  'stickerMessage',
+  'audioMessage',
+  'documentMessage'
+]);
+
+const TEXTUAL_MESSAGE_TYPES = new Set([
+  'conversation',
+  'extendedTextMessage',
+  'buttonsMessage',
+  'buttonsResponseMessage',
+  'listMessage',
+  'listResponseMessage',
+  'interactiveMessage',
+  'interactiveResponseMessage',
+  'templateButtonReplyMessage',
+  'templateMessage',
+  'contactMessage'
+]);
+
+const IGNORED_MESSAGE_TYPES = new Set([
+  'senderKeyDistributionMessage',
+  'messageContextInfo',
+  'protocolMessage',
+  'historySyncNotification',
+  'deviceSentMessage'
+]);
+
+const DEFAULT_MIMETYPES = {
+  imageMessage: 'image/jpeg',
+  videoMessage: 'video/mp4',
+  stickerMessage: 'image/webp',
+  audioMessage: 'audio/ogg',
+  documentMessage: 'application/octet-stream'
+};
+
+function unwrapBaileysMessageContent(message) {
+  if (!message) return { type: null, content: null };
+  if (message.ephemeralMessage?.message) return unwrapBaileysMessageContent(message.ephemeralMessage.message);
+  if (message.deviceSentMessage?.message) return unwrapBaileysMessageContent(message.deviceSentMessage.message);
+  if (message.documentWithCaptionMessage?.message) return unwrapBaileysMessageContent(message.documentWithCaptionMessage.message);
+  if (message.viewOnceMessage?.message) return unwrapBaileysMessageContent(message.viewOnceMessage.message);
+  if (message.viewOnceMessageV2?.message) return unwrapBaileysMessageContent(message.viewOnceMessageV2.message);
+  if (message.viewOnceMessageV2Extension?.message) return unwrapBaileysMessageContent(message.viewOnceMessageV2Extension.message);
+
+  const entries = Object.entries(message).filter(([, value]) => value);
+  if (!entries.length) return { type: null, content: null };
+
+  // Prefer textual message types first (preserves conversation/extended text semantics)
+  for (const [key, value] of entries) {
+    if (!value) continue;
+    if (TEXTUAL_MESSAGE_TYPES.has(key) || key === 'conversation') {
+      return { type: key, content: value };
+    }
+  }
+
+  // Then look for known media payloads
+  for (const [key, value] of entries) {
+    if (!value) continue;
+    if (MEDIA_MESSAGE_TYPES.has(key)) {
+      return { type: key, content: value };
+    }
+  }
+
+  // Skip known non-content wrappers like senderKeyDistribution
+  for (const [key, value] of entries) {
+    if (!value) continue;
+    if (IGNORED_MESSAGE_TYPES.has(key)) {
+      continue;
+    }
+    if (key.endsWith('Message')) {
+      return { type: key, content: value };
+    }
+  }
+
+  const [fallbackType, fallbackContent] = entries.find(([key]) => !IGNORED_MESSAGE_TYPES.has(key)) || entries[0];
+  return { type: fallbackType || null, content: fallbackContent || null };
+}
+
+function extractMediaFromWebMessageInfo(webMessageInfo) {
+  if (!webMessageInfo?.message) return { type: null, content: null };
+  const { type, content } = unwrapBaileysMessageContent(webMessageInfo.message);
+  if (MEDIA_MESSAGE_TYPES.has(type)) {
+    return { type, content };
+  }
+
+  // Fallback: scan top-level for media keys (covers senderKeyDistribution + media payload)
+  for (const mediaType of MEDIA_MESSAGE_TYPES) {
+    const direct = webMessageInfo.message[mediaType];
+    if (direct) {
+      return { type: mediaType, content: direct };
+    }
+  }
+
+  return { type: null, content: null };
+}
+
 function normalizeOpenWAMessage(msg, opts = {}) {
   const { store, userId, rememberMessage, rememberQuoted } = opts;
 
@@ -175,18 +287,7 @@ function normalizeOpenWAMessage(msg, opts = {}) {
 
   const isGroupMsg = String(remoteJid).endsWith('@g.us');
 
-  const unwrapMessageContent = (message) => {
-    if (!message) return { type: null, content: null };
-    if (message.viewOnceMessage?.message) return unwrapMessageContent(message.viewOnceMessage.message);
-    if (message.viewOnceMessageV2?.message) return unwrapMessageContent(message.viewOnceMessageV2.message);
-    if (message.viewOnceMessageV2Extension?.message) return unwrapMessageContent(message.viewOnceMessageV2Extension.message);
-    const entries = Object.entries(message).filter(([, value]) => value);
-    if (!entries.length) return { type: null, content: null };
-    const [type, content] = entries[0];
-    return { type, content };
-  };
-
-  const unwrap = unwrapMessageContent(m.message || {});
+  const unwrap = unwrapBaileysMessageContent(m.message || {});
   const content = unwrap.content || {};
   const messageType = unwrap.type || '';
   const contextInfo = content.contextInfo
@@ -198,8 +299,10 @@ function normalizeOpenWAMessage(msg, opts = {}) {
     || null;
 
   const extractBody = () => {
+    const directText = typeof content === 'string' ? content : null;
     return (
-      content?.text
+      directText
+      || content?.text
       || content?.caption
       || m.message?.conversation
       || m.message?.extendedTextMessage?.text
@@ -214,16 +317,14 @@ function normalizeOpenWAMessage(msg, opts = {}) {
   let isMedia = false;
   let mimetype = '';
   let type = 'chat';
-  if (messageType === 'imageMessage') {
-    isMedia = true; mimetype = content.mimetype || 'image/jpeg'; type = 'image';
-  } else if (messageType === 'videoMessage') {
-    isMedia = true; mimetype = content.mimetype || 'video/mp4'; type = 'video';
-  } else if (messageType === 'stickerMessage') {
-    isMedia = true; mimetype = content.mimetype || 'image/webp'; type = 'sticker';
-  } else if (messageType === 'audioMessage') {
-    isMedia = true; mimetype = content.mimetype || 'audio/ogg'; type = 'audio';
-  } else if (messageType === 'documentMessage') {
-    isMedia = true; mimetype = content.mimetype || 'application/octet-stream'; type = 'document';
+  if (MEDIA_MESSAGE_TYPES.has(messageType)) {
+    isMedia = true;
+    mimetype = content?.mimetype || DEFAULT_MIMETYPES[messageType] || 'application/octet-stream';
+    if (messageType === 'imageMessage') type = 'image';
+    else if (messageType === 'videoMessage') type = 'video';
+    else if (messageType === 'stickerMessage') type = 'sticker';
+    else if (messageType === 'audioMessage') type = 'audio';
+    else if (messageType === 'documentMessage') type = 'document';
   }
 
   const senderId = fromMe
@@ -269,7 +370,7 @@ function normalizeOpenWAMessage(msg, opts = {}) {
   let quotedMsg = null;
   let quotedMsgId = null;
   if (contextInfo?.quotedMessage) {
-    const qUnwrap = unwrapMessageContent(contextInfo.quotedMessage);
+    const qUnwrap = unwrapBaileysMessageContent(contextInfo.quotedMessage);
     const qContent = qUnwrap.content || {};
     const qTypeRaw = qUnwrap.type || '';
 
@@ -284,17 +385,17 @@ function normalizeOpenWAMessage(msg, opts = {}) {
     let qMimetype = '';
 
     if (qTypeRaw === 'imageMessage') {
-      qType = 'image'; qIsMedia = true; qMimetype = qContent.mimetype || 'image/jpeg';
+      qType = 'image'; qIsMedia = true; qMimetype = qContent?.mimetype || DEFAULT_MIMETYPES.imageMessage;
       if (!qBody) qBody = qContent?.caption || '';
     } else if (qTypeRaw === 'videoMessage') {
-      qType = 'video'; qIsMedia = true; qMimetype = qContent.mimetype || 'video/mp4';
+      qType = 'video'; qIsMedia = true; qMimetype = qContent?.mimetype || DEFAULT_MIMETYPES.videoMessage;
       if (!qBody) qBody = qContent?.caption || '';
     } else if (qTypeRaw === 'stickerMessage') {
-      qType = 'sticker'; qIsMedia = true; qMimetype = qContent.mimetype || 'image/webp';
+      qType = 'sticker'; qIsMedia = true; qMimetype = qContent?.mimetype || DEFAULT_MIMETYPES.stickerMessage;
     } else if (qTypeRaw === 'audioMessage') {
-      qType = 'audio'; qIsMedia = true; qMimetype = qContent.mimetype || 'audio/ogg';
+      qType = 'audio'; qIsMedia = true; qMimetype = qContent?.mimetype || DEFAULT_MIMETYPES.audioMessage;
     } else if (qTypeRaw === 'documentMessage') {
-      qType = 'document'; qIsMedia = true; qMimetype = qContent.mimetype || 'application/octet-stream';
+      qType = 'document'; qIsMedia = true; qMimetype = qContent?.mimetype || DEFAULT_MIMETYPES.documentMessage;
     }
 
     const qId = contextInfo.stanzaId || contextInfo.stanzaID || contextInfo.messageId || null;
@@ -600,13 +701,8 @@ async function start() {
   function rememberQuoted(normalized, raw) {
     rememberMessage(normalized, raw);
     try {
-      if (
-        raw?.message?.imageMessage
-        || raw?.message?.videoMessage
-        || raw?.message?.stickerMessage
-        || raw?.message?.audioMessage
-        || raw?.message?.documentMessage
-      ) {
+      const mediaInfo = extractMediaFromWebMessageInfo(raw);
+      if (mediaInfo.type) {
         rememberMedia(raw);
       }
     } catch {}
@@ -627,13 +723,13 @@ async function start() {
   }
 
   async function buildMediaBuffer(m) {
-    const content = m.message?.imageMessage || m.message?.videoMessage || m.message?.stickerMessage || m.message?.audioMessage || m.message?.documentMessage;
-    if (!content) throw new Error('no_media');
+    const { type: mediaType, content } = extractMediaFromWebMessageInfo(m);
+    if (!mediaType || !content) throw new Error('no_media');
     let kind = 'image';
-    if (m.message?.videoMessage) kind = 'video';
-    else if (m.message?.stickerMessage) kind = 'sticker';
-    else if (m.message?.audioMessage) kind = 'audio';
-    else if (m.message?.documentMessage) kind = 'document';
+    if (mediaType === 'videoMessage') kind = 'video';
+    else if (mediaType === 'stickerMessage') kind = 'sticker';
+    else if (mediaType === 'audioMessage') kind = 'audio';
+    else if (mediaType === 'documentMessage') kind = 'document';
     const stream = await downloadContentFromMessage(content, kind);
     const chunks = [];
     for await (const chunk of stream) chunks.push(chunk);
@@ -788,13 +884,14 @@ async function start() {
       }
 
       if (type === 'sendRawWebpAsSticker') {
-        const { chatId, dataUrl } = msg || {};
+        const { chatId, dataUrl, options } = msg || {};
         if (!chatId || !canSendTo(chatId)) return send(ws, { type: 'error', error: 'forbidden' });
         try {
           const match = /^data:image\/webp;base64,(.+)$/i.exec(String(dataUrl || ''));
           if (!match) throw new Error('invalid_data_url');
           const buf = Buffer.from(match[1], 'base64');
-          await sock.sendMessage(chatId, { sticker: buf });
+          const animated = typeof options?.animated === 'boolean' ? options.animated : isAnimatedWebpBuffer(buf);
+          await sock.sendMessage(chatId, { sticker: buf, mimetype: 'image/webp', isAnimated: animated });
           send(ws, { type: 'ack', action: 'sendRawWebpAsSticker', chatId, requestId: incomingRequestId });
         } catch (e) {
           send(ws, { type: 'error', error: e.message, requestId: incomingRequestId });
@@ -803,12 +900,13 @@ async function start() {
       }
 
       if (type === 'sendImageAsSticker') {
-        const { chatId, filePath } = msg || {};
+        const { chatId, filePath, options } = msg || {};
         if (!chatId || !canSendTo(chatId)) return send(ws, { type: 'error', error: 'forbidden' });
         try {
           // Expect already webp. If not, WhatsApp will likely reject.
           const buf = fs.readFileSync(filePath);
-          await sock.sendMessage(chatId, { sticker: buf });
+          const animated = typeof options?.animated === 'boolean' ? options.animated : isAnimatedWebpBuffer(buf);
+          await sock.sendMessage(chatId, { sticker: buf, mimetype: 'image/webp', isAnimated: animated });
           send(ws, { type: 'ack', action: 'sendImageAsSticker', chatId, requestId: incomingRequestId });
         } catch (e) {
           send(ws, { type: 'error', error: e.message, requestId: incomingRequestId });
@@ -821,7 +919,7 @@ async function start() {
         if (!chatId || !canSendTo(chatId)) return send(ws, { type: 'error', error: 'forbidden' });
         try {
           const stickerBuf = await convertToAnimatedWebp(filePath);
-          await sock.sendMessage(chatId, { sticker: stickerBuf });
+          await sock.sendMessage(chatId, { sticker: stickerBuf, mimetype: 'image/webp', isAnimated: true });
           return send(ws, { type: 'ack', action: type, chatId, requestId: incomingRequestId });
         } catch (e) {
           return send(ws, { type: 'error', error: e.message || String(e), requestId: incomingRequestId });
@@ -841,7 +939,8 @@ async function start() {
         if (!entryCan) return send(ws, { type: 'error', action: 'downloadMedia', messageId, error: 'forbidden' });
         try {
           const buf = await buildMediaBuffer(m);
-          const mimetype = m.message?.imageMessage?.mimetype || m.message?.videoMessage?.mimetype || m.message?.stickerMessage?.mimetype || m.message?.audioMessage?.mimetype || m.message?.documentMessage?.mimetype || 'application/octet-stream';
+          const { type: mediaType, content } = extractMediaFromWebMessageInfo(m);
+          const mimetype = content?.mimetype || DEFAULT_MIMETYPES[mediaType] || 'application/octet-stream';
           const dataUrl = `data:${mimetype};base64,${buf.toString('base64')}`;
           return send(ws, { type: 'media', messageId, mimetype, dataUrl, requestId: incomingRequestId });
         } catch (e) {
@@ -914,7 +1013,8 @@ async function start() {
       // remember media for later download
       const m = evt.messages?.[0];
       try {
-        if (m?.message?.imageMessage || m?.message?.videoMessage || m?.message?.stickerMessage || m?.message?.audioMessage || m?.message?.documentMessage) {
+        const mediaInfo = extractMediaFromWebMessageInfo(m);
+        if (mediaInfo.type) {
           rememberMedia(m);
         }
       } catch {}

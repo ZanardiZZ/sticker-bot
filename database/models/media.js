@@ -2,40 +2,94 @@
  * Media model - handles media-related database operations
  */
 
-const { db } = require('../connection');
+const { db, dbHandler } = require('../connection');
+
+/**
+ * Retrieves the next available media ID, preferring gaps from deletions
+ * @returns {Promise<number>} ID to use for next media insertion
+ */
+async function getNextAvailableMediaId() {
+  try {
+    const firstResult = await dbHandler.get('SELECT COUNT(*) as count FROM media WHERE id = 1');
+    if (!firstResult || firstResult.count === 0) {
+      return 1;
+    }
+
+    const gapResult = await dbHandler.get(`
+      SELECT MIN(t1.id + 1) as gap_start
+      FROM media t1
+      LEFT JOIN media t2 ON t1.id + 1 = t2.id
+      WHERE t2.id IS NULL
+      AND t1.id + 1 <= (SELECT MAX(id) FROM media)
+    `);
+
+    if (gapResult && gapResult.gap_start) {
+      return gapResult.gap_start;
+    }
+
+    const nextResult = await dbHandler.get('SELECT COALESCE(MAX(id), 0) + 1 as next_id FROM media');
+    return nextResult && typeof nextResult.next_id === 'number' ? nextResult.next_id : 1;
+  } catch (error) {
+    console.error('[DB] Erro ao calcular próximo ID disponível:', error);
+    throw error;
+  }
+}
 
 /**
  * Saves media to the database
  * @param {object} mediaData - Media data object
  * @returns {Promise<number>} Media ID
  */
-function saveMedia(mediaData) {
-  return new Promise((resolve, reject) => {
-    const {
-      chatId,
-      groupId = null,
-      senderId = null,
-      filePath,
-      mimetype,
-      timestamp,
-      description = null,
-      hashVisual,
-      hashMd5,
-      nsfw = 0,
-      extractedText = null
-    } = mediaData;
+async function saveMedia(mediaData) {
+  const {
+    chatId,
+    groupId = null,
+    senderId = null,
+    filePath,
+    mimetype,
+    timestamp,
+    description = null,
+    hashVisual,
+    hashMd5,
+    nsfw = 0,
+    extractedText = null
+  } = mediaData;
 
-    db.run(
-      `INSERT INTO media (chat_id, group_id, sender_id, file_path, mimetype, timestamp, 
-                          description, hash_visual, hash_md5, nsfw, extracted_text)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [chatId, groupId, senderId, filePath, mimetype, timestamp, description, hashVisual, hashMd5, nsfw, extractedText],
-      function (err) {
-        if (err) reject(err);
-        else resolve(this.lastID);
-      }
+  await dbHandler.run('BEGIN IMMEDIATE TRANSACTION');
+
+  try {
+    const mediaId = await getNextAvailableMediaId();
+
+    await dbHandler.run(
+      `INSERT INTO media (id, chat_id, group_id, sender_id, file_path, mimetype, timestamp,
+                          description, hash_visual, hash_md5, nsfw, extracted_text, count_random)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      [
+        mediaId,
+        chatId,
+        groupId,
+        senderId,
+        filePath,
+        mimetype,
+        timestamp,
+        description,
+        hashVisual,
+        hashMd5,
+        nsfw,
+        extractedText
+      ]
     );
-  });
+
+    await dbHandler.run('COMMIT');
+    return mediaId;
+  } catch (error) {
+    try {
+      await dbHandler.run('ROLLBACK');
+    } catch (rollbackError) {
+      console.error('[DB] Falha ao executar ROLLBACK após erro em saveMedia:', rollbackError);
+    }
+    throw error;
+  }
 }
 
 /**
@@ -258,5 +312,6 @@ module.exports = {
   countMedia,
   findByHashMd5,
   getTop10Media,
-  findMediaByTheme
+  findMediaByTheme,
+  getNextAvailableMediaId
 };

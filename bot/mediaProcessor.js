@@ -206,35 +206,44 @@ async function processIncomingMedia(client, message) {
       return;
     }
     if (message.mimetype.startsWith('image/') && message.mimetype !== 'image/gif') {
-      const TARGET_STICKER_SIZE = 512;
-      const maintainAlphaBackground = { r: 0, g: 0, b: 0, alpha: 0 };
-      const webpOptions = {
-        quality: 90,
-        alphaQuality: 100,
-        smartSubsample: true,
-        effort: 6
-      };
+      const incomingAnimatedWebp = message.mimetype === 'image/webp' && isAnimatedWebpBuffer(buffer);
+      if (incomingAnimatedWebp) {
+        bufferWebp = Buffer.from(buffer);
+        await ensureVisualHashFromBuffer(bufferWebp, 'animated-webp');
+      } else {
+        const TARGET_STICKER_SIZE = 512;
+        const maintainAlphaBackground = { r: 0, g: 0, b: 0, alpha: 0 };
+        const webpOptions = {
+          quality: 90,
+          alphaQuality: 100,
+          smartSubsample: true,
+          effort: 6
+        };
 
-      // Replica a estratégia usada nos GIFs animados: mantêm aspecto original,
-      // centraliza em canvas 512x512 e evita cortes ou distorções.
-      bufferWebp = await sharp(tmpFilePath)
-        .resize(TARGET_STICKER_SIZE, TARGET_STICKER_SIZE, {
-          fit: 'contain',
-          position: 'centre',
-          background: maintainAlphaBackground,
-          withoutEnlargement: true
-        })
-        .webp(webpOptions)
-        .toBuffer();
+        const sharpOptions = message.mimetype === 'image/webp' ? { animated: true } : undefined;
+        const makeSharp = () => (sharpOptions ? sharp(tmpFilePath, sharpOptions) : sharp(tmpFilePath));
 
-      // Garante compatibilidade com stickers muito pequenos preservando dimensões originais
-      // quando nenhuma transformação é necessária.
-      if (!bufferWebp || bufferWebp.length === 0) {
-        bufferWebp = await sharp(tmpFilePath).webp(webpOptions).toBuffer();
-      }
+        // Replica a estratégia usada nos GIFs animados: mantêm aspecto original,
+        // centraliza em canvas 512x512 e evita cortes ou distorções.
+        bufferWebp = await makeSharp()
+          .resize(TARGET_STICKER_SIZE, TARGET_STICKER_SIZE, {
+            fit: 'contain',
+            position: 'centre',
+            background: maintainAlphaBackground,
+            withoutEnlargement: true
+          })
+          .webp(webpOptions)
+          .toBuffer();
 
-      if (!bufferWebp || bufferWebp.length === 0) {
-        throw new Error('Falha ao converter imagem estática para WebP padronizado');
+        // Garante compatibilidade com stickers muito pequenos preservando dimensões originais
+        // quando nenhuma transformação é necessária.
+        if (!bufferWebp || bufferWebp.length === 0) {
+          bufferWebp = await makeSharp().webp(webpOptions).toBuffer();
+        }
+
+        if (!bufferWebp || bufferWebp.length === 0) {
+          throw new Error('Falha ao converter imagem estática para WebP padronizado');
+        }
       }
 
       extToSave = 'webp';

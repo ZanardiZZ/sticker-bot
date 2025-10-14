@@ -188,35 +188,51 @@ function deleteLidMapping(lid) {
  * @returns {Promise<string>} Normalized user ID
  */
 async function resolveSenderId(sock, jid) {
-    const { db } = require('../connection');
     if (!jid) return null;
-    
+
     const normalizedJid = normalizeJid(jid);
-    
-    // Try to get preferred ID (LID if available)
+    if (!normalizedJid) return null;
+
     let preferredId = normalizedJid;
-    
-    try {
-        if (isPnUser(normalizedJid) && sock?.signalRepository?.lidMapping) {
-            // Try to get LID for PN
-            const lid = await sock.signalRepository.lidMapping.getLIDForPN(normalizedJid);
-            if (lid) {
-                preferredId = lid;
-                // Store mapping
-                storeLidPnMapping(lid, normalizedJid);
+
+    if (isPnUser(normalizedJid)) {
+        try {
+            const existingLid = await getLidForPn(normalizedJid);
+            if (existingLid) {
+                preferredId = existingLid;
+                return preferredId;
             }
-        } else if (isLidUser(normalizedJid) && sock?.signalRepository?.lidMapping) {
-            // Try to get PN for LID (for completeness)
-            const pn = await sock.signalRepository.lidMapping.getPNForLID(normalizedJid);
-            if (pn) {
-                // Store mapping
-                storeLidPnMapping(normalizedJid, pn);
+        } catch (error) {
+            console.log(`[JID] Falha ao consultar LID local para ${normalizedJid}:`, error?.message || error);
+        }
+
+        const remoteResolver = sock?.signalRepository?.lidMapping?.getLIDForPN;
+        if (typeof remoteResolver === 'function') {
+            try {
+                const lid = await remoteResolver.call(sock.signalRepository.lidMapping, normalizedJid);
+                const normalizedLid = normalizeJid(lid);
+                if (normalizedLid) {
+                    preferredId = normalizedLid;
+                    storeLidPnMapping(normalizedLid, normalizedJid);
+                }
+            } catch (error) {
+                if (error?.message !== 'ack_timeout') {
+                    console.log(`[JID] Erro ao resolver sender ID remoto para ${normalizedJid}:`, error?.message || error);
+                }
             }
         }
-    } catch (error) {
-        console.log(`[JID] Erro ao resolver sender ID para ${normalizedJid}:`, error.message);
+    } else if (isLidUser(normalizedJid)) {
+        try {
+            const existingPn = await getPnForLid(normalizedJid);
+            if (existingPn) {
+                storeLidPnMapping(normalizedJid, existingPn);
+            }
+        } catch (error) {
+            console.log(`[JID] Falha ao consultar PN local para ${normalizedJid}:`, error?.message || error);
+        }
+        // For LIDs, return as-is to avoid unnecessary network lookups that can timeout
     }
-    
+
     return preferredId;
 }
 

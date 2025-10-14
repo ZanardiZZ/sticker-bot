@@ -203,6 +203,8 @@ async function gerarPromptMeme(textoOriginal) {
   if (reutilizado) {
     return {
       prompt: reutilizado.prompt_final,
+      topText: '',
+      bottomText: '',
       reutilizado: true,
       origemId: reutilizado.id
     };
@@ -212,25 +214,51 @@ async function gerarPromptMeme(textoOriginal) {
   console.log('[MemeGen] prompt - solicitando ao modelo GPT');
   const response = await openai.chat.completions.create({
     model: PROMPT_MODEL,
-    temperature: 0.7,
-    max_tokens: 400,
+    temperature: 0.6,
+    max_tokens: 500,
     messages: [
       {
         role: 'system',
-        content: 'Você cria descrições visuais engraçadas para geração de memes. Seja específico com cenário, estilo visual, personagens e elementos icônicos. Responda somente com o prompt visual final.'
+        content: 'Você recebe pedidos de figurinhas e responde em JSON. Extraia exatamente o estilo visual solicitado pelo usuário, sem impor estilos genéricos ou mencionar “meme”. Sempre retorne apenas o JSON com as chaves "image_prompt" (descrição visual fiel ao pedido, sem palavras na arte), "caption_top" e "caption_bottom" (legendas externas; use string vazia se não houver). Nunca inclua texto dentro de "image_prompt".'
       },
       {
         role: 'user',
-        content: `Crie um prompt detalhado, em português, para gerar uma imagem de meme engraçada. Combine humor inteligente com referências visuais claras. Descrição do usuário: ${normalized}`
+        content: normalized
       }
     ]
   });
-  const prompt = response.choices?.[0]?.message?.content?.trim();
-  if (!prompt) {
-    throw new Error('Falha ao gerar prompt de meme');
+
+  const rawContent = response.choices?.[0]?.message?.content || '';
+  let prompt = rawContent.trim();
+  let topText = '';
+  let bottomText = '';
+
+  try {
+    const jsonStart = rawContent.indexOf('{');
+    const jsonEnd = rawContent.lastIndexOf('}');
+    if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+      const parsed = JSON.parse(rawContent.slice(jsonStart, jsonEnd + 1));
+      prompt = String(parsed.image_prompt || '').trim();
+      topText = String(parsed.caption_top || '').trim();
+      bottomText = String(parsed.caption_bottom || '').trim();
+    }
+  } catch (err) {
+    console.warn('[MemeGen] prompt - resposta não JSON, utilizando fallback:', err.message);
   }
+
+  if (!prompt) {
+    prompt = rawContent || normalized;
+  }
+
+  if (!/sem texto/i.test(prompt)) {
+    prompt = `${prompt}
+Sem texto sobre a imagem.`.trim();
+  }
+
   return {
     prompt,
+    topText,
+    bottomText,
     reutilizado: false
   };
 }
@@ -242,11 +270,13 @@ async function gerarImagemMeme(prompt, tipo = 'texto') {
   await initMemesDB();
   const openai = ensureOpenAiClient();
   const quality = tipo === 'audio' ? 'medium' : DEFAULT_IMAGE_QUALITY;
+  const safePrompt = `${prompt}
+Sem texto, palavras, letras ou legendas na imagem.`.trim();
 
   console.log(`[MemeGen] imagem - gerando com qualidade ${quality}`);
   const imageResponse = await openai.images.generate({
     model: IMAGE_MODEL,
-    prompt,
+    prompt: safePrompt,
     size: IMAGE_SIZE,
     quality
   });
