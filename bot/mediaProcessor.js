@@ -206,10 +206,12 @@ async function processIncomingMedia(client, message) {
       return;
     }
     if (message.mimetype.startsWith('image/') && message.mimetype !== 'image/gif') {
+      const isStickerMessage = message.type === 'sticker' || message.isSticker === true;
       const incomingAnimatedWebp = message.mimetype === 'image/webp' && isAnimatedWebpBuffer(buffer);
-      if (incomingAnimatedWebp) {
+      const shouldPreserveOriginalWebp = message.mimetype === 'image/webp' && (isStickerMessage || incomingAnimatedWebp);
+      if (shouldPreserveOriginalWebp) {
         bufferWebp = Buffer.from(buffer);
-        await ensureVisualHashFromBuffer(bufferWebp, 'animated-webp');
+        await ensureVisualHashFromBuffer(bufferWebp, incomingAnimatedWebp ? 'animated-webp' : 'sticker');
       } else {
         const TARGET_STICKER_SIZE = 512;
         const maintainAlphaBackground = { r: 0, g: 0, b: 0, alpha: 0 };
