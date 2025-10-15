@@ -10,17 +10,24 @@ async function fetchMyStickers() {
       return;
     }
     el.innerHTML = `<div style="display:flex; flex-wrap:wrap; gap:12px;">` +
-      d.results.map(s =>
-        `<div style='text-align:center;'>
-          <a href="/media/${s.id}" target="_blank">
-            ${s.mimetype === 'video/mp4' ?
-              `<video src="${s.url}" style="max-width:64px;max-height:64px;border-radius:6px;" muted playsinline></video>` :
-              `<img src="${s.url}" style="max-width:64px;max-height:64px;border-radius:6px;" loading="lazy">`
-            }
-          </a>
-          <div style="font-size:.8rem; color:#64748b;">#${s.id}</div>
-        </div>`
-      ).join('') + '</div>';
+      d.results.map((s) => {
+        const url = s.url || '';
+        const mime = (s.mimetype || '').toLowerCase();
+        const isVideo = mime.startsWith('video/') || url.endsWith('.mp4');
+        const previewUrl = mime.startsWith('audio/') ? '/media/audio.png' : url;
+        const altText = mime.startsWith('audio/') ? 'Pré-visualização de áudio' : 'sticker';
+
+        return `
+          <div style='text-align:center;'>
+            <a href="/media/${s.id}" target="_blank">
+              ${isVideo
+                ? `<video src="${url}" style="max-width:64px;max-height:64px;border-radius:6px;" muted playsinline></video>`
+                : `<img src="${previewUrl}" data-original-src="${url}" style="max-width:64px;max-height:64px;border-radius:6px;" loading="lazy" alt="${altText}">`
+              }
+            </a>
+            <div style="font-size:.8rem; color:#64748b;">#${s.id}</div>
+          </div>`;
+      }).join('') + '</div>';
   } catch (e) {
     el.textContent = 'Erro ao carregar histórico.';
   }

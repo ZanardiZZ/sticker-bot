@@ -4,6 +4,7 @@
 require('dotenv').config();
 
 const WebSocket = require('ws');
+const { parseBase64DataUrl } = require('./utils/dataUrl');
 
 class BaileysWsAdapter {
   constructor({ url, token, chats = ['*'] }) {
@@ -138,11 +139,10 @@ class BaileysWsAdapter {
 
   async getMediaBuffer(messageId) {
     const res = await this.downloadMedia(messageId);
-    const m = /^data:([^;]+);base64,(.+)$/i.exec(res.dataUrl || '');
-    if (!m) throw new Error('invalid_data_url');
+    const { buffer, mimetype } = parseBase64DataUrl(res.dataUrl || '');
     return {
-      buffer: Buffer.from(m[2], 'base64'),
-      mimetype: m[1]
+      buffer,
+      mimetype: res.mimetype || mimetype
     };
   }
 

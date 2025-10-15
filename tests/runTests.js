@@ -24,6 +24,7 @@ const { testMultiFrameDisableFeature } = require('./unit/multiFrameDisabled.test
 const { tests: mockBaileysIntegrationTests } = require('./integration/mockBaileysIntegration.test');
 const { tests: mediaSendHandlerTests } = require('./unit/mediaSendHandlers.test');
 const { tests: processIncomingMediaTests } = require('./unit/processIncomingMedia.test');
+const { tests: dataUrlTests } = require('./unit/dataUrl.test');
 
 
 async function runAllTests() {
@@ -49,6 +50,7 @@ async function runAllTests() {
     results.push(await runTestSuite('Mock Baileys Integration Tests', mockBaileysIntegrationTests));
     results.push(await runTestSuite('Media Sending Helper Tests', mediaSendHandlerTests));
     results.push(await runTestSuite('Process Incoming Media Tests', processIncomingMediaTests));
+    results.push(await runTestSuite('Data URL Utils Tests', dataUrlTests));
     
     // Run animated sticker tests (different format)
     await runAnimatedStickerTests();

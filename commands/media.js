@@ -21,15 +21,19 @@ const { PACK_NAME, AUTHOR_NAME } = require('../config/stickers');
 async function sendMediaByType(client, chatId, media) {
   if (!media) return;
 
+  const path = require('path');
+  const mime = require('mime-types');
+
   const filePath = media.file_path;
-  const mimetype = media.mimetype || '';
+  const rawMime = media.mimetype || '';
+  const normalizedMime = (rawMime || mime.lookup(filePath) || '').toLowerCase();
+  const effectiveMime = normalizedMime || 'application/octet-stream';
 
-  const isGif = mimetype === 'image/gif' || filePath.endsWith('.gif');
-  const isVideo = mimetype.startsWith('video/');
-  const isImage = mimetype.startsWith('image/');
-  const isAudio = mimetype.startsWith('audio/');
+  const isGif = normalizedMime === 'image/gif' || filePath.endsWith('.gif');
+  const isVideo = normalizedMime.startsWith('video/');
+  const isImage = normalizedMime.startsWith('image/');
+  const isAudio = normalizedMime.startsWith('audio/');
 
-  // GIFs should be sent as animated stickers
   if (isGif) {
     if (typeof client.sendMp4AsSticker === 'function') {
       try {
@@ -43,26 +47,44 @@ async function sendMediaByType(client, chatId, media) {
       await client.sendImageAsStickerGif(chatId, filePath, { pack: PACK_NAME, author: AUTHOR_NAME });
       return;
     }
-    const path = require('path');
     await client.sendFile(chatId, filePath, path.basename(filePath));
     return;
   }
 
-  // Videos should be sent as files
   if (isVideo) {
-    const path = require('path');
-    await client.sendFile(chatId, filePath, path.basename(filePath));
+    await client.sendFile(
+      chatId,
+      filePath,
+      path.basename(filePath),
+      undefined,
+      undefined,
+      true,
+      false,
+      false,
+      undefined,
+      undefined,
+      { mimetype: rawMime || effectiveMime, asDocument: false }
+    );
     return;
   }
 
-  // Audio should be sent as files
   if (isAudio) {
-    const path = require('path');
-    await client.sendFile(chatId, filePath, path.basename(filePath));
+    await client.sendFile(
+      chatId,
+      filePath,
+      path.basename(filePath),
+      undefined,
+      undefined,
+      true,
+      true,
+      false,
+      undefined,
+      undefined,
+      { mimetype: rawMime || effectiveMime, asDocument: false }
+    );
     return;
   }
 
-  // Images as stickers
   if (isImage) {
     if (Sticker && StickerTypes) {
       const sticker = new Sticker(filePath, {
@@ -80,9 +102,19 @@ async function sendMediaByType(client, chatId, media) {
     return;
   }
 
-  // Others
-  const path = require('path');
-  await client.sendFile(chatId, filePath, path.basename(filePath));
+  await client.sendFile(
+    chatId,
+    filePath,
+    path.basename(filePath),
+    undefined,
+    undefined,
+    true,
+    false,
+    false,
+    undefined,
+    undefined,
+    { mimetype: rawMime || effectiveMime, asDocument: false }
+  );
 }
 
 /**
@@ -96,8 +128,13 @@ async function sendMediaAsOriginal(client, chatId, media) {
     throw new Error('Media object is required');
   }
 
+  const path = require('path');
+  const mime = require('mime-types');
+
   const filePath = media.file_path;
   const mimetype = media.mimetype || '';
+  const normalizedMime = (mimetype || mime.lookup(filePath) || '').toLowerCase();
+  const effectiveMime = normalizedMime || 'application/octet-stream';
 
   // Check if file exists
   const fs = require('fs');
@@ -108,10 +145,10 @@ async function sendMediaAsOriginal(client, chatId, media) {
 
   console.log(`[sendMediaAsOriginal] Enviando mídia: ${filePath} (${mimetype})`);
 
-  const isGif = mimetype === 'image/gif' || filePath.endsWith('.gif');
-  const isVideo = mimetype.startsWith('video/');
-  const isImage = mimetype.startsWith('image/');
-  const path = require('path');
+  const isGif = normalizedMime === 'image/gif' || filePath.endsWith('.gif');
+  const isVideo = normalizedMime.startsWith('video/');
+  const isImage = normalizedMime.startsWith('image/');
+  const isAudio = normalizedMime.startsWith('audio/');
 
   try {
     // Real GIF files remain animated stickers for backwards compatibility
@@ -151,13 +188,32 @@ async function sendMediaAsOriginal(client, chatId, media) {
           false,       // withoutPreview
           undefined,   // hideTags
           undefined,   // viewOnce
-          { mimetype, asDocument: false }
+          { mimetype: mimetype || effectiveMime, asDocument: false }
         );
         console.log('[sendMediaAsOriginal] Vídeo enviado via sendFile');
         return;
       }
 
       throw new Error('Cliente não suporta envio de vídeos');
+    }
+
+    if (isAudio) {
+      const filename = path.basename(filePath);
+      await client.sendFile(
+        chatId,
+        filePath,
+        filename,
+        undefined,
+        undefined,
+        true,
+        true,
+        false,
+        undefined,
+        undefined,
+        { mimetype: mimetype || effectiveMime, asDocument: false }
+      );
+      console.log('[sendMediaAsOriginal] Áudio enviado via sendFile');
+      return;
     }
 
     // Images can still be sent as stickers since that's expected behavior
@@ -186,8 +242,20 @@ async function sendMediaAsOriginal(client, chatId, media) {
       return;
     }
 
-    // Audio and others
-    await client.sendFile(chatId, filePath, path.basename(filePath));
+    // Other mimetypes fallback to document send
+    await client.sendFile(
+      chatId,
+      filePath,
+      path.basename(filePath),
+      undefined,
+      undefined,
+      true,
+      false,
+      false,
+      undefined,
+      undefined,
+      { mimetype: mimetype || effectiveMime, asDocument: true }
+    );
     console.log('[sendMediaAsOriginal] Arquivo enviado via sendFile');
     
   } catch (error) {

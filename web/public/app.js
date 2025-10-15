@@ -97,16 +97,19 @@ function cardHTML(s) {
   }
   let tagsFullHtml = tags.map(t => `<span class="tag">${t.startsWith('#') ? t : '#' + t}</span>`).join(' ');
 
-  const mime = s.mimetype || '';
   const url = s.url || '';
-  const isVideo = mime === 'video/mp4' || url.endsWith('.mp4');
+  const mime = (s.mimetype || '').toLowerCase();
+  const isVideo = mime.startsWith('video/') || url.endsWith('.mp4');
+  const isAudio = mime.startsWith('audio/');
+  const previewUrl = isAudio ? '/media/audio.png' : url;
+  const altText = isAudio ? 'Pré-visualização de áudio' : 'sticker';
 
   // card-expand-btn e card-collapse-btn são os botões de expandir/recolher
   return `
     <div class="card" data-id="${s.id}">
       ${isVideo
         ? `<video data-src="${url}" class="card-video lazy-video" style="max-width:128px;max-height:128px;display:block;margin:auto;" muted playsinline preload="none"></video>`
-        : `<img data-src="${url}" alt="sticker" class="card-img lazy-img" style="max-width:128px;max-height:128px;display:block;margin:auto;">`
+        : `<img data-src="${previewUrl}" data-original-src="${url}" alt="${altText}" class="card-img lazy-img" style="max-width:128px;max-height:128px;display:block;margin:auto;">`
       }
       <div class="sticker-id">#${s.id}</div>
       <div class="desc clamp-2" data-desc-full="${desc.replace(/"/g, '&quot;')}">${descShort}

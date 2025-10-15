@@ -86,6 +86,24 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+function getMediaPreviewUrl(mimetype, url, filePath) {
+  const mime = (mimetype || '').toLowerCase();
+  if (mime.startsWith('audio/')) {
+    return '/media/audio.png';
+  }
+  if (url) {
+    return url;
+  }
+  if (filePath) {
+    const parts = String(filePath).split('/');
+    const base = parts[parts.length - 1] || '';
+    if (base) {
+      return '/media/' + base;
+    }
+  }
+  return '';
+}
+
 function decodeHashSegment(value) {
   if (!value) return '';
   try {
@@ -1924,7 +1942,8 @@ async function toggleGroupDetails(hashVisual) {
       detailsDiv.innerHTML = details.map((media, index) => {
         const date = new Date(media.timestamp).toLocaleDateString('pt-BR');
         const isOldest = index === 0; // Details are returned sorted by timestamp ASC
-        
+        const previewUrl = getMediaPreviewUrl(media.mimetype, media.url, media.file_path);
+
         return `
           <div class="duplicate-item ${isOldest ? 'oldest' : ''}">
             <div class="media-info">
@@ -1936,8 +1955,8 @@ async function toggleGroupDetails(hashVisual) {
               </span>
             </div>
             <div class="media-actions">
-              <img class="media-preview" src="${media.url || '/media/' + media.file_path.split('/').pop()}" 
-                   onerror="this.style.display='none'" alt="Preview">
+              <img class="media-preview" src="${previewUrl}" data-original-src="${media.url || ''}"
+                   onerror="this.src='/media/audio.png'" alt="Preview">
             </div>
           </div>
         `;
