@@ -26,6 +26,19 @@ const { withTyping } = require('../utils/typingIndicator');
 const MAX_STICKER_BYTES = 1024 * 1024; // WhatsApp animated sticker limit ≈1MB
 let ffmpegFactory = null;
 
+function inferExtensionFromMimetype(mimetype) {
+  if (!mimetype || typeof mimetype !== 'string') return 'bin';
+  const slashIndex = mimetype.indexOf('/');
+  if (slashIndex === -1) return 'bin';
+  let subtype = mimetype.slice(slashIndex + 1);
+  const semicolonIndex = subtype.indexOf(';');
+  if (semicolonIndex !== -1) subtype = subtype.slice(0, semicolonIndex);
+  const plusIndex = subtype.indexOf('+');
+  if (plusIndex !== -1) subtype = subtype.slice(0, plusIndex);
+  const clean = subtype.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
+  return clean || 'bin';
+}
+
 function setFfmpegFactory(factory) {
   ffmpegFactory = typeof factory === 'function' ? factory : null;
 }
@@ -84,7 +97,7 @@ async function processIncomingMedia(client, message) {
     message.mimetype = effectiveMimetype;
     console.log('[MediaProcessor] Mimetype recebido:', effectiveMimetype);
     console.log('[MediaProcessor] Tamanho do buffer:', buffer ? buffer.length : 'null');
-    const ext = (effectiveMimetype.split('/')[1]) || 'bin';
+    const ext = inferExtensionFromMimetype(effectiveMimetype);
   const tmpDir = path.resolve(__dirname, 'temp');
   if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
   tmpFilePath = path.join(tmpDir, `media-tmp-${Date.now()}-${Math.floor(Math.random()*10000)}.${ext}`);
@@ -265,8 +278,8 @@ async function processIncomingMedia(client, message) {
         }
 
         const gifAttempts = [
-          { lossless: false, quality: 85, nearLossless: 60 },
-          { lossless: false, quality: 75, nearLossless: 50 },
+          { lossless: false, quality: 85, nearLossless: true },
+          { lossless: false, quality: 75, nearLossless: false },
           { lossless: false, quality: 65 }
         ];
 
@@ -442,6 +455,13 @@ async function processIncomingMedia(client, message) {
       } else {
         await safeReply(client, chatId, 'Erro ao converter a mídia para sticker. O formato pode não ser suportado.', message.id);
         return;
+      }
+    } else {
+      try {
+        fs.copyFileSync(tmpFilePath, filePath);
+      } catch (copyErr) {
+        console.error('[MediaProcessor] Falha ao persistir mídia original:', copyErr);
+        throw copyErr;
       }
     }
 

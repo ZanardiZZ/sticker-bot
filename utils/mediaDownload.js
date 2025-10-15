@@ -1,6 +1,5 @@
 const { decryptMedia } = require('@open-wa/wa-decrypt');
-
-const DATA_URL_REGEX = /^data:([^;]+);base64,(.+)$/i;
+const { parseBase64DataUrl } = require('./dataUrl');
 
 /**
  * Downloads media for a WhatsApp message, preferring the Baileys adapter RPC when available.
@@ -25,12 +24,8 @@ async function downloadMediaForMessage(client, message) {
     if (typeof client.downloadMedia === 'function') {
       try {
         const rpcResponse = await client.downloadMedia(messageId);
-        const match = DATA_URL_REGEX.exec(rpcResponse?.dataUrl || '');
-        if (!match) {
-          throw new Error('invalid_media_payload');
-        }
-        const buffer = Buffer.from(match[2], 'base64');
-        const mimetype = rpcResponse?.mimetype || match[1] || message?.mimetype || 'application/octet-stream';
+        const { buffer, mimetype: parsedMimetype } = parseBase64DataUrl(rpcResponse?.dataUrl || '');
+        const mimetype = rpcResponse?.mimetype || parsedMimetype || message?.mimetype || 'application/octet-stream';
         return { buffer, mimetype };
       } catch (err) {
         console.warn('[MediaDownload] RPC downloadMedia failed, falling back to getMediaBuffer:', err.message);

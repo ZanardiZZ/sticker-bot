@@ -1,1 +1,3 @@
 -Bot: Adicionar novas funções com base nos outros bots existentes para whatsapp, ver o que é interessante e Adicionar
+-Bot: Comando deletar, requer 3 usuários votando no comando para efetivar o delete
+-Bot: Comando #top5users não retorna o esperado, está dando erro
