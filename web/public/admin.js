@@ -165,6 +165,7 @@ async function changePassword() {
 async function load() {
   // Analytics functionality removed - only load rules
   await loadRules();
+  await loadDeleteVoteThreshold();
 }
 
 // ===== Bot Restart Control =====
@@ -195,6 +196,10 @@ document.getElementById('restartClientBtn')?.addEventListener('click', async () 
 
   // Re-enable button after a short delay to avoid accidental double-click
   setTimeout(() => { btn.disabled = false; }, 5000);
+});
+
+document.getElementById('deleteVoteThresholdSave')?.addEventListener('click', async () => {
+  await saveDeleteVoteThreshold();
 });
 
 async function loadRules(){
@@ -1361,6 +1366,65 @@ async function saveBotSchedule() {
   }
 }
 
+async function loadDeleteVoteThreshold() {
+  const inputEl = document.getElementById('deleteVoteThresholdInput');
+  const statusEl = document.getElementById('deleteVoteThresholdStatus');
+  if (!inputEl) return;
+
+  if (statusEl) statusEl.textContent = 'Carregando configuração...';
+
+  try {
+    const data = await fetchJSON('/api/admin/bot-config/delete-threshold');
+    if (typeof data.threshold !== 'undefined') {
+      inputEl.value = data.threshold;
+    }
+    if (statusEl) statusEl.textContent = '';
+  } catch (error) {
+    console.error('Erro ao carregar limiar de exclusão:', error);
+    if (statusEl) {
+      statusEl.textContent = 'Erro ao carregar configuração. Verifique suas permissões.';
+    }
+  }
+}
+
+async function saveDeleteVoteThreshold() {
+  const inputEl = document.getElementById('deleteVoteThresholdInput');
+  const statusEl = document.getElementById('deleteVoteThresholdStatus');
+  if (!inputEl) return;
+
+  const value = Number(inputEl.value);
+  if (!Number.isFinite(value) || value < 1 || value > 10) {
+    if (statusEl) {
+      statusEl.textContent = 'Informe um valor entre 1 e 10.';
+    }
+    return;
+  }
+
+  if (statusEl) statusEl.textContent = 'Salvando configuração...';
+
+  try {
+    const response = await fetchWithCSRF('/api/admin/bot-config/delete-threshold', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ threshold: Math.floor(value) })
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(getAdminErrorMessage(data, 'Erro ao salvar configuração'));
+    }
+
+    const payload = await response.json();
+    if (typeof payload.threshold !== 'undefined') {
+      inputEl.value = payload.threshold;
+    }
+    if (statusEl) statusEl.textContent = 'Configuração atualizada com sucesso!';
+  } catch (error) {
+    console.error('Erro ao salvar limiar de exclusão:', error);
+    if (statusEl) statusEl.textContent = error.message || 'Falha ao salvar configuração.';
+  }
+}
+
 async function initializeGroupCommandsTab() {
   const selectEl = document.getElementById('groupCommandsSelect');
   const inputEl = document.getElementById('groupCommandsGroupId');
@@ -1813,12 +1877,6 @@ async function loadDuplicatesTab() {
     await load();
   } catch (error) {
     console.warn('Failed to load basic data:', error.message);
-  }
-  
-  try {
-    await loadRules();
-  } catch (error) {
-    console.warn('Failed to load rules:', error.message);
   }
   
   try {

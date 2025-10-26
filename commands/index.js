@@ -13,6 +13,8 @@ const { handleEditCommand } = require('./handlers/edit');
 const { handleThemeCommand } = require('./handlers/theme');
 const { handleVerifyCommand } = require('./handlers/verify');
 const { handleCriarMemeCommand, handleExportarMemesCommand } = require('./handlers/meme');
+const { handleDeleteCommand } = require('./handlers/delete');
+const { handleIssueCommand } = require('./handlers/issue');
 
 // Utilities
 const validation = require('./validation');
@@ -40,7 +42,7 @@ const clearDescriptionCmds = [];
  * @param {string} chatId - Chat ID
  * @returns {boolean} True if command was handled
  */
-async function handleCommand(client, message, chatId) {
+async function handleCommand(client, message, chatId, context = {}) {
   const rawCommand = message.body || message.caption || '';
   if (!rawCommand || !rawCommand.startsWith('#')) {
     return false;
@@ -94,6 +96,14 @@ async function handleCommand(client, message, chatId) {
 
       case '#exportarmemes':
         await handleExportarMemesCommand(client, message, chatId);
+        return true;
+
+      case '#deletar':
+        await handleDeleteCommand(client, message, chatId, params, context);
+        return true;
+
+      case '#issue':
+        await handleIssueCommand(client, message, chatId, params, context);
         return true;
 
       case '#ping': {

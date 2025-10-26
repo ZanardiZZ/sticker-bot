@@ -81,8 +81,8 @@ const tests = [
 
       const mockCommands = {
         taggingMap: new Map(),
-        async handleCommand(client, message, chatId) {
-          commandCalls.push({ client, message, chatId });
+        async handleCommand(client, message, chatId, context) {
+          commandCalls.push({ client, message, chatId, context });
           if (message.body === '#handled') {
             return true;
           }

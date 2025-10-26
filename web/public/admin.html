@@ -325,6 +325,21 @@
             <div id="restartStatus" class="muted">&nbsp;</div>
           </div>
         </div>
+
+        <div class="panel admin-only" id="delete-threshold-panel">
+          <h3>Exclusão por votação</h3>
+          <div class="muted">Defina quantos votos únicos são necessários para excluir uma mídia quando um usuário usa <code>#deletar</code>.</div>
+          <div class="row" style="align-items:flex-end; gap:1rem; margin-top:1rem; flex-wrap:wrap;">
+            <div style="flex:0 0 160px; display:flex; flex-direction:column; gap:.4rem;">
+              <label for="deleteVoteThresholdInput" class="muted">Votos mínimos</label>
+              <input id="deleteVoteThresholdInput" type="number" min="1" max="10" step="1" value="3" />
+            </div>
+            <div style="flex:0 0 auto;">
+              <button id="deleteVoteThresholdSave" class="btn-primary">Salvar</button>
+            </div>
+          </div>
+          <div id="deleteVoteThresholdStatus" class="muted" style="margin-top:.8rem;"></div>
+        </div>
       </div>
       <div class="main-tab-content admin-only" id="main-tab-group-users" data-title="Usuários do Grupo" data-description="Visualize membros, funções e bloqueios dos grupos conectados." role="tabpanel" aria-labelledby="main-tab-button-group-users" aria-hidden="true">
         <div class="panel">

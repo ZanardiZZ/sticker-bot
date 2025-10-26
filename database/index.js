@@ -23,6 +23,8 @@ const maintenanceModel = require('./models/maintenance');
 const processingModel = require('./models/processing');
 const versionModel = require('./models/version');
 const lidMappingModel = require('./models/lidMapping');
+const deleteRequestsModel = require('./models/deleteRequests');
+const configModel = require('./models/config');
 
 // Utilities
 const utils = require('./utils');
@@ -72,7 +74,13 @@ module.exports = {
   
   // LID mapping operations
   ...lidMappingModel,
-  
+
+  // Delete vote requests
+  ...deleteRequestsModel,
+
+  // Bot configuration
+  ...configModel,
+
   // Utilities  
   ...utils
 };

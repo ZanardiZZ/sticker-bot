@@ -106,6 +106,7 @@ function withProcessIncomingMedia(overrides, testFn) {
       getAiAnnotations: async () => ({ description: 'ai-desc', tags: ['tag-ai'] }),
       getAiAnnotationsFromPrompt: async () => ({ tags: [] }),
       getAiAnnotationsForGif: async () => ({ description: 'gif-desc', tags: ['gif-tag'] }),
+      getTagsFromTextPrompt: async () => ({ tags: [] }),
       transcribeAudioBuffer: async () => ''
     },
     'services/videoProcessor.js': {
@@ -347,6 +348,7 @@ const tests = [
             getAiAnnotations: async () => { aiCalled = true; return { description: 'should-not-run', tags: [] }; },
             getAiAnnotationsFromPrompt: async () => ({}),
             getAiAnnotationsForGif: async () => ({}),
+            getTagsFromTextPrompt: async () => ({ tags: [] }),
             transcribeAudioBuffer: async () => ''
           },
           'utils/safeMessaging.js': {
@@ -448,6 +450,7 @@ const tests = [
             getAiAnnotations: async () => ({ description: 'ai-desc', tags: ['tag-ai'] }),
             getAiAnnotationsFromPrompt: async () => ({}),
             getAiAnnotationsForGif: async () => ({ description: 'gif-desc', tags: ['gif-tag'] }),
+            getTagsFromTextPrompt: async () => ({ tags: [] }),
             transcribeAudioBuffer: async () => ''
           },
           'bot/stickers.js': {
@@ -568,6 +571,7 @@ const tests = [
           'services/ai.js': {
             getAiAnnotations: async () => ({ description: 'ai-desc', tags: ['tag-ai'] }),
             getAiAnnotationsFromPrompt: async () => ({ tags: ['spoken', 'note'] }),
+            getTagsFromTextPrompt: async () => ({ tags: ['spoken', 'note'] }),
             getAiAnnotationsForGif: async () => ({ description: 'gif-desc', tags: ['gif-tag'] }),
             transcribeAudioBuffer: async () => 'Audio transcription'
           },
@@ -637,6 +641,7 @@ const tests = [
             getAiAnnotations: async () => ({ description: 'ai-desc', tags: ['tag-ai'] }),
             getAiAnnotationsFromPrompt: async () => ({ tags: [] }),
             getAiAnnotationsForGif: async () => ({ description: 'gif-desc', tags: ['gif-tag'] }),
+            getTagsFromTextPrompt: async () => ({ tags: [] }),
             transcribeAudioBuffer: async () => { throw new Error('transcription failed'); }
           },
           'utils/safeMessaging.js': {

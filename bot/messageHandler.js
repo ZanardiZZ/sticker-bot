@@ -136,7 +136,12 @@ async function handleMessage(client, message) {
     }
     
     // 1) Try to handle command via commands module (includes validation)
-    const commandHandled = await handleCommand(client, message, chatId);
+    const commandHandled = await handleCommand(client, message, chatId, {
+      resolvedSenderId,
+      groupId: remoteJid,
+      isGroup,
+      rawSenderId: senderId
+    });
     if (commandHandled) return;
 
     // 2) Modo edição de tags (if activated for this chat)
