@@ -10,6 +10,7 @@ const { normalizeText } = require('../utils/commandNormalizer');
 const VALID_COMMANDS = [
   '#random',
   '#editar',
+  '#deletar',
   '#top10',
   '#top5users',
   '#id',
@@ -54,6 +55,11 @@ const HELP_ENTRIES = [
     command: '#id <número>',
     description: 'Resgata uma figurinha específica pelo ID.',
     example: '#id 5120'
+  },
+  {
+    command: '#deletar ID <número>',
+    description: 'Solicita a exclusão de uma mídia. Admins ou autores deletam na hora; demais precisam atingir o limite de votos.',
+    example: '#deletar ID 5120'
   },
   {
     command: '#editar',

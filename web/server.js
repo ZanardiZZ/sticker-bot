@@ -297,6 +297,8 @@ const {
   getBotConfig,
   setBotConfig
 } = require('./dataAccess.js');
+const { DEFAULT_DELETE_VOTE_THRESHOLD } = require('../config/botDefaults');
+const { invalidateVoteThresholdCache } = require('../commands/handlers/delete');
 
 // Approval system imports
 const {
@@ -2179,6 +2181,42 @@ app.post('/api/admin/bot-config/schedule', requireAdmin, express.json(), async (
   }
   // Return the computed cron expression so UI and other services can display it
   res.json({ ok: true, cron: cronExpr });
+});
+
+app.get('/api/admin/bot-config/delete-threshold', requireAdmin, async (req, res) => {
+  try {
+    const stored = await getBotConfig('delete_vote_threshold');
+    const parsed = Number(stored);
+    const threshold = Number.isFinite(parsed) && parsed >= 1 ? Math.floor(parsed) : DEFAULT_DELETE_VOTE_THRESHOLD;
+    res.json({ threshold });
+  } catch (error) {
+    console.error('[WEB] Erro ao carregar limiar de exclusão:', error);
+    res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+app.post('/api/admin/bot-config/delete-threshold', requireAdmin, express.json(), async (req, res) => {
+  try {
+    const { threshold } = req.body || {};
+    const parsed = Number(threshold);
+    if (!Number.isFinite(parsed) || parsed < 1 || parsed > 10) {
+      return res.status(400).json({ error: 'invalid_threshold', message: 'O limiar deve estar entre 1 e 10.' });
+    }
+
+    const finalValue = Math.floor(parsed);
+    await setBotConfig('delete_vote_threshold', String(finalValue));
+
+    try {
+      invalidateVoteThresholdCache();
+    } catch (cacheError) {
+      console.warn('[WEB] Não foi possível invalidar cache de limiar:', cacheError?.message || cacheError);
+    }
+
+    res.json({ ok: true, threshold: finalValue });
+  } catch (error) {
+    console.error('[WEB] Erro ao salvar limiar de exclusão:', error);
+    res.status(500).json({ error: 'internal_error' });
+  }
 });
 
 // Temporary debug endpoint (token-protected) to inspect persisted bot config and process identity

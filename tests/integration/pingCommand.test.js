@@ -29,7 +29,11 @@ const tests = [
       // Ensure environment cron is deterministic for test
       process.env.BOT_CRON_SCHEDULE = '0 0-23 * * *';
 
-      await commands.handleCommand(client, message, message.from);
+      await commands.handleCommand(client, message, message.from, {
+        resolvedSenderId: message.from,
+        groupId: message.from,
+        isGroup: false
+      });
 
       // The mock safeReply falls back to sendText, so check sent messages
       assertEqual(client.sent.length, 1, 'should send exactly one outgoing message');

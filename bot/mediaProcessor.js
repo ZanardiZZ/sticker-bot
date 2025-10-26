@@ -12,7 +12,12 @@ const {
 } = require('../database/index.js');
 const { isNSFW } = require('../services/nsfwFilter');
 const { isVideoNSFW } = require('../services/nsfwVideoFilter');
-const { getAiAnnotations, transcribeAudioBuffer, getAiAnnotationsFromPrompt, getAiAnnotationsForGif } = require('../services/ai');
+const {
+  getAiAnnotations,
+  transcribeAudioBuffer,
+  getAiAnnotationsForGif,
+  getTagsFromTextPrompt
+} = require('../services/ai');
 const { processVideo, processGif, processAnimatedWebp } = require('../services/videoProcessor');
 const { updateMediaDescription, updateMediaTags } = require('../database/index.js');
 const { forceMap, MAX_TAGS_LENGTH, clearDescriptionCmds } = require('../commands');
@@ -25,6 +30,38 @@ const { withTyping } = require('../utils/typingIndicator');
 
 const MAX_STICKER_BYTES = 1024 * 1024; // WhatsApp animated sticker limit ≈1MB
 let ffmpegFactory = null;
+
+const STOPWORDS_PT = new Set([
+  'de', 'da', 'do', 'das', 'dos', 'para', 'pra', 'por', 'com', 'que', 'quem', 'quando',
+  'onde', 'como', 'uma', 'umas', 'uns', 'um', 'ao', 'aos', 'e', 'em', 'no', 'na', 'nos',
+  'nas', 'sobre', 'entre', 'sem', 'mais', 'menos', 'muito', 'muita', 'muitos', 'muitas',
+  'pouco', 'pouca', 'poucos', 'poucas', 'esse', 'essa', 'isso', 'aquele', 'aquela', 'aquilo',
+  'dessa', 'desse', 'isso', 'isso', 'já', 'tão', 'também', 'porque', 'porquê', 'ser', 'está',
+  'estão', 'estou', 'estamos', 'fui', 'foi', 'são', 'era', 'era', 'vai', 'vou', 'vamos',
+  'assim', 'aqui', 'ali', 'lá', 'então', 'agora', 'hoje', 'amanhã', 'ontem'
+]);
+
+function fallbackTagsFromText(text, limit = 5) {
+  if (!text || typeof text !== 'string') return [];
+  const normalized = text
+    .toLowerCase()
+    .replace(/[#!?,.;:()"'`]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!normalized) return [];
+
+  const words = normalized.split(' ');
+  const tags = [];
+  for (const word of words) {
+    const clean = word.replace(/[^\p{L}\p{N}_-]+/gu, '');
+    if (clean.length < 3) continue;
+    if (STOPWORDS_PT.has(clean)) continue;
+    if (!tags.includes(clean)) tags.push(clean);
+    if (tags.length >= limit) break;
+  }
+  return tags;
+}
 
 function inferExtensionFromMimetype(mimetype) {
   if (!mimetype || typeof mimetype !== 'string') return 'bin';
@@ -693,23 +730,37 @@ async function processIncomingMedia(client, message) {
       } else if (message.mimetype.startsWith('audio/')) {
         try {
           description = await transcribeAudioBuffer(buffer);
+          let rawTags = [];
+
           if (description) {
-            const prompt = `\nVocê é um assistente que recebe a transcrição de um áudio em português e deve gerar até 5 tags relevantes, separadas por vírgula, relacionadas ao conteúdo dessa transcrição.\n\nTranscrição:\n${description}\n\nResposta (tags separadas por vírgula):\n              `.trim();
-            const tagResult = await getAiAnnotationsFromPrompt(prompt);
-            if (tagResult && typeof tagResult === 'object') {
-              const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(null, tagResult.tags);
-              tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
+            const prompt = [
+              'Você receberá a transcrição de um áudio em português.',
+              'Gere no máximo 5 tags curtas, sem espaços, relacionadas ao conteúdo.',
+              'Responda apenas com as tags separadas por vírgula.',
+              'Transcrição:',
+              description
+            ].join('\n');
+
+            const tagResult = await getTagsFromTextPrompt(prompt);
+            if (tagResult && Array.isArray(tagResult.tags) && tagResult.tags.length > 0) {
+              rawTags = tagResult.tags;
             } else {
-              console.warn('Resultado inválido do processamento de tags de áudio:', tagResult);
-              tags = '';
+              console.warn('Tags por IA ausentes, gerando fallback baseado na transcrição.');
+              rawTags = fallbackTagsFromText(description);
             }
-          } else {
-            tags = '';
           }
+
+          if (!rawTags || rawTags.length === 0) {
+            rawTags = fallbackTagsFromText(description);
+          }
+
+          const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(description, rawTags);
+          tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
         } catch (err) {
           console.warn('Erro ao processar áudio:', err);
-          description = '';
-          tags = '';
+          description = description || '';
+          const fallback = fallbackTagsFromText(description);
+          tags = fallback.length > 0 ? fallback.join(',') : '';
         }
       }
     } else {

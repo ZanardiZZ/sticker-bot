@@ -137,6 +137,19 @@ function initializeTables(db) {
         )
       `);
 
+      db.run(`
+        CREATE TABLE IF NOT EXISTS media_delete_requests (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          media_id INTEGER NOT NULL,
+          user_id TEXT NOT NULL,
+          group_id TEXT,
+          first_requested_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+          last_requested_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+          UNIQUE(media_id, user_id),
+          FOREIGN KEY(media_id) REFERENCES media(id) ON DELETE CASCADE
+        )
+      `);
+
       // Create indexes for performance
       createIndexes(db);
 
@@ -190,6 +203,8 @@ function createIndexes(db) {
   // Version indexes
   db.run(`CREATE INDEX IF NOT EXISTS idx_version_info_current ON version_info(is_current)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_version_info_created_at ON version_info(created_at DESC)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_media_delete_requests_media_id ON media_delete_requests(media_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_media_delete_requests_group_media ON media_delete_requests(group_id, media_id)`);
 }
 
 module.exports = { initializeTables };
