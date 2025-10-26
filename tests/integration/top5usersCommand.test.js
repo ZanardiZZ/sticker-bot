@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * Integration test for top5users command handler
  */
