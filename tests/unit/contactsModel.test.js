@@ -13,18 +13,17 @@ function createContactsModel(db) {
       return new Promise((resolve) => {
         db.all(
           `SELECT 
-             COALESCE(c.display_name, 
-                      CASE 
-                        WHEN m.sender_id LIKE '%@g.us' THEN 'Grupo ' || substr(m.sender_id, 1, 8) || '...'
-                        ELSE 'Usuário ' || substr(m.sender_id, 1, 8) || '...'
-                      END) as nome,
-             COUNT(m.id) as total_figurinhas,
+             c.display_name,
+             m.sender_id as effective_sender,
+             CASE WHEN m.sender_id LIKE '%@g.us' THEN 1 ELSE 0 END as is_group,
+             CASE WHEN m.sender_id LIKE '%@g.us' THEN m.sender_id ELSE NULL END as group_id,
+             COUNT(m.id) as sticker_count,
              SUM(m.count_random) as total_usos
            FROM media m
            LEFT JOIN contacts c ON m.sender_id = c.sender_id
            WHERE m.sender_id IS NOT NULL
            GROUP BY m.sender_id
-           ORDER BY total_figurinhas DESC
+           ORDER BY sticker_count DESC
            LIMIT 5`,
           (err, rows) => {
             resolve(err ? [] : rows);
@@ -382,22 +381,25 @@ const tests = [
       assert(top5.length > 0, 'Should return users');
       assert(top5.length <= 5, 'Should return max 5 users');
       
-      // Should be ordered by sticker count (total_figurinhas) DESC
+      // Should be ordered by sticker count (sticker_count) DESC
       // user1 should be first (2 stickers)
-      const user1 = top5.find(u => u.nome === 'User One');
+      const user1 = top5.find(u => u.display_name === 'User One');
       assert(user1 !== undefined, 'Should include User One');
-      assertEqual(user1.total_figurinhas, 2, 'User One should have 2 stickers');
+      assertEqual(user1.sticker_count, 2, 'User One should have 2 stickers');
       assertEqual(user1.total_usos, 15, 'User One should have 15 total uses');
+      assertEqual(user1.effective_sender, 'user1@c.us', 'User One should have correct sender_id');
+      assertEqual(user1.is_group, 0, 'User One should not be a group');
       
       // user2 and user3 should have 1 sticker each
-      const user2 = top5.find(u => u.nome === 'User Two');
+      const user2 = top5.find(u => u.display_name === 'User Two');
       assert(user2 !== undefined, 'Should include User Two');
-      assertEqual(user2.total_figurinhas, 1, 'User Two should have 1 sticker');
+      assertEqual(user2.sticker_count, 1, 'User Two should have 1 sticker');
       assertEqual(user2.total_usos, 20, 'User Two should have 20 total uses');
       
-      // Unknown user should have generated display name
-      const unknownUser = top5.find(u => u.nome.startsWith('Usuário'));
-      assert(unknownUser !== undefined, 'Should include unknown user with generated name');
+      // Unknown user should have null display_name but valid effective_sender
+      const unknownUser = top5.find(u => u.display_name === null);
+      assert(unknownUser !== undefined, 'Should include unknown user with null display_name');
+      assertEqual(unknownUser.effective_sender, 'unknown@c.us', 'Unknown user should have correct sender_id');
       
       await cleanup();
     }
