@@ -29,7 +29,7 @@
     "csrf": "^3.1.0",
     "csurf": "^1.11.0",
     "dotenv": "^17.2.3",
-    "express": "^4.21.2",
+    "express": "^5.1.0",
     "express-rate-limit": "^6.11.2",
     "express-session": "^1.18.2",
     "ffmpeg-static": "^5.2.0",
