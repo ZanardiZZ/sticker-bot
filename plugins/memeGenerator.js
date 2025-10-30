@@ -6,7 +6,7 @@ const OpenAI = require('openai');
 const sharp = require('sharp');
 
 const { downloadMediaForMessage } = require('../utils/mediaDownload');
-
+const crypto = require('crypto');
 require('dotenv').config();
 
 const DATA_DIR = path.resolve(__dirname, '..', 'data');
@@ -286,10 +286,11 @@ Sem texto, palavras, letras ou legendas na imagem.`.trim();
   }
 
   const rawBuffer = Buffer.from(imageData, 'base64');
-  const tmpOriginalPath = path.join('/tmp', `meme-${Date.now()}-${Math.floor(Math.random() * 10_000)}.png`);
+  const randomSuffix = crypto.randomBytes(16).toString('hex');
+  const tmpOriginalPath = path.join('/tmp', `meme-${Date.now()}-${randomSuffix}.png`);
   await fsp.writeFile(tmpOriginalPath, rawBuffer);
 
-  const filename = `media-${Date.now()}-${Math.floor(Math.random() * 10_000)}.webp`;
+  const filename = `media-${Date.now()}-${randomSuffix}.webp`;
   const finalPath = path.join(STICKER_DIR, filename);
   await sharp(rawBuffer)
     .resize(512, 512, { fit: 'cover' })
@@ -318,7 +319,8 @@ async function processarAudioParaMeme(client, audioMessage) {
     throw new Error('Falha ao baixar áudio para meme');
   }
 
-  const tmpAudioPath = path.join('/tmp', `meme-audio-${Date.now()}-${Math.floor(Math.random() * 10_000)}.ogg`);
+  const randomAudioSuffix = crypto.randomBytes(8).toString('hex');
+  const tmpAudioPath = path.join('/tmp', `meme-audio-${Date.now()}-${randomAudioSuffix}.ogg`);
   await fsp.writeFile(tmpAudioPath, buffer);
 
   try {
