@@ -56,6 +56,16 @@ app.set('trust proxy', true);
 app.use(cors());
 app.use(cookieParser());
 
+// Global rate limiter to protect expensive authorization logic against abuse
+// Adjust values depending on expected traffic patterns
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use(globalLimiter);
+
 // Auth middleware - MUST be after cookieParser but before routes
 app.use(async (req, res, next) => {
   try {
