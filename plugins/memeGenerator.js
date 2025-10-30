@@ -319,7 +319,7 @@ async function processarAudioParaMeme(client, audioMessage) {
     throw new Error('Falha ao baixar áudio para meme');
   }
 
-  const randomAudioSuffix = crypto.randomBytes(6).toString('hex');
+  const randomAudioSuffix = crypto.randomBytes(8).toString('hex');
   const tmpAudioPath = path.join('/tmp', `meme-audio-${Date.now()}-${randomAudioSuffix}.ogg`);
   await fsp.writeFile(tmpAudioPath, buffer);
 
