@@ -834,7 +834,11 @@ function setActiveSubTab(tabId, options = {}) {
     content.classList.toggle('active', content.id === `tab-${tabId}`);
   });
 
-  if (!initializedSubTabs.has(tabId) && typeof subTabLoaders[tabId] === 'function') {
+  if (
+    !initializedSubTabs.has(tabId) &&
+    Object.prototype.hasOwnProperty.call(subTabLoaders, tabId) &&
+    typeof subTabLoaders[tabId] === 'function'
+  ) {
     initializedSubTabs.add(tabId);
     Promise.resolve(subTabLoaders[tabId]()).catch((error) => {
       console.warn('Failed to initialize sub-tab "%s":', tabId, error);
