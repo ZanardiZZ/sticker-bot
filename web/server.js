@@ -58,11 +58,10 @@ app.use(cookieParser());
 
 // Global rate limiter to protect expensive authorization logic against abuse
 // Adjust values depending on expected traffic patterns
-const globalLimiter = rateLimit({
+const globalLimiter = createMainRateLimiter({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // Limit each IP to 100 requests per windowMs
-  standardHeaders: true,
-  legacyHeaders: false,
+  skipPaths: []
 });
 app.use(globalLimiter);
 
