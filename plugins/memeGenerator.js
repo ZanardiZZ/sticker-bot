@@ -286,11 +286,12 @@ Sem texto, palavras, letras ou legendas na imagem.`.trim();
   }
 
   const rawBuffer = Buffer.from(imageData, 'base64');
-  const randomSuffix = crypto.randomBytes(6).toString('hex');
-  const tmpOriginalPath = path.join('/tmp', `meme-${Date.now()}-${randomSuffix}.png`);
+  const tmpRandomSuffix = crypto.randomBytes(6).toString('hex');
+  const tmpOriginalPath = path.join('/tmp', `meme-${Date.now()}-${tmpRandomSuffix}.png`);
   await fsp.writeFile(tmpOriginalPath, rawBuffer);
 
-  const filename = `media-${Date.now()}-${randomSuffix}.webp`;
+  const mediaRandomSuffix = crypto.randomBytes(6).toString('hex');
+  const filename = `media-${Date.now()}-${mediaRandomSuffix}.webp`;
   const finalPath = path.join(STICKER_DIR, filename);
   await sharp(rawBuffer)
     .resize(512, 512, { fit: 'cover' })
