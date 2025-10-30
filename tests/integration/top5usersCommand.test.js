@@ -57,8 +57,8 @@ function createCommandHandler(mockDb) {
 
           // Se é um grupo, usa o nome do grupo ou gera um nome baseado no ID
           if (user.is_group) {
-            if (!userName && user.group_id) {
-              userName = `Grupo ${user.group_id.replace('@g.us', '').substring(0, 10)}...`;
+            if (!userName && user.effective_sender) {
+              userName = `Grupo ${user.effective_sender.replace('@g.us', '').substring(0, 10)}...`;
             }
             userName = userName || 'Grupo desconhecido';
           } else {
