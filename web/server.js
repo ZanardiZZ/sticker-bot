@@ -60,7 +60,7 @@ app.use(cookieParser());
 // Adjust values depending on expected traffic patterns
 const globalLimiter = createMainRateLimiter({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
+  max: 1500, // Limit each IP to 1500 requests per windowMs (broader protection layer)
   skipPaths: []
 });
 app.use(globalLimiter);
