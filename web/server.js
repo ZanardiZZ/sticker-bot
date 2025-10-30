@@ -1424,7 +1424,7 @@ app.delete('/api/admin/duplicates/:hashVisual', requireAdmin, async (req, res) =
     const allDuplicates = await findDuplicateMedia(100);
     const groupStillExists = allDuplicates.find(d => d.hash_visual === hashVisual);
     if (groupStillExists) {
-      console.error(`[ADMIN] ERROR: Group ${hashVisual} still appears in duplicates list after deletion!`, groupStillExists);
+      console.error('[ADMIN] ERROR: Group %s still appears in duplicates list after deletion!', hashVisual, groupStillExists);
     } else {
       console.log(`[ADMIN] Confirmed: Group ${hashVisual} no longer appears in duplicates list`);
     }
