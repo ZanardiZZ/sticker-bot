@@ -212,7 +212,7 @@ function parseCaptionTexts(text) {
   }
   const extract = (patterns) => {
     for (const pattern of patterns) {
-      const regex = new RegExp(`${pattern}(?:\s+escrito)?[\s,:;\-]*["“']?([^"“',.;]+)`, 'i');
+      const regex = new RegExp(`${pattern}(?:\\s+escrito)?[\\s,:;\\-]*["“']?([^"“',.;]+)`, 'i');
       const match = text.match(regex);
       if (match && match[1]) {
         return match[1].trim().toUpperCase();
