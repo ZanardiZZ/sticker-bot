@@ -837,7 +837,7 @@ function setActiveSubTab(tabId, options = {}) {
   if (!initializedSubTabs.has(tabId) && typeof subTabLoaders[tabId] === 'function') {
     initializedSubTabs.add(tabId);
     Promise.resolve(subTabLoaders[tabId]()).catch((error) => {
-      console.warn(`Failed to initialize sub-tab "${tabId}":`, error);
+      console.warn('Failed to initialize sub-tab "%s":', tabId, error);
     });
   }
 
