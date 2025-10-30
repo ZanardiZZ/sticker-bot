@@ -286,8 +286,8 @@ Sem texto, palavras, letras ou legendas na imagem.`.trim();
   }
 
   const rawBuffer = Buffer.from(imageData, 'base64');
-  const tmpRandomSuffix = crypto.randomBytes(6).toString('hex');
-  const tmpOriginalPath = path.join('/tmp', `meme-${Date.now()}-${tmpRandomSuffix}.png`);
+  const randomSuffix = crypto.randomBytes(16).toString('hex');
+  const tmpOriginalPath = path.join('/tmp', `meme-${Date.now()}-${randomSuffix}.png`);
   await fsp.writeFile(tmpOriginalPath, rawBuffer);
 
   const mediaRandomSuffix = crypto.randomBytes(6).toString('hex');
@@ -320,7 +320,7 @@ async function processarAudioParaMeme(client, audioMessage) {
     throw new Error('Falha ao baixar áudio para meme');
   }
 
-  const randomAudioSuffix = crypto.randomBytes(6).toString('hex');
+  const randomAudioSuffix = crypto.randomBytes(8).toString('hex');
   const tmpAudioPath = path.join('/tmp', `meme-audio-${Date.now()}-${randomAudioSuffix}.ogg`);
   await fsp.writeFile(tmpAudioPath, buffer);
 
