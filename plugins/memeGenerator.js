@@ -286,7 +286,7 @@ Sem texto, palavras, letras ou legendas na imagem.`.trim();
   }
 
   const rawBuffer = Buffer.from(imageData, 'base64');
-  const randomSuffix = crypto.randomBytes(6).toString('hex');
+  const randomSuffix = crypto.randomBytes(16).toString('hex');
   const tmpOriginalPath = path.join('/tmp', `meme-${Date.now()}-${randomSuffix}.png`);
   await fsp.writeFile(tmpOriginalPath, rawBuffer);
 
