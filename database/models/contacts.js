@@ -16,7 +16,6 @@ function getTop5UsersByStickerCount() {
          c.display_name,
          m.sender_id as effective_sender,
          CASE WHEN m.sender_id LIKE '%@g.us' THEN 1 ELSE 0 END as is_group,
-         CASE WHEN m.sender_id LIKE '%@g.us' THEN m.sender_id ELSE NULL END as group_id,
          COUNT(m.id) as sticker_count,
          SUM(m.count_random) as total_usos
        FROM media m
