@@ -2,6 +2,7 @@
  * CAPTCHA generation routes
  */
 
+const crypto = require('crypto');
 function createCaptchaRoutes() {
   const router = require('express').Router();
 
@@ -25,7 +26,7 @@ function createCaptchaRoutes() {
     }
     
     // Generate a unique session identifier for this CAPTCHA
-    const sessionId = Date.now().toString(36) + Math.random().toString(36).substr(2);
+    const sessionId = Date.now().toString(36) + crypto.randomBytes(16).toString('hex');
     
     // Store in session with expiration
     req.session.captcha = {
