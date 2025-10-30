@@ -13,18 +13,16 @@ function getTop5UsersByStickerCount() {
   return new Promise((resolve) => {
     db.all(
       `SELECT 
-         COALESCE(c.display_name, 
-                  CASE 
-                    WHEN m.sender_id LIKE '%@g.us' THEN 'Grupo ' || substr(m.sender_id, 1, 8) || '...'
-                    ELSE 'Usuário ' || substr(m.sender_id, 1, 8) || '...'
-                  END) as nome,
-         COUNT(m.id) as total_figurinhas,
+         c.display_name,
+         m.sender_id as effective_sender,
+         CASE WHEN m.sender_id LIKE '%@g.us' THEN 1 ELSE 0 END as is_group,
+         COUNT(m.id) as sticker_count,
          SUM(m.count_random) as total_usos
        FROM media m
        LEFT JOIN contacts c ON m.sender_id = c.sender_id
        WHERE m.sender_id IS NOT NULL
        GROUP BY m.sender_id
-       ORDER BY total_figurinhas DESC
+       ORDER BY sticker_count DESC
        LIMIT 5`,
       (err, rows) => {
         resolve(err ? [] : rows);
