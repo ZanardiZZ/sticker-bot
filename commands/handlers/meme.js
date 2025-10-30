@@ -212,7 +212,12 @@ function parseCaptionTexts(text) {
   }
   const extract = (patterns) => {
     for (const pattern of patterns) {
-      const regex = new RegExp(`${pattern}(?:\\s+escrito)?[\\s,:;\\-]*["“']?([^"“',.;]+)`, 'i');
+      const baseRegex = pattern instanceof RegExp ? pattern : new RegExp(String(pattern), 'i');
+      const flags = baseRegex.flags.includes('i') ? baseRegex.flags : `${baseRegex.flags}i`;
+      const regex = new RegExp(
+        `${baseRegex.source}(?:\\s+escrito)?[\\s,:;\\-]*["“']?([^"“',.;]+)`,
+        flags
+      );
       const match = text.match(regex);
       if (match && match[1]) {
         return match[1].trim().toUpperCase();
@@ -220,8 +225,16 @@ function parseCaptionTexts(text) {
     }
     return '';
   };
-  const topText = extract(['texto\s+em\s+cima', 'texto\s+no\s+topo', 'texto\s+superior']);
-  const bottomText = extract(['texto\s+em\s+baixo', 'texto\s+na\s+parte\s+de\s+baixo', 'texto\s+inferior']);
+  const topText = extract([
+    /texto\s+em\s+cima/i,
+    /texto\s+no\s+topo/i,
+    /texto\s+superior/i
+  ]);
+  const bottomText = extract([
+    /texto\s+em\s+baixo/i,
+    /texto\s+na\s+parte\s+de\s+baixo/i,
+    /texto\s+inferior/i
+  ]);
   return { topText, bottomText };
 }
 
