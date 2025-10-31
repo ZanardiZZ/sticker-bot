@@ -8,17 +8,14 @@
     "test:integration": "node tests/integration/database.test.js",
     "test:unit": "node tests/runTests.js",
     "web": "node web/server.js",
-    "bot": "USE_SOCKET_MODE=true node index.js",
-    "bot-direct": "USE_SOCKET_MODE=false node index.js",
+    "bot": "node index.js",
+    "bot-direct": "node index.js",
     "baileys:server": "node server.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@open-wa/wa-automate": "^4.76.0",
-    "@open-wa/wa-automate-socket-client": "^3.3.0",
-    "@open-wa/wa-decrypt": "^4.4.0",
     "@tensorflow/tfjs-node": "^4.22.0",
     "@whiskeysockets/baileys": "^7.0.0-rc.6",
     "axios": "^1.13.1",
@@ -47,8 +44,5 @@
     "uuid": "^13.0.0",
     "wa-sticker-formatter": "^4.4.4",
     "ws": "^8.18.0"
-  },
-  "overrides": {
-    "parse-url": "^10.0.3"
   }
 }

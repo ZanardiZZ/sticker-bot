@@ -91,11 +91,8 @@ node tests/test-lid-integration.js
 ### 3. Iniciar Bot
 
 ```bash
-# Modo normal
+# Baileys WebSocket (modo padrão)
 npm start
-
-# Modo Baileys (recomendado para LIDs)
-USE_BAILEYS=true npm start
 ```
 
 ## 📊 Monitoramento
@@ -138,7 +135,6 @@ Se LID não estiver disponível:
 
 ```env
 # .env
-USE_BAILEYS=true
 BAILEYS_WS_URL=ws://localhost:8765
 BAILEYS_CLIENT_TOKEN=your_token
 ```
@@ -147,7 +143,7 @@ BAILEYS_CLIENT_TOKEN=your_token
 
 ### Problema: "LID mapping não funciona"
 - ✅ Verifique se Baileys está atualizado (v6.8.0+)
-- ✅ Confirme que `USE_BAILEYS=true`
+- ✅ Certifique-se de que o bridge Baileys (`npm run baileys:server`) está em execução
 - ✅ Execute a migração: `node scripts/migrate-to-lids.js`
 
 ### Problema: "Usuários duplicados"

@@ -93,41 +93,31 @@ ADMIN_NUMBER=5511999999999@c.us
 
 ### 3. Start the Applications
 
-#### 🚀 Socket Mode (Recommended for Development)
+#### 🚀 Baileys WebSocket Mode (Default)
 
-**Socket Mode** enables hot-reloading without losing WhatsApp connection - perfect for development!
+The bot now runs exclusively on the Baileys WebSocket bridge. Keep the bridge online and restart the bot freely without losing the session.
 
 **Setup:**
-1. Enable socket mode in `.env`:
-   ```env
-   USE_SOCKET_MODE=true
-   ```
-
-2. Start socket server (keeps WhatsApp connected):
+1. Start Baileys bridge (maintains the WhatsApp session):
    ```bash
-   npm run socket-server
+   npm run baileys:server
    ```
-   - Scan QR code with WhatsApp (first time only)
-   - Keep this running during development
+   - Scan the QR code the first time only.
+   - Leave this running in production and during development.
 
-3. Start bot (can be restarted anytime):
+2. Start the bot (can be restarted anytime):
    ```bash
    npm run bot
    ```
-   - Connects to socket server automatically
-   - No QR code needed - instant restart!
-
-**Benefits:**
-- ⚡ **10-15x faster** development iteration
-- 🔄 **Hot-reload** bot code without losing WhatsApp connection
-- 🛠️ **Debug easily** without re-authentication
+   - Connects to the bridge automatically.
+   - No QR code needed on restarts.
 
 **Available Scripts:**
-- `npm run socket-server` - Start WhatsApp socket server
-- `npm run bot` - Start bot in socket mode  
-- `npm run bot-direct` - Start bot in direct mode
+- `npm run baileys:server` – Start the shared WhatsApp session.
+- `npm run bot` – Launch the bot logic.
+- `npm run bot-direct` – Alias for `npm run bot` (kept for backward compatibility).
 
-📖 **Full documentation:** [Socket Mode Guide](SOCKET_MODE_GUIDE.md)
+📖 Looking for the old open-wa socket instructions? Check the legacy docs in [`docs/SOCKET_MODE_GUIDE.md`](docs/SOCKET_MODE_GUIDE.md).
 
 #### 📱 Direct Mode (Legacy)
 
