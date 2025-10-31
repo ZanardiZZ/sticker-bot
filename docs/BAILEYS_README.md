@@ -13,10 +13,10 @@ Run
 - Start Baileys server: npm run baileys:server
 - Scan QR in terminal once to persist session in auth_info_baileys
 - Create adapter in your app with require('./waAdapter').createAdapter()
-- To run bot with Baileys adapter: set USE_BAILEYS=true and start your bot normally
+- The bot runs on this adapter by default; just start it normally once the bridge is online.
 
 Example
-USE_BAILEYS=true node index.js
+node index.js
 
 Notes
 - Messages are forwarded to registered clients only for allowed chats provided on register/subscribe.

@@ -1,6 +1,8 @@
 # Socket Mode Implementation Summary
 
-This document provides a technical summary of the Socket Mode implementation for the Sticker Bot WhatsApp application.
+> ⚠️ **Legacy notice**: Starting with the Baileys-only architecture, the project no longer ships the open-wa socket or direct mode implementations. This document is kept for historical reference only.
+
+This document provides a technical summary of the former Socket Mode implementation for the Sticker Bot WhatsApp application.
 
 ## Problem Statement
 

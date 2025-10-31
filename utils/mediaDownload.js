@@ -1,4 +1,3 @@
-const { decryptMedia } = require('@open-wa/wa-decrypt');
 const { parseBase64DataUrl } = require('./dataUrl');
 
 /**
@@ -39,11 +38,7 @@ async function downloadMediaForMessage(client, message) {
     };
   }
 
-  const buffer = await decryptMedia(message);
-  return {
-    buffer,
-    mimetype: message?.mimetype || 'application/octet-stream'
-  };
+  throw new Error('client_missing_media_support');
 }
 
 module.exports = {

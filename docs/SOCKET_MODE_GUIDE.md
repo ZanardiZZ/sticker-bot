@@ -1,6 +1,8 @@
 # Socket Mode Guide
 
-This guide explains how to use the Socket Mode functionality of the Sticker Bot, which enables **hot-reloading without losing WhatsApp connection**.
+> ⚠️ **Legacy notice**: The current codebase runs exclusively on the Baileys WebSocket adapter. The open-wa socket mode described below is deprecated and retained only for archival purposes.
+
+This guide explains how the former Socket Mode functionality of the Sticker Bot worked, enabling **hot-reloading without losing WhatsApp connection**.
 
 ## Overview
 

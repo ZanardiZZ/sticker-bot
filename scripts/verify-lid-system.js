@@ -173,26 +173,21 @@ async function testBasicFunctionality() {
 function checkConfiguration() {
     console.log('\n⚙️  Verificando configurações...');
     
-    const useBaileys = process.env.USE_BAILEYS === 'true';
     const baileysUrl = process.env.BAILEYS_WS_URL;
     const baileysToken = process.env.BAILEYS_CLIENT_TOKEN;
     
-    if (useBaileys) {
-        console.log('  ✅ USE_BAILEYS=true (recomendado para LIDs)');
-        
-        if (baileysUrl) {
-            console.log(`  ✅ BAILEYS_WS_URL configurado: ${baileysUrl}`);
-        } else {
-            console.log('  ⚠️  BAILEYS_WS_URL não configurado (usará padrão)');
-        }
-        
-        if (baileysToken) {
-            console.log(`  ✅ BAILEYS_CLIENT_TOKEN configurado: ${baileysToken}`);
-        } else {
-            console.log('  ⚠️  BAILEYS_CLIENT_TOKEN não configurado (usará padrão)');
-        }
+    console.log('  ✅ Baileys bridge habilitada (modo padrão)');
+    
+    if (baileysUrl) {
+        console.log(`  ✅ BAILEYS_WS_URL configurado: ${baileysUrl}`);
     } else {
-        console.log('  ⚠️  USE_BAILEYS=false (LIDs funcionarão parcialmente)');
+        console.log('  ⚠️  BAILEYS_WS_URL não configurado (usará padrão)');
+    }
+    
+    if (baileysToken) {
+        console.log(`  ✅ BAILEYS_CLIENT_TOKEN configurado: ${baileysToken}`);
+    } else {
+        console.log('  ⚠️  BAILEYS_CLIENT_TOKEN não configurado (usará padrão)');
     }
     
     return true;
@@ -203,7 +198,7 @@ function checkConfiguration() {
  */
 function showNextSteps() {
     console.log('\n📋 Próximos Passos:');
-    console.log('   1. Execute: npm start (ou USE_BAILEYS=true npm start)');
+    console.log('   1. Execute: npm start');
     console.log('   2. Monitore logs para: [LID] Novo mapeamento...');
     console.log('   3. Verifique se usuários são identificados corretamente');
     console.log('   4. Use scripts de teste quando necessário:');
