@@ -1,0 +1,57 @@
+diff --git a/node_modules/parse-url/lib/index.js b/node_modules/parse-url/lib/index.js
+index 6e194fa..ae373ca 100644
+--- a/node_modules/parse-url/lib/index.js
++++ b/node_modules/parse-url/lib/index.js
+@@ -37,9 +37,22 @@ var parsePath = require("parse-path"),
+ function parseUrl(url) {
+     var normalize = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : false;
+ 
++    var GIT_RE = /^(?:([a-z_][a-z0-9_-]{0,31})@|https?:\/\/)([\w\.\-@]+)[\/:]([\~,\.\w,\-,\_,\/]+?(?:\.git|\/)?)$/;
++
++    var throwErr = function throwErr(msg) {
++        var err = new Error(msg);
++        err.subject_url = url;
++        throw err;
++    };
++
+     if (typeof url !== "string" || !url.trim()) {
+-        throw new Error("Invalid url.");
++        throwErr("Invalid url.");
++    }
++
++    if (url.length > parseUrl.MAX_INPUT_LENGTH) {
++        throwErr("Input exceeds maximum length. If needed, change the value of parseUrl.MAX_INPUT_LENGTH.");
+     }
++
+     if (normalize) {
+         if ((typeof normalize === "undefined" ? "undefined" : _typeof(normalize)) !== "object") {
+             normalize = {
+@@ -48,8 +61,28 @@ function parseUrl(url) {
+         }
+         url = normalizeUrl(url, normalize);
+     }
++
+     var parsed = parsePath(url);
++
++    if (parsed && parsed.parse_failed) {
++        var matched = parsed.href && parsed.href.match(GIT_RE);
++
++        if (matched) {
++            parsed.protocols = ["ssh"];
++            parsed.protocol = "ssh";
++            parsed.resource = matched[2];
++            parsed.host = matched[2];
++            parsed.user = matched[1] || parsed.user;
++            parsed.pathname = "/" + matched[3];
++            parsed.parse_failed = false;
++        } else {
++            throwErr("URL parsing failed.");
++        }
++    }
++
+     return parsed;
+ }
+ 
++parseUrl.MAX_INPUT_LENGTH = 2048;
++
+ module.exports = parseUrl;
