@@ -11,15 +11,15 @@ const crypto = require('crypto');
 
 const MAX_VIDEO_DURATION = 60; // 60 seconds = 1 minute
 
-// Initialize yt-dlp wrapper
-let ytDlp = null;
+// Initialize yt-dlp wrapper - will be lazily initialized on first use
+let ytDlpInstance = null;
 
 /**
  * Initialize the yt-dlp binary
  * Downloads the binary if not already present
  */
 async function initYtDlp() {
-  if (ytDlp) return ytDlp;
+  if (ytDlpInstance) return ytDlpInstance;
   
   try {
     const ytDlpBinaryPath = path.resolve(__dirname, '../temp/yt-dlp');
@@ -27,15 +27,16 @@ async function initYtDlp() {
     // Check if binary already exists
     if (!fs.existsSync(ytDlpBinaryPath)) {
       console.log('[VideoDownloader] Downloading yt-dlp binary...');
-      ytDlp = new YTDlpWrap();
+      const downloader = new YTDlpWrap();
       await YTDlpWrap.downloadFromGithub(ytDlpBinaryPath);
+      ytDlpInstance = new YTDlpWrap(ytDlpBinaryPath);
       console.log('[VideoDownloader] yt-dlp binary downloaded successfully');
     } else {
-      ytDlp = new YTDlpWrap(ytDlpBinaryPath);
+      ytDlpInstance = new YTDlpWrap(ytDlpBinaryPath);
       console.log('[VideoDownloader] Using existing yt-dlp binary');
     }
     
-    return ytDlp;
+    return ytDlpInstance;
   } catch (error) {
     console.error('[VideoDownloader] Failed to initialize yt-dlp:', error.message);
     throw error;
@@ -119,7 +120,7 @@ async function downloadVideo(url) {
     console.log('[VideoDownloader] Duration:', videoInfo.duration, 'seconds');
     
     // Download video with optimal settings for short videos
-    const downloadedFiles = await ytDlpInstance.execPromise([
+    await ytDlpInstance.execPromise([
       url,
       '-o', outputTemplate,
       '--format', 'best[ext=mp4]/best', // Prefer MP4 format
