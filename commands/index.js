@@ -15,6 +15,7 @@ const { handleVerifyCommand } = require('./handlers/verify');
 const { handleCriarMemeCommand, handleExportarMemesCommand } = require('./handlers/meme');
 const { handleDeleteCommand } = require('./handlers/delete');
 const { handleIssueCommand } = require('./handlers/issue');
+const { handleDownloadCommand } = require('./handlers/download');
 
 // Utilities
 const validation = require('./validation');
@@ -104,6 +105,11 @@ async function handleCommand(client, message, chatId, context = {}) {
 
       case '#issue':
         await handleIssueCommand(client, message, chatId, params, context);
+        return true;
+
+      case '#download':
+      case '#baixar':
+        await handleDownloadCommand(client, message, chatId, params);
         return true;
 
       case '#ping': {
