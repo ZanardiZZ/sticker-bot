@@ -124,12 +124,13 @@ async function handleDownloadCommand(client, message, chatId, params) {
       
       let description = '';
       let tags = '';
+      let isGifLike = false;
       
       // Only process with AI if not NSFW
       if (!nsfw) {
         try {
-          // Check if it's a GIF-like video
-          const isGifLike = await isGifLikeVideo(downloadedFile, result.mimetype);
+          // Check if it's a GIF-like video (store result to avoid redundant computation)
+          isGifLike = await isGifLikeVideo(downloadedFile, result.mimetype);
           
           // Process video with AI to get description and tags
           const aiResult = await processVideo(downloadedFile);
@@ -168,7 +169,9 @@ async function handleDownloadCommand(client, message, chatId, params) {
         fs.mkdirSync(mediaDir, { recursive: true });
       }
       
-      const fileName = `media-${Date.now()}.mp4`;
+      // Use the actual file extension from the downloaded file
+      const downloadedExt = path.extname(downloadedFile).toLowerCase().slice(1) || 'mp4';
+      const fileName = `media-${Date.now()}.${downloadedExt}`;
       finalMediaPath = path.join(mediaDir, fileName);
       fs.copyFileSync(downloadedFile, finalMediaPath);
       
@@ -199,9 +202,8 @@ async function handleDownloadCommand(client, message, chatId, params) {
       // Get saved media record
       const savedMedia = await findById(mediaId);
       
-      // Try to send as sticker if it's GIF-like
+      // Try to send as sticker if it's GIF-like (reuse the previously computed value)
       try {
-        const isGifLike = await isGifLikeVideo(finalMediaPath, result.mimetype);
         if (isGifLike) {
           console.log('[DownloadCommand] Attempting to send as animated sticker...');
           await sendStickerForMediaRecord(client, chatId, savedMedia);
