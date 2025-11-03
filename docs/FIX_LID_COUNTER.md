@@ -70,6 +70,10 @@ A comprehensive unit test was created to validate the fix:
 
 **File:** `tests/unit/resolvedSenderIdPropagation.test.js`
 
+> **Note:** This test is **not** executed by `npm test`. To run it manually, use:
+> ```
+> node tests/unit/resolvedSenderIdPropagation.test.js
+> ```
 The test validates:
 - ✅ processIncomingMedia prefers resolvedSenderId parameter
 - ✅ Meme command uses context.resolvedSenderId
