@@ -129,6 +129,13 @@ async function handleDownloadCommand(client, message, chatId, params) {
       // Only process with AI if not NSFW
       if (!nsfw) {
         try {
+          // Check that downloadedFile is within MEDIA_DIR to prevent path traversal
+          const absDownloadedFile = path.resolve(downloadedFile);
+          if (!absDownloadedFile.startsWith(MEDIA_DIR + path.sep)) {
+            console.warn('[DownloadCommand] Security violation: downloadedFile outside MEDIA_DIR:', absDownloadedFile);
+            await safeReply(msg, 'Erro de segurança: arquivo de vídeo inválido.');
+            return;
+          }
           // Check if it's a GIF-like video (store result to avoid redundant computation)
           isGifLike = await isGifLikeVideo(downloadedFile, result.mimetype);
           
