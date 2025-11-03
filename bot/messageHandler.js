@@ -13,6 +13,7 @@ const { isJidGroup, normalizeJid } = require('../utils/jidUtils');
 const { resolveSenderId } = require('../database');
 const MediaQueue = require('../services/mediaQueue');
 const { getDmUser, upsertDmUser } = require('../web/dataAccess');
+const { handleGroupChatMessage } = require('../services/conversationAgent');
 // Rate-limited auto-reply tracker for DM request notifications
 const dmAutoReplyMap = new Map();
 const DM_AUTO_REPLY_TTL = Number(process.env.DM_AUTO_REPLY_TTL_SECONDS) || 60 * 60; // default 1 hour
@@ -150,9 +151,20 @@ async function handleMessage(client, message) {
       if (handled) return;
     }
 
-    // 3) Sem comando -> só processa se for mídia
+    // 3) Conversas em grupo: tenta gerar resposta natural via IA
+    if (isGroup && message.type === 'chat' && message.body) {
+      const conversationHandled = await handleGroupChatMessage(client, message, {
+        chatId,
+        senderId: resolvedSenderId,
+        senderName: message.pushName || message.notifyName || message.sender?.name,
+        groupName: message.chat?.name || message.groupMetadata?.subject
+      });
+      if (conversationHandled) return;
+    }
+
+    // 4) Sem comando -> só processa se for mídia
     if (!message.isMedia) return;
-    
+
     // Queue media processing to avoid resource contention
     await mediaProcessingQueue.add(async () => {
       return await processIncomingMedia(client, message, resolvedSenderId);

@@ -53,8 +53,9 @@ module.exports = {
       const who = `${name}${contactId ? ` (${contactId})` : ''}`;
       const where = isGroup ? ` | ${groupName}` : '';
       const body = bodyPreview ? ` | "${bodyPreview}"` : '';
+      const chatInfo = message?.from ? ` | Chat: ${message.from}` : '';
 
-      console.log(`${base} | De: ${who}${where}${body}`);
+      console.log(`${base} | De: ${who}${where}${body}${chatInfo}`);
     } catch (e) {
       console.warn('[MSG] Falha ao logar mensagem:', e?.message || e);
     }
