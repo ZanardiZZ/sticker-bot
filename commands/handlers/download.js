@@ -1,4 +1,4 @@
-const { downloadVideo, isVideoUrl, getVideoInfo, MAX_VIDEO_DURATION } = require('../../services/videoDownloader');
+const { downloadVideo, isVideoUrl, getVideoInfo, MAX_VIDEO_DURATION, SUPPORTED_PLATFORMS } = require('../../services/videoDownloader');
 const { safeReply } = require('../../utils/safeMessaging');
 const { withTyping } = require('../../utils/typingIndicator');
 const { saveMedia, findById } = require('../../database/index.js');
@@ -22,7 +22,7 @@ const TEMP_DIR = path.resolve(__dirname, '..', '..', 'temp');
  * Usage: #download <URL>
  * Example: #download https://youtube.com/shorts/xxxxx
  */
-async function handleDownloadCommand(client, message, chatId, params) {
+async function handleDownloadCommand(client, message, chatId, params, context = {}) {
   const combinedParams = Array.isArray(params)
     ? params
         .map(part => {
@@ -35,6 +35,8 @@ async function handleDownloadCommand(client, message, chatId, params) {
   const url = typeof combinedParams === 'string'
     ? combinedParams.trim()
     : '';
+  const supportedPlatformsList = SUPPORTED_PLATFORMS.map(platform => `• ${platform}`).join('\n');
+
   if (!url) {
     await safeReply(
       client,
@@ -47,7 +49,8 @@ async function handleDownloadCommand(client, message, chatId, params) {
       '• `#download https://tiktok.com/@user/video/xxxxx`\n' +
       '• `#download https://instagram.com/reel/xxxxx`\n\n' +
       `⏱️ *Limite:* ${MAX_VIDEO_DURATION} segundos (1 minuto)\n` +
-      '🌐 *Sites suportados:* YouTube, TikTok, Instagram, Twitter/X, Facebook, Vimeo, e mais!',
+      '🌐 *Plataformas suportadas:*\n' +
+      `${supportedPlatformsList}`,
       message.id
     );
     return;
@@ -61,13 +64,7 @@ async function handleDownloadCommand(client, message, chatId, params) {
       '❌ *URL inválida ou não suportada*\n\n' +
       'Por favor, forneça um link válido de vídeo de uma plataforma suportada.\n\n' +
       '*Plataformas suportadas:*\n' +
-      '• YouTube (incluindo Shorts)\n' +
-      '• TikTok\n' +
-      '• Instagram (Reels, IGTV)\n' +
-      '• Twitter/X\n' +
-      '• Facebook\n' +
-      '• Vimeo\n' +
-      '• E mais...',
+      `${supportedPlatformsList}`,
       message.id
     );
     return;
@@ -204,7 +201,7 @@ async function handleDownloadCommand(client, message, chatId, params) {
       
       // Save to database
       const groupId = chatId.endsWith('@g.us') ? chatId : null;
-      const senderId = context.resolvedSenderId || message?.sender?.id || message?.author || 
+      const senderId = context?.resolvedSenderId || message?.sender?.id || message?.author || 
                       (message?.from && !String(message.from).endsWith('@g.us') ? message.from : null);
       
       const mediaId = await saveMedia({
@@ -275,9 +272,11 @@ async function handleDownloadCommand(client, message, chatId, params) {
         errorMessage += '• O link está correto';
       } else if (error.message.includes('URL não suportada') || error.message.includes('Unsupported')) {
         errorMessage += '🌐 Esta plataforma ou tipo de link não é suportada.\n\n';
+        errorMessage += '*Plataformas suportadas:*\n';
+        errorMessage += `${supportedPlatformsList}\n\n`;
         errorMessage += '💡 *Tente:*\n';
         errorMessage += '• Usar o link direto do vídeo\n';
-        errorMessage += '• Verificar se é uma plataforma suportada';
+        errorMessage += '• Verificar se o link é público';
       } else {
         errorMessage += `⚠️ ${error.message}\n\n`;
         errorMessage += '💡 *Tente novamente* ou use um link diferente.';
