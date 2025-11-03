@@ -8,6 +8,7 @@ const { cleanDescriptionTags } = require('../../utils/messageUtils');
 const { sendStickerForMediaRecord } = require('../../bot/stickers');
 const { generateResponseMessage } = require('../../utils/responseMessage');
 const { isGifLikeVideo } = require('../../utils/gifDetection');
+const { sendMediaByType } = require('../media');
 const fs = require('fs');
 const path = require('path');
 
@@ -238,7 +239,16 @@ main
         console.warn('[DownloadCommand] Could not send as sticker:', stickerError.message);
         // Continue anyway - we'll send text response
       }
-      
+
+      if (!isGifLike) {
+        try {
+          console.log('[DownloadCommand] Sending processed video as media...');
+          await sendMediaByType(client, chatId, savedMedia);
+        } catch (mediaError) {
+          console.warn('[DownloadCommand] Could not send as media:', mediaError.message);
+        }
+      }
+
       // Send success response
       let responseMessage = generateResponseMessage(result.mimetype, false);
       responseMessage += `📝 ${description || ''}\n`;
