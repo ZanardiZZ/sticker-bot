@@ -3,6 +3,25 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
+const EXTENSION_MIME_MAP = {
+  '.mp4': 'video/mp4',
+  '.m4v': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mkv': 'video/x-matroska',
+  '.avi': 'video/x-msvideo',
+  '.mov': 'video/quicktime'
+};
+
+function getMimeTypeByExtension(extension) {
+  if (!extension) return null;
+
+  const normalizedExtension = extension.startsWith('.')
+    ? extension.toLowerCase()
+    : `.${extension.toLowerCase()}`;
+
+  return EXTENSION_MIME_MAP[normalizedExtension] || null;
+}
+
 /**
  * Video Downloader Service
  * Downloads short videos from various platforms (YouTube, TikTok, Instagram, etc.)
@@ -10,6 +29,18 @@ const crypto = require('crypto');
  */
 
 const MAX_VIDEO_DURATION = 60; // 60 seconds = 1 minute
+
+const SUPPORTED_PLATFORMS = [
+  'YouTube (incl. Shorts)',
+  'TikTok',
+  'Instagram (Reels, IGTV, Posts)',
+  'Twitter/X',
+  'Facebook (vídeos)',
+  'Vimeo',
+  'Dailymotion',
+  'Twitch (vídeos gravados)',
+  'Reddit (posts com vídeo)'
+];
 
 // Initialize yt-dlp wrapper - will be lazily initialized on first use
 let ytDlpInstance = null;
@@ -65,16 +96,28 @@ async function getVideoInfo(url) {
       duration: info.duration,
       extractor: info.extractor
     });
-    
+
+    const infoExt = info.ext || (info.requested_downloads?.[0]?.ext);
+    const normalizedExt = infoExt ? infoExt.toLowerCase() : null;
+    const infoMimeType = normalizedExt ? getMimeTypeByExtension(normalizedExt) : null;
+
     return {
       title: info.title || 'Unknown',
       duration: info.duration || 0,
       extractor: info.extractor || 'unknown',
       thumbnail: info.thumbnail,
-      url: info.webpage_url || url
+      url: info.webpage_url || url,
+      fileExt: normalizedExt,
+      mimeType: infoMimeType
     };
   } catch (error) {
-    console.error('[VideoDownloader] Error extracting video info:', error.message);
+    const combinedMessage = [error?.stderr, error?.message].filter(Boolean).join(' ');
+    console.error('[VideoDownloader] Error extracting video info:', combinedMessage || error);
+
+    if (/logged-in/i.test(combinedMessage) && /vimeo/i.test(combinedMessage)) {
+      throw new Error('Este vídeo do Vimeo requer login. Forneça um link público ou autorizado.');
+    }
+
     throw new Error('Não foi possível obter informações do vídeo. Tente novamente mais tarde.');
   }
 }
@@ -138,19 +181,37 @@ async function downloadVideo(url) {
     }
     
     const downloadedFile = files[0];
-    const filePath = path.join(tempDir, downloadedFile);
-    
-    // Determine mimetype based on file extension
+    let filePath = path.join(tempDir, downloadedFile);
+
     const ext = path.extname(downloadedFile).toLowerCase();
-    let mimetype = 'video/mp4'; // Default
-    
-    if (ext === '.webm') mimetype = 'video/webm';
-    else if (ext === '.mkv') mimetype = 'video/x-matroska';
-    else if (ext === '.avi') mimetype = 'video/x-msvideo';
-    else if (ext === '.mov') mimetype = 'video/quicktime';
-    
+    let mimetype = getMimeTypeByExtension(ext);
+
+    if (!ext) {
+      const expectedExt = videoInfo.fileExt ? `.${videoInfo.fileExt}` : null;
+      const expectedMime = expectedExt ? getMimeTypeByExtension(expectedExt) : (videoInfo.mimeType || null);
+
+      if (expectedExt && expectedMime) {
+        const targetPath = `${filePath}${expectedExt}`;
+        fs.renameSync(filePath, targetPath);
+        filePath = targetPath;
+        mimetype = expectedMime;
+      } else if (!mimetype && videoInfo.mimeType) {
+        mimetype = videoInfo.mimeType;
+      }
+    }
+
+    if (!mimetype && videoInfo.mimeType) {
+      mimetype = videoInfo.mimeType;
+    }
+
+    if (!mimetype) {
+      mimetype = videoInfo.fileExt === 'mp4' ? 'video/mp4' : 'application/octet-stream';
+    }
+
     console.log('[VideoDownloader] Video downloaded successfully:', filePath);
-    
+
+    const finalFileExt = path.extname(filePath).replace('.', '') || videoInfo.fileExt || null;
+
     return {
       filePath,
       mimetype,
@@ -158,7 +219,8 @@ async function downloadVideo(url) {
         title: videoInfo.title,
         duration: videoInfo.duration,
         source: videoInfo.extractor,
-        url: videoInfo.url
+        url: videoInfo.url,
+        fileExt: finalFileExt
       }
     };
     
@@ -167,11 +229,15 @@ async function downloadVideo(url) {
     
     // Provide user-friendly error messages
     if (error.message.includes('Unsupported URL')) {
-      throw new Error('URL não suportada. Verifique se o link está correto.');
+      throw new Error(
+        'URL não suportada. Utilize uma das plataformas compatíveis: ' + SUPPORTED_PLATFORMS.join(', ') + '.'
+      );
     } else if (error.message.includes('Video unavailable')) {
       throw new Error('Vídeo não disponível ou privado.');
     } else if (error.message.includes('muito longo')) {
       throw error; // Pass duration error as-is
+    } else if (error.message.includes('requer login')) {
+      throw error;
     } else {
       throw new Error(`Erro ao baixar vídeo: ${error.message}`);
     }
@@ -208,5 +274,6 @@ module.exports = {
   downloadVideo,
   getVideoInfo,
   isVideoUrl,
-  MAX_VIDEO_DURATION
+  MAX_VIDEO_DURATION,
+  SUPPORTED_PLATFORMS
 };
