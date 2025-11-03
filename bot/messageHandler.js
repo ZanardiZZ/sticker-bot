@@ -155,7 +155,7 @@ async function handleMessage(client, message) {
     
     // Queue media processing to avoid resource contention
     await mediaProcessingQueue.add(async () => {
-      return await processIncomingMedia(client, message);
+      return await processIncomingMedia(client, message, resolvedSenderId);
     });
     
   } catch (e) {

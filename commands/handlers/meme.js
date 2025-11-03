@@ -289,7 +289,7 @@ async function enviarFigurinhaGerada(client, chatId, webpPath) {
   return null;
 }
 
-async function handleCriarMemeCommand(client, message, chatId, params = '') {
+async function handleCriarMemeCommand(client, message, chatId, params = '', context = {}) {
   if (!process.env.OPENAI_API_KEY_MEMECREATOR) {
     await sendStatusMessage(client, chatId, '🚫 Nenhuma chave OpenAI configurada para criação de memes.');
     return true;
@@ -308,7 +308,7 @@ async function handleCriarMemeCommand(client, message, chatId, params = '') {
   let promptInfo = null;
   let imagemInfo = null;
   let captions = parseCaptionTexts(textoOriginal);
-  const senderId = message.sender?.id || message.author || message.from;
+  const senderId = context.resolvedSenderId || message.sender?.id || message.author || message.from;
   const groupId = chatId.endsWith('@g.us') ? chatId : null;
 
   try {
