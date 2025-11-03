@@ -75,7 +75,7 @@ async function getVideoInfo(url) {
     };
   } catch (error) {
     console.error('[VideoDownloader] Error extracting video info:', error.message);
-    throw new Error(`Não foi possível obter informações do vídeo: ${error.message}`);
+    throw new Error('Não foi possível obter informações do vídeo. Tente novamente mais tarde.');
   }
 }
 
