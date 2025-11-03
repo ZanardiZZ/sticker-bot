@@ -151,6 +151,48 @@ Send these commands to the bot in WhatsApp:
 | `#editar 123` | Edit sticker tags/description | `#editar 456` |
 | `#forçar` | Force save next media (admin) | `#forçar` |
 | `#verificar` | Generate WhatsApp verification code | `#verificar` |
+| `#download <URL>` | Download short video from URL | `#download https://youtube.com/shorts/xxxxx` |
+| `#baixar <URL>` | Same as #download (Portuguese) | `#baixar https://tiktok.com/@user/video/xxxxx` |
+
+### 📥 Video Download Feature
+
+Download short videos from various platforms and process them as stickers:
+
+**Usage:**
+```
+#download <URL>
+#baixar <URL>
+```
+
+**Supported platforms:**
+- YouTube (including Shorts)
+- TikTok
+- Instagram (Reels, IGTV)
+- Twitter/X
+- Facebook
+- Vimeo
+- Reddit
+- And many more...
+
+**Limitations:**
+- ⏱️ Maximum duration: 60 seconds (1 minute)
+- 📦 Maximum file size: 50MB
+- 🤖 Videos are automatically analyzed with AI
+- 🔒 NSFW filtering is applied
+- ✨ GIF-like videos are converted to animated stickers
+
+**Example:**
+```
+#download https://youtube.com/shorts/abc123
+```
+
+The bot will:
+1. Check video duration and availability
+2. Download the video
+3. Analyze content with AI (description and tags)
+4. Apply NSFW filtering
+5. Convert to sticker format (if applicable)
+6. Save to database with full metadata
 
 ### Tag Editing Mode
 After using `#editar ID`, send:
