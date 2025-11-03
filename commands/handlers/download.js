@@ -34,6 +34,7 @@ async function handleDownloadCommand(client, message, chatId, params) {
   const url = typeof combinedParams === 'string'
     ? combinedParams.trim()
     : '';
+main
   
   if (!url) {
     await safeReply(
@@ -204,7 +205,7 @@ async function handleDownloadCommand(client, message, chatId, params) {
       
       // Save to database
       const groupId = chatId.endsWith('@g.us') ? chatId : null;
-      const senderId = message?.sender?.id || message?.author || 
+      const senderId = context.resolvedSenderId || message?.sender?.id || message?.author || 
                       (message?.from && !String(message.from).endsWith('@g.us') ? message.from : null);
       
       const mediaId = await saveMedia({
