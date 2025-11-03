@@ -171,7 +171,7 @@ async function handleDownloadCommand(client, message, chatId, params) {
       }
       
       // Move video to media directory
-      const mediaDir = path.resolve(__dirname, '../../bot/media');
+      const mediaDir = path.resolve(__dirname, 'STICKER_DIR');
       if (!fs.existsSync(mediaDir)) {
         fs.mkdirSync(mediaDir, { recursive: true });
       }
