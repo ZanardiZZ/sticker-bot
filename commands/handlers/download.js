@@ -11,6 +11,9 @@ const { isGifLikeVideo } = require('../../utils/gifDetection');
 const fs = require('fs');
 const path = require('path');
 
+const MEDIA_DIR = path.resolve(__dirname, '..', '..', 'bot', 'media');
+const TEMP_DIR = path.resolve(__dirname, '..', '..', 'temp');
+
 /**
  * Handles the #download command
  * Downloads short videos from various platforms and processes them as stickers
@@ -18,8 +21,20 @@ const path = require('path');
  * Usage: #download <URL>
  * Example: #download https://youtube.com/shorts/xxxxx
  */
-async function handleDownloadCommand(client, message, chatId, params, context = {}) {
-  const url = params?.trim();
+async function handleDownloadCommand(client, message, chatId, params) {
+  const combinedParams = Array.isArray(params)
+    ? params
+        .map(part => {
+          if (typeof part === 'string') return part;
+          if (part == null) return '';
+          return String(part);
+        })
+        .join(' ')
+    : params;
+  const url = typeof combinedParams === 'string'
+    ? combinedParams.trim()
+    : '';
+main
   
   if (!url) {
     await safeReply(
@@ -129,11 +144,16 @@ async function handleDownloadCommand(client, message, chatId, params, context = 
       // Only process with AI if not NSFW
       if (!nsfw) {
         try {
-          // Check that downloadedFile is within MEDIA_DIR to prevent path traversal
+          // Check that downloadedFile is within TEMP_DIR to prevent path traversal
           const absDownloadedFile = path.resolve(downloadedFile);
-          if (!absDownloadedFile.startsWith(MEDIA_DIR + path.sep)) {
-            console.warn('[DownloadCommand] Security violation: downloadedFile outside MEDIA_DIR:', absDownloadedFile);
-            await safeReply(msg, 'Erro de segurança: arquivo de vídeo inválido.');
+          if (!absDownloadedFile.startsWith(TEMP_DIR + path.sep)) {
+            console.warn('[DownloadCommand] Security violation: downloadedFile outside TEMP_DIR:', absDownloadedFile);
+            await safeReply(
+              client,
+              chatId,
+              'Erro de segurança: arquivo de vídeo inválido.',
+              message.id
+            );
             return;
           }
           // Check if it's a GIF-like video (store result to avoid redundant computation)
@@ -171,15 +191,14 @@ async function handleDownloadCommand(client, message, chatId, params, context = 
       }
       
       // Move video to media directory
-      const mediaDir = path.resolve(__dirname, 'STICKER_DIR');
-      if (!fs.existsSync(mediaDir)) {
-        fs.mkdirSync(mediaDir, { recursive: true });
+      if (!fs.existsSync(MEDIA_DIR)) {
+        fs.mkdirSync(MEDIA_DIR, { recursive: true });
       }
-      
+
       // Use the actual file extension from the downloaded file
       const downloadedExt = path.extname(downloadedFile).toLowerCase().slice(1) || 'mp4';
       const fileName = `media-${Date.now()}.${downloadedExt}`;
-      finalMediaPath = path.join(mediaDir, fileName);
+      finalMediaPath = path.join(MEDIA_DIR, fileName);
       fs.copyFileSync(downloadedFile, finalMediaPath);
       
       console.log('[DownloadCommand] Video copied to media directory:', finalMediaPath);
