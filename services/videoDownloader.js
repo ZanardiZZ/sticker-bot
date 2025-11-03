@@ -27,7 +27,6 @@ async function initYtDlp() {
     // Check if binary already exists
     if (!fs.existsSync(ytDlpBinaryPath)) {
       console.log('[VideoDownloader] Downloading yt-dlp binary...');
-      const downloader = new YTDlpWrap();
       await YTDlpWrap.downloadFromGithub(ytDlpBinaryPath);
       ytDlpInstance = new YTDlpWrap(ytDlpBinaryPath);
       console.log('[VideoDownloader] yt-dlp binary downloaded successfully');
