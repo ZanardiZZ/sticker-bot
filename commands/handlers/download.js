@@ -35,8 +35,6 @@ async function handleDownloadCommand(client, message, chatId, params) {
   const url = typeof combinedParams === 'string'
     ? combinedParams.trim()
     : '';
-main
-  
   if (!url) {
     await safeReply(
       client,
