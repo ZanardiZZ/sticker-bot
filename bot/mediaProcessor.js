@@ -115,7 +115,7 @@ function fallbackCleanDescriptionTags(description, tags) {
   return { description: cleanDesc, tags: cleanTags };
 }
 
-async function processIncomingMedia(client, message) {
+async function processIncomingMedia(client, message, resolvedSenderId = null) {
   const chatId = message.from;
 
   // Show typing indicator while processing media
@@ -768,7 +768,7 @@ async function processIncomingMedia(client, message) {
       tags = '';
     }
 
-    const senderId =
+    const senderId = resolvedSenderId ||
       message?.sender?.id ||
       message?.author ||
       (message?.from && !String(message.from).endsWith('@g.us') ? message.from : null);

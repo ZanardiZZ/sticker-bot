@@ -18,7 +18,7 @@ const path = require('path');
  * Usage: #download <URL>
  * Example: #download https://youtube.com/shorts/xxxxx
  */
-async function handleDownloadCommand(client, message, chatId, params) {
+async function handleDownloadCommand(client, message, chatId, params, context = {}) {
   const url = params?.trim();
   
   if (!url) {
@@ -186,7 +186,7 @@ async function handleDownloadCommand(client, message, chatId, params) {
       
       // Save to database
       const groupId = chatId.endsWith('@g.us') ? chatId : null;
-      const senderId = message?.sender?.id || message?.author || 
+      const senderId = context.resolvedSenderId || message?.sender?.id || message?.author || 
                       (message?.from && !String(message.from).endsWith('@g.us') ? message.from : null);
       
       const mediaId = await saveMedia({

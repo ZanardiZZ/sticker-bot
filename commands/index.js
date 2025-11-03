@@ -92,7 +92,7 @@ async function handleCommand(client, message, chatId, context = {}) {
         return true;
 
       case '#criar':
-        await handleCriarMemeCommand(client, message, chatId, params);
+        await handleCriarMemeCommand(client, message, chatId, params, context);
         return true;
 
       case '#exportarmemes':
@@ -109,7 +109,7 @@ async function handleCommand(client, message, chatId, context = {}) {
 
       case '#download':
       case '#baixar':
-        await handleDownloadCommand(client, message, chatId, params);
+        await handleDownloadCommand(client, message, chatId, params, context);
         return true;
 
       case '#ping': {
