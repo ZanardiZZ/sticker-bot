@@ -308,10 +308,70 @@ async function getAiAnnotationsFromPrompt(prompt) {
     return { description: null, tags: null };
   }
 }
+
+/**
+ * Indicates whether the OpenAI client is configured and ready.
+ * @returns {boolean}
+ */
+function isAiAvailable() {
+  return !!openai;
+}
+
+/**
+ * Generates a conversational reply using the configured OpenAI chat model.
+ * @param {Object} options
+ * @param {Array<{role: string, content: string}>} options.messages - Chat messages for the completion call
+ * @param {string} [options.model] - Override model name
+ * @param {number} [options.temperature] - Sampling temperature
+ * @param {number} [options.maxTokens] - Maximum number of tokens in the reply
+ * @returns {Promise<string|null>} - Generated reply text or null if unavailable
+ */
+async function generateConversationalReply({
+  messages,
+  model = process.env.CONVERSATION_MODEL || 'gpt-4o-mini',
+  temperature,
+  maxTokens
+} = {}) {
+  try {
+    if (!openai) {
+      console.warn('[AI] Conversational AI requested sem configuração de OpenAI.');
+      return null;
+    }
+
+    if (!Array.isArray(messages) || messages.length === 0) {
+      console.warn('[AI] Conversational reply chamado sem mensagens.');
+      return null;
+    }
+
+    const envTemp = Number(process.env.CONVERSATION_TEMPERATURE);
+    const envMaxTokens = Number(process.env.CONVERSATION_MAX_TOKENS);
+    const safeTemperature = Number.isFinite(temperature)
+      ? temperature
+      : (Number.isFinite(envTemp) ? envTemp : 0.6);
+    const safeMaxTokens = Number.isFinite(maxTokens) && maxTokens > 0
+      ? Math.floor(maxTokens)
+      : (Number.isFinite(envMaxTokens) && envMaxTokens > 0 ? Math.floor(envMaxTokens) : 320);
+
+    const response = await openai.chat.completions.create({
+      model,
+      messages,
+      temperature: safeTemperature,
+      max_tokens: safeMaxTokens
+    });
+
+    const choice = response?.choices?.[0]?.message?.content;
+    return choice ? choice.trim() : null;
+  } catch (error) {
+    console.error('[AI] Erro ao gerar resposta conversacional:', error);
+    return null;
+  }
+}
 module.exports = {
   getAiAnnotations,
   getAiAnnotationsForGif,
   getAiAnnotationsFromPrompt,
   getTagsFromTextPrompt,
-  transcribeAudioBuffer // mantenha se já tiver implementado
+  transcribeAudioBuffer, // mantenha se já tiver implementado
+  isAiAvailable,
+  generateConversationalReply
 };
