@@ -12,9 +12,10 @@ const GITHUB_ASSIGNEES = (process.env.GITHUB_ISSUE_ASSIGNEES || 'copilot')
   .split(',')
   .map(value => value.trim())
   .filter(Boolean);
+const ZERO_WIDTH_SPACE = '\u200b';
 
 function sanitizeTripleBackticks(text = '') {
-  return text.replace(/```/g, '``\`');
+  return text.replace(/```/g, `\`${ZERO_WIDTH_SPACE}\`\``);
 }
 
 function extractIssueDescription(rawText = '') {
