@@ -19,13 +19,7 @@ try {
   console.warn('[init] Funcionalidades de conversão de vídeo serão desabilitadas');
 }
 
-// wa-sticker-formatter é opcional
-let Sticker, StickerTypes;
-try {
-  ({ Sticker, StickerTypes } = require('wa-sticker-formatter'));
-} catch (e) {
-  console.warn('[init] wa-sticker-formatter não encontrado, usando fallback do open-wa. Instale com: npm i wa-sticker-formatter');
-}
+const { Sticker, StickerTypes } = require('../utils/stickerFormatter');
 
 /**
  * Ensures directory exists, creating it if necessary
