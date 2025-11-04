@@ -805,11 +805,16 @@ function setActiveMainTab(tabId, options = {}) {
 
   if (currentMainTab === 'settings') {
     setActiveSubTab(currentSubTab, { updateHash: false });
-  } else if (subTabLoaders[currentMainTab] && !initializedSubTabs.has(currentMainTab)) {
-    initializedSubTabs.add(currentMainTab);
-    Promise.resolve(subTabLoaders[currentMainTab]()).catch((error) => {
-      console.warn(`Failed to initialize main tab "${currentMainTab}":`, error);
-    });
+  } else if (!initializedSubTabs.has(currentMainTab)) {
+    const loader = Object.prototype.hasOwnProperty.call(subTabLoaders, currentMainTab)
+      ? subTabLoaders[currentMainTab]
+      : undefined;
+    if (typeof loader === 'function') {
+      initializedSubTabs.add(currentMainTab);
+      Promise.resolve(loader()).catch((error) => {
+        console.warn(`Failed to initialize main tab "${currentMainTab}":`, error);
+      });
+    }
   }
 
   if (updateHash) {
@@ -834,15 +839,16 @@ function setActiveSubTab(tabId, options = {}) {
     content.classList.toggle('active', content.id === `tab-${tabId}`);
   });
 
-  if (
-    !initializedSubTabs.has(tabId) &&
-    Object.prototype.hasOwnProperty.call(subTabLoaders, tabId) &&
-    typeof subTabLoaders[tabId] === 'function'
-  ) {
-    initializedSubTabs.add(tabId);
-    Promise.resolve(subTabLoaders[tabId]()).catch((error) => {
-      console.warn('Failed to initialize sub-tab "%s":', tabId, error);
-    });
+  if (!initializedSubTabs.has(tabId)) {
+    const loader = Object.prototype.hasOwnProperty.call(subTabLoaders, tabId)
+      ? subTabLoaders[tabId]
+      : undefined;
+    if (typeof loader === 'function') {
+      initializedSubTabs.add(tabId);
+      Promise.resolve(loader()).catch((error) => {
+        console.warn('Failed to initialize sub-tab "%s":', tabId, error);
+      });
+    }
   }
 
   if (updateHash) {
