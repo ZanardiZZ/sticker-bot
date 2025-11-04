@@ -17,7 +17,6 @@ try {
   console.warn('[ENV] dotenv não carregado:', e.message);
 }
 const session = require('express-session');
-const csurf = require('csurf');
 const cookieParser = require('cookie-parser');
 const bcrypt = require('bcryptjs');
 const rateLimit = require('express-rate-limit');
@@ -29,7 +28,9 @@ const {
   createLoginRateLimiter,
   createRegistrationRateLimiter,
   createRequestLogger,
-  createIPRulesMiddleware
+  createIPRulesMiddleware,
+  createCSRFMiddleware,
+  getCSRFToken
 } = require('./middlewares');
 const { registerRoutes } = require('./routes');
 const {
@@ -452,17 +453,9 @@ app.use(session({
 }));
 
 
-// CSRF Protection (use csurf, recognized by CodeQL)
-app.use((req, res, next) => {
-  // Skip CSRF for login and register POST requests, and debug/admin endpoints
-  if ((req.path === '/api/login' || req.path === '/api/register') && req.method === 'POST') {
-    return next();
-  }
-  if (req.path.startsWith('/api/debug/') || req.path.startsWith('/api/admin/')) {
-    return next();
-  }
-  return csurf({ cookie: false })(req, res, next);
-});
+// CSRF Protection using internal middleware (still recognized by CodeQL)
+const csrfProtection = createCSRFMiddleware();
+app.use(csrfProtection);
 
 console.time('[BOOT] auth');
 authMiddleware(app);
@@ -555,7 +548,7 @@ app.get('/api/my-stickers', requireLogin, async (req, res) => {
 
 // CSRF Token endpoint
 app.get('/api/csrf-token', (req, res) => {
-  res.json({ csrfToken: req.csrfToken() });
+  res.json({ csrfToken: getCSRFToken(req, res) });
 });
   // ========= Email Confirmation API =========
 app.get('/confirm-email', async (req, res) => {

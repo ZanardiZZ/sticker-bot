@@ -5,61 +5,99 @@
 
 const csrf = require('csrf');
 
-// Create a single csrf instance to reuse across the module
+// Reuse a single token generator for the process
 const tokens = new csrf();
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
-function createCSRFMiddleware() {
+function ensureSecret(req) {
+  if (!req.session) {
+    throw new Error('Session middleware is required before CSRF protection middleware');
+  }
+  if (!req.session.csrfSecret) {
+    req.session.csrfSecret = tokens.secretSync();
+  }
+  return req.session.csrfSecret;
+}
+
+function defaultSkip(req) {
+  const method = (req.method || '').toUpperCase();
+  if (SAFE_METHODS.has(method)) {
+    return true;
+  }
+
+  const path = req.path || req.originalUrl || '';
+
+  if (method === 'POST' && (path === '/api/login' || path === '/api/register')) {
+    return true;
+  }
+
+  if (path.startsWith('/api/debug/')) {
+    return true;
+  }
+
+  if (path.startsWith('/api/admin/')) {
+    return true;
+  }
+
+  if (path === '/api/captcha' || path.startsWith('/api/captcha/')) {
+    return true;
+  }
+
+  if (path === '/login' || path === '/register') {
+    return true;
+  }
+
+  return false;
+}
+
+function attachTokenHelpers(req, res) {
+  let cachedToken;
+  const targetRes = res || {};
+  targetRes.locals = targetRes.locals || {};
+  req.csrfToken = () => {
+    const secret = ensureSecret(req);
+    cachedToken = cachedToken || tokens.create(secret);
+    return cachedToken;
+  };
+  targetRes.locals.csrfToken = req.csrfToken();
+  return targetRes.locals.csrfToken;
+}
+
+function createCSRFMiddleware(options = {}) {
+  const { skip = defaultSkip } = options;
+
   return (req, res, next) => {
-    // Skip CSRF for safe methods and API endpoints that use other auth
-    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
-      return next();
-    }
+    try {
+      attachTokenHelpers(req, res);
 
-    // Skip for certain API endpoints that use alternative auth
-    const skipPaths = [
-      '/api/admin/logs/stream', // SSE endpoint
-      '/api/captcha', // Already has CAPTCHA protection
-      '/login', // Login form (needs special handling)
-      '/register', // Registration form
-    ];
-    
-    if (skipPaths.some(path => req.path.includes(path))) {
-      return next();
-    }
+      if (typeof skip === 'function' && skip(req)) {
+        return next();
+      }
 
-    // Initialize CSRF secret in session if not present
-    if (!req.session.csrfSecret) {
-      req.session.csrfSecret = tokens.secretSync();
-    }
+      const method = (req.method || '').toUpperCase();
+      if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+        return next();
+      }
 
-    // Generate token for the current session
-    const token = tokens.create(req.session.csrfSecret);
-    
-    // Make token available to templates
-    res.locals.csrfToken = token;
+      const secret = ensureSecret(req);
+      const submittedToken = req.body?._csrf || req.get('x-csrf-token') || req.get('x-xsrf-token');
 
-    // For POST/PUT/DELETE requests, verify the token
-    if (req.method === 'POST' || req.method === 'PUT' || req.method === 'DELETE') {
-      const submittedToken = req.body._csrf || req.headers['x-csrf-token'];
-      
-      if (!submittedToken || !tokens.verify(req.session.csrfSecret, submittedToken)) {
+      if (!submittedToken || !tokens.verify(secret, submittedToken)) {
         const error = new Error('Invalid CSRF token');
         error.code = 'EBADCSRFTOKEN';
         error.status = 403;
         return next(error);
       }
-    }
 
-    next();
+      return next();
+    } catch (err) {
+      return next(err);
+    }
   };
 }
 
 function getCSRFToken(req, res) {
-  if (!req.session.csrfSecret) {
-    req.session.csrfSecret = tokens.secretSync();
-  }
-  
-  return tokens.create(req.session.csrfSecret);
+  return attachTokenHelpers(req, res);
 }
 
 module.exports = {
