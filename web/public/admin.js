@@ -699,13 +699,34 @@ let lastLoadedGroupUsersId = '';
 let lastLoadedGroupCommandsId = '';
 
 const mainTabIds = new Set(['settings', 'group-users', 'bot-frequency', 'group-config', 'logs', 'network', 'users', 'pending-edits', 'duplicates']);
-const subTabLoaders = {
-  'group-users': initializeGroupUsersTab,
-  'bot-frequency': loadBotSchedule,
-  'group-config': initializeGroupCommandsTab
-};
 const initializedSubTabs = new Set();
 const tabPayload = {};
+
+function runTabLoader(tabId, contextLabel) {
+  if (initializedSubTabs.has(tabId)) {
+    return;
+  }
+
+  let loader;
+  switch (tabId) {
+    case 'group-users':
+      loader = initializeGroupUsersTab;
+      break;
+    case 'bot-frequency':
+      loader = loadBotSchedule;
+      break;
+    case 'group-config':
+      loader = initializeGroupCommandsTab;
+      break;
+    default:
+      return;
+  }
+
+  initializedSubTabs.add(tabId);
+  Promise.resolve(loader()).catch((error) => {
+    console.warn(`Failed to initialize ${contextLabel} "${tabId}":`, error);
+  });
+}
 
 function initializeMainTabs() {
   mainTabButtons = Array.from(document.querySelectorAll('.main-tab-button'));
@@ -805,16 +826,8 @@ function setActiveMainTab(tabId, options = {}) {
 
   if (currentMainTab === 'settings') {
     setActiveSubTab(currentSubTab, { updateHash: false });
-  } else if (!initializedSubTabs.has(currentMainTab)) {
-    const loader = Object.prototype.hasOwnProperty.call(subTabLoaders, currentMainTab)
-      ? subTabLoaders[currentMainTab]
-      : undefined;
-    if (typeof loader === 'function') {
-      initializedSubTabs.add(currentMainTab);
-      Promise.resolve(loader()).catch((error) => {
-        console.warn(`Failed to initialize main tab "${currentMainTab}":`, error);
-      });
-    }
+  } else {
+    runTabLoader(currentMainTab, 'main tab');
   }
 
   if (updateHash) {
@@ -839,17 +852,7 @@ function setActiveSubTab(tabId, options = {}) {
     content.classList.toggle('active', content.id === `tab-${tabId}`);
   });
 
-  if (!initializedSubTabs.has(tabId)) {
-    const loader = Object.prototype.hasOwnProperty.call(subTabLoaders, tabId)
-      ? subTabLoaders[tabId]
-      : undefined;
-    if (typeof loader === 'function') {
-      initializedSubTabs.add(tabId);
-      Promise.resolve(loader()).catch((error) => {
-        console.warn('Failed to initialize sub-tab "%s":', tabId, error);
-      });
-    }
-  }
+  runTabLoader(tabId, 'sub-tab');
 
   if (updateHash) {
     updateLocationHash();
