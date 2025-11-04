@@ -57,6 +57,23 @@ app.set('trust proxy', true);
 app.use(cors());
 app.use(cookieParser());
 
+// Session middleware must run before CSRF protection
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
+  resave: false,
+  saveUninitialized: true,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 15 * 60 * 1000,
+    httpOnly: true,
+    sameSite: 'lax'
+  }
+}));
+
+// CSRF Protection using internal middleware (still recognized by CodeQL)
+const csrfProtection = createCSRFMiddleware();
+app.use(csrfProtection);
+
 // Global rate limiter to protect expensive authorization logic against abuse
 // Adjust values depending on expected traffic patterns
 const globalLimiter = createMainRateLimiter({
@@ -438,24 +455,6 @@ const PUBLIC_DIR = process.env.PUBLIC_DIR || path.resolve(__dirname, 'public');
 //   next();
 // });
 console.log('[WEB] PUBLIC_DIR:', PUBLIC_DIR, 'exists:', fs.existsSync(PUBLIC_DIR));
-
-// Session middleware for CAPTCHA
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
-  resave: false,
-  saveUninitialized: true, // Changed to true to ensure session is created
-  cookie: {
-    secure: process.env.NODE_ENV === 'production',
-    maxAge: 15 * 60 * 1000, // 15 minutes (longer than CAPTCHA expiry)
-    httpOnly: true,
-    sameSite: 'lax' // Add sameSite for better compatibility
-  }
-}));
-
-
-// CSRF Protection using internal middleware (still recognized by CodeQL)
-const csrfProtection = createCSRFMiddleware();
-app.use(csrfProtection);
 
 console.time('[BOOT] auth');
 authMiddleware(app);
