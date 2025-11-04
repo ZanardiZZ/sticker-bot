@@ -724,7 +724,11 @@ function runTabLoader(tabId, contextLabel) {
 
   initializedSubTabs.add(tabId);
   Promise.resolve(loader()).catch((error) => {
-    console.warn(`Failed to initialize ${contextLabel} "${tabId}":`, error);
+    console.warn('Failed to initialize tab loader', {
+      context: contextLabel,
+      tabId,
+      error
+    });
   });
 }
 
