@@ -303,7 +303,8 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
     } else if (message.mimetype === 'image/gif') {
       try {
         const gifSharp = sharp(tmpFilePath, { animated: true });
-        const { pageHeight, height } = await gifSharp.metadata();
+        const metadata = await gifSharp.metadata();
+        const { pageHeight, height, width } = metadata;
         const animatedBase = {
           loop: 0,
           effort: 6,
@@ -314,33 +315,130 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
           animatedBase.pageHeight = targetPageHeight;
         }
 
-        const gifAttempts = [
-          { lossless: false, quality: 85, nearLossless: true },
-          { lossless: false, quality: 75, nearLossless: false },
-          { lossless: false, quality: 65 }
+        // Strategy: Try quality reduction first, then combine with dimension reduction if needed
+        const qualityLevels = [
+          { quality: 85, nearLossless: true },
+          { quality: 75, nearLossless: false },
+          { quality: 65, nearLossless: false }
         ];
-
+        
+        // Dimension reduction targets if quality alone doesn't work
+        const dimensionTargets = [512, 480, 400, 320];
+        
         let lastBuffer = null;
-        for (const attempt of gifAttempts) {
+        let successfulDimension = null;
+        let successfulQuality = null;
+
+        // First, try quality reduction without resizing
+        for (const qualityAttempt of qualityLevels) {
           try {
             const candidate = await gifSharp
               .clone()
-              .webp({ ...animatedBase, ...attempt })
+              .webp({ ...animatedBase, lossless: false, ...qualityAttempt })
               .toBuffer();
             lastBuffer = candidate;
+            successfulQuality = qualityAttempt.quality;
+            
             if (candidate.length <= MAX_STICKER_BYTES) {
+              console.log(`[MediaProcessor] GIF convertido com qualidade ${qualityAttempt.quality} - Tamanho: ${Math.round(candidate.length / 1024)}KB`);
               break;
             }
           } catch (attemptErr) {
-            console.warn('[MediaProcessor] GIF WebP attempt falhou:', attemptErr.message);
+            console.warn('[MediaProcessor] GIF WebP quality attempt falhou:', attemptErr.message);
+          }
+        }
+
+        // If still too large, try combining dimension reduction with quality reduction
+        if (lastBuffer && lastBuffer.length > MAX_STICKER_BYTES) {
+          console.log(`[MediaProcessor] GIF ainda grande (${Math.round(lastBuffer.length / 1024)}KB), tentando redução de dimensões...`);
+          
+          for (const targetSize of dimensionTargets) {
+            // Skip if already smaller than target
+            if (width <= targetSize && height <= targetSize) {
+              continue;
+            }
+            
+            for (const qualityAttempt of qualityLevels) {
+              try {
+                const resizedSharp = sharp(tmpFilePath, { animated: true });
+                const resizedMetadata = await resizedSharp.metadata();
+                const resizedPageHeight = resizedMetadata.pageHeight || resizedMetadata.height;
+                
+                const resizedBase = {
+                  loop: 0,
+                  effort: 6,
+                  smartSubsample: true,
+                };
+                
+                if (resizedPageHeight) {
+                  // Calculate proportional pageHeight for resized image
+                  const scaleFactor = targetSize / Math.max(width, height);
+                  resizedBase.pageHeight = Math.round(resizedPageHeight * scaleFactor);
+                }
+                
+                const candidate = await resizedSharp
+                  .resize(targetSize, targetSize, {
+                    fit: 'inside',
+                    withoutEnlargement: true
+                  })
+                  .webp({ ...resizedBase, lossless: false, ...qualityAttempt })
+                  .toBuffer();
+                
+                lastBuffer = candidate;
+                successfulDimension = targetSize;
+                successfulQuality = qualityAttempt.quality;
+                
+                if (candidate.length <= MAX_STICKER_BYTES) {
+                  console.log(`[MediaProcessor] GIF convertido com redimensionamento ${targetSize}px e qualidade ${qualityAttempt.quality} - Tamanho: ${Math.round(candidate.length / 1024)}KB`);
+                  break;
+                }
+              } catch (resizeErr) {
+                console.warn(`[MediaProcessor] GIF resize to ${targetSize}px failed:`, resizeErr.message);
+              }
+            }
+            
+            // If we got under the limit, stop trying
+            if (lastBuffer && lastBuffer.length <= MAX_STICKER_BYTES) {
+              break;
+            }
           }
         }
 
         bufferWebp = lastBuffer;
         await ensureVisualHashFromBuffer(bufferWebp, 'gif');
         gifSourceForAnalysis = tmpFilePath;
+        
         if (bufferWebp && bufferWebp.length > MAX_STICKER_BYTES) {
-          console.warn('[MediaProcessor] GIF convertido excede 1MB mesmo após tentativas de compressão. Tamanho:', bufferWebp.length);
+          const sizeInMB = (bufferWebp.length / (1024 * 1024)).toFixed(2);
+          console.warn(`[MediaProcessor] GIF muito grande para figurinha animada (${sizeInMB}MB mesmo após todas tentativas de compressão)`);
+          console.warn(`[MediaProcessor] WhatsApp pode rejeitar ou converter para figurinha estática`);
+          
+          // Last resort: try converting to static sticker at highest quality
+          console.log('[MediaProcessor] Tentando conversão para figurinha estática como fallback...');
+          try {
+            const staticSharp = sharp(tmpFilePath, { animated: false, page: 0 });
+            const staticBuffer = await staticSharp
+              .resize(512, 512, {
+                fit: 'inside',
+                withoutEnlargement: true
+              })
+              .webp({ quality: 90, effort: 6 })
+              .toBuffer();
+            
+            if (staticBuffer && staticBuffer.length <= MAX_STICKER_BYTES) {
+              console.log(`[MediaProcessor] GIF convertido para figurinha estática - Tamanho: ${Math.round(staticBuffer.length / 1024)}KB`);
+              bufferWebp = staticBuffer;
+              // Notify user that GIF was converted to static
+              await safeReply(client, chatId, 
+                '⚠️ Este GIF é muito grande para ser enviado como figurinha animada. Foi convertido para figurinha estática.',
+                message.id
+              );
+            }
+          } catch (staticErr) {
+            console.warn('[MediaProcessor] Falha na conversão para figurinha estática:', staticErr.message);
+          }
+        } else if (successfulDimension) {
+          console.log(`[MediaProcessor] GIF redimensionado de ${width}x${height} para max ${successfulDimension}px para caber em 1MB`);
         }
       } catch (e) {
         console.warn('[MediaProcessor] Erro ao converter GIF para webp animado:', e.message);
