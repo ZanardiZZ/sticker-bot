@@ -71,7 +71,7 @@ app.use(session({
 }));
 
 // CSRF Protection using internal middleware (still recognized by CodeQL)
-app.use(createCSRFMiddleware());
+// app.use(createCSRFMiddleware());
 const csrfProtection = createCSRFMiddleware();
 app.use(csrfProtection);
 
