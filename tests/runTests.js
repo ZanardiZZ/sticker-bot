@@ -14,6 +14,7 @@ const { tests: mediaQueueTests } = require('./unit/mediaQueue.test');
 const { tests: maintenanceModelTests } = require('./unit/maintenanceModel.test');
 const { tests: idReuseTests } = require('./unit/idReuse.test');
 const { tests: gifProcessorTests } = require('./unit/gifProcessor.test');
+const { tests: largeGifProcessingTests } = require('./unit/largeGifProcessing.test');
 const { tests: tagSimilarityTests, cleanup: tagSimilarityCleanup } = require('./unit/tagSimilarity.test');
 const { tests: idCommandTests } = require('./unit/idCommand.test');
 const { tests: versionTests } = require('./unit/version.test');
@@ -42,6 +43,7 @@ async function runAllTests() {
     results.push(await runTestSuite('Maintenance Model Tests', maintenanceModelTests));
     results.push(await runTestSuite('ID Reuse Tests', idReuseTests));
     results.push(await runTestSuite('GIF Processor Tests', gifProcessorTests));
+    results.push(await runTestSuite('Large GIF Processing Tests', largeGifProcessingTests));
     results.push(await runTestSuite('Tag Similarity Tests', tagSimilarityTests));
     results.push(await runTestSuite('ID Command Tests', idCommandTests));
     results.push(await runTestSuite('Version Model Tests', versionTests));
