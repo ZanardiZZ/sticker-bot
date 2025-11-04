@@ -226,6 +226,12 @@ async function downloadVideo(url) {
     
   } catch (error) {
     console.error('[VideoDownloader] Error downloading video:', error.message);
+    const stderrOutput = typeof error?.stderr === 'string' ? error.stderr.trim() : '';
+    const stdoutOutput = typeof error?.stdout === 'string' ? error.stdout.trim() : '';
+    const detailedLog = [stderrOutput, stdoutOutput].filter(Boolean).join('\n');
+    if (detailedLog) {
+      console.error('[VideoDownloader] Detailed error output\n', detailedLog);
+    }
     
     // Provide user-friendly error messages
     if (error.message.includes('Unsupported URL')) {
@@ -257,14 +263,16 @@ function isVideoUrl(url) {
     /youtu\.be\//i,
     /youtube\.com\/shorts/i,
     /tiktok\.com\//i,
-    /instagram\.com\/(p|reel|tv)\//i,
+    /instagram\.com\/(p|reel|reels|tv)\//i,
     /twitter\.com\/.*\/status\//i,
     /x\.com\/.*\/status\//i,
     /facebook\.com\/.*\/videos\//i,
     /vimeo\.com\//i,
     /dailymotion\.com\//i,
     /twitch\.tv\/videos\//i,
-    /reddit\.com\/.*\/comments\//i
+    /reddit\.com\/.*\/comments\//i,
+    /v\.redd\.it\//i,
+    /redd\.it\//i
   ];
   
   return videoPatterns.some(pattern => pattern.test(url));
