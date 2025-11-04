@@ -360,8 +360,8 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
             
             for (const qualityAttempt of qualityLevels) {
               try {
-                const resizedSharp = sharp(tmpFilePath, { animated: true });
-                const resizedMetadata = await resizedSharp.metadata();
+                // Reuse original Sharp instance with clone() for efficiency
+                const resizedMetadata = metadata; // Use already loaded metadata
                 const resizedPageHeight = resizedMetadata.pageHeight || resizedMetadata.height;
                 
                 const resizedBase = {
@@ -376,7 +376,8 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
                   resizedBase.pageHeight = Math.round(resizedPageHeight * scaleFactor);
                 }
                 
-                const candidate = await resizedSharp
+                const candidate = await gifSharp
+                  .clone()
                   .resize(targetSize, targetSize, {
                     fit: 'inside',
                     withoutEnlargement: true

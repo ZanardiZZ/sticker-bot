@@ -1,6 +1,6 @@
 /**
  * Test for large GIF processing with dimension reduction
- * Verifies fix for issue: "gifs muito grandes estão sendo convertidos par stickers estáticos"
+ * Verifies fix for issue: "gifs muito grandes estão sendo convertidos para stickers estáticos"
  */
 
 const sharp = require('sharp');
@@ -110,8 +110,9 @@ const tests = [
             
             for (const qualityAttempt of qualityLevels) {
               try {
-                const resizedSharp = sharp(largeGifPath, { animated: true });
-                const candidate = await resizedSharp
+                // Reuse original Sharp instance with clone() for efficiency
+                const candidate = await gifSharp
+                  .clone()
                   .resize(targetSize, targetSize, {
                     fit: 'inside',
                     withoutEnlargement: true
