@@ -10,13 +10,7 @@ const { runTestSuite, assert, assertEqual } = require('../helpers/testUtils');
 const { MockBaileysClient } = require('../helpers/mockBaileysClient');
 
 const MEDIA_MODULE_PATH = path.resolve(__dirname, '..', '..', 'commands/media.js');
-const STICKER_MODULE_ID = (() => {
-  try {
-    return require.resolve('wa-sticker-formatter');
-  } catch {
-    return null;
-  }
-})();
+const STICKER_MODULE_ID = require.resolve('../../utils/stickerFormatter');
 const GIF_DETECTION_PATH = path.resolve(__dirname, '..', '..', 'utils/gifDetection.js');
 
 function withMediaModule(overrides, fn) {
@@ -80,7 +74,7 @@ function createStickerStub() {
   }
   return {
     Sticker: StickerStub,
-    StickerTypes: { FULL: 'FULL' }
+    StickerTypes: { FULL: 'full' }
   };
 }
 
@@ -110,14 +104,14 @@ const tests = [
     }
   },
   {
-    name: 'sendMediaByType uses wa-sticker-formatter for images when available',
+    name: 'sendMediaByType uses internal sticker formatter for images when available',
     fn: async () => {
       await withMediaModule({ stickerModule: createStickerStub() }, async ({ sendMediaByType }) => {
         const client = new MockBaileysClient();
         await sendMediaByType(client, 'chat-img', { file_path: '/tmp/image.png', mimetype: 'image/png' });
 
         assertEqual(client.sent.length, 1, 'Image should trigger one send operation');
-        assertEqual(client.sent[0].type, 'sticker-raw', 'Image should be sent as raw webp via wa-sticker-formatter');
+        assertEqual(client.sent[0].type, 'sticker-raw', 'Image should be sent as raw webp via stickerFormatter');
       });
     }
   },

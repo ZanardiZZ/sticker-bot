@@ -2,13 +2,7 @@
  * Media sending utilities for commands
  */
 
-const { Sticker, StickerTypes } = (() => {
-  try {
-    return require('wa-sticker-formatter');
-  } catch {
-    return { Sticker: null, StickerTypes: null };
-  }
-})();
+const { Sticker, StickerTypes } = require('../utils/stickerFormatter');
 
 const { PACK_NAME, AUTHOR_NAME } = require('../config/stickers');
 
@@ -229,10 +223,10 @@ async function sendMediaAsOriginal(client, chatId, media) {
           const webpBuf = await sticker.build();
           const dataUrl = `data:image/webp;base64,${webpBuf.toString('base64')}`;
           await client.sendRawWebpAsSticker(chatId, dataUrl, { pack: PACK_NAME, author: AUTHOR_NAME });
-          console.log('[sendMediaAsOriginal] Imagem enviada como sticker via wa-sticker-formatter');
+          console.log('[sendMediaAsOriginal] Imagem enviada como sticker via stickerFormatter');
           return;
         } catch (stickerError) {
-          console.warn(`[sendMediaAsOriginal] Erro ao processar sticker com wa-sticker-formatter: ${stickerError.message}`);
+          console.warn(`[sendMediaAsOriginal] Erro ao processar sticker com stickerFormatter: ${stickerError.message}`);
           console.warn('[sendMediaAsOriginal] Tentando fallback para sendImageAsSticker');
           // Fallback to simpler method
         }
