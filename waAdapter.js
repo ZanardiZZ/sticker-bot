@@ -243,6 +243,21 @@ class BaileysWsAdapter {
   return this._sendAndWaitForAck({ type: 'sendMp4AsSticker', chatId, filePath, options });
   }
 
+  /**
+   * Update group participants (add, remove, promote, demote)
+   * @param {string} groupId - Group JID
+   * @param {Array<string>} participants - Array of participant JIDs
+   * @param {string} action - Action to perform: 'add', 'remove', 'promote', 'demote'
+   */
+  async groupParticipantsUpdate(groupId, participants, action) {
+    return this._sendAndWaitForAck({ 
+      type: 'groupParticipantsUpdate', 
+      groupId, 
+      participants, 
+      action 
+    });
+  }
+
   _send(obj) {
     try { this.ws && this.ws.readyState === WebSocket.OPEN && this.ws.send(JSON.stringify(obj)); } catch {}
   }
