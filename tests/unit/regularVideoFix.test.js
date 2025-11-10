@@ -4,7 +4,6 @@
  * instead of being rejected with "formato não suportado" error
  */
 
-const path = require('path');
 const { assert, assertEqual } = require('../helpers/testUtils');
 
 // Mock modules for testing
