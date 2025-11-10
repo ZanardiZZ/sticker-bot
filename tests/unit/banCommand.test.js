@@ -1,0 +1,256 @@
+#!/usr/bin/env node
+/**
+ * Unit tests for Ban command handler
+ */
+
+const { assert, assertEqual } = require('../helpers/testUtils');
+
+// Mock WhatsApp client for testing
+class MockWhatsAppClient {
+  constructor() {
+    this.sentMessages = [];
+    this.groupParticipantsUpdateCalls = [];
+  }
+
+  async sendText(chatId, text) {
+    this.sentMessages.push({ chatId, text, type: 'text' });
+  }
+
+  async reply(chatId, message, replyId) {
+    this.sentMessages.push({ chatId, message, replyId, type: 'reply' });
+  }
+
+  async groupParticipantsUpdate(groupId, participants, action) {
+    this.groupParticipantsUpdateCalls.push({ groupId, participants, action });
+  }
+
+  reset() {
+    this.sentMessages = [];
+    this.groupParticipantsUpdateCalls = [];
+  }
+}
+
+// Mock database functions
+const mockDatabase = {
+  resolveSenderId: async (client, senderId) => senderId
+};
+
+// Load handler
+function loadBanHandler() {
+  // Mock the database module
+  const Module = require('module');
+  const originalRequire = Module.prototype.require;
+  
+  Module.prototype.require = function(id) {
+    if (id === '../../database' || id === '../../database/index.js') {
+      return mockDatabase;
+    }
+    return originalRequire.apply(this, arguments);
+  };
+  
+  const handler = require('../../commands/handlers/ban');
+  
+  // Restore original require
+  Module.prototype.require = originalRequire;
+  
+  return handler;
+}
+
+const tests = [
+  {
+    name: 'Ban command works with admin and mentioned user in group',
+    fn: async () => {
+      const { handleBanCommand } = loadBanHandler();
+      const client = new MockWhatsAppClient();
+      
+      const message = {
+        body: '#ban @user',
+        id: 'test-message-id',
+        from: '123456789@g.us', // Group chat
+        mentionedJid: ['5511999999999@c.us'], // Mentioned user
+        sender: { isAdmin: true },
+        key: {
+          participant: '5511888888888@c.us' // Admin sender
+        }
+      };
+      
+      const chatId = '123456789@g.us';
+      const context = { 
+        isGroup: true, 
+        groupId: '123456789@g.us'
+      };
+      
+      // Set admin env variable
+      process.env.ADMIN_NUMBER = '5511888888888@c.us';
+      
+      await handleBanCommand(client, message, chatId, [], context);
+      
+      // Check that groupParticipantsUpdate was called
+      assertEqual(client.groupParticipantsUpdateCalls.length, 1, 'Should call groupParticipantsUpdate once');
+      assertEqual(client.groupParticipantsUpdateCalls[0].groupId, '123456789@g.us', 'Should use correct group ID');
+      assertEqual(client.groupParticipantsUpdateCalls[0].participants[0], '5511999999999@c.us', 'Should target mentioned user');
+      assertEqual(client.groupParticipantsUpdateCalls[0].action, 'remove', 'Should use remove action');
+      
+      // Check success message
+      assert(client.sentMessages.length > 0, 'Should send a confirmation message');
+      const messageText = client.sentMessages[0].message || client.sentMessages[0].text;
+      assert(messageText && messageText.includes('✅'), 'Should send success message');
+      
+      // Clean up
+      delete process.env.ADMIN_NUMBER;
+    }
+  },
+  
+  {
+    name: 'Ban command rejects non-admin users',
+    fn: async () => {
+      const { handleBanCommand } = loadBanHandler();
+      const client = new MockWhatsAppClient();
+      
+      const message = {
+        body: '#ban @user',
+        id: 'test-message-id',
+        from: '123456789@g.us',
+        mentionedJid: ['5511999999999@c.us'],
+        sender: { isAdmin: false },
+        key: {
+          participant: '5511777777777@c.us' // Non-admin sender
+        }
+      };
+      
+      const chatId = '123456789@g.us';
+      const context = { 
+        isGroup: true, 
+        groupId: '123456789@g.us'
+      };
+      
+      await handleBanCommand(client, message, chatId, [], context);
+      
+      // Check that groupParticipantsUpdate was NOT called
+      assertEqual(client.groupParticipantsUpdateCalls.length, 0, 'Should not call groupParticipantsUpdate for non-admin');
+      
+      // Check error message
+      assert(client.sentMessages.length > 0, 'Should send an error message');
+      const messageText = client.sentMessages[0].message || client.sentMessages[0].text;
+      assert(messageText && messageText.includes('administradores'), 'Should send admin-only message');
+    }
+  },
+  
+  {
+    name: 'Ban command rejects when no user is mentioned',
+    fn: async () => {
+      const { handleBanCommand } = loadBanHandler();
+      const client = new MockWhatsAppClient();
+      
+      const message = {
+        body: '#ban',
+        id: 'test-message-id',
+        from: '123456789@g.us',
+        mentionedJid: [], // No mentioned user
+        sender: { isAdmin: true },
+        key: {
+          participant: '5511888888888@c.us'
+        }
+      };
+      
+      const chatId = '123456789@g.us';
+      const context = { 
+        isGroup: true, 
+        groupId: '123456789@g.us'
+      };
+      
+      process.env.ADMIN_NUMBER = '5511888888888@c.us';
+      
+      await handleBanCommand(client, message, chatId, [], context);
+      
+      // Check that groupParticipantsUpdate was NOT called
+      assertEqual(client.groupParticipantsUpdateCalls.length, 0, 'Should not call groupParticipantsUpdate without mention');
+      
+      // Check error message
+      assert(client.sentMessages.length > 0, 'Should send an error message');
+      const messageText = client.sentMessages[0].message || client.sentMessages[0].text;
+      assert(messageText && messageText.includes('mencionar'), 'Should ask for mention');
+      
+      delete process.env.ADMIN_NUMBER;
+    }
+  },
+  
+  {
+    name: 'Ban command rejects in non-group chats',
+    fn: async () => {
+      const { handleBanCommand } = loadBanHandler();
+      const client = new MockWhatsAppClient();
+      
+      const message = {
+        body: '#ban @user',
+        id: 'test-message-id',
+        from: '5511888888888@c.us', // Private chat
+        mentionedJid: ['5511999999999@c.us'],
+        sender: { isAdmin: true },
+        key: {
+          participant: '5511888888888@c.us'
+        }
+      };
+      
+      const chatId = '5511888888888@c.us';
+      const context = { 
+        isGroup: false
+      };
+      
+      await handleBanCommand(client, message, chatId, [], context);
+      
+      // Check that groupParticipantsUpdate was NOT called
+      assertEqual(client.groupParticipantsUpdateCalls.length, 0, 'Should not call groupParticipantsUpdate in private chat');
+      
+      // Check error message
+      assert(client.sentMessages.length > 0, 'Should send an error message');
+      const messageText = client.sentMessages[0].message || client.sentMessages[0].text;
+      assert(messageText && messageText.includes('grupos'), 'Should indicate group-only command');
+    }
+  },
+
+  {
+    name: 'extractMentionedJid extracts from message.mentionedJid',
+    fn: async () => {
+      const { extractMentionedJid } = loadBanHandler();
+      
+      const message = {
+        mentionedJid: ['5511999999999@c.us', '5511888888888@c.us']
+      };
+      
+      const result = extractMentionedJid(message);
+      assertEqual(result, '5511999999999@c.us', 'Should extract first mentioned JID');
+    }
+  },
+  
+  {
+    name: 'extractMentionedJid returns null when no mention',
+    fn: async () => {
+      const { extractMentionedJid } = loadBanHandler();
+      
+      const message = {
+        body: '#ban'
+      };
+      
+      const result = extractMentionedJid(message);
+      assertEqual(result, null, 'Should return null when no mention');
+    }
+  }
+];
+
+// Run tests if called directly
+async function main() {
+  const { runTestSuite } = require('../helpers/testUtils');
+  try {
+    await runTestSuite('Ban Command Tests', tests);
+  } catch (error) {
+    console.error('Test suite failed:', error);
+    process.exit(1);
+  }
+}
+
+if (require.main === module) {
+  main();
+}
+
+module.exports = { tests, MockWhatsAppClient };

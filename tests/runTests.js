@@ -17,6 +17,7 @@ const { tests: gifProcessorTests } = require('./unit/gifProcessor.test');
 const { tests: largeGifProcessingTests } = require('./unit/largeGifProcessing.test');
 const { tests: tagSimilarityTests, cleanup: tagSimilarityCleanup } = require('./unit/tagSimilarity.test');
 const { tests: idCommandTests } = require('./unit/idCommand.test');
+const { tests: banCommandTests } = require('./unit/banCommand.test');
 const { tests: versionTests } = require('./unit/version.test');
 const { tests: logCollectorTests } = require('./unit/logCollector.test');
 const { tests: permissionEvaluatorTests } = require('./unit/permissionEvaluator.test');
@@ -46,6 +47,7 @@ async function runAllTests() {
     results.push(await runTestSuite('Large GIF Processing Tests', largeGifProcessingTests));
     results.push(await runTestSuite('Tag Similarity Tests', tagSimilarityTests));
     results.push(await runTestSuite('ID Command Tests', idCommandTests));
+    results.push(await runTestSuite('Ban Command Tests', banCommandTests));
     results.push(await runTestSuite('Version Model Tests', versionTests));
     results.push(await runTestSuite('LogCollector Tests', logCollectorTests));
     results.push(await runTestSuite('Permission Evaluator Tests', permissionEvaluatorTests));

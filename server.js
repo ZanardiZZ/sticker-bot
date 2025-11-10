@@ -926,6 +926,22 @@ async function start() {
         }
       }
 
+      if (type === 'groupParticipantsUpdate') {
+        const { groupId, participants, action } = msg || {};
+        if (!groupId || !participants || !action) {
+          return send(ws, { type: 'error', error: 'missing_parameters', requestId: incomingRequestId });
+        }
+        if (!canSendTo(groupId)) {
+          return send(ws, { type: 'error', error: 'forbidden', requestId: incomingRequestId });
+        }
+        try {
+          await sock.groupParticipantsUpdate(groupId, participants, action);
+          return send(ws, { type: 'ack', action: 'groupParticipantsUpdate', groupId, requestId: incomingRequestId });
+        } catch (e) {
+          return send(ws, { type: 'error', error: e.message || String(e), requestId: incomingRequestId });
+        }
+      }
+
       if (type === 'downloadMedia') {
         const { messageId } = msg || {};
         const cached = messageId ? mediaCache.get(messageId) : null;
