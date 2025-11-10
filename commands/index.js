@@ -16,6 +16,7 @@ const { handleCriarMemeCommand, handleExportarMemesCommand } = require('./handle
 const { handleDeleteCommand } = require('./handlers/delete');
 const { handleIssueCommand } = require('./handlers/issue');
 const { handleDownloadCommand } = require('./handlers/download');
+const { handleBanCommand } = require('./handlers/ban');
 
 // Utilities
 const validation = require('./validation');
@@ -110,6 +111,10 @@ async function handleCommand(client, message, chatId, context = {}) {
       case '#download':
       case '#baixar':
         await handleDownloadCommand(client, message, chatId, params, context);
+        return true;
+
+      case '#ban':
+        await handleBanCommand(client, message, chatId, params, context);
         return true;
 
       case '#ping': {
