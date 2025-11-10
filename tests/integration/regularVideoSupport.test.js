@@ -81,7 +81,7 @@ async function testRegularVideoFlow() {
   console.log('\nStep 5: After video processing');
   console.log(`  extToSave: ${extToSave}`);
   console.log(`  mimetypeToSave: ${mimetypeToSave}`);
-  console.log(`  bufferWebp: ${bufferWebp}`);
+  console.log(`  bufferWebp: ${bufferWebp === null ? '(null)' : bufferWebp}`);
   console.log(`  wasProcessedAsGifLike: ${wasProcessedAsGifLike}`);
   
   // Step 6: Save file (as in mediaProcessor.js lines 583-602)
