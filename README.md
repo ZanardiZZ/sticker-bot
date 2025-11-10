@@ -150,9 +150,39 @@ Send these commands to the bot in WhatsApp:
 | `#123` | Get sticker by ID | `#456` |
 | `#editar 123` | Edit sticker tags/description | `#editar 456` |
 | `#forçar` | Force save next media (admin) | `#forçar` |
+| `#ban @user` | Kick mentioned user from group (admin) | `#ban @username` |
 | `#verificar` | Generate WhatsApp verification code | `#verificar` |
 | `#download <URL>` | Download short video from URL | `#download https://youtube.com/shorts/xxxxx` |
 | `#baixar <URL>` | Same as #download (Portuguese) | `#baixar https://tiktok.com/@user/video/xxxxx` |
+
+### 🛡️ Group Moderation
+
+**Ban Command** - Remove users from group (admin only):
+
+**Usage:**
+```
+#ban @username
+```
+
+**Requirements:**
+- ✅ Must be executed in a group chat
+- ✅ Command sender must be an admin (configured via `ADMIN_NUMBER` environment variable)
+- ✅ Must mention a user to kick using @mention
+- ✅ Bot must have admin permissions in the group
+
+**Example:**
+```
+#ban @spammer
+```
+
+**Response Messages:**
+- ✅ Success: "✅ Usuário removido do grupo."
+- ⚠️ Non-group: "⚠️ Este comando só funciona em grupos."
+- ⚠️ Non-admin: "⚠️ Apenas administradores podem usar este comando."
+- ⚠️ No mention: "⚠️ Você precisa mencionar um usuário para banir."
+- ⚠️ No permission: "⚠️ O bot não tem permissão de administrador neste grupo."
+
+**Note:** The bot needs to be promoted to admin in the WhatsApp group for this command to work.
 
 ### 📥 Video Download Feature
 
