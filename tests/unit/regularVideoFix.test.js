@@ -54,7 +54,7 @@ async function testRegularVideoHandling() {
     }
   }
   
-  console.log(`  Final: extToSave=${extToSave}, mimetypeToSave=${mimetypeToSave}, bufferWebp=${bufferWebp}`);
+  console.log(`  Final: extToSave=${extToSave}, mimetypeToSave=${mimetypeToSave}, bufferWebp=${bufferWebp === null ? 'null' : `Buffer(${bufferWebp.length})`}`);
   
   // Verify the fix
   assertEqual(extToSave, 'mp4', 'Regular video should save with .mp4 extension');
