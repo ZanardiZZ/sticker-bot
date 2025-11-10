@@ -9,16 +9,6 @@ const path = require('path');
 const { assert, assertEqual } = require('../helpers/testUtils');
 
 // Mock modules for testing
-const mockModules = {
-  saveMediaCalls: [],
-  safeReplyCalls: [],
-  downloadedBuffer: Buffer.from('fake video content'),
-  
-  reset() {
-    this.saveMediaCalls = [];
-    this.safeReplyCalls = [];
-  }
-};
 
 async function testRegularVideoHandling() {
   console.log('\n=== Testing Regular Video Handling Fix ===\n');
