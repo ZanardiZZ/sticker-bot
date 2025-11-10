@@ -162,10 +162,14 @@ async function handleBanCommand(client, message, chatId, params = [], context = 
     } catch (error) {
       console.error('[BAN] Error removing participant:', error);
       
-      // Check for common errors
-      if (error.message && error.message.includes('not authorized')) {
+      // Prefer error codes if available, fallback to message substrings.
+      // Baileys groupParticipantsUpdate may return errors like:
+      //   { code: '401', message: 'not authorized' } (bot not admin)
+      //   { code: '404', message: 'not found' } (user not in group)
+      // See: https://github.com/adiwajshing/Baileys/issues/ (for error format)
+      if (error.code === '401' || (error.message && error.message.includes('not authorized'))) {
         await safeReply(client, chatId, '⚠️ O bot não tem permissão de administrador neste grupo.', message);
-      } else if (error.message && error.message.includes('not found')) {
+      } else if (error.code === '404' || (error.message && error.message.includes('not found'))) {
         await safeReply(client, chatId, '⚠️ Usuário não encontrado no grupo.', message);
       } else {
         await safeReply(client, chatId, `⚠️ Erro ao remover usuário: ${error.message}`, message);
