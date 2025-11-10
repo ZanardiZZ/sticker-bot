@@ -931,6 +931,9 @@ async function start() {
         if (!groupId || !participants || !action) {
           return send(ws, { type: 'error', error: 'missing_parameters', requestId: incomingRequestId });
         }
+        if (!Array.isArray(participants) || participants.length === 0) {
+          return send(ws, { type: 'error', error: 'invalid_participants', requestId: incomingRequestId });
+        }
         if (!canSendTo(groupId)) {
           return send(ws, { type: 'error', error: 'forbidden', requestId: incomingRequestId });
         }
