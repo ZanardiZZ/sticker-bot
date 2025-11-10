@@ -553,10 +553,11 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
         mimetypeToSave = 'image/webp';
         wasProcessedAsGifLike = true;
       } else {
-        // Não é GIF-like, não processa
+        // Não é GIF-like, salva vídeo no formato original
+        console.log('[MediaProcessor] Vídeo regular (não GIF-like) detectado, salvando no formato original');
         bufferWebp = null;
-        extToSave = 'webp';
-        mimetypeToSave = 'image/webp';
+        // Mantém extToSave e mimetypeToSave originais (ext e message.mimetype)
+        // Não define extToSave/mimetypeToSave aqui - usa os valores padrão definidos anteriormente
       }
     }
 
@@ -584,7 +585,7 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
 
     const fileName = `media-${Date.now()}.${extToSave}`;
     const filePath = path.join(dir, fileName);
-    // Salva apenas o arquivo convertido (webp), nunca o original nem mp4
+    // Salva webp para stickers (imagens e GIF-like), ou formato original para vídeos regulares
     if (extToSave === 'webp') {
       if (bufferWebp) {
         fs.writeFileSync(filePath, bufferWebp);
