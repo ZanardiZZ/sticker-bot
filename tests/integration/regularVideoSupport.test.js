@@ -54,7 +54,7 @@ async function testRegularVideoFlow() {
   console.log('\nStep 3: Initialize processing variables');
   console.log(`  extToSave: ${extToSave}`);
   console.log(`  mimetypeToSave: ${mimetypeToSave}`);
-  console.log(`  bufferWebp: ${bufferWebp}`);
+  console.log(`  bufferWebp: ${bufferWebp !== null ? bufferWebp : 'none'}`);
   
   // Step 4: Check if video and process accordingly
   if (message.mimetype.startsWith('video/')) {
