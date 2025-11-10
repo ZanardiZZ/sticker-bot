@@ -123,6 +123,32 @@ async function handleBanCommand(client, message, chatId, params = [], context = 
       return true;
     }
 
+    // Prevent banning the bot itself
+    const botJid = normalizeJid(
+      (client.user && client.user.id) ||
+      process.env.BOT_WHATSAPP_NUMBER ||
+      ''
+    );
+    if (mentionedJid === botJid) {
+      await safeReply(client, chatId, '⚠️ Você não pode banir o próprio bot.', message);
+      return true;
+    }
+
+    // Prevent banning other admins (including super admins)
+    // Get group participants and admin list
+    const groupMetadata = message?.groupMetadata;
+    let adminJids = [];
+    if (groupMetadata && Array.isArray(groupMetadata.participants)) {
+      adminJids = groupMetadata.participants
+        .filter(p => p.isAdmin || p.isSuperAdmin)
+        .map(p => normalizeJid(p.id));
+    }
+    // Also check env super admins
+    const envAdmins = getEnvAdminSet();
+    if (adminJids.includes(mentionedJid) || envAdmins.has(mentionedJid)) {
+      await safeReply(client, chatId, '⚠️ Você não pode banir outro administrador ou super admin.', message);
+      return true;
+    }
     // Try to kick the user
     try {
       // Use the groupParticipantsUpdate function via the client
