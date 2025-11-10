@@ -72,9 +72,13 @@ async function testRegularVideoHandling() {
   console.log(`  shouldUseWebpPath=${shouldUseWebpPath}`);
   console.log(`  shouldCopyOriginal=${shouldCopyOriginal}`);
   
-  if (shouldUseWebpPath && !bufferWebp) {
-    console.log('❌ Would show error: "formato não suportado"');
-    throw new Error('This would fail with "formato não suportado" error');
+  if (shouldUseWebpPath) {
+    if (!bufferWebp) {
+      console.log('❌ Would show error: "formato não suportado"');
+      throw new Error('This would fail with "formato não suportado" error');
+    } else {
+      console.log('✅ Would convert to webp (correct behavior)');
+    }
   } else if (shouldCopyOriginal) {
     console.log('✅ Would copy original file (correct behavior)');
   }
