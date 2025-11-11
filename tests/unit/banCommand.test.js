@@ -37,23 +37,49 @@ const mockDatabase = {
 
 // Load handler
 function loadBanHandler() {
-  // Mock the database module
-  const Module = require('module');
-  const originalRequire = Module.prototype.require;
-  
-  Module.prototype.require = function(id) {
-    if (id === '../../database' || id === '../../database/index.js') {
-      return mockDatabase;
+  const resolve = request => {
+    try {
+      return require.resolve(request);
+    } catch (error) {
+      if (error.code === 'MODULE_NOT_FOUND') {
+        return null;
+      }
+      throw error;
     }
-    return originalRequire.apply(this, arguments);
   };
-  
-  const handler = require('../../commands/handlers/ban');
-  
-  // Restore original require
-  Module.prototype.require = originalRequire;
-  
-  return handler;
+
+  const handlerPath = resolve('../../commands/handlers/ban');
+  if (handlerPath) {
+    delete require.cache[handlerPath];
+  }
+
+  const databaseModules = ['../../database', '../../database/index.js'];
+  const modulePaths = Array.from(
+    new Set(databaseModules.map(resolve).filter(Boolean))
+  );
+
+  const originals = modulePaths.map(path => ({ path, module: require.cache[path] }));
+
+  modulePaths.forEach(path => {
+    require.cache[path] = { exports: mockDatabase };
+  });
+
+  try {
+    return require('../../commands/handlers/ban');
+  } finally {
+    modulePaths.forEach((path, index) => {
+      const original = originals[index].module;
+      if (original) {
+        require.cache[path] = original;
+      } else {
+        delete require.cache[path];
+      }
+    });
+
+    if (handlerPath) {
+      delete require.cache[handlerPath];
+    }
+  }
 }
 
 const tests = [
