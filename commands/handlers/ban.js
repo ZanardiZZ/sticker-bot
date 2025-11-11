@@ -14,23 +14,84 @@ const { getEnvAdminSet, senderIsAdminFromMessage } = require('../../utils/adminU
  * @returns {string|null} - Mentioned user JID or null
  */
 function extractMentionedJid(message) {
-  // Check for mentionedJid array in message
-  if (message.mentionedJid && Array.isArray(message.mentionedJid) && message.mentionedJid.length > 0) {
-    return message.mentionedJid[0]; // Return first mentioned user
+  if (!message) return null;
+
+  const candidates = [];
+  const pushCandidate = (value) => {
+    if (!value) return;
+    if (Array.isArray(value)) {
+      value.forEach(pushCandidate);
+      return;
+    }
+    if (typeof value === 'object') {
+      if (typeof value.jid === 'string') {
+        pushCandidate(value.jid);
+        return;
+      }
+      if (typeof value.id === 'string') {
+        pushCandidate(value.id);
+        return;
+      }
+      if (typeof value.user === 'string') {
+        const server = typeof value.server === 'string'
+          ? value.server
+          : (typeof value.domain === 'string' ? value.domain : '');
+        const jid = server ? `${value.user}@${server}` : value.user;
+        pushCandidate(jid);
+        return;
+      }
+    }
+
+    if (typeof value === 'string' || typeof value === 'number') {
+      candidates.push(String(value));
+    }
+  };
+
+  pushCandidate(message.mentionedJid);
+  pushCandidate(message.mentions);
+  pushCandidate(message.mentionedIds);
+
+  const contextInfo = message.contextInfo;
+  if (contextInfo) {
+    pushCandidate(contextInfo.mentionedJid);
+    pushCandidate(contextInfo.participants);
+    pushCandidate(contextInfo.participant);
   }
-  
-  // Check in message.message for Baileys format
-  if (message.message) {
-    const msgContent = message.message.extendedTextMessage 
-      || message.message.imageMessage 
-      || message.message.videoMessage;
-    
-    if (msgContent?.contextInfo?.mentionedJid && msgContent.contextInfo.mentionedJid.length > 0) {
-      return msgContent.contextInfo.mentionedJid[0];
+
+  const messageNode = message.message || message.msg;
+  if (messageNode) {
+    const possibleContexts = [
+      messageNode.extendedTextMessage?.contextInfo,
+      messageNode.imageMessage?.contextInfo,
+      messageNode.videoMessage?.contextInfo,
+      messageNode.buttonsResponseMessage?.contextInfo,
+      messageNode.listResponseMessage?.contextInfo,
+      messageNode.interactiveResponseMessage?.contextInfo,
+      messageNode.templateButtonReplyMessage?.contextInfo,
+      messageNode.contextInfo
+    ];
+
+    possibleContexts.forEach(ctx => {
+      if (!ctx) return;
+      pushCandidate(ctx.mentionedJid);
+      pushCandidate(ctx.participants);
+      pushCandidate(ctx.participant);
+    });
+  }
+
+  const normalizedCandidates = [];
+  for (const value of candidates) {
+    const normalized = normalizeJid(value);
+    if (!normalized) continue;
+    if (!normalizedCandidates.includes(normalized)) {
+      normalizedCandidates.push(normalized);
+    }
+    if (normalized.includes(':')) {
+      return normalized;
     }
   }
-  
-  return null;
+
+  return normalizedCandidates[0] || null;
 }
 
 /**
