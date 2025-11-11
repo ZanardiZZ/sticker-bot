@@ -41,6 +41,13 @@ function parseThemeParams(params = []) {
  * @param {string} chatId - Chat ID
  * @param {string[]} params - Command parameters
  */
+function isRateLimitError(error) {
+  if (!error) return false;
+  const code = typeof error.data === 'number' ? String(error.data) : '';
+  const message = String(error.message || '').toLowerCase();
+  return message.includes('rate-overlimit') || code === '429';
+}
+
 async function handleThemeCommand(client, message, chatId, params = []) {
   try {
     const { keywords, limit } = parseThemeParams(params);
@@ -70,25 +77,51 @@ async function handleThemeCommand(client, message, chatId, params = []) {
     const requestedCount = limit;
     const deliveredCount = mediaList.length;
 
-    const mediaWithDetails = await Promise.all(
-      mediaList.map(async media => {
-        const [, tags] = await Promise.all([
-          incrementRandomCount(media.id),
-          getTagsForMedia(media.id)
-        ]);
+    const mediaWithDetails = [];
+    for (const media of mediaList) {
+      const [, tags] = await Promise.all([
+        incrementRandomCount(media.id),
+        getTagsForMedia(media.id)
+      ]);
+      mediaWithDetails.push({ media, tags });
+    }
 
-        return { media, tags };
-      })
-    );
+    let rateLimited = false;
 
     for (const { media, tags } of mediaWithDetails) {
-      await sendMediaByType(client, chatId, media);
+      try {
+        await sendMediaByType(client, chatId, media);
+      } catch (error) {
+        if (isRateLimitError(error)) {
+          rateLimited = true;
+          break;
+        }
+        throw error;
+      }
 
       const infoText = renderInfoMessage(media, tags);
 
       if (infoText.trim()) {
-        await safeReply(client, chatId, infoText, message.id);
+        try {
+          await safeReply(client, chatId, infoText, message.id);
+        } catch (error) {
+          if (isRateLimitError(error)) {
+            rateLimited = true;
+            break;
+          }
+          throw error;
+        }
       }
+    }
+
+    if (rateLimited) {
+      await safeReply(
+        client,
+        chatId,
+        'O WhatsApp limitou temporariamente o envio de mensagens. Aguarde alguns instantes e tente novamente.',
+        message.id
+      );
+      return;
     }
 
     if (deliveredCount < requestedCount) {
@@ -101,7 +134,12 @@ async function handleThemeCommand(client, message, chatId, params = []) {
     }
   } catch (err) {
     console.error('Error in #theme command:', err);
-    await safeReply(client, chatId, 'Erro ao buscar stickers por tema.', message.id);
+
+    const fallbackMessage = isRateLimitError(err)
+      ? 'O WhatsApp limitou temporariamente o envio de mensagens. Aguarde alguns instantes e tente novamente.'
+      : 'Erro ao buscar stickers por tema.';
+
+    await safeReply(client, chatId, fallbackMessage, message.id);
   }
 }
 
