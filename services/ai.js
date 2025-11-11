@@ -12,6 +12,103 @@ if (process.env.OPENAI_API_KEY) {
   console.warn('[AI] OpenAI API key not configured. AI features will be disabled.');
 }
 
+const {
+  APIConnectionError,
+  APIConnectionTimeoutError,
+  RateLimitError,
+  InternalServerError,
+  APIError
+} = OpenAI;
+
+function parsePositiveNumber(value, fallback) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return fallback;
+  }
+  return parsed;
+}
+
+const DEFAULT_MAX_RETRIES = parsePositiveNumber(process.env.OPENAI_MAX_RETRIES, 2);
+const DEFAULT_RETRY_DELAY_MS = parsePositiveNumber(process.env.OPENAI_RETRY_DELAY_MS, 1000);
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function shouldRetryOpenAiError(error) {
+  if (!error) return false;
+
+  if (
+    error instanceof APIConnectionError ||
+    error instanceof APIConnectionTimeoutError ||
+    error instanceof RateLimitError ||
+    error instanceof InternalServerError
+  ) {
+    return true;
+  }
+
+  if (error instanceof APIError) {
+    const status = Number(error.status);
+    if ([408, 409, 425, 429, 500, 502, 503, 504].includes(status)) {
+      return true;
+    }
+  }
+
+  const statusCode = Number(error?.status || error?.response?.status);
+  if ([408, 409, 425, 429, 500, 502, 503, 504].includes(statusCode)) {
+    return true;
+  }
+
+  const networkCodes = ['ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED'];
+  if (networkCodes.includes(error?.code)) {
+    return true;
+  }
+
+  const name = String(error?.name || '').toLowerCase();
+  if (name.includes('timeout') || name.includes('connection')) {
+    return true;
+  }
+
+  return false;
+}
+
+async function executeWithAiRetry(action, {
+  actionLabel = 'OpenAI request',
+  maxRetries = DEFAULT_MAX_RETRIES,
+  baseDelayMs = DEFAULT_RETRY_DELAY_MS
+} = {}) {
+  let attempt = 0;
+
+  while (true) {
+    try {
+      return await action();
+    } catch (error) {
+      if (!shouldRetryOpenAiError(error) || attempt >= maxRetries) {
+        throw error;
+      }
+
+      attempt += 1;
+      const backoffMs = baseDelayMs * attempt;
+      console.warn(
+        `[AI] ${actionLabel} falhou (tentativa ${attempt}/${maxRetries + 1}): ${error?.message || error}`
+      );
+      await sleep(backoffMs);
+    }
+  }
+}
+
+function buildFallbackAnnotation(type = 'imagem') {
+  const baseDescription = type === 'gif'
+    ? 'Análise automática indisponível para o GIF no momento.'
+    : 'Análise automática indisponível para a imagem no momento.';
+
+  return {
+    description: baseDescription,
+    text: '',
+    tags: ['#ia-indisponivel', '#fallback', '#sticker', '#analise', '#temporario']
+  };
+}
+
 /**
  * Chama a OpenAI com prompt textual customizado, retorna descrição e tags.
  * @param {string} prompt Texto do prompt a enviar.
@@ -32,12 +129,15 @@ async function transcribeAudioBuffer(buffer) {
     try {
       fs.writeFileSync(tmpFile, buffer);
       // Use OpenAI Whisper API for transcription
-      const transcription = await openai.audio.transcriptions.create({
-        file: fs.createReadStream(tmpFile),
-        model: 'whisper-1',
-        language: 'pt', // Portuguese
-        response_format: 'text'
-      });
+      const transcription = await executeWithAiRetry(
+        () => openai.audio.transcriptions.create({
+          file: fs.createReadStream(tmpFile),
+          model: 'whisper-1',
+          language: 'pt', // Portuguese
+          response_format: 'text'
+        }),
+        { actionLabel: 'transcrição de áudio' }
+      );
       const transcript = transcription.trim();
       return transcript || 'Áudio sem conteúdo transcrito.';
     } catch (apiError) {
@@ -65,12 +165,15 @@ async function getTagsFromTextPrompt(prompt) {
       return { description: null, tags: null };
     }
     
-    const response = await openai.chat.completions.create({
-  model: 'gpt-4o-mini',
-  messages: [{ role: 'user', content: prompt }],
-  temperature: 0.3,
-  max_tokens: 200,
-});
+    const response = await executeWithAiRetry(
+      () => openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.3,
+        max_tokens: 200,
+      }),
+      { actionLabel: 'geração de tags por texto' }
+    );
 
     const text = response.choices[0].message.content.trim();
 
@@ -141,12 +244,15 @@ Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",
       }
     ];
 
-    const resp = await openai.chat.completions.create({
-      model: VISION_MODEL,
-      max_tokens: 300,
-      temperature: 0.4,
-      messages
-    });
+    const resp = await executeWithAiRetry(
+      () => openai.chat.completions.create({
+        model: VISION_MODEL,
+        max_tokens: 300,
+        temperature: 0.4,
+        messages
+      }),
+      { actionLabel: 'anotação de imagem' }
+    );
 
     const raw = resp.choices[0].message.content;
     try {
@@ -177,7 +283,7 @@ Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",
     }
   } catch (err) {
     console.error('❌ Erro na IA (imagem):', err);
-    throw new Error('Erro na IA ao gerar descrição de imagem');
+    return buildFallbackAnnotation('imagem');
   }
 }
 
@@ -231,12 +337,15 @@ Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",
       }
     ];
 
-    const resp = await openai.chat.completions.create({
-      model: VISION_MODEL,
-      max_tokens: 300,
-      temperature: 0.4,
-      messages
-    });
+    const resp = await executeWithAiRetry(
+      () => openai.chat.completions.create({
+        model: VISION_MODEL,
+        max_tokens: 300,
+        temperature: 0.4,
+        messages
+      }),
+      { actionLabel: 'anotação de GIF' }
+    );
 
     const raw = resp.choices[0].message.content;
     try {
@@ -267,7 +376,7 @@ Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",
     }
   } catch (err) {
     console.error('❌ Erro na IA (GIF frame):', err);
-    throw new Error('Erro na IA ao gerar descrição de frame de GIF');
+    return buildFallbackAnnotation('gif');
   }
 }
 
@@ -278,12 +387,15 @@ async function getAiAnnotationsFromPrompt(prompt) {
       return { description: null, tags: null };
     }
     
-    const response = await openai.chat.completions.create({
-  model: 'gpt-4o-mini',
-  messages: [{ role: 'user', content: prompt }],
-  temperature: 0.3,
-  max_tokens: 200,
-});
+    const response = await executeWithAiRetry(
+      () => openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.3,
+        max_tokens: 200,
+      }),
+      { actionLabel: 'anotação a partir de prompt' }
+    );
 
     const text = response.choices[0].message.content.trim();
     // Extrai JSON do texto (espera que a resposta contenha JSON entre chaves {...})
@@ -352,12 +464,15 @@ async function generateConversationalReply({
       ? Math.floor(maxTokens)
       : (Number.isFinite(envMaxTokens) && envMaxTokens > 0 ? Math.floor(envMaxTokens) : 320);
 
-    const response = await openai.chat.completions.create({
-      model,
-      messages,
-      temperature: safeTemperature,
-      max_tokens: safeMaxTokens
-    });
+    const response = await executeWithAiRetry(
+      () => openai.chat.completions.create({
+        model,
+        messages,
+        temperature: safeTemperature,
+        max_tokens: safeMaxTokens
+      }),
+      { actionLabel: 'resposta conversacional' }
+    );
 
     const choice = response?.choices?.[0]?.message?.content;
     return choice ? choice.trim() : null;
