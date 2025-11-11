@@ -276,13 +276,38 @@ const tests = [
     name: 'extractMentionedJid returns null when no mention',
     fn: async () => {
       const { extractMentionedJid } = loadBanHandler();
-      
+
       const message = {
         body: '#ban'
       };
-      
+
       const result = extractMentionedJid(message);
       assertEqual(result, null, 'Should return null when no mention');
+    }
+  },
+
+  {
+    name: 'extractMentionedJid handles contextInfo mentions from LID users',
+    fn: async () => {
+      const { extractMentionedJid } = loadBanHandler();
+
+      const message = {
+        body: '#ban @user',
+        contextInfo: {
+          mentionedJid: ['20018943291402@LID'],
+          participant: '20018943291402@LID'
+        },
+        message: {
+          extendedTextMessage: {
+            contextInfo: {
+              mentionedJid: ['20018943291402:12@LID']
+            }
+          }
+        }
+      };
+
+      const result = extractMentionedJid(message);
+      assertEqual(result, '20018943291402:12@lid', 'Should normalize and return first valid mentioned JID');
     }
   }
 ];
