@@ -115,12 +115,16 @@ async function handleThemeCommand(client, message, chatId, params = []) {
     }
 
     if (rateLimited) {
-      await safeReply(
-        client,
-        chatId,
-        'O WhatsApp limitou temporariamente o envio de mensagens. Aguarde alguns instantes e tente novamente.',
-        message.id
-      );
+      try {
+        await safeReply(
+          client,
+          chatId,
+          'O WhatsApp limitou temporariamente o envio de mensagens. Aguarde alguns instantes e tente novamente.',
+          message.id
+        );
+      } catch (error) {
+        console.error('Failed to send rate limit notification:', error);
+      }
       return;
     }
 
