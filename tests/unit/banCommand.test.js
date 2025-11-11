@@ -80,24 +80,29 @@ const tests = [
         groupId: '123456789@g.us'
       };
       
-      // Set admin env variable
+      const previousAdminNumber = process.env.ADMIN_NUMBER;
       process.env.ADMIN_NUMBER = '5511888888888@c.us';
-      
-      await handleBanCommand(client, message, chatId, [], context);
-      
-      // Check that groupParticipantsUpdate was called
-      assertEqual(client.groupParticipantsUpdateCalls.length, 1, 'Should call groupParticipantsUpdate once');
-      assertEqual(client.groupParticipantsUpdateCalls[0].groupId, '123456789@g.us', 'Should use correct group ID');
-      assertEqual(client.groupParticipantsUpdateCalls[0].participants[0], '5511999999999@c.us', 'Should target mentioned user');
-      assertEqual(client.groupParticipantsUpdateCalls[0].action, 'remove', 'Should use remove action');
-      
-      // Check success message
-      assert(client.sentMessages.length > 0, 'Should send a confirmation message');
-      const messageText = client.sentMessages[0].message || client.sentMessages[0].text;
-      assert(messageText && messageText.includes('✅'), 'Should send success message');
-      
-      // Clean up
-      delete process.env.ADMIN_NUMBER;
+
+      try {
+        await handleBanCommand(client, message, chatId, [], context);
+
+        // Check that groupParticipantsUpdate was called
+        assertEqual(client.groupParticipantsUpdateCalls.length, 1, 'Should call groupParticipantsUpdate once');
+        assertEqual(client.groupParticipantsUpdateCalls[0].groupId, '123456789@g.us', 'Should use correct group ID');
+        assertEqual(client.groupParticipantsUpdateCalls[0].participants[0], '5511999999999@c.us', 'Should target mentioned user');
+        assertEqual(client.groupParticipantsUpdateCalls[0].action, 'remove', 'Should use remove action');
+
+        // Check success message
+        assert(client.sentMessages.length > 0, 'Should send a confirmation message');
+        const messageText = client.sentMessages[0].message || client.sentMessages[0].text;
+        assert(messageText && messageText.includes('✅'), 'Should send success message');
+      } finally {
+        if (previousAdminNumber === undefined) {
+          delete process.env.ADMIN_NUMBER;
+        } else {
+          process.env.ADMIN_NUMBER = previousAdminNumber;
+        }
+      }
     }
   },
   
@@ -124,15 +129,26 @@ const tests = [
         groupId: '123456789@g.us'
       };
       
-      await handleBanCommand(client, message, chatId, [], context);
-      
-      // Check that groupParticipantsUpdate was NOT called
-      assertEqual(client.groupParticipantsUpdateCalls.length, 0, 'Should not call groupParticipantsUpdate for non-admin');
-      
-      // Check error message
-      assert(client.sentMessages.length > 0, 'Should send an error message');
-      const messageText = client.sentMessages[0].message || client.sentMessages[0].text;
-      assert(messageText && messageText.includes('administradores'), 'Should send admin-only message');
+      const previousAdminNumber = process.env.ADMIN_NUMBER;
+      delete process.env.ADMIN_NUMBER;
+
+      try {
+        await handleBanCommand(client, message, chatId, [], context);
+
+        // Check that groupParticipantsUpdate was NOT called
+        assertEqual(client.groupParticipantsUpdateCalls.length, 0, 'Should not call groupParticipantsUpdate for non-admin');
+
+        // Check error message
+        assert(client.sentMessages.length > 0, 'Should send an error message');
+        const messageText = client.sentMessages[0].message || client.sentMessages[0].text;
+        assert(messageText && messageText.includes('administradores'), 'Should send admin-only message');
+      } finally {
+        if (previousAdminNumber === undefined) {
+          delete process.env.ADMIN_NUMBER;
+        } else {
+          process.env.ADMIN_NUMBER = previousAdminNumber;
+        }
+      }
     }
   },
   
@@ -159,19 +175,26 @@ const tests = [
         groupId: '123456789@g.us'
       };
       
+      const previousAdminNumber = process.env.ADMIN_NUMBER;
       process.env.ADMIN_NUMBER = '5511888888888@c.us';
-      
-      await handleBanCommand(client, message, chatId, [], context);
-      
-      // Check that groupParticipantsUpdate was NOT called
-      assertEqual(client.groupParticipantsUpdateCalls.length, 0, 'Should not call groupParticipantsUpdate without mention');
-      
-      // Check error message
-      assert(client.sentMessages.length > 0, 'Should send an error message');
-      const messageText = client.sentMessages[0].message || client.sentMessages[0].text;
-      assert(messageText && messageText.includes('mencionar'), 'Should ask for mention');
-      
-      delete process.env.ADMIN_NUMBER;
+
+      try {
+        await handleBanCommand(client, message, chatId, [], context);
+
+        // Check that groupParticipantsUpdate was NOT called
+        assertEqual(client.groupParticipantsUpdateCalls.length, 0, 'Should not call groupParticipantsUpdate without mention');
+
+        // Check error message
+        assert(client.sentMessages.length > 0, 'Should send an error message');
+        const messageText = client.sentMessages[0].message || client.sentMessages[0].text;
+        assert(messageText && messageText.includes('mencionar'), 'Should ask for mention');
+      } finally {
+        if (previousAdminNumber === undefined) {
+          delete process.env.ADMIN_NUMBER;
+        } else {
+          process.env.ADMIN_NUMBER = previousAdminNumber;
+        }
+      }
     }
   },
   
