@@ -1,6 +1,7 @@
 const { safeReply } = require('../../utils/safeMessaging');
 const { parseCommand } = require('../../utils/commandNormalizer');
 const { normalizeJid, isJidGroup } = require('../../utils/jidUtils');
+const { getEnvAdminSet } = require('../../utils/adminUtils');
 const {
   findById,
   deleteMediaByIds,
@@ -39,22 +40,6 @@ function extractMediaIdFromCommand(rawCommand, paramList = []) {
     }
   }
   return null;
-}
-
-function getEnvAdminSet() {
-  const entries = [];
-  if (process.env.ADMIN_NUMBER) {
-    entries.push(process.env.ADMIN_NUMBER);
-  }
-  if (process.env.ADMIN_NUMBERS) {
-    entries.push(...process.env.ADMIN_NUMBERS.split(',').map(v => v.trim()));
-  }
-  if (process.env.BOT_SUPER_ADMINS) {
-    entries.push(...process.env.BOT_SUPER_ADMINS.split(',').map(v => v.trim()));
-  }
-  return new Set(entries
-    .map(value => normalizeJid(value))
-    .filter(Boolean));
 }
 
 async function loadVoteThreshold() {
