@@ -6,26 +6,7 @@
 const { safeReply } = require('../../utils/safeMessaging');
 const { normalizeJid, isJidGroup } = require('../../utils/jidUtils');
 const { resolveSenderId } = require('../../database');
-
-/**
- * Get environment admin set
- * Checks ADMIN_NUMBER, ADMIN_NUMBERS, and BOT_SUPER_ADMINS
- */
-function getEnvAdminSet() {
-  const entries = [];
-  if (process.env.ADMIN_NUMBER) {
-    entries.push(process.env.ADMIN_NUMBER);
-  }
-  if (process.env.ADMIN_NUMBERS) {
-    entries.push(...process.env.ADMIN_NUMBERS.split(',').map(v => v.trim()));
-  }
-  if (process.env.BOT_SUPER_ADMINS) {
-    entries.push(...process.env.BOT_SUPER_ADMINS.split(',').map(v => v.trim()));
-  }
-  return new Set(entries
-    .map(value => normalizeJid(value))
-    .filter(Boolean));
-}
+const { getEnvAdminSet } = require('../../utils/adminUtils');
 
 /**
  * Extract mentioned JID from message
@@ -187,6 +168,5 @@ async function handleBanCommand(client, message, chatId, params = [], context = 
 module.exports = {
   handleBanCommand,
   extractMentionedJid,
-  isAdmin,
-  getEnvAdminSet
+  isAdmin
 };
