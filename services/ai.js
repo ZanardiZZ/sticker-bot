@@ -90,7 +90,7 @@ async function executeWithAiRetry(action, {
       attempt += 1;
       const backoffMs = baseDelayMs * attempt;
       console.warn(
-        `[AI] ${actionLabel} falhou (tentativa ${attempt}/${maxRetries + 1}): ${error?.message || error}`
+        `[AI] ${actionLabel} falhou (tentativa ${attempt}/${maxRetries}): ${error?.message || error}`
       );
       await sleep(backoffMs);
     }
