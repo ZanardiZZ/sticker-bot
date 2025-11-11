@@ -6,7 +6,7 @@
 const { safeReply } = require('../../utils/safeMessaging');
 const { normalizeJid, isJidGroup } = require('../../utils/jidUtils');
 const { resolveSenderId } = require('../../database');
-const { getEnvAdminSet } = require('../../utils/adminUtils');
+const { getEnvAdminSet, senderIsAdminFromMessage } = require('../../utils/adminUtils');
 
 /**
  * Extract mentioned JID from message
@@ -49,22 +49,7 @@ function isAdmin(resolvedSenderId, message) {
     return true;
   }
 
-  // Check message sender metadata
-  const sender = message?.sender;
-  if (!sender) return false;
-  
-  if (sender.isAdmin === true || sender.isSuperAdmin === true) return true;
-  
-  if (typeof sender.admin === 'string') {
-    const lowered = sender.admin.toLowerCase();
-    if (lowered.includes('admin')) return true;
-  }
-  
-  if (Array.isArray(sender.labels)) {
-    return sender.labels.some(label => typeof label === 'string' && label.toLowerCase().includes('admin'));
-  }
-  
-  return false;
+  return senderIsAdminFromMessage(message);
 }
 
 /**
