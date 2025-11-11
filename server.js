@@ -934,6 +934,10 @@ async function start() {
         if (!Array.isArray(participants) || participants.length === 0) {
           return send(ws, { type: 'error', error: 'invalid_participants', requestId: incomingRequestId });
         }
+        const validActions = ['add', 'remove', 'promote', 'demote'];
+        if (!validActions.includes(action)) {
+          return send(ws, { type: 'error', error: 'invalid_action', requestId: incomingRequestId });
+        }
         if (!canSendTo(groupId)) {
           return send(ws, { type: 'error', error: 'forbidden', requestId: incomingRequestId });
         }
