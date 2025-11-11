@@ -1,7 +1,7 @@
 const { safeReply } = require('../../utils/safeMessaging');
 const { parseCommand } = require('../../utils/commandNormalizer');
 const { normalizeJid, isJidGroup } = require('../../utils/jidUtils');
-const { getEnvAdminSet } = require('../../utils/adminUtils');
+const { getEnvAdminSet, senderIsAdminFromMessage } = require('../../utils/adminUtils');
 const {
   findById,
   deleteMediaByIds,
@@ -59,20 +59,6 @@ async function loadVoteThreshold() {
 function invalidateVoteThresholdCache() {
   cachedThresholdValue = null;
   cachedThresholdAt = 0;
-}
-
-function senderIsAdminFromMessage(message) {
-  const sender = message?.sender;
-  if (!sender) return false;
-  if (sender.isAdmin === true || sender.isSuperAdmin === true) return true;
-  if (typeof sender.admin === 'string') {
-    const lowered = sender.admin.toLowerCase();
-    if (lowered.includes('admin')) return true;
-  }
-  if (Array.isArray(sender.labels)) {
-    return sender.labels.some(label => typeof label === 'string' && label.toLowerCase().includes('admin'));
-  }
-  return false;
 }
 
 async function senderIsAdminInGroup(groupId, userId) {
