@@ -17,6 +17,7 @@ const { handleCriarMemeCommand, handleExportarMemesCommand } = require('./handle
 const { handleDeleteCommand } = require('./handlers/delete');
 const { handleIssueCommand } = require('./handlers/issue');
 const { handleDownloadCommand } = require('./handlers/download');
+const { handleDownloadMp3Command } = require('./handlers/downloadMp3');
 const { handleBanCommand } = require('./handlers/ban');
 const { handlePerfilCommand } = require('./handlers/perfil');
 
@@ -148,6 +149,14 @@ async function handleCommand(client, message, chatId, context = {}) {
       case '#download':
       case '#baixar':
         await handleDownloadCommand(client, message, chatId, params, context);
+        handled = true;
+        shouldTrackUsage = true;
+        break;
+
+      case '#downloadmp3':
+      case '#baixarmp3':
+      case '#baixaraudio':
+        await handleDownloadMp3Command(client, message, chatId, params, context);
         handled = true;
         shouldTrackUsage = true;
         break;

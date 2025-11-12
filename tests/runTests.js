@@ -18,6 +18,7 @@ const { tests: largeGifProcessingTests } = require('./unit/largeGifProcessing.te
 const { tests: tagSimilarityTests, cleanup: tagSimilarityCleanup } = require('./unit/tagSimilarity.test');
 const { tests: idCommandTests } = require('./unit/idCommand.test');
 const { tests: banCommandTests } = require('./unit/banCommand.test');
+const { tests: downloadMp3CommandTests } = require('./unit/downloadMp3Command.test');
 const { tests: adminUtilsTests } = require('./unit/adminUtils.test');
 const { tests: versionTests } = require('./unit/version.test');
 const { tests: logCollectorTests } = require('./unit/logCollector.test');
@@ -50,6 +51,7 @@ async function runAllTests() {
     results.push(await runTestSuite('Tag Similarity Tests', tagSimilarityTests));
     results.push(await runTestSuite('ID Command Tests', idCommandTests));
     results.push(await runTestSuite('Ban Command Tests', banCommandTests));
+    results.push(await runTestSuite('Download MP3 Command Tests', downloadMp3CommandTests));
     results.push(await runTestSuite('Admin Utils Tests', adminUtilsTests));
     results.push(await runTestSuite('Version Model Tests', versionTests));
     results.push(await runTestSuite('Command Usage Model Tests', commandUsageModelTests));
