@@ -75,10 +75,71 @@ function getTopCommandsWithDb(database, limit = 5) {
   });
 }
 
+function getUserCommandUsageWithDb(database, userId) {
+  return new Promise((resolve, reject) => {
+    const normalizedUserId = normalizeUserId(userId);
+
+    if (!normalizedUserId) {
+      resolve([]);
+      return;
+    }
+
+    database.all(
+      `SELECT
+         command, usage_count, last_used
+       FROM command_usage
+       WHERE user_id = ?
+       ORDER BY usage_count DESC, last_used DESC`,
+      [normalizedUserId],
+      (err, rows) => {
+        if (err) {
+          reject(err);
+        } else {
+          const formatted = (rows || []).map((row) => ({
+            command: row.command,
+            usage_count: Number(row.usage_count) || 0,
+            last_used: Number(row.last_used) || 0
+          }));
+          resolve(formatted);
+        }
+      }
+    );
+  });
+}
+
+function getTotalCommandsWithDb(database, userId) {
+  return new Promise((resolve, reject) => {
+    const normalizedUserId = normalizeUserId(userId);
+
+    if (!normalizedUserId) {
+      resolve(0);
+      return;
+    }
+
+    database.get(
+      `SELECT
+         SUM(usage_count) AS total_usage
+       FROM command_usage
+       WHERE user_id = ?`,
+      [normalizedUserId],
+      (err, row) => {
+        if (err) {
+          reject(err);
+        } else {
+          const total = row && typeof row.total_usage === 'number' ? row.total_usage : 0;
+          resolve(total || 0);
+        }
+      }
+    );
+  });
+}
+
 function createCommandUsageModel(database = db) {
   return {
     incrementCommandUsage: (command, userId) => incrementCommandUsageWithDb(database, command, userId),
-    getTopCommands: (limit) => getTopCommandsWithDb(database, limit)
+    getTopCommands: (limit) => getTopCommandsWithDb(database, limit),
+    getUserCommandUsage: (userId) => getUserCommandUsageWithDb(database, userId),
+    getTotalCommands: (userId) => getTotalCommandsWithDb(database, userId)
   };
 }
 
@@ -86,5 +147,7 @@ const defaultModel = createCommandUsageModel();
 
 module.exports = {
   ...defaultModel,
-  createCommandUsageModel
+  createCommandUsageModel,
+  getUserCommandUsageWithDb,
+  getTotalCommandsWithDb
 };

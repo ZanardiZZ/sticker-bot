@@ -21,6 +21,7 @@ const VALID_COMMANDS = [
   '#theme',
   '#verificar',
   '#verify',
+  '#perfil',
   '#ping',
   '#criar',
   '#exportarmemes'
@@ -81,6 +82,11 @@ const HELP_ENTRIES = [
     command: '#count',
     description: 'Informa quantas figurinhas existem no acervo.',
     example: '#count'
+  },
+  {
+    command: '#perfil',
+    description: 'Mostra seu resumo de figurinhas e comandos utilizados.',
+    example: '#perfil'
   },
   {
     command: '#exportarmemes',
