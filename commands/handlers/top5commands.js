@@ -16,12 +16,12 @@ function createTop5CommandsHandler({ getTopCommands = database.getTopCommands, s
       }
 
       const maxResults = Math.min(topCommands.length, limit || topCommands.length);
-      let response = `🏆 *Top ${maxResults} comandos mais usados:*\\n\\n`;
+      let response = `🏆 *Top ${maxResults} comandos mais usados:*\n\n`;
 
       topCommands.slice(0, maxResults).forEach((entry, index) => {
         const position = index + 1;
         const emoji = position === 1 ? '🥇' : position === 2 ? '🥈' : position === 3 ? '🥉' : `${position}.`;
-        response += `${emoji} ${entry.command} — ${entry.total_usage} usos\\n`;
+        response += `${emoji} ${entry.command} — ${entry.total_usage} usos\n`;
       });
 
       await safeReplyFn(client, chatId, response.trim(), message);
