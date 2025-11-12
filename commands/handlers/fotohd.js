@@ -196,7 +196,6 @@ async function handleFotoHdCommand(client, message, chatId, context = {}) {
   params = afterScaleParams;
 
   const { mediaId, remaining: afterIdParams } = extractMediaId(params);
-  params = afterIdParams;
 
   const usageMessage = 'Responda a uma figurinha ou imagem com #fotohd para ampliar em alta resolução.\n' +
     'Você também pode usar #fotohd ID <número>. Opcional: adicione 4x para ampliar quatro vezes.';
