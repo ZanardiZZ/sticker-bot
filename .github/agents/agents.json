@@ -1,0 +1,65 @@
+{
+  "version": "1.0.0",
+  "agents": [
+    {
+      "id": "sticker-bot-expert",
+      "name": "Sticker Bot Expert",
+      "description": "Comprehensive expert agent for all Sticker Bot development tasks",
+      "file": "sticker-bot-expert.md",
+      "expertise": [
+        "whatsapp-bot",
+        "baileys",
+        "media-processing",
+        "nodejs",
+        "express",
+        "sqlite",
+        "ai-integration",
+        "openai",
+        "web-development",
+        "database-migrations"
+      ],
+      "useCases": [
+        "bot-commands",
+        "web-interface",
+        "database-operations",
+        "media-processing",
+        "ai-features",
+        "security",
+        "performance-optimization",
+        "bug-fixes"
+      ],
+      "priority": 1,
+      "enabled": true
+    }
+  ],
+  "guidelines": {
+    "minimal_changes": true,
+    "test_before_commit": true,
+    "document_changes": true,
+    "follow_patterns": true,
+    "handle_errors": true
+  },
+  "network_restrictions": {
+    "blocked_domains": [
+      "esm.ubuntu.com",
+      "googlechromelabs.github.io",
+      "storage.googleapis.com"
+    ],
+    "install_command": "PUPPETEER_SKIP_DOWNLOAD=true npm install --ignore-scripts",
+    "workarounds_required": true
+  },
+  "testing": {
+    "no_unit_tests": true,
+    "validation_commands": [
+      "npm run web",
+      "npm run bot",
+      "node scripts/test-migration.js"
+    ]
+  },
+  "documentation": {
+    "main_readme": "../../README.md",
+    "copilot_instructions": "../copilot-instructions.md",
+    "web_guidelines": "../../web/public/AGENTS.md",
+    "feature_docs": "../../docs/"
+  }
+}
