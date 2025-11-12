@@ -27,7 +27,8 @@ const VALID_COMMANDS = [
   '#exportarmemes',
   '#downloadmp3',
   '#baixarmp3',
-  '#baixaraudio'
+  '#baixaraudio',
+  '#fotohd'
 ];
 
 const HELP_ENTRIES = [
@@ -105,6 +106,11 @@ const HELP_ENTRIES = [
     command: '#ping',
     description: 'Exibe informações de status do bot.',
     example: '#ping'
+  },
+  {
+    command: '#fotohd (respondendo a uma figurinha) 4x',
+    description: 'Amplia a imagem respondida com IA local (configure REAL_ESRGAN_BIN) e usa Lanczos3 como fallback. Opcionalmente informe o fator de ampliação (ex: 4x). Padrão 2x, use 4x para ampliar quatro vezes.',
+    example: '#fotohd 4x'
   }
 ];
 
