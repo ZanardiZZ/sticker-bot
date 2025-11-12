@@ -3,7 +3,7 @@
  * Tests basic functionality without making actual downloads
  */
 
-const { isVideoUrl, MAX_VIDEO_DURATION } = require('../../services/videoDownloader');
+const { isVideoUrl, MAX_VIDEO_DURATION, MAX_AUDIO_DURATION, MAX_AUDIO_FILESIZE_MB } = require('../../services/videoDownloader');
 
 console.log('🧪 Testing Video Downloader Module...\n');
 
@@ -50,12 +50,22 @@ console.log(`  Failed: ${failed}/${testUrls.length}\n`);
 // Test 2: Configuration constants
 console.log('Test 2: Configuration validation');
 console.log(`  ✅ MAX_VIDEO_DURATION: ${MAX_VIDEO_DURATION} seconds`);
-console.log(`  ✅ Duration limit correctly set to 60 seconds (1 minute)\n`);
+console.log(`  ✅ Duration limit correctly set to 60 seconds (1 minute)`);
+console.log(`  ✅ MAX_AUDIO_DURATION: ${MAX_AUDIO_DURATION} seconds (10 minutos)`);
+console.log(`  ✅ MAX_AUDIO_FILESIZE_MB: ${MAX_AUDIO_FILESIZE_MB}MB\n`);
 
 // Test 3: Module exports
 console.log('Test 3: Module exports');
 const videoDownloader = require('../../services/videoDownloader');
-const requiredExports = ['downloadVideo', 'getVideoInfo', 'isVideoUrl', 'MAX_VIDEO_DURATION'];
+const requiredExports = [
+  'downloadVideo',
+  'downloadAudio',
+  'getVideoInfo',
+  'isVideoUrl',
+  'MAX_VIDEO_DURATION',
+  'MAX_AUDIO_DURATION',
+  'MAX_AUDIO_FILESIZE_MB'
+];
 
 requiredExports.forEach(exportName => {
   if (videoDownloader[exportName] !== undefined) {
