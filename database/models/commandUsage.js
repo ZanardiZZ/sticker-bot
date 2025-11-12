@@ -85,7 +85,8 @@ function getUserCommandUsageWithDb(database, userId) {
     }
 
     database.all(
-      `SELECT command, usage_count, last_used
+      `SELECT
+         command, usage_count, last_used
        FROM command_usage
        WHERE user_id = ?
        ORDER BY usage_count DESC, last_used DESC`,
