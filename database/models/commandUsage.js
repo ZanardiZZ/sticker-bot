@@ -117,7 +117,8 @@ function getTotalCommandsWithDb(database, userId) {
     }
 
     database.get(
-      `SELECT SUM(usage_count) AS total_usage
+      `SELECT
+         SUM(usage_count) AS total_usage
        FROM command_usage
        WHERE user_id = ?`,
       [normalizedUserId],
