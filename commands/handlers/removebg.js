@@ -131,7 +131,7 @@ async function handleRemoveBackgroundCommand(client, message, chatId, context = 
     return false;
   }
 
-  let params = Array.isArray(originalParams) ? [...originalParams] : [];
+  const params = Array.isArray(originalParams) ? [...originalParams] : [];
   const { mediaId } = extractMediaId(params);
 
   const usageMessage = 'Responda a uma figurinha ou imagem com #removebg para remover o fundo.\n' +
