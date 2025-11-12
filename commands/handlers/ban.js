@@ -9,11 +9,117 @@ const { resolveSenderId } = require('../../database');
 const { getEnvAdminSet, senderIsAdminFromMessage } = require('../../utils/adminUtils');
 
 /**
+ * Collect candidate text fragments from a message that may contain mentions
+ * @param {object} message - Message object
+ * @returns {string[]} Array of text fragments
+ */
+function collectMessageTextFragments(message) {
+  const fragments = new Set();
+
+  const add = (value) => {
+    if (!value) return;
+    if (typeof value !== 'string') return;
+    const trimmed = value.trim();
+    if (trimmed) {
+      fragments.add(trimmed);
+    }
+  };
+
+  add(message?.body);
+  add(message?.text);
+  add(message?.caption);
+
+  const messageNode = message?.message || message?.msg;
+  const nodesToInspect = [];
+  if (messageNode && typeof messageNode === 'object') {
+    nodesToInspect.push(messageNode);
+    if (messageNode.ephemeralMessage?.message) {
+      nodesToInspect.push(messageNode.ephemeralMessage.message);
+    }
+    if (messageNode.ephemeralMessageV2?.message) {
+      nodesToInspect.push(messageNode.ephemeralMessageV2.message);
+    }
+    if (messageNode.viewOnceMessage?.message) {
+      nodesToInspect.push(messageNode.viewOnceMessage.message);
+    }
+    if (messageNode.viewOnceMessageV2?.message) {
+      nodesToInspect.push(messageNode.viewOnceMessageV2.message);
+    }
+  }
+
+  nodesToInspect.forEach(node => {
+    if (!node || typeof node !== 'object') return;
+    add(node.conversation);
+    add(node.text);
+    add(node.caption);
+    add(node.selectedDisplayText);
+    add(node?.extendedTextMessage?.text);
+    add(node?.imageMessage?.caption);
+    add(node?.videoMessage?.caption);
+    add(node?.documentMessage?.caption);
+    add(node?.buttonsResponseMessage?.selectedDisplayText);
+    add(node?.buttonsResponseMessage?.selectedButtonId);
+    add(node?.listResponseMessage?.title);
+    add(node?.listResponseMessage?.description);
+    add(node?.listResponseMessage?.singleSelectReply?.selectedDisplayText);
+    add(node?.interactiveResponseMessage?.body?.text);
+  });
+
+  return Array.from(fragments);
+}
+
+/**
+ * Try to find a participant JID in the provided metadata that matches the token
+ * @param {string} token - Candidate token extracted from text
+ * @param {object} groupMetadata - Group metadata containing participants
+ * @returns {string|null} Matching participant JID or null
+ */
+function findParticipantJidFromToken(token, groupMetadata) {
+  if (!token) return null;
+  const participants = Array.isArray(groupMetadata?.participants)
+    ? groupMetadata.participants
+    : [];
+
+  if (participants.length === 0) {
+    return null;
+  }
+
+  const normalizedToken = normalizeJid(token);
+  const tokenDigits = token.replace(/\D+/g, '');
+
+  for (const participant of participants) {
+    const participantJid = normalizeJid(participant?.id);
+    if (!participantJid) continue;
+
+    if (normalizedToken && participantJid === normalizedToken) {
+      return participantJid;
+    }
+
+    if (normalizedToken && !normalizedToken.includes('@')) {
+      const participantLocalPart = participantJid.split('@')[0];
+      if (participantLocalPart === normalizedToken) {
+        return participantJid;
+      }
+    }
+
+    if (tokenDigits) {
+      const participantDigits = participantJid.replace(/\D+/g, '');
+      if (participantDigits === tokenDigits) {
+        return participantJid;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
  * Extract mentioned JID from message
  * @param {object} message - Message object
+ * @param {object} [groupMetadata] - Optional group metadata
  * @returns {string|null} - Mentioned user JID or null
  */
-function extractMentionedJid(message) {
+function extractMentionedJid(message, groupMetadata = null) {
   if (!message) return null;
 
   const candidates = [];
@@ -59,16 +165,18 @@ function extractMentionedJid(message) {
   }
 
   const messageNode = message.message || message.msg;
-  if (messageNode) {
+  const addContextCandidates = (node) => {
+    if (!node) return;
     const possibleContexts = [
-      messageNode.extendedTextMessage?.contextInfo,
-      messageNode.imageMessage?.contextInfo,
-      messageNode.videoMessage?.contextInfo,
-      messageNode.buttonsResponseMessage?.contextInfo,
-      messageNode.listResponseMessage?.contextInfo,
-      messageNode.interactiveResponseMessage?.contextInfo,
-      messageNode.templateButtonReplyMessage?.contextInfo,
-      messageNode.contextInfo
+      node.extendedTextMessage?.contextInfo,
+      node.imageMessage?.contextInfo,
+      node.videoMessage?.contextInfo,
+      node.buttonsResponseMessage?.contextInfo,
+      node.listResponseMessage?.contextInfo,
+      node.interactiveResponseMessage?.contextInfo,
+      node.templateButtonReplyMessage?.contextInfo,
+      node.contextInfo,
+      node.conversationContextInfo
     ];
 
     possibleContexts.forEach(ctx => {
@@ -77,7 +185,13 @@ function extractMentionedJid(message) {
       pushCandidate(ctx.participants);
       pushCandidate(ctx.participant);
     });
-  }
+  };
+
+  addContextCandidates(messageNode);
+  addContextCandidates(messageNode?.ephemeralMessage?.message);
+  addContextCandidates(messageNode?.ephemeralMessageV2?.message);
+  addContextCandidates(messageNode?.viewOnceMessage?.message);
+  addContextCandidates(messageNode?.viewOnceMessageV2?.message);
 
   const normalizedCandidates = [];
   for (const value of candidates) {
@@ -91,7 +205,37 @@ function extractMentionedJid(message) {
     }
   }
 
-  return normalizedCandidates[0] || null;
+  if (normalizedCandidates.length > 0) {
+    return normalizedCandidates[0];
+  }
+
+  const metadata = groupMetadata || message?.groupMetadata;
+  const textFragments = collectMessageTextFragments(message);
+
+  for (const fragment of textFragments) {
+    const matches = fragment.match(/@[^\s@]+/g);
+    if (!matches) continue;
+
+    for (const rawMatch of matches) {
+      const sanitized = rawMatch
+        .replace(/^@+/, '')
+        .replace(/[\]\[(){}<>,;!?]+$/g, '')
+        .trim();
+      if (!sanitized) continue;
+
+      const directCandidate = normalizeJid(sanitized);
+      if (directCandidate && directCandidate.includes('@')) {
+        return directCandidate;
+      }
+
+      const participantJid = findParticipantJidFromToken(sanitized, metadata);
+      if (participantJid) {
+        return participantJid;
+      }
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -143,7 +287,8 @@ async function handleBanCommand(client, message, chatId, params = [], context = 
     }
 
     // Extract mentioned user
-    const mentionedJid = extractMentionedJid(message);
+    const groupMetadata = context?.groupMetadata || message?.groupMetadata;
+    const mentionedJid = extractMentionedJid(message, groupMetadata);
     
     if (!mentionedJid) {
       await safeReply(client, chatId, '⚠️ Você precisa mencionar um usuário para banir.\nUso: #ban @usuario', message);
@@ -163,7 +308,6 @@ async function handleBanCommand(client, message, chatId, params = [], context = 
 
     // Prevent banning other admins (including super admins)
     // Get group participants and admin list
-    const groupMetadata = message?.groupMetadata;
     let adminJids = [];
     if (groupMetadata && Array.isArray(groupMetadata.participants)) {
       adminJids = groupMetadata.participants
