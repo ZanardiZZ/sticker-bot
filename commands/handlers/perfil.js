@@ -15,7 +15,7 @@ function resolveDisplayName(contact, senderId) {
     return senderId.split('@')[0];
   }
 
-  return senderId || 'Usuário';
+  return senderId;
 }
 
 function createPerfilHandler({
