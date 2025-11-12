@@ -28,7 +28,8 @@ const VALID_COMMANDS = [
   '#downloadmp3',
   '#baixarmp3',
   '#baixaraudio',
-  '#fotohd'
+  '#fotohd',
+  '#removebg'
 ];
 
 const HELP_ENTRIES = [
@@ -111,6 +112,11 @@ const HELP_ENTRIES = [
     command: '#fotohd (respondendo a uma figurinha) 4x',
     description: 'Amplia a imagem respondida com IA local (configure REAL_ESRGAN_BIN) e usa Lanczos3 como fallback. Opcionalmente informe o fator de ampliação (ex: 4x). Padrão 2x, use 4x para ampliar quatro vezes.',
     example: '#fotohd 4x'
+  },
+  {
+    command: '#removebg (respondendo a uma figurinha)',
+    description: 'Remove o fundo da imagem ou figurinha respondida. Também aceita #removebg ID <número> para processar itens do acervo.',
+    example: '#removebg'
   }
 ];
 

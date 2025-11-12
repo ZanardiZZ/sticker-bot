@@ -44,6 +44,7 @@ A comprehensive WhatsApp bot for managing, automatically sending, and administer
 - **OpenAI API key** - For AI-powered features
 - **SMTP server** - For email functionality
 - **FFmpeg** - For advanced video processing
+- **@tensorflow-models/body-pix** - Recommended for the #removebg command (fallback heuristic runs without it, but quality improves with the model)
 
 ### 🚨 Network Restrictions
 The application gracefully handles environments where FFmpeg binaries cannot be downloaded due to firewall restrictions (common with `storage.googleapis.com` blocks). When FFmpeg is unavailable:
