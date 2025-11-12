@@ -21,7 +21,7 @@ jobs:
         with:
           script: |
             const owner = context.repo.owner;
-const repo = context.repo.repo;
+            const repo = context.repo.repo;
 
 // 🔧 Configurações
 const LABELS = {
