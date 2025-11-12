@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { runTestSuite, assert, assertEqual } = require('../helpers/testUtils');
+const { runTestSuite, assert } = require('../helpers/testUtils');
 const { MockBaileysClient } = require('../helpers/mockBaileysClient');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
