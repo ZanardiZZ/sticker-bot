@@ -23,12 +23,16 @@ function incrementCommandUsageWithDb(database, command, userId) {
 
     const timestamp = Math.floor(Date.now() / 1000);
 
+    const upsertQuery = `
+      INSERT INTO command_usage (command, user_id, usage_count, last_used)
+      VALUES (?, ?, 1, ?)
+      ON CONFLICT(command, user_id) DO UPDATE SET
+        usage_count = usage_count + 1,
+        last_used = excluded.last_used
+    `.trim();
+
     database.run(
-      `INSERT INTO command_usage (command, user_id, usage_count, last_used)
-       VALUES (?, ?, 1, ?)
-       ON CONFLICT(command, user_id) DO UPDATE SET
-         usage_count = usage_count + 1,
-         last_used = excluded.last_used`,
+      upsertQuery,
       [normalizedCommand, normalizedUserId, timestamp],
       (err) => {
         if (err) {
