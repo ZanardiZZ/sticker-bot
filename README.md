@@ -147,6 +147,7 @@ Send these commands to the bot in WhatsApp:
 | `#count` | Show total sticker count | `#count` |
 | `#top10` | Top 10 most used stickers | `#top10` |
 | `#top5users` | Top 5 users by sticker count | `#top5users` |
+| `#top5comandos` | Top 5 commands ranked by usage | `#top5comandos` |
 | `#123` | Get sticker by ID | `#456` |
 | `#editar 123` | Edit sticker tags/description | `#editar 456` |
 | `#forçar` | Force save next media (admin) | `#forçar` |
@@ -317,6 +318,10 @@ All database operations use:
 - **Automatic retries** for SQLITE_BUSY errors
 - **Queue system** for high-volume processing
 - **Transaction safety** with rollback on failures
+
+### Command Usage Analytics
+
+Command executions are recorded in the `command_usage` table and exposed through the helpers in `database/models/commandUsage.js`. When you add new commands, follow the checklist in [`docs/COMMAND_USAGE_ANALYTICS.md`](docs/COMMAND_USAGE_ANALYTICS.md) to make sure usage counts stay accurate and appear in rankings like `#top5comandos`.
 
 ## ⚙️ Configuration
 
