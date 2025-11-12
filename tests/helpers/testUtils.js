@@ -107,7 +107,20 @@ function createTestTables(db) {
         )
       `, (err) => {
         if (err) reject(err);
-        else resolve();
+        else {
+          db.run(`
+            CREATE TABLE IF NOT EXISTS command_usage (
+              command TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              usage_count INTEGER NOT NULL DEFAULT 1,
+              last_used INTEGER NOT NULL,
+              PRIMARY KEY (command, user_id)
+            )
+          `, (usageErr) => {
+            if (usageErr) reject(usageErr);
+            else resolve();
+          });
+        }
       });
     });
   });

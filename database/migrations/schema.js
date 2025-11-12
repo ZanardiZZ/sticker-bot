@@ -92,6 +92,16 @@ function initializeTables(db) {
         )
       `);
 
+      db.run(`
+        CREATE TABLE IF NOT EXISTS command_usage (
+          command TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          usage_count INTEGER NOT NULL DEFAULT 1,
+          last_used INTEGER NOT NULL,
+          PRIMARY KEY (command, user_id)
+        )
+      `);
+
       // Version tracking table for SemVer implementation
       db.run(`
         CREATE TABLE IF NOT EXISTS version_info (

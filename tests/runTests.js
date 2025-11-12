@@ -28,6 +28,7 @@ const { tests: mockBaileysIntegrationTests } = require('./integration/mockBailey
 const { tests: mediaSendHandlerTests } = require('./unit/mediaSendHandlers.test');
 const { tests: processIncomingMediaTests } = require('./unit/processIncomingMedia.test');
 const { tests: dataUrlTests } = require('./unit/dataUrl.test');
+const { tests: commandUsageModelTests } = require('./unit/commandUsageModel.test');
 
 
 async function runAllTests() {
@@ -51,6 +52,7 @@ async function runAllTests() {
     results.push(await runTestSuite('Ban Command Tests', banCommandTests));
     results.push(await runTestSuite('Admin Utils Tests', adminUtilsTests));
     results.push(await runTestSuite('Version Model Tests', versionTests));
+    results.push(await runTestSuite('Command Usage Model Tests', commandUsageModelTests));
     results.push(await runTestSuite('LogCollector Tests', logCollectorTests));
     results.push(await runTestSuite('Permission Evaluator Tests', permissionEvaluatorTests));
     results.push(await runTestSuite('Mock Baileys Integration Tests', mockBaileysIntegrationTests));

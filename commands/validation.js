@@ -13,6 +13,7 @@ const VALID_COMMANDS = [
   '#deletar',
   '#top10',
   '#top5users',
+  '#top5comandos',
   '#id',
   '#forçar',
   '#count',
@@ -45,6 +46,11 @@ const HELP_ENTRIES = [
     command: '#top10',
     description: 'Mostra as 10 figurinhas mais usadas.',
     example: '#top10'
+  },
+  {
+    command: '#top5comandos',
+    description: 'Mostra os 5 comandos mais usados no bot.',
+    example: '#top5comandos'
   },
   {
     command: '#top5users',
