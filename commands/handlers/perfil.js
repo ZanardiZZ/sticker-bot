@@ -42,8 +42,8 @@ function createPerfilHandler({
       ]);
 
       const displayName = resolveDisplayName(contact, senderId);
-      const totalStickers = Number.isFinite(stickerCount) ? stickerCount : Number(stickerCount) || 0;
-      const totalCommandsUsed = Number.isFinite(totalCommands) ? totalCommands : Number(totalCommands) || 0;
+      const totalStickers = Number.isFinite(stickerCount) ? stickerCount : 0;
+      const totalCommandsUsed = Number.isFinite(totalCommands) ? totalCommands : 0;
 
       let response = '👤 *Perfil do usuário*\n';
       response += `• Nome: ${displayName}\n`;
