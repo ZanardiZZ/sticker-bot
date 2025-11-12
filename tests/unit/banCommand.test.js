@@ -131,6 +131,56 @@ const tests = [
       }
     }
   },
+
+  {
+    name: 'Ban command resolves mention from text using group metadata fallback',
+    fn: async () => {
+      const { handleBanCommand } = loadBanHandler();
+      const client = new MockWhatsAppClient();
+
+      const message = {
+        body: '#ban @20018943291402',
+        id: 'test-message-id',
+        from: '123456789@g.us',
+        sender: { isAdmin: true },
+        key: {
+          participant: '5511888888888@c.us'
+        },
+        groupMetadata: {
+          participants: [
+            { id: '5511888888888@c.us', isAdmin: true },
+            { id: '20018943291402@lid' }
+          ]
+        }
+      };
+
+      const chatId = '123456789@g.us';
+      const context = {
+        isGroup: true,
+        groupId: '123456789@g.us',
+        groupMetadata: message.groupMetadata
+      };
+
+      const previousAdminNumber = process.env.ADMIN_NUMBER;
+      process.env.ADMIN_NUMBER = '5511888888888@c.us';
+
+      try {
+        await handleBanCommand(client, message, chatId, [], context);
+
+        assertEqual(client.groupParticipantsUpdateCalls.length, 1, 'Should call groupParticipantsUpdate once');
+        assertEqual(client.groupParticipantsUpdateCalls[0].participants[0], '20018943291402@lid', 'Should resolve LID from text mention');
+
+        const messageText = client.sentMessages[0].message || client.sentMessages[0].text;
+        assert(messageText && messageText.includes('✅'), 'Should send success message');
+      } finally {
+        if (previousAdminNumber === undefined) {
+          delete process.env.ADMIN_NUMBER;
+        } else {
+          process.env.ADMIN_NUMBER = previousAdminNumber;
+        }
+      }
+    }
+  },
   
   {
     name: 'Ban command rejects non-admin users',
