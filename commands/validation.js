@@ -24,7 +24,10 @@ const VALID_COMMANDS = [
   '#perfil',
   '#ping',
   '#criar',
-  '#exportarmemes'
+  '#exportarmemes',
+  '#downloadmp3',
+  '#baixarmp3',
+  '#baixaraudio'
 ];
 
 const HELP_ENTRIES = [
@@ -92,6 +95,11 @@ const HELP_ENTRIES = [
     command: '#exportarmemes',
     description: 'Exporta os memes bem avaliados e o dataset de treinamento.',
     example: '#exportarmemes'
+  },
+  {
+    command: '#downloadmp3 <URL>',
+    description: 'Extrai o áudio em MP3 de um vídeo curto das plataformas suportadas. Use #baixarmp3 ou #baixaraudio como atalho.',
+    example: '#downloadmp3 https://youtube.com/watch?v=xxxxx'
   },
   {
     command: '#ping',

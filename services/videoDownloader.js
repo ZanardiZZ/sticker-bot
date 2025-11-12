@@ -29,6 +29,9 @@ function getMimeTypeByExtension(extension) {
  */
 
 const MAX_VIDEO_DURATION = 60; // 60 seconds = 1 minute
+const MAX_AUDIO_DURATION = 600; // 600 seconds = 10 minutes
+const MAX_AUDIO_FILESIZE_MB = 25;
+const MAX_AUDIO_FILESIZE_BYTES = MAX_AUDIO_FILESIZE_MB * 1024 * 1024;
 
 const SUPPORTED_PLATFORMS = [
   'YouTube (incl. Shorts)',
@@ -251,6 +254,110 @@ async function downloadVideo(url) {
 }
 
 /**
+ * Downloads audio from a URL in MP3 format
+ * @param {string} url - Source URL (YouTube, TikTok, Instagram, etc.)
+ * @returns {Promise<Object>} Object with filePath, mimetype, and metadata
+ */
+async function downloadAudio(url) {
+  try {
+    if (!url || typeof url !== 'string') {
+      throw new Error('URL inválida');
+    }
+
+    const ytDlpInstance = await initYtDlp();
+
+    const audioInfo = await getVideoInfo(url);
+
+    if (audioInfo.duration > MAX_AUDIO_DURATION) {
+      throw new Error(
+        `Áudio muito longo! Duração: ${Math.round(audioInfo.duration)}s. ` +
+        `Máximo permitido: ${MAX_AUDIO_DURATION}s (10 minutos).`
+      );
+    }
+
+    const tempDir = path.resolve(__dirname, '../temp');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    const uniqueId = crypto.randomBytes(8).toString('hex');
+    const outputTemplate = path.join(tempDir, `audio-${uniqueId}.%(ext)s`);
+
+    console.log('[VideoDownloader] Downloading audio from:', url);
+
+    await ytDlpInstance.execPromise([
+      url,
+      '-o', outputTemplate,
+      '--extract-audio',
+      '--audio-format', 'mp3',
+      '--no-playlist',
+      '--max-filesize', `${MAX_AUDIO_FILESIZE_MB}M`,
+      '--no-warnings',
+      '--quiet',
+      '--no-progress'
+    ]);
+
+    const files = fs.readdirSync(tempDir).filter(f => f.startsWith(`audio-${uniqueId}`));
+
+    if (files.length === 0) {
+      throw new Error('Arquivo de áudio não foi encontrado após download');
+    }
+
+    let downloadedFile = path.join(tempDir, files[0]);
+    const currentExt = path.extname(downloadedFile).toLowerCase();
+
+    if (currentExt !== '.mp3') {
+      const targetPath = path.join(tempDir, `audio-${uniqueId}.mp3`);
+      fs.renameSync(downloadedFile, targetPath);
+      downloadedFile = targetPath;
+    }
+
+    const stats = fs.statSync(downloadedFile);
+    if (stats.size > MAX_AUDIO_FILESIZE_BYTES) {
+      fs.unlinkSync(downloadedFile);
+      throw new Error(
+        `Arquivo de áudio excede o limite de ${MAX_AUDIO_FILESIZE_MB}MB.`
+      );
+    }
+
+    console.log('[VideoDownloader] Audio downloaded successfully:', downloadedFile);
+
+    return {
+      filePath: downloadedFile,
+      mimetype: 'audio/mpeg',
+      metadata: {
+        title: audioInfo.title,
+        duration: audioInfo.duration,
+        source: audioInfo.extractor,
+        url: audioInfo.url,
+        fileExt: 'mp3',
+        filesize: stats.size
+      }
+    };
+  } catch (error) {
+    console.error('[VideoDownloader] Error downloading audio:', error.message);
+    const stderrOutput = typeof error?.stderr === 'string' ? error.stderr.trim() : '';
+    const stdoutOutput = typeof error?.stdout === 'string' ? error.stdout.trim() : '';
+    const detailedLog = [stderrOutput, stdoutOutput].filter(Boolean).join('\n');
+    if (detailedLog) {
+      console.error('[VideoDownloader] Detailed error output\n', detailedLog);
+    }
+
+    if (error.message.includes('Unsupported URL')) {
+      throw new Error(
+        'URL não suportada. Utilize uma das plataformas compatíveis: ' + SUPPORTED_PLATFORMS.join(', ') + '.'
+      );
+    } else if (error.message.includes('muito longo')) {
+      throw error;
+    } else if (error.message.includes('excede o limite')) {
+      throw error;
+    } else {
+      throw new Error(`Erro ao baixar áudio: ${error.message}`);
+    }
+  }
+}
+
+/**
  * Checks if a URL is likely a video URL from a supported platform
  * @param {string} url - URL to check
  * @returns {boolean} True if URL looks like a video URL
@@ -280,8 +387,11 @@ function isVideoUrl(url) {
 
 module.exports = {
   downloadVideo,
+  downloadAudio,
   getVideoInfo,
   isVideoUrl,
   MAX_VIDEO_DURATION,
+  MAX_AUDIO_DURATION,
+  MAX_AUDIO_FILESIZE_MB,
   SUPPORTED_PLATFORMS
 };
