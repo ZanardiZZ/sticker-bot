@@ -18,6 +18,7 @@ const { handleDeleteCommand } = require('./handlers/delete');
 const { handleIssueCommand } = require('./handlers/issue');
 const { handleDownloadCommand } = require('./handlers/download');
 const { handleBanCommand } = require('./handlers/ban');
+const { handlePerfilCommand } = require('./handlers/perfil');
 
 // Utilities
 const validation = require('./validation');
@@ -153,6 +154,12 @@ async function handleCommand(client, message, chatId, context = {}) {
 
       case '#ban':
         await handleBanCommand(client, message, chatId, params, context);
+        handled = true;
+        shouldTrackUsage = true;
+        break;
+
+      case '#perfil':
+        await handlePerfilCommand(client, message, chatId, context);
         handled = true;
         shouldTrackUsage = true;
         break;
