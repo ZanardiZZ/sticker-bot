@@ -21,6 +21,7 @@ const { handleDownloadMp3Command } = require('./handlers/downloadMp3');
 const { handleBanCommand } = require('./handlers/ban');
 const { handlePerfilCommand } = require('./handlers/perfil');
 const { handleFotoHdCommand } = require('./handlers/fotohd');
+const { handleRemoveBackgroundCommand } = require('./handlers/removebg');
 
 // Utilities
 const validation = require('./validation');
@@ -176,6 +177,12 @@ async function handleCommand(client, message, chatId, context = {}) {
 
       case '#fotohd':
         await handleFotoHdCommand(client, message, chatId, context);
+        handled = true;
+        shouldTrackUsage = true;
+        break;
+
+      case '#removebg':
+        await handleRemoveBackgroundCommand(client, message, chatId, context);
         handled = true;
         shouldTrackUsage = true;
         break;

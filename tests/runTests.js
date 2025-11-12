@@ -19,6 +19,7 @@ const { tests: tagSimilarityTests, cleanup: tagSimilarityCleanup } = require('./
 const { tests: idCommandTests } = require('./unit/idCommand.test');
 const { tests: banCommandTests } = require('./unit/banCommand.test');
 const { tests: downloadMp3CommandTests } = require('./unit/downloadMp3Command.test');
+const { tests: removeBgCommandTests } = require('./unit/removeBgCommand.test');
 const { tests: adminUtilsTests } = require('./unit/adminUtils.test');
 const { tests: versionTests } = require('./unit/version.test');
 const { tests: logCollectorTests } = require('./unit/logCollector.test');
@@ -31,6 +32,7 @@ const { tests: processIncomingMediaTests } = require('./unit/processIncomingMedi
 const { tests: dataUrlTests } = require('./unit/dataUrl.test');
 const { tests: commandUsageModelTests } = require('./unit/commandUsageModel.test');
 const { tests: imageEnhancerTests } = require('./services/imageEnhancer.test');
+const { tests: backgroundRemovalTests } = require('./services/backgroundRemoval.test');
 
 
 async function runAllTests() {
@@ -53,6 +55,7 @@ async function runAllTests() {
     results.push(await runTestSuite('ID Command Tests', idCommandTests));
     results.push(await runTestSuite('Ban Command Tests', banCommandTests));
     results.push(await runTestSuite('Download MP3 Command Tests', downloadMp3CommandTests));
+    results.push(await runTestSuite('Remove Background Command Tests', removeBgCommandTests));
     results.push(await runTestSuite('Admin Utils Tests', adminUtilsTests));
     results.push(await runTestSuite('Version Model Tests', versionTests));
     results.push(await runTestSuite('Command Usage Model Tests', commandUsageModelTests));
@@ -63,6 +66,7 @@ async function runAllTests() {
     results.push(await runTestSuite('Process Incoming Media Tests', processIncomingMediaTests));
     results.push(await runTestSuite('Data URL Utils Tests', dataUrlTests));
     results.push(await runTestSuite('Image Enhancer Service Tests', imageEnhancerTests));
+    results.push(await runTestSuite('Background Removal Service Tests', backgroundRemovalTests));
     
     // Run animated sticker tests (different format)
     await runAnimatedStickerTests();

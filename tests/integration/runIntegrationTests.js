@@ -8,6 +8,7 @@ const { tests: databaseTests } = require('./database.test');
 const { tests: top5CommandsTests } = require('./top5commandsCommand.test');
 const { tests: downloadMp3IntegrationTests } = require('./downloadMp3Command.test');
 const { tests: fotoHdTests } = require('./fotohdCommand.test');
+const { tests: removeBgIntegrationTests } = require('./removeBgCommand.test');
 
 async function runIntegrationSuites() {
   try {
@@ -15,6 +16,7 @@ async function runIntegrationSuites() {
     await runTestSuite('Top5 Commands Handler Tests', top5CommandsTests);
     await runTestSuite('Download MP3 Command Integration Tests', downloadMp3IntegrationTests);
     await runTestSuite('Foto HD Command Integration Tests', fotoHdTests);
+    await runTestSuite('Remove Background Command Integration Tests', removeBgIntegrationTests);
   } catch (error) {
     console.error('Integration test suites failed:', error);
     process.exit(1);
