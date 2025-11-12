@@ -22,7 +22,8 @@ async function resolveDefaultLoader() {
       } catch (error) {
         console.warn('[SERVICE:BackgroundRemoval] @tensorflow-models/body-pix ausente. Aplicando fallback heurístico.');
         return {
-          async segmentPerson(tensor) {
+          async segmentPerson(tensor, options = {}) {
+            // The options parameter is ignored in this heuristic fallback.
             const [height, width] = tensor.shape;
             const grayscaleTensor = tf.tidy(() => tf.mean(tf.cast(tensor, 'float32'), 2));
             const grayscaleData = await grayscaleTensor.data();
