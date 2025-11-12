@@ -30,6 +30,7 @@ const { tests: mediaSendHandlerTests } = require('./unit/mediaSendHandlers.test'
 const { tests: processIncomingMediaTests } = require('./unit/processIncomingMedia.test');
 const { tests: dataUrlTests } = require('./unit/dataUrl.test');
 const { tests: commandUsageModelTests } = require('./unit/commandUsageModel.test');
+const { tests: imageEnhancerTests } = require('./services/imageEnhancer.test');
 
 
 async function runAllTests() {
@@ -61,6 +62,7 @@ async function runAllTests() {
     results.push(await runTestSuite('Media Sending Helper Tests', mediaSendHandlerTests));
     results.push(await runTestSuite('Process Incoming Media Tests', processIncomingMediaTests));
     results.push(await runTestSuite('Data URL Utils Tests', dataUrlTests));
+    results.push(await runTestSuite('Image Enhancer Service Tests', imageEnhancerTests));
     
     // Run animated sticker tests (different format)
     await runAnimatedStickerTests();
