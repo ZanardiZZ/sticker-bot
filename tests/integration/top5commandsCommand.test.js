@@ -37,7 +37,9 @@ const tests = [
 
       assertEqual(replies.length, 1, 'Should send a single reply');
       const response = replies[0].text;
-      assert(response.includes('Top 3 comandos mais usados'), 'Response should mention the number of commands returned');
+      // Determine the expected number of top commands
+      const expectedTopCount = 3; // We incremented 3 unique commands above
+      assert(response.includes(`Top ${expectedTopCount} comandos mais usados`), 'Response should mention the number of commands returned');
       assert(response.includes('#count'), 'Response should include #count');
       assert(response.includes('#random'), 'Response should include #random');
       assert(!response.includes('undefined'), 'Response should not contain undefined values');
