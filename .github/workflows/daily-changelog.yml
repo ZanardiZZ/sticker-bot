@@ -6,8 +6,11 @@ on:
     # Opcional: roda todo dia às 23:55 (UTC). Ajuste conforme necessário ou remova a seção schedule.
     - cron: "55 23 * * *"
 
+
 permissions:
   contents: write
+  pull-requests: read
+  metadata: read
 
 jobs:
   changelog:
