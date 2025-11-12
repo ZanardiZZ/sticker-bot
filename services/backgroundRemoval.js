@@ -194,7 +194,7 @@ function createBackgroundRemovalService({ tfLib = tf, sharpLib = sharp, modelLoa
         } catch (disposeError) {
           console.warn('[SERVICE:BackgroundRemoval] Falha ao descartar tensor:', disposeError?.message || disposeError);
         }
-        tfLib.dispose?.(tensor);
+        // Removed redundant double disposal of tensor
       }
     }
   }
