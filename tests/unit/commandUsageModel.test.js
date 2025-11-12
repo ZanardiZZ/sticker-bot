@@ -68,6 +68,61 @@ const tests = [
 
       await cleanup();
     }
+  },
+  {
+    name: 'getUserCommandUsage returns per-command stats sorted by usage',
+    fn: async () => {
+      const { db, cleanup } = createTestDatabase('command-usage-user');
+      await createTestTables(db);
+      const { incrementCommandUsage, getUserCommandUsage } = createCommandUsageModel(db);
+
+      await incrementCommandUsage('#random', 'user1@c.us');
+      await incrementCommandUsage('#random', 'user1@c.us');
+      await incrementCommandUsage('#tema', 'user1@c.us');
+      await incrementCommandUsage('#count', 'user1@c.us');
+      await incrementCommandUsage('#tema', 'user1@c.us');
+
+      const usage = await getUserCommandUsage('user1@c.us');
+
+      assertEqual(usage.length, 3, 'Should return stats for each command used by the user');
+      assert(
+        usage.every((entry, index) => index === 0 || entry.usage_count <= usage[index - 1].usage_count),
+        'Results should be sorted by usage count descending'
+      );
+
+      const temaUsage = usage.find((entry) => entry.command === '#tema');
+      const randomUsage = usage.find((entry) => entry.command === '#random');
+      const countUsage = usage.find((entry) => entry.command === '#count');
+
+      assert(temaUsage, 'Should include #tema stats');
+      assertEqual(temaUsage.usage_count, 2, 'Usage count should match aggregated value for #tema');
+      assert(randomUsage, 'Should include #random stats');
+      assertEqual(randomUsage.usage_count, 2, 'Usage count should match aggregated value for #random');
+      assert(countUsage, 'Should include #count stats');
+      assertEqual(countUsage.usage_count, 1, 'Usage count should match aggregated value for #count');
+
+      await cleanup();
+    }
+  },
+  {
+    name: 'getTotalCommands sums all usages for a user and handles empty results',
+    fn: async () => {
+      const { db, cleanup } = createTestDatabase('command-usage-total');
+      await createTestTables(db);
+      const { incrementCommandUsage, getTotalCommands } = createCommandUsageModel(db);
+
+      await incrementCommandUsage('#random', 'user1@c.us');
+      await incrementCommandUsage('#random', 'user1@c.us');
+      await incrementCommandUsage('#tema', 'user1@c.us');
+
+      const total = await getTotalCommands('user1@c.us');
+      assertEqual(total, 3, 'Should sum all command usages for the user');
+
+      const emptyTotal = await getTotalCommands('user2@c.us');
+      assertEqual(emptyTotal, 0, 'Should return 0 when user has no command usage history');
+
+      await cleanup();
+    }
   }
 ];
 

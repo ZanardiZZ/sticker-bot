@@ -5,6 +5,7 @@
 
 const path = require('path');
 const { createTestDatabase, createTestTables, insertTestMedia, assert, assertEqual, assertLength, runTestSuite } = require('../helpers/testUtils');
+const { countMediaBySenderWithDb } = require('../../database/models/media');
 
 // Mock the database connection for testing
 let testDb;
@@ -426,7 +427,34 @@ const tests = [
       
       // Verify ordering (most recent first)
       assert(page1[0].timestamp >= page1[9].timestamp, 'Results should be ordered by timestamp DESC');
-      
+
+      await cleanup();
+    }
+  },
+  {
+    name: 'countMediaBySender returns total media for a sender',
+    fn: async () => {
+      const { db, cleanup: cleanupFn } = createTestDatabase('media-count-by-sender');
+      testDb = db;
+      cleanup = cleanupFn;
+
+      await createTestTables(db);
+
+      await insertTestMedia(db, [
+        { senderId: 'user1@c.us' },
+        { senderId: 'user1@c.us' },
+        { senderId: 'user2@c.us' }
+      ]);
+
+      const totalUser1 = await countMediaBySenderWithDb(db, 'user1@c.us');
+      assertEqual(totalUser1, 2, 'Should count media rows belonging to the sender');
+
+      const totalUser2 = await countMediaBySenderWithDb(db, 'user2@c.us');
+      assertEqual(totalUser2, 1, 'Should count media rows for a different sender');
+
+      const totalUnknown = await countMediaBySenderWithDb(db, 'unknown@c.us');
+      assertEqual(totalUnknown, 0, 'Should return 0 when sender has no media');
+
       await cleanup();
     }
   }

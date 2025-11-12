@@ -234,6 +234,32 @@ function countMedia() {
   });
 }
 
+function countMediaBySenderWithDb(database, senderId) {
+  return new Promise((resolve, reject) => {
+    if (!senderId || typeof senderId !== 'string' || !senderId.trim()) {
+      resolve(0);
+      return;
+    }
+
+    database.get(
+      'SELECT COUNT(*) AS total FROM media WHERE sender_id = ?',
+      [senderId.trim()],
+      (err, row) => {
+        if (err) {
+          reject(err);
+        } else {
+          const total = row && typeof row.total === 'number' ? row.total : 0;
+          resolve(total || 0);
+        }
+      }
+    );
+  });
+}
+
+function countMediaBySender(senderId) {
+  return countMediaBySenderWithDb(db, senderId);
+}
+
 /**
  * Gets top 10 media by usage
  * @returns {Promise<object[]>} Array of media objects with usage stats
@@ -310,8 +336,10 @@ module.exports = {
   incrementRandomCount,
   updateMediaDescription,
   countMedia,
+  countMediaBySender,
   findByHashMd5,
   getTop10Media,
   findMediaByTheme,
-  getNextAvailableMediaId
+  getNextAvailableMediaId,
+  countMediaBySenderWithDb
 };
