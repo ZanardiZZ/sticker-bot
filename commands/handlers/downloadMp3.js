@@ -77,6 +77,7 @@ async function handleDownloadMp3Command(client, message, chatId, params) {
   await withTyping(client, chatId, async () => {
     let downloadResult = null;
     let finalMediaPath = null;
+    let fileSent = false;
 
     try {
       await safeReply(
@@ -120,6 +121,8 @@ async function handleDownloadMp3Command(client, message, chatId, params) {
         { mimetype: 'audio/mpeg', asDocument: false }
       );
 
+      fileSent = true;
+
       const successMessageParts = [
         '✅ *Áudio pronto!*',
         '',
@@ -140,6 +143,16 @@ async function handleDownloadMp3Command(client, message, chatId, params) {
           }
         } catch (cleanupError) {
           console.warn('[DownloadMp3Command] Failed to remove temp audio file:', cleanupError.message);
+        }
+      }
+
+      if (finalMediaPath && !fileSent) {
+        try {
+          if (fs.existsSync(finalMediaPath)) {
+            fs.unlinkSync(finalMediaPath);
+          }
+        } catch (cleanupError) {
+          console.warn('[DownloadMp3Command] Failed to remove orphaned media file:', cleanupError.message);
         }
       }
     }
