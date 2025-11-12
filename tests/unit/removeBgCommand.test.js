@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
-const { runTestSuite, assert, assertEqual } = require('../helpers/testUtils');
+const { runTestSuite, assert } = require('../helpers/testUtils');
 
 const handlerPath = require.resolve('../../commands/handlers/removebg');
 const servicePath = require.resolve('../../services/backgroundRemoval');
