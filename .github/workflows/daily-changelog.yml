@@ -2,9 +2,6 @@ name: Gerar changelog diário
 
 on:
   workflow_dispatch: {}
-  push:
-    branches:
-      - copilot/fix-daily-changelog-workflow  # Temporary: for testing only
   schedule:
     # Opcional: roda todo dia às 23:55 (UTC). Ajuste conforme necessário ou remova a seção schedule.
     - cron: "55 02 * * *"  # 23:55 horário de Brasília (UTC-3)
