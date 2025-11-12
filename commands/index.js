@@ -7,6 +7,7 @@ const { handleRandomCommand } = require('./handlers/random');
 const { handleCountCommand } = require('./handlers/count');
 const { handleTop10Command } = require('./handlers/top10');
 const { handleTop5UsersCommand } = require('./handlers/top5users');
+const { handleTop5CommandsCommand } = require('./handlers/top5commands');
 const { handleIdCommand } = require('./handlers/id');
 const { handleForceCommand } = require('./handlers/force');
 const { handleEditCommand } = require('./handlers/edit');
@@ -23,7 +24,7 @@ const validation = require('./validation');
 const media = require('./media');
 
 // Database functions
-const { updateMediaDescription, updateMediaTags } = require('../database/index.js');
+const { updateMediaDescription, updateMediaTags, incrementCommandUsage } = require('../database/index.js');
 const { safeReply } = require('../utils/safeMessaging');
 const { parseCommand } = require('../utils/commandNormalizer');
 const packageJson = require('../package.json');
@@ -52,70 +53,109 @@ async function handleCommand(client, message, chatId, context = {}) {
 
   const { command, params } = parseCommand(rawCommand);
 
+  let handled = false;
+  let shouldTrackUsage = false;
+
   try {
     switch (command) {
       case '#random':
         await handleRandomCommand(client, message, chatId);
-        return true;
-      
+        handled = true;
+        shouldTrackUsage = true;
+        break;
+
       case '#count':
         await handleCountCommand(client, message, chatId);
-        return true;
-      
+        handled = true;
+        shouldTrackUsage = true;
+        break;
+
       case '#top10':
         await handleTop10Command(client, message, chatId);
-        return true;
-      
+        handled = true;
+        shouldTrackUsage = true;
+        break;
+
       case '#top5users':
         await handleTop5UsersCommand(client, message, chatId);
-        return true;
-      
+        handled = true;
+        shouldTrackUsage = true;
+        break;
+
+      case '#top5comandos':
+        await handleTop5CommandsCommand(client, message, chatId);
+        handled = true;
+        shouldTrackUsage = true;
+        break;
+
       case '#id':
         await handleIdCommand(client, message, chatId);
-        return true;
-      
+        handled = true;
+        shouldTrackUsage = true;
+        break;
+
       case '#forçar':
         await handleForceCommand(client, message, chatId, forceMap);
-        return true;
-      
+        handled = true;
+        shouldTrackUsage = true;
+        break;
+
       case '#editar':
         await handleEditCommand(client, message, chatId, taggingMap, MAX_TAGS_LENGTH);
-        return true;
-      
+        handled = true;
+        shouldTrackUsage = true;
+        break;
+
       case '#tema':
       case '#theme':
         await handleThemeCommand(client, message, chatId, params);
-        return true;
+        handled = true;
+        shouldTrackUsage = true;
+        break;
 
       case '#verificar':
       case '#verify':
         await handleVerifyCommand(client, message, chatId);
-        return true;
+        handled = true;
+        shouldTrackUsage = true;
+        break;
 
       case '#criar':
         await handleCriarMemeCommand(client, message, chatId, params, context);
-        return true;
+        handled = true;
+        shouldTrackUsage = true;
+        break;
 
       case '#exportarmemes':
         await handleExportarMemesCommand(client, message, chatId);
-        return true;
+        handled = true;
+        shouldTrackUsage = true;
+        break;
 
       case '#deletar':
         await handleDeleteCommand(client, message, chatId, params, context);
-        return true;
+        handled = true;
+        shouldTrackUsage = true;
+        break;
 
       case '#issue':
         await handleIssueCommand(client, message, chatId, params, context);
-        return true;
+        handled = true;
+        shouldTrackUsage = true;
+        break;
 
       case '#download':
       case '#baixar':
         await handleDownloadCommand(client, message, chatId, params, context);
-        return true;
+        handled = true;
+        shouldTrackUsage = true;
+        break;
 
       case '#ban':
         await handleBanCommand(client, message, chatId, params, context);
-        return true;
+        handled = true;
+        shouldTrackUsage = true;
+        break;
 
       case '#ping': {
           // Build ping response
@@ -139,22 +179,38 @@ async function handleCommand(client, message, chatId, context = {}) {
             `🛠️ Versão: ${botVersion}`;
 
           await safeReply(client, chatId, response, message);
-          return true;
+          handled = true;
+          shouldTrackUsage = true;
+          break;
         }
-      
+
       default:
         // Check if it's an invalid command
         if (validation.isValidCommand(rawCommand) === false) {
           await validation.handleInvalidCommand(client, chatId);
-          return true;
+          handled = true;
         }
-        return false;
+        break;
     }
   } catch (error) {
     console.error('Error handling command:', error);
     await safeReply(client, chatId, 'Erro ao processar comando.', message.id);
     return true;
   }
+
+  if (handled && shouldTrackUsage) {
+    const usageUserId = context?.resolvedSenderId || message.from || null;
+
+    if (usageUserId && typeof incrementCommandUsage === 'function') {
+      try {
+        await incrementCommandUsage(command, usageUserId);
+      } catch (incrementError) {
+        console.error('Error incrementing command usage:', incrementError);
+      }
+    }
+  }
+
+  return handled;
 }
 
 /**

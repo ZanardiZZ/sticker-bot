@@ -25,6 +25,7 @@ const versionModel = require('./models/version');
 const lidMappingModel = require('./models/lidMapping');
 const deleteRequestsModel = require('./models/deleteRequests');
 const configModel = require('./models/config');
+const commandUsageModel = require('./models/commandUsage');
 
 // Utilities
 const utils = require('./utils');
@@ -81,6 +82,9 @@ module.exports = {
   // Bot configuration
   ...configModel,
 
-  // Utilities  
+  // Command usage analytics
+  ...commandUsageModel,
+
+  // Utilities
   ...utils
 };
