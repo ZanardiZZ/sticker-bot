@@ -262,10 +262,11 @@ async function handlePackCommand(client, message, chatId, params = []) {
             client,
             chatId,
             `✅ Pack "${pack.name}" enviado com sucesso! (${sentCount} stickers)`,
-          message.id
-        );
-      } catch (error) {
-        console.error('Failed to send completion notification:', error);
+            message.id
+          );
+        } catch (error) {
+          console.error('Failed to send completion notification:', error);
+        }
       }
     }
 
