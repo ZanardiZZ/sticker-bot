@@ -241,8 +241,19 @@ function countMediaBySenderWithDb(database, senderId) {
       return;
     }
 
+    // Use the same effective_sender logic as getTop5UsersByStickerCount
+    // to ensure consistency between perfil and top5usuarios commands
     database.get(
-      'SELECT COUNT(*) AS total FROM media WHERE sender_id = ?',
+      `SELECT COUNT(*) AS total
+       FROM media m
+       LEFT JOIN lid_mapping lm ON lm.lid = COALESCE(m.sender_id, m.chat_id, m.group_id)
+       WHERE (
+         CASE
+           WHEN COALESCE(m.sender_id, m.chat_id, m.group_id) LIKE '%@lid'
+             THEN COALESCE(NULLIF(lm.pn, ''), m.chat_id, m.group_id, m.sender_id)
+           ELSE COALESCE(m.sender_id, m.chat_id, m.group_id)
+         END
+       ) = ?`,
       [senderId.trim()],
       (err, row) => {
         if (err) {

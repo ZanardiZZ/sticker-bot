@@ -118,7 +118,21 @@ function createTestTables(db) {
             )
           `, (usageErr) => {
             if (usageErr) reject(usageErr);
-            else resolve();
+            else {
+              // LID mapping table for WhatsApp LID ↔ PN mappings
+              db.run(`
+                CREATE TABLE IF NOT EXISTS lid_mapping (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  lid TEXT UNIQUE,
+                  pn TEXT UNIQUE,
+                  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+              `, (lidErr) => {
+                if (lidErr) reject(lidErr);
+                else resolve();
+              });
+            }
           });
         }
       });
