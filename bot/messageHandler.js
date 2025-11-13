@@ -22,7 +22,8 @@ const DM_AUTO_REPLY_TTL = Number(process.env.DM_AUTO_REPLY_TTL_SECONDS) || 60 * 
 const mediaProcessingQueue = new MediaQueue({ 
   concurrency: 2, // Lower concurrency to reduce resource contention
   retryAttempts: 4, // More retries for media processing failures
-  retryDelay: 2000 // Longer delay between retries for resource-intensive operations
+  retryDelay: 2000, // Longer delay between retries for resource-intensive operations
+  maxQueueSize: 50 // Limit queue size to prevent memory issues with large message bursts
 });
 
 // Add queue monitoring
@@ -38,6 +39,14 @@ mediaProcessingQueue.on('jobRetry', (jobId, attempt, error) => {
 mediaProcessingQueue.on('jobCompleted', (jobId) => {
   const stats = mediaProcessingQueue.getStats();
   console.log(`[MediaHandler] Media job ${jobId} completed (${stats.waiting} waiting, ${stats.processing} processing)`);
+});
+
+mediaProcessingQueue.on('queueFull', (maxSize, currentSize) => {
+  console.warn(`[MediaHandler] ⚠️ Queue is FULL! Max: ${maxSize}, Current: ${currentSize}. Rejecting new media.`);
+});
+
+mediaProcessingQueue.on('queueWarning', (currentSize, maxSize, usage) => {
+  console.warn(`[MediaHandler] ⚠️ Queue usage is high: ${currentSize}/${maxSize} (${(usage * 100).toFixed(1)}%)`);
 });
 
 /**
@@ -166,9 +175,31 @@ async function handleMessage(client, message) {
     if (!message.isMedia) return;
 
     // Queue media processing to avoid resource contention
-    await mediaProcessingQueue.add(async () => {
-      return await processIncomingMedia(client, message, resolvedSenderId);
-    });
+    try {
+      await mediaProcessingQueue.add(async () => {
+        return await processIncomingMedia(client, message, resolvedSenderId);
+      });
+    } catch (queueError) {
+      // Handle queue overflow gracefully
+      if (queueError.code === 'QUEUE_FULL') {
+        console.warn(`[MediaHandler] Queue full, notifying user: ${message.from}`);
+        try {
+          await withTyping(client, message.from, async () => {
+            await safeReply(
+              client, 
+              message.from, 
+              '⚠️ O sistema está processando muitas figurinhas no momento. Por favor, aguarde alguns instantes e tente novamente.', 
+              message.id
+            );
+          });
+        } catch (notifyError) {
+          console.error('[MediaHandler] Failed to notify user about queue overflow:', notifyError);
+        }
+      } else {
+        // Re-throw other queue errors
+        throw queueError;
+      }
+    }
     
   } catch (e) {
     console.error('Erro ao processar mensagem:', e);
