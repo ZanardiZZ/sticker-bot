@@ -11,13 +11,15 @@ class MediaQueue extends EventEmitter {
     this.concurrency = options.concurrency || 3; // Max concurrent processes
     this.retryAttempts = options.retryAttempts || 3;
     this.retryDelay = options.retryDelay || 1000; // Initial retry delay in ms
+    this.maxQueueSize = options.maxQueueSize || 100; // Max queue size to prevent memory issues
     
     this.queue = [];
     this.processing = new Set();
     this.stats = {
       processed: 0,
       failed: 0,
-      queued: 0
+      queued: 0,
+      rejected: 0 // Track rejected items due to queue overflow
     };
   }
 
@@ -26,6 +28,16 @@ class MediaQueue extends EventEmitter {
    */
   async add(job) {
     return new Promise((resolve, reject) => {
+      // Check if queue is full (excluding items currently processing)
+      if (this.queue.length >= this.maxQueueSize) {
+        const error = new Error(`Queue is full (max: ${this.maxQueueSize}). Please try again later.`);
+        error.code = 'QUEUE_FULL';
+        this.stats.rejected++;
+        this.emit('queueFull', this.maxQueueSize, this.queue.length);
+        reject(error);
+        return;
+      }
+      
       const queueItem = {
         id: `job-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
         job,
@@ -49,6 +61,8 @@ class MediaQueue extends EventEmitter {
           } finally {
             // Ensure cleanup happens in all cases
             this.processing.delete(queueItem.id);
+            // Process next item in queue if any
+            setImmediate(() => this.processNext());
           }
         });
         
@@ -59,6 +73,12 @@ class MediaQueue extends EventEmitter {
       this.queue.push(queueItem);
       this.stats.queued++;
       this.emit('jobAdded', queueItem.id);
+      
+      // Emit warning if queue is getting large (>75% full)
+      const queueUsage = this.queue.length / this.maxQueueSize;
+      if (queueUsage >= 0.75) {
+        this.emit('queueWarning', this.queue.length, this.maxQueueSize, queueUsage);
+      }
       
       // Start processing if we have capacity
       this.processNext();
@@ -152,7 +172,9 @@ class MediaQueue extends EventEmitter {
     return {
       ...this.stats,
       processing: this.processing.size,
-      waiting: this.queue.length
+      waiting: this.queue.length,
+      capacity: this.maxQueueSize,
+      usage: this.queue.length / this.maxQueueSize
     };
   }
 
