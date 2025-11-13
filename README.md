@@ -653,6 +653,13 @@ See [`.github/agents/README.md`](.github/agents/README.md) for detailed document
 5. Use custom agents for guidance on repository patterns
 6. Submit a pull request
 
+### Version Management
+
+This project uses an automated version management system:
+- Version starts at **0.5** and auto-increments by 0.1 for each changelog
+- Manual version bumps: include `bump: version X.Y` in commit messages
+- See [docs/VERSION_MANAGEMENT.md](docs/VERSION_MANAGEMENT.md) for details
+
 ## 📄 License
 
 ISC License
