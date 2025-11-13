@@ -66,3 +66,8 @@ auth_info_baileys/
 bot/temp
 data/
 data/memes.sqlite*
+
+# Wastickers generated files
+wastickers/
+*.wastickers
+*.wastickers.zip
