@@ -730,10 +730,39 @@ async function start() {
     else if (mediaType === 'stickerMessage') kind = 'sticker';
     else if (mediaType === 'audioMessage') kind = 'audio';
     else if (mediaType === 'documentMessage') kind = 'document';
-    const stream = await downloadContentFromMessage(content, kind);
-    const chunks = [];
-    for await (const chunk of stream) chunks.push(chunk);
-    return Buffer.concat(chunks);
+    
+    // Retry logic with exponential backoff for transient failures
+    const maxRetries = 3;
+    const baseDelay = 1000; // 1 second
+    let lastError;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const stream = await downloadContentFromMessage(content, kind);
+        const chunks = [];
+        for await (const chunk of stream) chunks.push(chunk);
+        const buffer = Buffer.concat(chunks);
+        
+        if (attempt > 0) {
+          console.log(`[buildMediaBuffer] Successfully downloaded media after ${attempt} retries`);
+        }
+        
+        return buffer;
+      } catch (err) {
+        lastError = err;
+        
+        if (attempt < maxRetries) {
+          const delay = baseDelay * Math.pow(2, attempt);
+          console.warn(`[buildMediaBuffer] Download attempt ${attempt + 1} failed: ${err.message}. Retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        } else {
+          console.error(`[buildMediaBuffer] All ${maxRetries + 1} download attempts failed for ${kind} media: ${err.message}`);
+        }
+      }
+    }
+    
+    // All retries exhausted, throw the last error
+    throw lastError;
   }
 
   async function convertToAnimatedWebp(inputPath) {
@@ -954,9 +983,13 @@ async function start() {
         const cached = messageId ? mediaCache.get(messageId) : null;
         if (cached && typeof cached.timestamp === 'number' && Date.now() - cached.timestamp > MEDIA_CACHE_TTL_MS) {
           mediaCache.delete(messageId);
+          console.warn(`[WS Server] Media expired for message: ${messageId}`);
           return send(ws, { type: 'error', action: 'downloadMedia', messageId, error: 'media_expired' });
         }
-        if (!cached) return send(ws, { type: 'error', action: 'downloadMedia', messageId, error: 'media_not_found' });
+        if (!cached) {
+          console.warn(`[WS Server] Media not found in cache for message: ${messageId}`);
+          return send(ws, { type: 'error', action: 'downloadMedia', messageId, error: 'media_not_found' });
+        }
         const { m, chatId } = cached;
         const entryCan = entry.allowedChats.has('*') || entry.allowedChats.has(chatId);
         if (!entryCan) return send(ws, { type: 'error', action: 'downloadMedia', messageId, error: 'forbidden' });
@@ -967,7 +1000,21 @@ async function start() {
           const dataUrl = `data:${mimetype};base64,${buf.toString('base64')}`;
           return send(ws, { type: 'media', messageId, mimetype, dataUrl, requestId: incomingRequestId });
         } catch (e) {
-          return send(ws, { type: 'error', action: 'downloadMedia', messageId, error: e.message || String(e), requestId: incomingRequestId });
+          console.error(`[WS Server] Failed to download media for message ${messageId}:`, e.message);
+          // Provide more detailed error information
+          const errorDetails = {
+            message: e.message || String(e),
+            type: e.name || 'Unknown',
+            stack: process.env.NODE_ENV === 'development' ? e.stack : undefined
+          };
+          return send(ws, { 
+            type: 'error', 
+            action: 'downloadMedia', 
+            messageId, 
+            error: e.message || String(e),
+            errorDetails,
+            requestId: incomingRequestId 
+          });
         }
       }
 

@@ -938,7 +938,25 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
       if (e.response && e.response.data) {
         console.error('Detalhes do erro de resposta:', e.response.data);
       }
-      await safeReply(client, message.from, 'Erro ao processar sua mídia.', message.id);
+      
+      // Provide more specific error messages based on the error type
+      let userMessage = 'Erro ao processar sua mídia.';
+      
+      if (e.message && e.message.includes('media_download_failed')) {
+        userMessage = '⚠️ Não foi possível baixar a mídia. Isso pode acontecer se:\n' +
+                     '• A mídia expirou no WhatsApp (tente reenviar)\n' +
+                     '• Há problemas de conexão temporários\n' +
+                     '• O arquivo é muito grande\n\n' +
+                     'Por favor, tente enviar novamente.';
+      } else if (e.message && e.message.includes('timeout')) {
+        userMessage = '⏱️ O download da mídia demorou muito e foi cancelado. Por favor, tente enviar novamente ou envie um arquivo menor.';
+      } else if (e.message && e.message.includes('media_expired')) {
+        userMessage = '⚠️ Esta mídia expirou no WhatsApp. Por favor, envie novamente.';
+      } else if (e.message && e.message.includes('media_not_found')) {
+        userMessage = '❌ Mídia não encontrada. Por favor, envie novamente.';
+      }
+      
+      await safeReply(client, message.from, userMessage, message.id);
     } finally {
       if (tmpFilePath) {
         try {

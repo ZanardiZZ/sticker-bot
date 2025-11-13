@@ -224,17 +224,19 @@ async function handleMessage(client, message) {
     // Queue media processing to avoid resource contention
     try {
       await mediaProcessingQueue.add(async () => {
-        return await processIncomingMedia(client, message, resolvedSenderId);
-      });
-      
-      // Mark message as processed after successful media queuing
-      if (messageId && chatId) {
-        try {
-          await markMessageAsProcessed(messageId, chatId);
-        } catch (err) {
-          console.error('[MessageHandler] Error marking message as processed:', err);
+        // Process media and mark as processed only on success
+        await processIncomingMedia(client, message, resolvedSenderId);
+        
+        // Mark message as processed ONLY after successful media processing
+        // This ensures failed downloads can be retried by history recovery
+        if (messageId && chatId) {
+          try {
+            await markMessageAsProcessed(messageId, chatId);
+          } catch (err) {
+            console.error('[MessageHandler] Error marking message as processed:', err);
+          }
         }
-      }
+      });
     } catch (queueError) {
       // Handle queue overflow gracefully
       if (queueError.code === 'QUEUE_FULL') {
