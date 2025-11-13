@@ -117,25 +117,16 @@ The bot now runs exclusively on the Baileys WebSocket bridge. Keep the bridge on
 - `npm run bot` – Launch the bot logic.
 - `npm run bot-direct` – Alias for `npm run bot` (kept for backward compatibility).
 
-📖 Looking for the old open-wa socket instructions? Check the legacy docs in [`docs/SOCKET_MODE_GUIDE.md`](docs/SOCKET_MODE_GUIDE.md).
+#### 🌐 Web Interface
 
-#### 📱 Direct Mode (Legacy)
-
-**Web Interface:**
 ```bash
 npm run web
 ```
 - Access at `http://localhost:3000`
 - Default admin: `admin` (password shown on startup)
+- Provides user management, sticker browsing, and analytics
 
-**WhatsApp Bot:**
-```bash
-node index.js
-# OR
-npm run bot-direct
-```
-- Scan QR code with WhatsApp
-- Bot will be ready after connection
+**Note:** The web interface runs independently of the bot. You can run both simultaneously for full functionality.
 
 ## 🎮 Bot Commands
 
@@ -155,6 +146,17 @@ Send these commands to the bot in WhatsApp:
 | `#verificar` | Generate WhatsApp verification code | `#verificar` |
 | `#download <URL>` | Download short video from URL | `#download https://youtube.com/shorts/xxxxx` |
 | `#baixar <URL>` | Same as #download (Portuguese) | `#baixar https://tiktok.com/@user/video/xxxxx` |
+| `#downloadmp3 <URL>` | Download audio from video URL | `#downloadmp3 https://youtube.com/watch?v=xxxxx` |
+| `#baixarmp3 <URL>` | Same as #downloadmp3 (Portuguese) | `#baixarmp3 https://youtube.com/watch?v=xxxxx` |
+| `#baixaraudio <URL>` | Same as #downloadmp3 (Portuguese) | `#baixaraudio https://youtube.com/watch?v=xxxxx` |
+| `#criar <prompt>` | Generate meme with AI | `#criar gato engraçado com chapéu` |
+| `#exportarmemes` | Export all generated memes (admin) | `#exportarmemes` |
+| `#deletar <ID>` | Delete sticker by ID (voting system) | `#deletar 123` |
+| `#issue <description>` | Report an issue to developers | `#issue O bot está lento` |
+| `#perfil` | Show your user profile and statistics | `#perfil` |
+| `#fotohd` | Upscale photo to HD quality | `#fotohd` (reply to image) |
+| `#tema <theme>` | Get random sticker by theme | `#tema cats` |
+| `#ping` | Check bot status and uptime | `#ping` |
 
 ### 🛡️ Group Moderation
 
@@ -224,6 +226,41 @@ The bot will:
 4. Apply NSFW filtering
 5. Convert to sticker format (if applicable)
 6. Save to database with full metadata
+
+### 🗑️ Delete Command (Voting System)
+
+Delete stickers using a democratic voting system:
+
+**Usage:**
+```
+#deletar <ID>
+```
+
+**How it works:**
+
+1. **Immediate deletion** (no voting needed):
+   - ✅ **Original sender** of the sticker can delete it directly
+   - ✅ **Admins** (configured via `ADMIN_NUMBER` or WhatsApp group admins) can delete directly
+
+2. **Community voting**:
+   - 👥 Regular users can vote to delete a sticker
+   - 🗳️ When **3 votes** are reached, the sticker is automatically deleted
+   - ✅ Each user can vote once per sticker
+   - 📊 Bot shows remaining votes needed
+
+**Example:**
+```
+User1: #deletar 123
+Bot: 🗳️ Seu voto para deletar a mídia ID 123 foi registrado. Faltam 2 voto(s).
+
+User2: #deletar 123
+Bot: 🗳️ Seu voto para deletar a mídia ID 123 foi registrado. Faltam 1 voto(s).
+
+User3: #deletar 123
+Bot: 🗑️ Mídia ID 123 deletada após atingir 3 votos.
+```
+
+**Note:** The voting threshold can be configured by admins in the database (`delete_vote_threshold`).
 
 ### Tag Editing Mode
 After using `#editar ID`, send:

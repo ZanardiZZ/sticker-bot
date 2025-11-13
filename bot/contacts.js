@@ -1,4 +1,4 @@
-// Helpers para armazenar nomes de usuários a partir do open-wa message.sender
+// Helpers para armazenar nomes de usuários a partir de mensagens do WhatsApp
 const { db } = require('../database/index.js');
 
 /**
@@ -28,7 +28,7 @@ function initContactsTable() {
 }
 
 /**
- * Extrai o melhor nome exibível do objeto de mensagem do open-wa.
+ * Extrai o melhor nome exibível do objeto de mensagem do WhatsApp.
  * Prioridade: formattedName > pushname > name > shortName > notifyName > null
  */
 function extractDisplayNameFromMessage(message) {
@@ -66,7 +66,7 @@ function upsertContact(senderId, displayName) {
 }
 
 /**
- * Chame isso em todo onMessage do open-wa.
+ * Chame isso em todo onMessage do handler de mensagens.
  * Evita gravar o ID do grupo (@g.us) como contato.
  */
 function upsertContactFromMessage(message) {
