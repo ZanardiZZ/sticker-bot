@@ -26,6 +26,7 @@ const lidMappingModel = require('./models/lidMapping');
 const deleteRequestsModel = require('./models/deleteRequests');
 const configModel = require('./models/config');
 const commandUsageModel = require('./models/commandUsage');
+const packsModel = require('./models/packs');
 
 // Utilities
 const utils = require('./utils');
@@ -84,6 +85,9 @@ module.exports = {
 
   // Command usage analytics
   ...commandUsageModel,
+
+  // Sticker packs operations
+  ...packsModel,
 
   // Utilities
   ...utils

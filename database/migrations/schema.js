@@ -160,6 +160,32 @@ function initializeTables(db) {
         )
       `);
 
+      // Sticker packs tables
+      db.run(`
+        CREATE TABLE IF NOT EXISTS sticker_packs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL UNIQUE,
+          description TEXT,
+          created_by TEXT,
+          created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+          updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+          sticker_count INTEGER DEFAULT 0,
+          max_stickers INTEGER DEFAULT 30
+        )
+      `);
+
+      db.run(`
+        CREATE TABLE IF NOT EXISTS pack_stickers (
+          pack_id INTEGER NOT NULL,
+          media_id INTEGER NOT NULL,
+          position INTEGER NOT NULL,
+          added_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+          PRIMARY KEY(pack_id, media_id),
+          FOREIGN KEY(pack_id) REFERENCES sticker_packs(id) ON DELETE CASCADE,
+          FOREIGN KEY(media_id) REFERENCES media(id) ON DELETE CASCADE
+        )
+      `);
+
       // Create indexes for performance
       createIndexes(db);
 
@@ -215,6 +241,13 @@ function createIndexes(db) {
   db.run(`CREATE INDEX IF NOT EXISTS idx_version_info_created_at ON version_info(created_at DESC)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_media_delete_requests_media_id ON media_delete_requests(media_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_media_delete_requests_group_media ON media_delete_requests(group_id, media_id)`);
+  
+  // Sticker packs indexes
+  db.run(`CREATE INDEX IF NOT EXISTS idx_sticker_packs_name ON sticker_packs(name)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_sticker_packs_created_at ON sticker_packs(created_at DESC)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_pack_stickers_pack_id ON pack_stickers(pack_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_pack_stickers_media_id ON pack_stickers(media_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_pack_stickers_position ON pack_stickers(pack_id, position)`);
 }
 
 module.exports = { initializeTables };
