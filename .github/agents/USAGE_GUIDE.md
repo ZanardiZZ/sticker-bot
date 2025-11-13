@@ -353,7 +353,7 @@ await db.run(`SELECT * FROM media WHERE id = ${userId}`);
 
 Before committing, verify using agent guidelines:
 
-- [ ] **Installation**: Tested with `PUPPETEER_SKIP_DOWNLOAD=true npm install --ignore-scripts`
+- [ ] **Installation**: Tested with `npm install --ignore-scripts && npm rebuild sqlite3 sharp`
 - [ ] **Web interface**: Tested with `npm run web` (1-2 seconds startup)
 - [ ] **Bot startup**: Tested with `npm run bot` (3-5 seconds)
 - [ ] **Database**: Migration tested if applicable

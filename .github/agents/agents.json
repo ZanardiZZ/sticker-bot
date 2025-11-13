@@ -41,12 +41,11 @@
   },
   "network_restrictions": {
     "blocked_domains": [
-      "esm.ubuntu.com",
-      "googlechromelabs.github.io",
       "storage.googleapis.com"
     ],
-    "install_command": "PUPPETEER_SKIP_DOWNLOAD=true npm install --ignore-scripts",
-    "workarounds_required": true
+    "install_command": "npm install --ignore-scripts && npm rebuild sqlite3 sharp",
+    "workarounds_required": false,
+    "notes": "Bot uses Baileys (WebSocket), not puppeteer. No browser dependencies required."
   },
   "testing": {
     "no_unit_tests": true,
