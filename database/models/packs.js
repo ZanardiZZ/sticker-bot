@@ -3,6 +3,7 @@
  */
 
 const { db, dbHandler } = require('../connection');
+const { randomUUID } = require('crypto');
 
 /**
  * Creates a new sticker pack
@@ -13,10 +14,11 @@ const { db, dbHandler } = require('../connection');
  */
 async function createPack(name, description = null, createdBy = null) {
   try {
+    const packId = randomUUID();
     const result = await dbHandler.run(
-      `INSERT INTO sticker_packs (name, description, created_by)
-       VALUES (?, ?, ?)`,
-      [name, description, createdBy]
+      `INSERT INTO sticker_packs (pack_id, name, description, created_by)
+       VALUES (?, ?, ?, ?)`,
+      [packId, name, description, createdBy]
     );
     return result.lastID;
   } catch (error) {
