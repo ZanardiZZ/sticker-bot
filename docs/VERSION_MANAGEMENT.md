@@ -14,11 +14,12 @@ Versions follow the format: `major.minor.patch`
 
 - **Major**: Represents breaking changes or major milestones (e.g., 0.x, 1.x, 2.x)
 - **Minor**: Auto-increments by 1 for each changelog generation (represents 0.1 increments)
-- **Patch**: Used for hotfixes or manual patches (typically 0)
+- **Patch**: Used for hotfixes or small changes that don't warrant a minor version bump
 
 Examples:
 - `0.5.0` - Initial version (starting point)
-- `0.6.0` - After first changelog generation
+- `0.5.1` - Patch update (small fix)
+- `0.6.0` - After first changelog generation (minor increment)
 - `0.7.0` - After second changelog generation
 - `1.0.0` - Major milestone (manual bump)
 - `1.1.0` - After changelog generation following 1.0.0
@@ -28,10 +29,39 @@ Examples:
 The version automatically increments when the daily changelog GitHub Action runs:
 
 1. The workflow runs the `scripts/increment-version.js` script
-2. The script checks recent commits for manual bump instructions (see below)
-3. If no manual instruction is found, it auto-increments the minor version by 1
-4. The new version is committed to `package.json`
-5. The changelog is generated with the new version number
+2. The script checks recent commits for manual bump or patch-only instructions (see below)
+3. If a "patch" keyword is found, only the patch version is incremented
+4. If no manual instruction is found, it auto-increments the minor version by 1
+5. The new version is committed to `package.json`
+6. The changelog is generated with the new version number
+
+## Patch-Only Updates
+
+For small changes that don't warrant a full version bump, you can use the `patch` keyword in your commit message:
+
+### How It Works
+
+- Include the word `patch` anywhere in your commit message
+- The script will increment only the patch version (e.g., `0.5.0` → `0.5.1`)
+- The minor version remains unchanged
+
+### Examples
+
+```bash
+# Small bug fix
+git commit -m "fix: patch - correct typo in message"
+
+# Documentation update
+git commit -m "docs: patch update for README"
+
+# Minor style fix
+git commit -m "style: patch - adjust button alignment"
+```
+
+When the changelog workflow runs with a patch commit:
+- Version `0.5.0` → `0.5.1`
+- Version `0.6.2` → `0.6.3`
+- The minor version stays the same
 
 ## Manual Version Bumps
 
@@ -58,7 +88,7 @@ git commit -m "bump: version 0.8"
 
 When the changelog workflow runs, it will:
 1. Detect the bump instruction in recent commits (last 10 commits)
-2. Set the version to the specified number
+2. Set the version to the specified number (with patch reset to 0)
 3. Continue from that version in future auto-increments
 
 ## Manual Script Usage
