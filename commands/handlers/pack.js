@@ -167,6 +167,10 @@ async function handlePackCommand(client, message, chatId, params = []) {
       // Send the wastickers file
       await client.sendFile(chatId, zipPath, `${pack.name}.wastickers`);
 
+      // Get web server URL for share link
+      const webServerUrl = process.env.WEB_SERVER_URL || 'http://localhost:3000';
+      const shareLink = `${webServerUrl}/pack/${encodeURIComponent(pack.name)}`;
+
       await safeReply(
         client,
         chatId,
@@ -175,6 +179,7 @@ async function handlePackCommand(client, message, chatId, params = []) {
         `1. Baixe o arquivo ${pack.name}.wastickers\n` +
         `2. Abra com um app de stickers do WhatsApp\n` +
         `3. Adicione todos os ${stickers.length} stickers de uma vez!\n\n` +
+        `🔗 Link para compartilhar:\n${shareLink}\n\n` +
         `💡 Você também pode salvar stickers individualmente ao recebê-los.`,
         message.id
       );
