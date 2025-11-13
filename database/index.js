@@ -27,6 +27,7 @@ const deleteRequestsModel = require('./models/deleteRequests');
 const configModel = require('./models/config');
 const commandUsageModel = require('./models/commandUsage');
 const packsModel = require('./models/packs');
+const processedMessagesModel = require('./models/processedMessages');
 
 // Utilities
 const utils = require('./utils');
@@ -88,6 +89,9 @@ module.exports = {
 
   // Sticker packs operations
   ...packsModel,
+
+  // Processed messages operations
+  ...processedMessagesModel,
 
   // Utilities
   ...utils

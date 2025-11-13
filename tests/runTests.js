@@ -31,6 +31,8 @@ const { tests: processIncomingMediaTests } = require('./unit/processIncomingMedi
 const { tests: dataUrlTests } = require('./unit/dataUrl.test');
 const { tests: commandUsageModelTests } = require('./unit/commandUsageModel.test');
 const { tests: imageEnhancerTests } = require('./services/imageEnhancer.test');
+const { tests: processedMessagesModelTests } = require('./unit/processedMessagesModel.test');
+const { tests: messageHistoryRecoveryTests } = require('./unit/messageHistoryRecovery.test');
 
 
 async function runAllTests() {
@@ -63,6 +65,8 @@ async function runAllTests() {
     results.push(await runTestSuite('Process Incoming Media Tests', processIncomingMediaTests));
     results.push(await runTestSuite('Data URL Utils Tests', dataUrlTests));
     results.push(await runTestSuite('Image Enhancer Service Tests', imageEnhancerTests));
+    results.push(await runTestSuite('Processed Messages Model Tests', processedMessagesModelTests));
+    results.push(await runTestSuite('Message History Recovery Tests', messageHistoryRecoveryTests));
     
     // Run animated sticker tests (different format)
     await runAnimatedStickerTests();

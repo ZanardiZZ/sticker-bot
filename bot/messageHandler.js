@@ -10,7 +10,7 @@ const { processIncomingMedia } = require('./mediaProcessor');
 const { withTyping } = require('../utils/typingIndicator');
 const { safeReply } = require('../utils/safeMessaging');
 const { isJidGroup, normalizeJid } = require('../utils/jidUtils');
-const { resolveSenderId } = require('../database');
+const { resolveSenderId, markMessageAsProcessed, isMessageProcessed } = require('../database');
 const MediaQueue = require('../services/mediaQueue');
 const { getDmUser, upsertDmUser } = require('../web/dataAccess');
 const { handleGroupChatMessage } = require('../services/conversationAgent');
@@ -60,6 +60,24 @@ async function handleMessage(client, message) {
   // Ignore messages sent by the bot itself to avoid re-processing forwarded media
   if (message.fromMe) return;
 
+  // Extract message ID for duplicate detection
+  const messageId = message.id || message.key?.id;
+  const chatId = message.from;
+
+  // Check if message was already processed (for history recovery)
+  if (messageId && chatId) {
+    try {
+      const alreadyProcessed = await isMessageProcessed(messageId);
+      if (alreadyProcessed) {
+        console.log(`[MessageHandler] Skipping already processed message: ${messageId}`);
+        return;
+      }
+    } catch (err) {
+      console.error('[MessageHandler] Error checking if message was processed:', err);
+      // Continue processing even if check fails
+    }
+  }
+
   // Update contact information
   try { 
     upsertContactFromMessage(message);
@@ -69,7 +87,6 @@ async function handleMessage(client, message) {
   }
   
   try {
-    const chatId = message.from;
     
     // Determine sender ID using new LID system
     let senderId;
@@ -152,12 +169,32 @@ async function handleMessage(client, message) {
       isGroup,
       rawSenderId: senderId
     });
-    if (commandHandled) return;
+    if (commandHandled) {
+      // Mark message as processed after successful command handling
+      if (messageId && chatId) {
+        try {
+          await markMessageAsProcessed(messageId, chatId);
+        } catch (err) {
+          console.error('[MessageHandler] Error marking message as processed:', err);
+        }
+      }
+      return;
+    }
 
     // 2) Modo edição de tags (if activated for this chat)
     if (message.type === 'chat' && message.body && taggingMap.has(chatId)) {
       const handled = await handleTaggingMode(client, message, chatId);
-      if (handled) return;
+      if (handled) {
+        // Mark message as processed after successful tagging mode handling
+        if (messageId && chatId) {
+          try {
+            await markMessageAsProcessed(messageId, chatId);
+          } catch (err) {
+            console.error('[MessageHandler] Error marking message as processed:', err);
+          }
+        }
+        return;
+      }
     }
 
     // 3) Conversas em grupo: tenta gerar resposta natural via IA
@@ -168,7 +205,17 @@ async function handleMessage(client, message) {
         senderName: message.pushName || message.notifyName || message.sender?.name,
         groupName: message.chat?.name || message.groupMetadata?.subject
       });
-      if (conversationHandled) return;
+      if (conversationHandled) {
+        // Mark message as processed after successful conversation handling
+        if (messageId && chatId) {
+          try {
+            await markMessageAsProcessed(messageId, chatId);
+          } catch (err) {
+            console.error('[MessageHandler] Error marking message as processed:', err);
+          }
+        }
+        return;
+      }
     }
 
     // 4) Sem comando -> só processa se for mídia
@@ -179,6 +226,15 @@ async function handleMessage(client, message) {
       await mediaProcessingQueue.add(async () => {
         return await processIncomingMedia(client, message, resolvedSenderId);
       });
+      
+      // Mark message as processed after successful media queuing
+      if (messageId && chatId) {
+        try {
+          await markMessageAsProcessed(messageId, chatId);
+        } catch (err) {
+          console.error('[MessageHandler] Error marking message as processed:', err);
+        }
+      }
     } catch (queueError) {
       // Handle queue overflow gracefully
       if (queueError.code === 'QUEUE_FULL') {
