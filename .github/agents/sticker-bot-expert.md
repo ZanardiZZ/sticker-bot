@@ -66,15 +66,17 @@ You are an expert in:
 
 ### Installation (CRITICAL)
 
-**ALWAYS use this command to avoid firewall blocks:**
+**Recommended installation command to handle potential firewall blocks:**
 ```bash
-PUPPETEER_SKIP_DOWNLOAD=true npm install --ignore-scripts
+npm install --ignore-scripts
+npm rebuild sqlite3 sharp
 ```
 
-**NEVER use regular `npm install`** - it fails due to:
-- `esm.ubuntu.com` - Ubuntu packages (DNS block)
-- `googlechromelabs.github.io` - Chrome binaries (HTTP block)
-- `storage.googleapis.com` - Chrome + TensorFlow binaries (HTTP block)
+**Note**: The `--ignore-scripts` flag prevents postinstall scripts that might fail due to:
+- `storage.googleapis.com` - TensorFlow and FFmpeg binary downloads (HTTP block in some environments)
+- Other binary downloads that may be blocked by firewalls
+
+The repository uses **Baileys** for WhatsApp integration (not puppeteer), so no browser dependencies are required.
 
 ### Testing Commands
 
@@ -94,10 +96,12 @@ node scripts/verify-contacts-migration.js
 
 ### Network Restrictions
 
-The repository handles environments where certain downloads fail:
-- **FFmpeg unavailable**: Falls back to basic video processing
-- **Chrome download fails**: Use `PUPPETEER_SKIP_DOWNLOAD=true`
+The repository handles environments where certain binary downloads may fail:
+- **FFmpeg binaries unavailable**: Falls back to basic video processing
 - **TensorFlow binaries blocked**: AI features gracefully degrade
+- **Sharp binaries**: Rebuild with `npm rebuild sharp` if needed
+
+**No browser/puppeteer dependencies** - The bot uses Baileys which connects via WebSocket protocol.
 
 ## Common Development Tasks
 
@@ -354,9 +358,10 @@ const processedPath = await sharp(media)
 
 ## Troubleshooting Guide
 
-### "Chrome download failed"
-- Use `PUPPETEER_SKIP_DOWNLOAD=true npm install --ignore-scripts`
-- Add `CHROME_EXECUTABLE_PATH` to `.env` if needed
+### Installation Issues
+- Use `npm install --ignore-scripts` to avoid postinstall script failures
+- Rebuild native modules: `npm rebuild sqlite3 sharp`
+- For TensorFlow issues: AI features will gracefully degrade if binaries unavailable
 
 ### "SQLITE_BUSY errors"
 - Database uses WAL mode and automatic retries
@@ -477,7 +482,8 @@ When implementing features:
 ### Common Commands
 ```bash
 # Installation
-PUPPETEER_SKIP_DOWNLOAD=true npm install --ignore-scripts
+npm install --ignore-scripts
+npm rebuild sqlite3 sharp
 
 # Running
 npm run baileys:server  # WhatsApp session bridge
