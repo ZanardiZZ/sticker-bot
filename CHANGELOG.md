@@ -2,7 +2,7 @@
 
 > Log de mudanças com foco em usuários: novidades, correções e melhorias relevantes.
 
-## [0.5.0] - 2024-11-13
+## [0.5.0] - 2025-11-13
 
 ### 🔧 Sistema de Versionamento
 
