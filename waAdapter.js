@@ -107,14 +107,19 @@ class BaileysWsAdapter {
   async downloadMedia(messageId) {
     if (!messageId) throw new Error('messageId_required');
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) throw new Error('ws_not_ready');
+    
+    // Increased timeout to 45 seconds for larger media files
+    const MEDIA_DOWNLOAD_TIMEOUT = 45000;
+    
     const p = new Promise((resolve, reject) => {
       this._pendingMedia.set(messageId, { resolve, reject });
       setTimeout(() => {
         if (this._pendingMedia.has(messageId)) {
           this._pendingMedia.delete(messageId);
-          reject(new Error('media_timeout'));
+          console.warn(`[WA Adapter] Media download timeout after ${MEDIA_DOWNLOAD_TIMEOUT}ms for message: ${messageId}`);
+          reject(new Error(`media_timeout_${MEDIA_DOWNLOAD_TIMEOUT}ms`));
         }
-      }, 20000);
+      }, MEDIA_DOWNLOAD_TIMEOUT);
     });
     this._send({ type: 'downloadMedia', messageId });
     const res = await p;
