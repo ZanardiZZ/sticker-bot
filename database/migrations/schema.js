@@ -187,6 +187,15 @@ function initializeTables(db) {
         )
       `);
 
+      // Processed messages table for history recovery
+      db.run(`
+        CREATE TABLE IF NOT EXISTS processed_messages (
+          message_id TEXT PRIMARY KEY,
+          chat_id TEXT NOT NULL,
+          processed_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+        )
+      `);
+
       // Create indexes for performance
       createIndexes(db);
 
@@ -249,6 +258,10 @@ function createIndexes(db) {
   db.run(`CREATE INDEX IF NOT EXISTS idx_pack_stickers_pack_id ON pack_stickers(pack_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_pack_stickers_media_id ON pack_stickers(media_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_pack_stickers_position ON pack_stickers(pack_id, position)`);
+  
+  // Processed messages indexes
+  db.run(`CREATE INDEX IF NOT EXISTS idx_processed_messages_chat_id ON processed_messages(chat_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_processed_messages_processed_at ON processed_messages(processed_at DESC)`);
 }
 
 module.exports = { initializeTables };
