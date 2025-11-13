@@ -603,6 +603,11 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
     }
 
     const groupId = message.from.endsWith('@g.us') ? message.from : null;
+    
+    // Determine chat_id for database storage
+    // In groups: use sender's ID (not group ID) to ensure proper counting
+    // In 1-on-1: use message.from (which is the sender's chat)
+    const chatIdForDb = groupId ? (resolvedSenderId || message?.sender?.id || message?.author || message.from) : chatId;
 
   // NSFW filtering - different approaches for different media types
   let nsfw = false;
@@ -874,7 +879,7 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
       (message?.from && !String(message.from).endsWith('@g.us') ? message.from : null);
 
     const mediaId = await saveMedia({
-      chatId,
+      chatId: chatIdForDb,
       groupId,
       senderId,
       filePath,
