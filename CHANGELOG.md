@@ -2,7 +2,29 @@
 
 > Log de mudanças com foco em usuários: novidades, correções e melhorias relevantes.
 
-## [1.0.0] - 2024
+## [0.5.0] - 2025-11-13
+
+### 🔧 Sistema de Versionamento
+
+- **Novo sistema de versionamento automático** - Versão agora inicia em 0.5 e incrementa automaticamente
+  - Auto-incremento de 0.1 (minor version) a cada geração de changelog
+  - **Suporte para patch-only updates** - Use a palavra `patch` no commit para incrementar apenas o patch (0.5.0 → 0.5.1)
+  - Suporte para bump manual via commit messages (e.g., `bump: version 1.0`)
+  - Histórico de versões armazenado no banco de dados
+  - Integração com workflow de changelog diário
+  - Script `scripts/increment-version.js` para gerenciamento manual
+  - Documentação completa em `docs/VERSION_MANAGEMENT.md`
+
+### 📝 Detalhes Técnicos
+
+- Versões armazenadas na tabela `version_info` do banco de dados
+- Formato: `major.minor.patch` (ex: 0.5.0, 0.5.1, 0.6.0, 1.0.0)
+- Workflow do GitHub Actions atualizado para incrementar versão antes do changelog
+- Testes unitários adicionados para validar incremento de versão
+- Package.json sincronizado automaticamente com versão do banco
+- Patch updates não resetam a versão minor (ideal para pequenos fixes)
+
+## [1.0.0] - 2025
 
 ### 🚀 Major Changes
 

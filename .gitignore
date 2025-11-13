@@ -71,3 +71,4 @@ data/memes.sqlite*
 wastickers/
 *.wastickers
 *.wastickers.zip
+stickers.db

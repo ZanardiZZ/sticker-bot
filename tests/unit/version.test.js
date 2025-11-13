@@ -30,7 +30,7 @@ function createVersionModel(db) {
         const version = await this.getCurrentVersion();
         if (!version) {
           await this.initializeVersion();
-          return '1.0.0';
+          return '0.5.0';
         }
         
         let versionString = `${version.major}.${version.minor}.${version.patch}`;
@@ -58,13 +58,13 @@ function createVersionModel(db) {
         const hiddenDataStr = hiddenData ? JSON.stringify(hiddenData) : JSON.stringify({
           initialized_at: new Date().toISOString(),
           source: 'auto-initialization',
-          package_version: '1.0.0'
+          package_version: '0.5.0'
         });
 
         const result = await dbHandler.run(
           `INSERT INTO version_info (major, minor, patch, created_by, description, hidden_data, is_current)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [1, 0, 0, createdBy, description, hiddenDataStr, 1]
+          [0, 5, 0, createdBy, description, hiddenDataStr, 1]
         );
 
         return result.lastID;
@@ -299,7 +299,7 @@ async function createVersionTable(db) {
 // Test cases
 const tests = [
   {
-    name: 'Initialize version with 1.0.0',
+    name: 'Initialize version with 0.5.0',
     fn: async () => {
       const { db, cleanup } = createTestDatabase('version-init');
       await createVersionTable(db);
@@ -310,14 +310,14 @@ const tests = [
       
       const current = await versionModel.getCurrentVersion();
       assert(current, 'Current version should exist');
-      assertEqual(current.major, 1, 'Major version should be 1');
-      assertEqual(current.minor, 0, 'Minor version should be 0');
+      assertEqual(current.major, 0, 'Major version should be 0');
+      assertEqual(current.minor, 5, 'Minor version should be 5');
       assertEqual(current.patch, 0, 'Patch version should be 0');
       assertEqual(current.created_by, 'test-user', 'Created by should match');
       assertEqual(current.is_current, 1, 'Should be marked as current');
       
       const versionString = await versionModel.getCurrentVersionString();
-      assertEqual(versionString, '1.0.0', 'Version string should be 1.0.0');
+      assertEqual(versionString, '0.5.0', 'Version string should be 0.5.0');
       
       await cleanup();
     }
@@ -356,18 +356,18 @@ const tests = [
         breaking_changes: ['removed old API', 'changed database schema']
       });
       
-      assertEqual(newVersion.major, 2, 'Major should be 2');
+      assertEqual(newVersion.major, 1, 'Major should be 1');
       assertEqual(newVersion.minor, 0, 'Minor should reset to 0');
       assertEqual(newVersion.patch, 0, 'Patch should reset to 0');
       
       const versionString = await versionModel.getCurrentVersionString();
-      assertEqual(versionString, '2.0.0', 'Version string should be 2.0.0');
+      assertEqual(versionString, '1.0.0', 'Version string should be 1.0.0');
       
       const hiddenData = await versionModel.getCurrentHiddenData();
       assert(hiddenData, 'Hidden data should exist');
       assert(hiddenData.increment_type, 'Hidden data should have increment_type');
       assertEqual(hiddenData.increment_type, 'major', 'Hidden data should track increment type');
-      assertEqual(hiddenData.previous_version, '1.0.0', 'Hidden data should track previous version');
+      assertEqual(hiddenData.previous_version, '0.5.0', 'Hidden data should track previous version');
       
       await cleanup();
     }
@@ -386,12 +386,12 @@ const tests = [
         new_features: ['added user management', 'improved search']
       });
       
-      assertEqual(newVersion.major, 1, 'Major should remain 1');
-      assertEqual(newVersion.minor, 1, 'Minor should be 1');
+      assertEqual(newVersion.major, 0, 'Major should remain 0');
+      assertEqual(newVersion.minor, 6, 'Minor should be 6');
       assertEqual(newVersion.patch, 0, 'Patch should reset to 0');
       
       const versionString = await versionModel.getCurrentVersionString();
-      assertEqual(versionString, '1.1.0', 'Version string should be 1.1.0');
+      assertEqual(versionString, '0.6.0', 'Version string should be 0.6.0');
       
       await cleanup();
     }
@@ -411,12 +411,12 @@ const tests = [
         bug_fixes: ['fixed memory leak', 'corrected typos']
       });
       
-      assertEqual(newVersion.major, 1, 'Major should remain 1');
-      assertEqual(newVersion.minor, 1, 'Minor should remain 1');
+      assertEqual(newVersion.major, 0, 'Major should remain 0');
+      assertEqual(newVersion.minor, 6, 'Minor should remain 6');
       assertEqual(newVersion.patch, 1, 'Patch should be 1');
       
       const versionString = await versionModel.getCurrentVersionString();
-      assertEqual(versionString, '1.1.1', 'Version string should be 1.1.1');
+      assertEqual(versionString, '0.6.1', 'Version string should be 0.6.1');
       
       await cleanup();
     }
@@ -435,13 +435,13 @@ const tests = [
         beta_features: ['experimental UI', 'draft API']
       });
       
-      assertEqual(newVersion.major, 1, 'Major should remain 1');
-      assertEqual(newVersion.minor, 0, 'Minor should remain 0');
+      assertEqual(newVersion.major, 0, 'Major should remain 0');
+      assertEqual(newVersion.minor, 5, 'Minor should remain 5');
       assertEqual(newVersion.patch, 0, 'Patch should remain 0');
       assertEqual(newVersion.pre_release, 'beta.1', 'Pre-release should be set');
       
       const versionString = await versionModel.getCurrentVersionString();
-      assertEqual(versionString, '1.0.0-beta.1', 'Version string should include pre-release');
+      assertEqual(versionString, '0.5.0-beta.1', 'Version string should include pre-release');
       
       await cleanup();
     }
@@ -454,10 +454,10 @@ const tests = [
       await createVersionTable(db);
       const versionModel = createVersionModel(db);
       
-      await versionModel.initializeVersion('test-user', 'Initial'); // 1.0.0
-      await versionModel.incrementPatchVersion('test-user', 'Fix 1'); // 1.0.1
-      await versionModel.incrementPatchVersion('test-user', 'Fix 2'); // 1.0.2
-      const finalVersion = await versionModel.incrementMinorVersion('test-user', 'Feature 1'); // 1.1.0
+      await versionModel.initializeVersion('test-user', 'Initial'); // 0.5.0
+      await versionModel.incrementPatchVersion('test-user', 'Fix 1'); // 0.5.1
+      await versionModel.incrementPatchVersion('test-user', 'Fix 2'); // 0.5.2
+      const finalVersion = await versionModel.incrementMinorVersion('test-user', 'Feature 1'); // 0.6.0
       
       const history = await versionModel.getVersionHistory(10);
       assert(history.length >= 4, 'Should have at least 4 version entries');

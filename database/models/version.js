@@ -28,9 +28,9 @@ async function getCurrentVersionString() {
   try {
     const version = await getCurrentVersion();
     if (!version) {
-      // Initialize with version 1.0.0 if none exists
+      // Initialize with version 0.5.0 if none exists
       await initializeVersion();
-      return '1.0.0';
+      return '0.5.0';
     }
     
     let versionString = `${version.major}.${version.minor}.${version.patch}`;
@@ -66,16 +66,16 @@ async function initializeVersion(createdBy = 'system', description = 'Initial ve
     const hiddenDataStr = hiddenData ? JSON.stringify(hiddenData) : JSON.stringify({
       initialized_at: new Date().toISOString(),
       source: 'auto-initialization',
-      package_version: '1.0.0'
+      package_version: '0.5.0'
     });
 
     const result = await dbHandler.run(
       `INSERT INTO version_info (major, minor, patch, created_by, description, hidden_data, is_current)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [1, 0, 0, createdBy, description, hiddenDataStr, 1]
+      [0, 5, 0, createdBy, description, hiddenDataStr, 1]
     );
 
-    console.log('[Version] Initialized version system with 1.0.0');
+    console.log('[Version] Initialized version system with 0.5.0');
     return result.lastID;
   } catch (error) {
     console.error('[Version] Error initializing version:', error);
