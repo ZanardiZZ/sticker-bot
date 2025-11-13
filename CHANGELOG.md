@@ -24,7 +24,7 @@
 - Package.json sincronizado automaticamente com versão do banco
 - Patch updates não resetam a versão minor (ideal para pequenos fixes)
 
-## [1.0.0] - 2024
+## [1.0.0] - 2025
 
 ### 🚀 Major Changes
 
