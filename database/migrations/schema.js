@@ -164,6 +164,7 @@ function initializeTables(db) {
       db.run(`
         CREATE TABLE IF NOT EXISTS sticker_packs (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
+          pack_id TEXT NOT NULL UNIQUE,
           name TEXT NOT NULL UNIQUE,
           description TEXT,
           created_by TEXT,

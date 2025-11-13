@@ -18,6 +18,7 @@
   "dependencies": {
     "@tensorflow/tfjs-node": "^4.22.0",
     "@whiskeysockets/baileys": "^7.0.0-rc.6",
+    "adm-zip": "^0.5.10",
     "axios": "^1.13.2",
     "bcryptjs": "^3.0.3",
     "canvas": "^3.1.2",

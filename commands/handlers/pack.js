@@ -13,6 +13,7 @@ const { sendMediaByType } = require('../media');
 const { renderInfoMessage } = require('../../utils/messageUtils');
 const { safeReply } = require('../../utils/safeMessaging');
 const { PACK_NAME, AUTHOR_NAME } = require('../../config/stickers');
+const { generateWastickersZip } = require('../../services/wastickersGenerator');
 
 /**
  * Parses command parameters to extract pack name
@@ -139,84 +140,123 @@ async function handlePackCommand(client, message, chatId, params = []) {
       return;
     }
 
-    // Send pack info first
-    const infoMsg = `📦 *Pack: ${pack.name}*\n` +
-      `📊 ${stickers.length}/${pack.max_stickers} stickers\n` +
-      (pack.description ? `📝 ${pack.description}\n` : '') +
-      `\n🎨 Pack criado por: ${PACK_NAME}\n` +
-      `✍️ Autor: ${AUTHOR_NAME}\n\n` +
-      `Enviando ${stickers.length} stickers...`;
+    // Generate wastickers ZIP file
+    try {
+      const infoMsg = `📦 *Gerando pack: ${pack.name}*\n` +
+        `📊 ${stickers.length}/${pack.max_stickers} stickers\n` +
+        (pack.description ? `📝 ${pack.description}\n` : '') +
+        `\n🎨 Pack criado por: ${PACK_NAME}\n` +
+        `✍️ Autor: ${AUTHOR_NAME}\n\n` +
+        `⏳ Gerando arquivo .wastickers...`;
 
-    await safeReply(client, chatId, infoMsg, message.id);
+      await safeReply(client, chatId, infoMsg, message.id);
 
-    // Prepare stickers with tags
-    const mediaWithDetails = [];
-    for (const media of stickers) {
-      const [, tags] = await Promise.all([
-        incrementRandomCount(media.id),
-        getTagsForMedia(media.id)
-      ]);
-      mediaWithDetails.push({ media, tags });
-    }
-
-    let rateLimited = false;
-    let sentCount = 0;
-
-    // Send each sticker
-    for (const { media, tags } of mediaWithDetails) {
-      try {
-        await sendMediaByType(client, chatId, media);
-        sentCount++;
-      } catch (error) {
-        if (isRateLimitError(error)) {
-          rateLimited = true;
-          break;
-        }
-        console.error('Error sending pack sticker:', error);
-        // Continue with next sticker on non-rate-limit errors
-        continue;
+      // Prepare stickers with tags for wastickers
+      const stickersWithTags = [];
+      for (const media of stickers) {
+        const tags = await getTagsForMedia(media.id);
+        stickersWithTags.push({
+          ...media,
+          tags: tags.map(t => t.replace('#', ''))
+        });
       }
 
-      // Send info message for each sticker
-      const infoText = renderInfoMessage(media, tags);
+      // Generate the wastickers ZIP file
+      const zipPath = await generateWastickersZip(pack, stickersWithTags);
 
-      if (infoText.trim()) {
+      // Send the wastickers file
+      await client.sendFile(chatId, zipPath, `${pack.name}.wastickers`);
+
+      await safeReply(
+        client,
+        chatId,
+        `✅ Pack "${pack.name}" enviado!\n\n` +
+        `📱 Para importar:\n` +
+        `1. Baixe o arquivo ${pack.name}.wastickers\n` +
+        `2. Abra com um app de stickers do WhatsApp\n` +
+        `3. Adicione todos os ${stickers.length} stickers de uma vez!\n\n` +
+        `💡 Você também pode salvar stickers individualmente ao recebê-los.`,
+        message.id
+      );
+
+    } catch (error) {
+      console.error('Error generating wastickers:', error);
+      
+      // Fallback to sending stickers individually
+      await safeReply(
+        client,
+        chatId,
+        `⚠️ Erro ao gerar arquivo .wastickers.\n` +
+        `Enviando stickers individualmente...`,
+        message.id
+      );
+
+      // Prepare stickers with tags
+      const mediaWithDetails = [];
+      for (const media of stickers) {
+        const [, tags] = await Promise.all([
+          incrementRandomCount(media.id),
+          getTagsForMedia(media.id)
+        ]);
+        mediaWithDetails.push({ media, tags });
+      }
+
+      let rateLimited = false;
+      let sentCount = 0;
+
+      // Send each sticker
+      for (const { media, tags } of mediaWithDetails) {
         try {
-          await safeReply(client, chatId, infoText, message.id);
+          await sendMediaByType(client, chatId, media);
+          sentCount++;
         } catch (error) {
           if (isRateLimitError(error)) {
             rateLimited = true;
             break;
           }
-          // Don't break on info message errors
-          console.error('Error sending sticker info:', error);
+          console.error('Error sending pack sticker:', error);
+          continue;
         }
+
+        // Send info message for each sticker
+        const infoText = renderInfoMessage(media, tags);
+
+        if (infoText.trim()) {
+          try {
+            await safeReply(client, chatId, infoText, message.id);
+          } catch (error) {
+            if (isRateLimitError(error)) {
+              rateLimited = true;
+              break;
+            }
+            console.error('Error sending sticker info:', error);
+          }
+        }
+
+        // Small delay between stickers to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
 
-      // Small delay between stickers to avoid rate limiting
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
-
-    // Send completion or rate limit message
-    if (rateLimited) {
-      try {
-        await safeReply(
-          client,
-          chatId,
-          `⚠️ Enviados ${sentCount}/${stickers.length} stickers.\n\n` +
-          'O WhatsApp limitou temporariamente o envio de mensagens. ' +
-          'Aguarde alguns instantes e use o comando novamente para receber os stickers restantes.',
-          message.id
-        );
-      } catch (error) {
-        console.error('Failed to send rate limit notification:', error);
-      }
-    } else if (sentCount === stickers.length) {
-      try {
-        await safeReply(
-          client,
-          chatId,
-          `✅ Pack "${pack.name}" enviado com sucesso! (${sentCount} stickers)`,
+      // Send completion or rate limit message
+      if (rateLimited) {
+        try {
+          await safeReply(
+            client,
+            chatId,
+            `⚠️ Enviados ${sentCount}/${stickers.length} stickers.\n\n` +
+            'O WhatsApp limitou temporariamente o envio de mensagens. ' +
+            'Aguarde alguns instantes e use o comando novamente para receber os stickers restantes.',
+            message.id
+          );
+        } catch (error) {
+          console.error('Failed to send rate limit notification:', error);
+        }
+      } else if (sentCount === stickers.length) {
+        try {
+          await safeReply(
+            client,
+            chatId,
+            `✅ Pack "${pack.name}" enviado com sucesso! (${sentCount} stickers)`,
           message.id
         );
       } catch (error) {
