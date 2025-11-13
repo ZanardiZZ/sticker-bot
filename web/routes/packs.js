@@ -137,9 +137,21 @@ function createPackRoutes(db) {
   router.get('/pack/:name', async (req, res) => {
     try {
       const packName = decodeURIComponent(req.params.name);
+      
+      // HTML escape function to prevent XSS
+      const escapeHtml = (text) => {
+        return String(text)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      };
+      
       const pack = await getPackByName(packName);
       
       if (!pack) {
+        const safePackName = escapeHtml(packName);
         return res.status(404).send(`
           <!DOCTYPE html>
           <html>
@@ -154,7 +166,7 @@ function createPackRoutes(db) {
           </head>
           <body>
             <h1>❌ Pack não encontrado</h1>
-            <p>O pack "${packName}" não existe ou foi removido.</p>
+            <p>O pack "${safePackName}" não existe ou foi removido.</p>
           </body>
           </html>
         `);
@@ -163,15 +175,20 @@ function createPackRoutes(db) {
       const stickers = await getPackStickers(pack.id);
       const percentage = Math.round((pack.sticker_count / pack.max_stickers) * 100);
       
+      // Escape all user-controlled data
+      const safeName = escapeHtml(pack.name);
+      const safeDescription = pack.description ? escapeHtml(pack.description) : '';
+      const safeNameForUrl = encodeURIComponent(pack.name);
+      
       res.send(`
         <!DOCTYPE html>
         <html>
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>${pack.name} - Sticker Pack</title>
-          <meta property="og:title" content="${pack.name} - Sticker Pack">
-          <meta property="og:description" content="${pack.description || 'Download this WhatsApp sticker pack'} - ${pack.sticker_count} stickers">
+          <title>${safeName} - Sticker Pack</title>
+          <meta property="og:title" content="${safeName} - Sticker Pack">
+          <meta property="og:description" content="${safeDescription || 'Download this WhatsApp sticker pack'} - ${pack.sticker_count} stickers">
           <meta property="og:type" content="website">
           <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -264,8 +281,8 @@ function createPackRoutes(db) {
         <body>
           <div class="container">
             <div class="icon">📦</div>
-            <h1>${pack.name}</h1>
-            ${pack.description ? `<p class="description">${pack.description}</p>` : ''}
+            <h1>${safeName}</h1>
+            ${safeDescription ? `<p class="description">${safeDescription}</p>` : ''}
             
             <div class="stats">
               <div class="stat">
@@ -296,7 +313,7 @@ function createPackRoutes(db) {
 
           <script>
             function downloadPack() {
-              window.location.href = '/api/packs/${encodeURIComponent(pack.name)}/download';
+              window.location.href = '/api/packs/${safeNameForUrl}/download';
             }
           </script>
         </body>
