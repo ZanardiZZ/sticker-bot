@@ -126,7 +126,7 @@ function getContactFromStore(store, jid) {
   return getFromStore(store?.contacts, jid);
 }
 
-function buildOpenWAContact(store, jid, opts = {}) {
+function buildContactPayloadFromStore(store, jid, opts = {}) {
   const { pushNameFallback } = opts;
   if (!jid) {
     return {
@@ -330,7 +330,7 @@ function normalizeOpenWAMessage(msg, opts = {}) {
   const senderId = fromMe
     ? (userId || remoteJid)
     : (m.key?.participant || m.participant || remoteJid);
-  const sender = buildOpenWAContact(store, senderId, { pushNameFallback: m.pushName });
+  const sender = buildContactPayloadFromStore(store, senderId, { pushNameFallback: m.pushName });
 
   if (senderId) {
     rememberStoreContact(store, {
@@ -402,7 +402,7 @@ function normalizeOpenWAMessage(msg, opts = {}) {
     const qParticipant = contextInfo.participant || contextInfo.remoteJid || contextInfo.quotedParticipant || null;
     const qSenderId = qParticipant || chatId;
     quotedMsgId = qId;
-    const qSender = buildOpenWAContact(store, qSenderId);
+    const qSender = buildContactPayloadFromStore(store, qSenderId);
     if (qSenderId) {
       rememberStoreContact(store, {
         id: qSenderId,
@@ -709,15 +709,15 @@ async function start() {
   }
 
   function buildContactPayload(jid) {
-    return buildOpenWAContact(store, jid);
+    return buildContactPayloadFromStore(store, jid);
   }
 
-  function broadcastAuthorized(openwaMsg) {
-    if (!openwaMsg) return;
-    const chatId = openwaMsg.chatId;
+  function broadcastAuthorized(messagePayload) {
+    if (!messagePayload) return;
+    const chatId = messagePayload.chatId;
     for (const [token, entry] of clientsByToken) {
       if (entry.allowedChats.has('*') || entry.allowedChats.has(chatId)) {
-        send(entry.ws, { type: 'message', data: openwaMsg });
+        send(entry.ws, { type: 'message', data: messagePayload });
       }
     }
   }
