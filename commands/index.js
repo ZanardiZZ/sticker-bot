@@ -21,6 +21,8 @@ const { handleDownloadMp3Command } = require('./handlers/downloadMp3');
 const { handleBanCommand } = require('./handlers/ban');
 const { handlePerfilCommand } = require('./handlers/perfil');
 const { handleFotoHdCommand } = require('./handlers/fotohd');
+const { handleAddPackCommand } = require('./handlers/addpack');
+const { handlePackCommand } = require('./handlers/pack');
 
 // Utilities
 const validation = require('./validation');
@@ -176,6 +178,18 @@ async function handleCommand(client, message, chatId, context = {}) {
 
       case '#fotohd':
         await handleFotoHdCommand(client, message, chatId, context);
+        handled = true;
+        shouldTrackUsage = true;
+        break;
+
+      case '#addpack':
+        await handleAddPackCommand(client, message, chatId, params);
+        handled = true;
+        shouldTrackUsage = true;
+        break;
+
+      case '#pack':
+        await handlePackCommand(client, message, chatId, params);
         handled = true;
         shouldTrackUsage = true;
         break;
