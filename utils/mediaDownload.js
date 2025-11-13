@@ -1,8 +1,7 @@
 const { parseBase64DataUrl } = require('./dataUrl');
 
 /**
- * Downloads media for a WhatsApp message, preferring the Baileys adapter RPC when available.
- * Falls back to the legacy decryptMedia implementation for open-wa clients.
+ * Downloads media for a WhatsApp message, using the Baileys adapter RPC.
  *
  * @param {Object} client - WhatsApp client or adapter instance
  * @param {Object} message - Message payload containing the media metadata
