@@ -520,13 +520,36 @@ curl http://localhost:3000/api/health
 # Check console output for connection status
 ```
 
+## 🤖 Custom Agents
+
+This repository includes custom agent definitions to improve agent-based coding efficiency. These agents provide specialized knowledge about the repository structure, patterns, and best practices.
+
+### Available Agents
+
+- **Sticker Bot Expert** (`.github/agents/sticker-bot-expert.md`) - Comprehensive expert for all development tasks
+  - WhatsApp bot development (Baileys, WebSocket bridges)
+  - Media processing (images, videos, GIFs)
+  - Node.js backend (Express, SQLite)
+  - AI integration (OpenAI, content filtering)
+  - Web administration and security
+
+### Using Custom Agents
+
+For GitHub Copilot and AI-assisted development:
+1. Reference `.github/agents/` for context on repository patterns
+2. Follow guidelines in agent definitions for consistent code
+3. Use the Sticker Bot Expert for comprehensive guidance
+
+See [`.github/agents/README.md`](.github/agents/README.md) for detailed documentation.
+
 ## 🤝 Contributing
 
 1. Fork the repository
 2. Create your feature branch
 3. Make minimal, focused changes
 4. Test thoroughly
-5. Submit a pull request
+5. Use custom agents for guidance on repository patterns
+6. Submit a pull request
 
 ## 📄 License
 
