@@ -28,8 +28,8 @@
 - **#tema** - Get random sticker by theme/topic
 - **#issue** - Report issues to developers
 
-#### Admin Commands
-- **#deletar** - Delete sticker by ID (admin only)
+#### Moderation Commands
+- **#deletar** - Delete sticker by ID using voting system (3 votes, or immediate for original sender/admins)
 
 ### 🎨 Features
 
