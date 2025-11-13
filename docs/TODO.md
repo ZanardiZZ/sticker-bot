@@ -2,7 +2,7 @@
 
 ## Completed Items ✅
 - ✅ Bot: #top5users command - Fixed and working
-- ✅ Bot: #deletar command - Implemented (admin only, no voting required)
+- ✅ Bot: #deletar command - Implemented with voting system (3 votes required, or immediate for original sender/admins)
 - ✅ Migration to Baileys - Complete
 - ✅ AI-powered meme generation - #criar command
 - ✅ Audio download feature - #downloadmp3, #baixarmp3, #baixaraudio
@@ -14,7 +14,6 @@
 ## Ideas for Future Development
 
 ### Bot Features
-- [ ] Collaborative delete (requires 3 users voting to delete)
 - [ ] More AI integrations (image editing, style transfer)
 - [ ] Scheduled sticker sending to multiple groups
 - [ ] Sticker collections/packs management
