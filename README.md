@@ -156,6 +156,8 @@ Send these commands to the bot in WhatsApp:
 | `#perfil` | Show your user profile and statistics | `#perfil` |
 | `#fotohd` | Upscale photo to HD quality | `#fotohd` (reply to image) |
 | `#tema <theme>` | Get random sticker by theme | `#tema cats` |
+| `#addpack <name>` | Add sticker to a pack | `#addpack MyPack` (reply to sticker info) |
+| `#pack [name]` | List packs or get pack stickers | `#pack` or `#pack MyPack` |
 | `#ping` | Check bot status and uptime | `#ping` |
 
 ### 🛡️ Group Moderation
@@ -261,6 +263,69 @@ Bot: 🗑️ Mídia ID 123 deletada após atingir 3 votos.
 ```
 
 **Note:** The voting threshold can be configured by admins in the database (`delete_vote_threshold`).
+
+### 📦 Sticker Packs
+
+Organize your stickers into themed packs with WhatsApp pack metadata:
+
+**Usage:**
+```
+#pack                    - List all available packs
+#pack <name>             - Get all stickers from a pack
+#addpack <name>          - Add sticker to a pack (reply to sticker info message)
+```
+
+**How it works:**
+
+1. **Creating a pack:**
+   - Simply use `#addpack <name>` - the pack is created automatically if it doesn't exist
+   - Each pack can hold up to 30 stickers (WhatsApp limit)
+   - Packs include bot information (PACK_NAME and AUTHOR_NAME)
+
+2. **Adding stickers:**
+   - Get a sticker from the bot (e.g., `#random`, `#tema`, etc.)
+   - Reply to the **info message** (the one with 🆔 ID) with `#addpack <pack-name>`
+   - The bot will confirm the addition and show remaining space
+
+3. **Viewing packs:**
+   - Use `#pack` without parameters to see all packs
+   - Shows pack name, sticker count, and capacity (e.g., 15/30)
+   - Status indicator: 🟢 (available space) or 🔴 (full)
+
+4. **Getting pack stickers:**
+   - Use `#pack <name>` to receive all stickers from a specific pack
+   - Stickers are sent in order with their metadata
+   - Works like `#tema` but for your custom collections
+
+**Examples:**
+```
+User: #pack
+Bot: 📦 Packs Disponíveis:
+     🟢 Animals (15/30 stickers - 50%)
+     🟢 Funny Memes (8/30 stickers - 27%)
+     🔴 Complete Pack (30/30 stickers - 100%)
+
+User: #addpack Animals
+Bot: ✅ Figurinha adicionada ao pack "Animals"!
+     📊 Stickers no pack: 16/30
+     💡 Espaço disponível: 14 stickers
+
+User: #pack Animals
+Bot: [Sends all 16 stickers from the Animals pack]
+```
+
+**Pack Full Handling:**
+- When a pack reaches 30 stickers, the bot suggests creating a numbered sequel
+- Example: "Animals" → "Animals (2)" → "Animals (3)"
+- The bot automatically suggests the next available number
+
+**Features:**
+- ✅ Automatic pack creation
+- ✅ 30 sticker limit per pack (WhatsApp standard)
+- ✅ Pack metadata (name, description, creator)
+- ✅ Smart name suggestions when full
+- ✅ Search packs by name (partial matching)
+- ✅ Pack statistics and usage tracking
 
 ### Tag Editing Mode
 After using `#editar ID`, send:
