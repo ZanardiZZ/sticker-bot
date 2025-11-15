@@ -310,6 +310,8 @@ async function handleCriarMemeCommand(client, message, chatId, params = '', cont
   let captions = parseCaptionTexts(textoOriginal);
   const senderId = context.resolvedSenderId || message.sender?.id || message.author || message.from;
   const groupId = chatId.endsWith('@g.us') ? chatId : null;
+  // For database storage: use sender ID in groups (not group ID)
+  const chatIdForDb = groupId ? senderId : chatId;
 
   try {
     await sendStatusMessage(client, chatId, '🎨 Gerando ideia de meme...');
@@ -427,7 +429,7 @@ async function handleCriarMemeCommand(client, message, chatId, params = '', cont
       const tagsStringForDb = cleaned.tags && cleaned.tags.length ? cleaned.tags.join(',') : '';
 
       const mediaId = await saveMedia({
-        chatId,
+        chatId: chatIdForDb,
         groupId,
         senderId,
         filePath: imagemInfo.webpPath,

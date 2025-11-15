@@ -203,9 +203,11 @@ async function handleDownloadCommand(client, message, chatId, params, context = 
       const groupId = chatId.endsWith('@g.us') ? chatId : null;
       const senderId = context?.resolvedSenderId || message?.sender?.id || message?.author || 
                       (message?.from && !String(message.from).endsWith('@g.us') ? message.from : null);
+      // For database storage: use sender ID in groups (not group ID)
+      const chatIdForDb = groupId ? senderId : chatId;
       
       const mediaId = await saveMedia({
-        chatId,
+        chatId: chatIdForDb,
         groupId,
         senderId,
         filePath: finalMediaPath,
