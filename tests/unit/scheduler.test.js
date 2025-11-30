@@ -1,5 +1,10 @@
 /**
  * Unit tests for the scheduler module, specifically the MATCHING_HOUR_EXPRESSIONS
+ * 
+ * Note: We duplicate the generation logic here instead of importing from bot/scheduler.js
+ * because the scheduler module has heavy dependencies (node-cron, database, etc.) that
+ * would make unit testing slow and require full environment setup. This approach allows
+ * fast, isolated testing of the matching hour logic.
  */
 
 // Simple assertions without requiring testUtils (which loads sqlite3)
@@ -16,8 +21,8 @@ function assertEqual(actual, expected, message) {
 }
 
 /**
- * Replicated logic from bot/scheduler.js for testing
  * Generates cron expressions for "matching hour" times
+ * This is the same logic used in bot/scheduler.js
  * e.g., 1:11, 2:22, 10:10, 11:11, 12:12, etc.
  */
 function generateMatchingHourExpressions() {
@@ -42,6 +47,20 @@ function cronToTime(cronExpr) {
   return { hour, minute };
 }
 
+/**
+ * Find expression for a specific hour in the generated expressions
+ * Returns null if the hour is not included (e.g., hours 6-9)
+ */
+function findExpressionForHour(exprs, targetHour) {
+  for (const expr of exprs) {
+    const time = cronToTime(expr);
+    if (time.hour === targetHour) {
+      return time;
+    }
+  }
+  return null;
+}
+
 const tests = [
   {
     name: 'should generate correct count of matching hour expressions',
@@ -56,95 +75,91 @@ const tests = [
     name: 'should generate 0:00 for hour 0',
     fn: () => {
       const exprs = generateMatchingHourExpressions();
-      const time = cronToTime(exprs[0]);
-      assertEqual(time.hour, 0, 'First expression should be hour 0');
-      assertEqual(time.minute, 0, 'First expression should be minute 0');
+      const time = findExpressionForHour(exprs, 0);
+      assert(time !== null, 'Should have expression for hour 0');
+      assertEqual(time.minute, 0, 'Hour 0 should have minute 0');
     }
   },
   {
     name: 'should generate 1:11 for hour 1',
     fn: () => {
       const exprs = generateMatchingHourExpressions();
-      const time = cronToTime(exprs[1]);
-      assertEqual(time.hour, 1, 'Second expression should be hour 1');
-      assertEqual(time.minute, 11, 'Second expression should be minute 11');
+      const time = findExpressionForHour(exprs, 1);
+      assert(time !== null, 'Should have expression for hour 1');
+      assertEqual(time.minute, 11, 'Hour 1 should have minute 11');
     }
   },
   {
     name: 'should generate 2:22 for hour 2',
     fn: () => {
       const exprs = generateMatchingHourExpressions();
-      const time = cronToTime(exprs[2]);
-      assertEqual(time.hour, 2, 'Third expression should be hour 2');
-      assertEqual(time.minute, 22, 'Third expression should be minute 22');
+      const time = findExpressionForHour(exprs, 2);
+      assert(time !== null, 'Should have expression for hour 2');
+      assertEqual(time.minute, 22, 'Hour 2 should have minute 22');
     }
   },
   {
     name: 'should generate 5:55 for hour 5',
     fn: () => {
       const exprs = generateMatchingHourExpressions();
-      const time = cronToTime(exprs[5]);
-      assertEqual(time.hour, 5, 'Sixth expression should be hour 5');
-      assertEqual(time.minute, 55, 'Sixth expression should be minute 55');
+      const time = findExpressionForHour(exprs, 5);
+      assert(time !== null, 'Should have expression for hour 5');
+      assertEqual(time.minute, 55, 'Hour 5 should have minute 55');
     }
   },
   {
     name: 'should skip hours 6-9 (invalid minutes 66, 77, 88, 99)',
     fn: () => {
       const exprs = generateMatchingHourExpressions();
-      const hours = exprs.map(e => cronToTime(e).hour);
-      assert(!hours.includes(6), 'Should not include hour 6');
-      assert(!hours.includes(7), 'Should not include hour 7');
-      assert(!hours.includes(8), 'Should not include hour 8');
-      assert(!hours.includes(9), 'Should not include hour 9');
+      assert(findExpressionForHour(exprs, 6) === null, 'Should not include hour 6');
+      assert(findExpressionForHour(exprs, 7) === null, 'Should not include hour 7');
+      assert(findExpressionForHour(exprs, 8) === null, 'Should not include hour 8');
+      assert(findExpressionForHour(exprs, 9) === null, 'Should not include hour 9');
     }
   },
   {
     name: 'should generate 10:10 for hour 10',
     fn: () => {
       const exprs = generateMatchingHourExpressions();
-      // Hour 10 is the 7th expression (0-5 = 6 expressions, then 10)
-      const time = cronToTime(exprs[6]);
-      assertEqual(time.hour, 10, 'Seventh expression should be hour 10');
-      assertEqual(time.minute, 10, 'Seventh expression should be minute 10');
+      const time = findExpressionForHour(exprs, 10);
+      assert(time !== null, 'Should have expression for hour 10');
+      assertEqual(time.minute, 10, 'Hour 10 should have minute 10');
     }
   },
   {
     name: 'should generate 11:11 for hour 11',
     fn: () => {
       const exprs = generateMatchingHourExpressions();
-      const time = cronToTime(exprs[7]);
-      assertEqual(time.hour, 11, 'Eighth expression should be hour 11');
-      assertEqual(time.minute, 11, 'Eighth expression should be minute 11');
+      const time = findExpressionForHour(exprs, 11);
+      assert(time !== null, 'Should have expression for hour 11');
+      assertEqual(time.minute, 11, 'Hour 11 should have minute 11');
     }
   },
   {
     name: 'should generate 12:12 for hour 12',
     fn: () => {
       const exprs = generateMatchingHourExpressions();
-      const time = cronToTime(exprs[8]);
-      assertEqual(time.hour, 12, 'Ninth expression should be hour 12');
-      assertEqual(time.minute, 12, 'Ninth expression should be minute 12');
+      const time = findExpressionForHour(exprs, 12);
+      assert(time !== null, 'Should have expression for hour 12');
+      assertEqual(time.minute, 12, 'Hour 12 should have minute 12');
     }
   },
   {
     name: 'should generate 22:22 for hour 22',
     fn: () => {
       const exprs = generateMatchingHourExpressions();
-      // Hour 22 is 0-5 (6) + 10-22 (13) = 19th index (0-indexed: 18)
-      const time = cronToTime(exprs[18]);
-      assertEqual(time.hour, 22, 'Expression at index 18 should be hour 22');
-      assertEqual(time.minute, 22, 'Expression at index 18 should be minute 22');
+      const time = findExpressionForHour(exprs, 22);
+      assert(time !== null, 'Should have expression for hour 22');
+      assertEqual(time.minute, 22, 'Hour 22 should have minute 22');
     }
   },
   {
     name: 'should generate 23:23 for hour 23',
     fn: () => {
       const exprs = generateMatchingHourExpressions();
-      // Last expression
-      const time = cronToTime(exprs[19]);
-      assertEqual(time.hour, 23, 'Last expression should be hour 23');
-      assertEqual(time.minute, 23, 'Last expression should be minute 23');
+      const time = findExpressionForHour(exprs, 23);
+      assert(time !== null, 'Should have expression for hour 23');
+      assertEqual(time.minute, 23, 'Hour 23 should have minute 23');
     }
   },
   {
@@ -177,18 +192,17 @@ const tests = [
       
       assertEqual(exprs.length, expectedTimes.length, 'Should have same count as expected');
       
-      for (let i = 0; i < expectedTimes.length; i++) {
-        const actual = cronToTime(exprs[i]);
-        const expected = expectedTimes[i];
-        assertEqual(
-          actual.hour,
-          expected.hour,
-          `Expression ${i} should have hour ${expected.hour}, got ${actual.hour}`
+      // Verify each expected time is present using hour lookup
+      for (const expected of expectedTimes) {
+        const actual = findExpressionForHour(exprs, expected.hour);
+        assert(
+          actual !== null,
+          `Should have expression for hour ${expected.hour}`
         );
         assertEqual(
           actual.minute,
           expected.minute,
-          `Expression ${i} should have minute ${expected.minute}, got ${actual.minute}`
+          `Hour ${expected.hour} should have minute ${expected.minute}, got ${actual.minute}`
         );
       }
     }
