@@ -16,8 +16,39 @@ const { getBotConfig } = require('../web/dataAccess');
 const { bus } = require('../web/eventBus.js');
 
 const AUTO_SEND_GROUP_ID = process.env.AUTO_SEND_GROUP_ID;
-let autoSendTask = null;
+let autoSendTasks = [];
 let lastCronExpr = null;
+
+const MATCHING_HOUR_EXPRESSIONS = (() => {
+  const exprs = [];
+  for (let hour = 0; hour < 24; hour++) {
+    const minute = (hour % 10) * 11;
+    if (minute > 59) continue;
+    exprs.push(`${minute} ${hour} * * *`);
+  }
+  return exprs;
+})();
+
+function stopScheduledTasks() {
+  autoSendTasks.forEach(task => task.stop());
+  autoSendTasks = [];
+}
+
+function scheduleCronExpressions(exprs, client, sendStickerFunction, tz) {
+  const uniqueExprs = [...new Set(exprs)];
+  uniqueExprs.forEach((expr) => {
+    if (!cron.validate(expr)) {
+      console.error(`[SCHEDULER] Expressão CRON inválida: '${expr}'.`);
+      return;
+    }
+    try {
+      const task = cron.schedule(expr, () => sendRandomMediaToGroup(client, sendStickerFunction), { timezone: tz });
+      autoSendTasks.push(task);
+    } catch (err) {
+      console.error(`[SCHEDULER] Erro ao agendar tarefa com expressão '${expr}':`, err);
+    }
+  });
+}
 
 /**
  * Picks a random media for automatic sending, prioritizing newly processed media
@@ -103,44 +134,30 @@ async function scheduleAutoSend(client, sendStickerFunction) {
   }
 
   // Se já existe uma task e a expressão mudou, para a anterior
-  if (autoSendTask && lastCronExpr !== cronExpr) {
-    autoSendTask.stop();
-    autoSendTask = null;
+  if (autoSendTasks.length && lastCronExpr !== cronExpr) {
+    stopScheduledTasks();
   }
 
-  if (!autoSendTask) {
-  try {
-      autoSendTask = cron.schedule(cronExpr, () => sendRandomMediaToGroup(client, sendStickerFunction), {
-        timezone: tz,
-      });
-      lastCronExpr = cronExpr;
-      console.log(`[SCHEDULER] Agendamento: '${cronExpr}' no fuso ${tz}.`);
-    } catch (err) {
-      console.error(`[SCHEDULER] Erro ao agendar tarefa com expressão '${cronExpr}':`, err);
-      return;
-    }
+  if (!autoSendTasks.length) {
+    scheduleCronExpressions([cronExpr, ...MATCHING_HOUR_EXPRESSIONS], client, sendStickerFunction, tz);
+    lastCronExpr = cronExpr;
+    console.log(`[SCHEDULER] Agendamento: '${cronExpr}' com horários casados adicionais no fuso ${tz}.`);
   }
 
-  // Checa periodicamente se houve alteração na config (shorter interval to pick up cross-process updates)
-  setInterval(async () => {
-  const newExpr = await getBotConfig('auto_send_cron');
-    if (newExpr && newExpr !== lastCronExpr) {
-      if (!cron.validate(newExpr)) {
-        console.error(`[SCHEDULER] Expressão CRON inválida detectada na atualização: '${newExpr}'. Agendamento não será alterado.`);
-        return;
-      }
-      console.log(`[SCHEDULER] Detected cron change in DB. Atualizando agendamento para: '${newExpr}'`);
-      if (autoSendTask) autoSendTask.stop();
-      try {
-        autoSendTask = cron.schedule(newExpr, () => sendRandomMediaToGroup(client, sendStickerFunction), {
-          timezone: tz,
-        });
+    // Checa periodicamente se houve alteração na config (shorter interval to pick up cross-process updates)
+    setInterval(async () => {
+      const newExpr = await getBotConfig('auto_send_cron');
+      if (newExpr && newExpr !== lastCronExpr) {
+        if (!cron.validate(newExpr)) {
+          console.error(`[SCHEDULER] Expressão CRON inválida detectada na atualização: '${newExpr}'. Agendamento não será alterado.`);
+          return;
+        }
+        console.log(`[SCHEDULER] Detected cron change in DB. Atualizando agendamento para: '${newExpr}'`);
+        stopScheduledTasks();
+        scheduleCronExpressions([newExpr, ...MATCHING_HOUR_EXPRESSIONS], client, sendStickerFunction, tz);
         lastCronExpr = newExpr;
-      } catch (err) {
-        console.error(`[SCHEDULER] Erro ao atualizar agendamento com expressão '${newExpr}':`, err);
       }
-    }
-  }, 10 * 1000); // poll every 10s
+    }, 10 * 1000); // poll every 10s
 
   // Also listen for immediate updates from the webserver
   try {
@@ -152,13 +169,9 @@ async function scheduleAutoSend(client, sendStickerFunction) {
         return;
       }
       console.log(`[SCHEDULER] Atualizando agendamento via evento para: '${expr}'`);
-      if (autoSendTask) autoSendTask.stop();
-      try {
-        autoSendTask = cron.schedule(expr, () => sendRandomMediaToGroup(client, sendStickerFunction), { timezone: tz });
-        lastCronExpr = expr;
-      } catch (err) {
-        console.error('[SCHEDULER] Erro ao agendar via evento:', err);
-      }
+      stopScheduledTasks();
+      scheduleCronExpressions([expr, ...MATCHING_HOUR_EXPRESSIONS], client, sendStickerFunction, tz);
+      lastCronExpr = expr;
     });
   } catch (e) {
     console.warn('[SCHEDULER] eventBus not available:', e.message);
