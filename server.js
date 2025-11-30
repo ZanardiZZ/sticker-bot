@@ -501,6 +501,93 @@ async function start() {
     }
   });
 
+  // cache limited number of recent media messages for download on demand
+  const MAX_CACHE = 500;
+  const MEDIA_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+  const mediaCache = new Map(); // messageId -> { m, chatId, timestamp }
+  const MAX_MESSAGE_CACHE = 1000;
+  const MESSAGE_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+  const messageCache = new Map(); // messageId -> { normalized, raw, timestamp }
+  const msgRetryCounterCache = new Map();
+  const IDENTICAL_MESSAGE_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+  const IDENTICAL_MESSAGE_THRESHOLD = 3;
+  const identicalMessageTracker = new Map(); // key -> [timestamps]
+
+  function pruneCache(map, ttl) {
+    const now = Date.now();
+    for (const [key, value] of map) {
+      const ts = value?.timestamp;
+      if (typeof ts === 'number' && now - ts > ttl) {
+        map.delete(key);
+      }
+    }
+  }
+
+  function rememberMedia(m) {
+    try {
+      const id = m?.key?.id;
+      const chatId = m?.key?.remoteJid;
+      if (!id || !chatId) return;
+      pruneCache(mediaCache, MEDIA_CACHE_TTL_MS);
+      if (mediaCache.size >= MAX_CACHE) {
+        const firstKey = mediaCache.keys().next().value;
+        if (firstKey) mediaCache.delete(firstKey);
+      }
+      mediaCache.set(id, { m, chatId, timestamp: Date.now() });
+    } catch {}
+  }
+
+  function rememberMessage(normalized, raw) {
+    try {
+      const messageId = normalized?.id || normalized?.messageId || raw?.key?.id;
+      if (!messageId) return;
+      pruneCache(messageCache, MESSAGE_CACHE_TTL_MS);
+      if (messageCache.size >= MAX_MESSAGE_CACHE) {
+        const firstKey = messageCache.keys().next().value;
+        if (firstKey) messageCache.delete(firstKey);
+      }
+      messageCache.set(messageId, {
+        normalized: normalized ? { ...normalized } : null,
+        raw,
+        timestamp: Date.now()
+      });
+    } catch {}
+  }
+
+  function shouldRateLimitIdenticalMessage(payload) {
+    try {
+      if (!payload?.chatId) return false;
+      const normalizedBody = String(payload.body || '').trim().toLowerCase();
+      if (!normalizedBody) return false;
+
+      const key = `${payload.chatId}::${normalizedBody}`;
+      const now = Date.now();
+      const existing = identicalMessageTracker.get(key) || [];
+      const recent = existing.filter((ts) => now - ts < IDENTICAL_MESSAGE_WINDOW_MS);
+
+      if (recent.length >= IDENTICAL_MESSAGE_THRESHOLD) {
+        identicalMessageTracker.set(key, recent); // prune old timestamps
+        return true;
+      }
+
+      recent.push(now);
+      identicalMessageTracker.set(key, recent);
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  function rememberQuoted(normalized, raw) {
+    rememberMessage(normalized, raw);
+    try {
+      const mediaInfo = extractMediaFromWebMessageInfo(raw);
+      if (mediaInfo.type) {
+        rememberMedia(raw);
+      }
+    } catch {}
+  }
+
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
   const { version } = await fetchLatestBaileysVersion();
   const store = createSimpleStore();
@@ -509,7 +596,13 @@ async function start() {
     version,
     auth: state,
     syncFullHistory: false,
-    browser: ['StickerBot', 'Chrome', '1.0']
+    browser: ['StickerBot', 'Chrome', '1.0'],
+    msgRetryCounterMap: msgRetryCounterCache,
+    getMessage: async (key) => {
+      if (!key?.id) return null;
+      const cached = messageCache.get(key.id);
+      return cached?.raw || null;
+    }
   });
 
   const toArray = (value) => (Array.isArray(value) ? value : []);
@@ -649,64 +742,14 @@ async function start() {
     try { ws.send(JSON.stringify(obj)); } catch {}
   }
 
-  // cache limited number of recent media messages for download on demand
-  const MAX_CACHE = 500;
-  const MEDIA_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
-  const mediaCache = new Map(); // messageId -> { m, chatId, timestamp }
-  const MAX_MESSAGE_CACHE = 1000;
-  const MESSAGE_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
-  const messageCache = new Map(); // messageId -> { normalized, raw, timestamp }
-
-  function pruneCache(map, ttl) {
-    const now = Date.now();
-    for (const [key, value] of map) {
-      const ts = value?.timestamp;
-      if (typeof ts === 'number' && now - ts > ttl) {
-        map.delete(key);
-      }
-    }
-  }
-
-  function rememberMedia(m) {
+  const rememberOutgoing = (rawMessage) => {
     try {
-      const id = m?.key?.id;
-      const chatId = m?.key?.remoteJid;
-      if (!id || !chatId) return;
-      pruneCache(mediaCache, MEDIA_CACHE_TTL_MS);
-      if (mediaCache.size >= MAX_CACHE) {
-        const firstKey = mediaCache.keys().next().value;
-        if (firstKey) mediaCache.delete(firstKey);
-      }
-      mediaCache.set(id, { m, chatId, timestamp: Date.now() });
+      if (!rawMessage) return;
+      rememberMessage(null, rawMessage);
+      const mediaInfo = extractMediaFromWebMessageInfo(rawMessage);
+      if (mediaInfo.type) rememberMedia(rawMessage);
     } catch {}
-  }
-
-  function rememberMessage(normalized, raw) {
-    try {
-      const messageId = normalized?.id || normalized?.messageId || raw?.key?.id;
-      if (!messageId) return;
-      pruneCache(messageCache, MESSAGE_CACHE_TTL_MS);
-      if (messageCache.size >= MAX_MESSAGE_CACHE) {
-        const firstKey = messageCache.keys().next().value;
-        if (firstKey) messageCache.delete(firstKey);
-      }
-      messageCache.set(messageId, {
-        normalized: { ...normalized },
-        raw,
-        timestamp: Date.now()
-      });
-    } catch {}
-  }
-
-  function rememberQuoted(normalized, raw) {
-    rememberMessage(normalized, raw);
-    try {
-      const mediaInfo = extractMediaFromWebMessageInfo(raw);
-      if (mediaInfo.type) {
-        rememberMedia(raw);
-      }
-    } catch {}
-  }
+  };
 
   function buildContactPayload(jid) {
     return buildContactPayloadFromStore(store, jid);
@@ -715,6 +758,12 @@ async function start() {
   function broadcastAuthorized(messagePayload) {
     if (!messagePayload) return;
     const chatId = messagePayload.chatId;
+
+    if (shouldRateLimitIdenticalMessage(messagePayload)) {
+      console.warn(`[WS Server] Dropping repeated message in chat ${chatId}`);
+      return;
+    }
+
     for (const [token, entry] of clientsByToken) {
       if (entry.allowedChats.has('*') || entry.allowedChats.has(chatId)) {
         send(entry.ws, { type: 'message', data: messagePayload });
@@ -842,7 +891,8 @@ async function start() {
       if (type === 'sendText') {
         const { chatId, text } = msg || {};
         if (!chatId || !canSendTo(chatId)) return send(ws, { type: 'error', error: 'forbidden' });
-        await sock.sendMessage(chatId, { text: String(text || '') });
+        const sent = await sock.sendMessage(chatId, { text: String(text || '') });
+        rememberOutgoing(sent);
         return send(ws, { type: 'ack', action: 'sendText', chatId });
       }
 
@@ -877,33 +927,37 @@ async function start() {
           const name = fileName || path.basename(filePath);
 
           if (!asDocument && mime.startsWith('video/')) {
-            await sock.sendMessage(chatId, {
+            const sent = await sock.sendMessage(chatId, {
               video: buf,
               mimetype: mime,
               fileName: name,
               caption: caption || ''
             });
+            rememberOutgoing(sent);
           } else if (!asDocument && mime.startsWith('audio/')) {
-            await sock.sendMessage(chatId, {
+            const sent = await sock.sendMessage(chatId, {
               audio: buf,
               mimetype: mime,
               fileName: name,
               ptt: !!ptt
             });
+            rememberOutgoing(sent);
           } else if (!asDocument && mime.startsWith('image/')) {
-            await sock.sendMessage(chatId, {
+            const sent = await sock.sendMessage(chatId, {
               image: buf,
               mimetype: mime,
               fileName: name,
               caption: caption || ''
             });
+            rememberOutgoing(sent);
           } else {
             // Fallback to document for unsupported/explicit document sends
-            await sock.sendMessage(chatId, {
+            const sent = await sock.sendMessage(chatId, {
               document: buf,
               mimetype: mime,
               fileName: name
             });
+            rememberOutgoing(sent);
           }
           send(ws, { type: 'ack', action: 'sendFile', chatId, requestId: incomingRequestId });
         } catch (e) {
@@ -920,7 +974,8 @@ async function start() {
           if (!match) throw new Error('invalid_data_url');
           const buf = Buffer.from(match[1], 'base64');
           const animated = typeof options?.animated === 'boolean' ? options.animated : isAnimatedWebpBuffer(buf);
-          await sock.sendMessage(chatId, { sticker: buf, mimetype: 'image/webp', isAnimated: animated });
+          const sent = await sock.sendMessage(chatId, { sticker: buf, mimetype: 'image/webp', isAnimated: animated });
+          rememberOutgoing(sent);
           send(ws, { type: 'ack', action: 'sendRawWebpAsSticker', chatId, requestId: incomingRequestId });
         } catch (e) {
           send(ws, { type: 'error', error: e.message, requestId: incomingRequestId });
@@ -935,7 +990,8 @@ async function start() {
           // Expect already webp. If not, WhatsApp will likely reject.
           const buf = fs.readFileSync(filePath);
           const animated = typeof options?.animated === 'boolean' ? options.animated : isAnimatedWebpBuffer(buf);
-          await sock.sendMessage(chatId, { sticker: buf, mimetype: 'image/webp', isAnimated: animated });
+          const sent = await sock.sendMessage(chatId, { sticker: buf, mimetype: 'image/webp', isAnimated: animated });
+          rememberOutgoing(sent);
           send(ws, { type: 'ack', action: 'sendImageAsSticker', chatId, requestId: incomingRequestId });
         } catch (e) {
           send(ws, { type: 'error', error: e.message, requestId: incomingRequestId });
@@ -948,7 +1004,8 @@ async function start() {
         if (!chatId || !canSendTo(chatId)) return send(ws, { type: 'error', error: 'forbidden' });
         try {
           const stickerBuf = await convertToAnimatedWebp(filePath);
-          await sock.sendMessage(chatId, { sticker: stickerBuf, mimetype: 'image/webp', isAnimated: true });
+          const sent = await sock.sendMessage(chatId, { sticker: stickerBuf, mimetype: 'image/webp', isAnimated: true });
+          rememberOutgoing(sent);
           return send(ws, { type: 'ack', action: type, chatId, requestId: incomingRequestId });
         } catch (e) {
           return send(ws, { type: 'error', error: e.message || String(e), requestId: incomingRequestId });
