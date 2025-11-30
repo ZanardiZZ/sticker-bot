@@ -22,7 +22,9 @@ let lastCronExpr = null;
 const MATCHING_HOUR_EXPRESSIONS = (() => {
   const exprs = [];
   for (let hour = 0; hour < 24; hour++) {
-    const minute = (hour % 10) * 11;
+    // For single-digit hours (0-9): repeat the digit (e.g., 1→11, 2→22)
+    // For double-digit hours (10-23): minute matches the hour (e.g., 10→10, 12→12)
+    const minute = hour < 10 ? hour * 11 : hour;
     if (minute > 59) continue;
     exprs.push(`${minute} ${hour} * * *`);
   }
