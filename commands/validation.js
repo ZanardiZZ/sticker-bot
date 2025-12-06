@@ -79,7 +79,7 @@ const HELP_ENTRIES = [
   },
   {
     command: '#forçar',
-    description: 'Salva uma figurinha semelhante mesmo com duplicidade.',
+    description: 'Força salvar duplicatas e converte o próximo vídeo em figurinha animada ignorando o áudio.',
     example: '#forçar'
   },
   {

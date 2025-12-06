@@ -10,6 +10,8 @@ const nsfwEl = document.getElementById('nsfw');
 const sortEl = document.getElementById('sort');
 const reloadBtn = document.getElementById('reload');
 let page = 1, loading = false, done = false, perPage = 20; // Reduced from 30 to 20 for faster loading
+let sentinelEl = null;
+let sentinelObserver = null;
 
 function updateNsfwSelectorState(lockOnlySafe = false) {
   if (!nsfwEl) return;
@@ -282,6 +284,16 @@ async function load(reset = false){
     }
   } finally {
     loading = false;
+    ensureScrollableContent();
+  }
+}
+
+function ensureScrollableContent() {
+  // If the sentinel is still visible (tall screens) and we have more data, load another page
+  if (!sentinelEl || done || loading) return;
+  const rect = sentinelEl.getBoundingClientRect();
+  if (rect.top <= window.innerHeight) {
+    load();
   }
 }
 
@@ -311,12 +323,15 @@ if (reloadBtn) {
 
 // Infinite scroll (only if grid exists)
 if (grid) {
-  const sentinel = document.createElement('div'); 
-  sentinel.style.height = '1px'; 
-  document.body.appendChild(sentinel);
-  new IntersectionObserver(entries => { 
+  sentinelEl = document.createElement('div');
+  sentinelEl.id = 'scrollSentinel';
+  sentinelEl.style.height = '1px';
+  sentinelEl.style.width = '100%';
+  document.body.appendChild(sentinelEl);
+  sentinelObserver = new IntersectionObserver(entries => { 
     if (entries.some(e => e.isIntersecting)) load(); 
-  }).observe(sentinel);
+  });
+  sentinelObserver.observe(sentinelEl);
 }
 
 // SSE

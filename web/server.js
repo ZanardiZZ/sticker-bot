@@ -70,6 +70,10 @@ app.use(session({
   }
 }));
 
+// Body parsers must run before CSRF so tokens in the body are available
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: false }));
+
 // CSRF Protection using internal middleware (still recognized by CodeQL)
 const csrfProtection = createCSRFMiddleware();
 app.use(csrfProtection);
@@ -130,9 +134,6 @@ app.use(async (req, res, next) => {
     next(error);
   }
 });
-
-app.use(express.json({ limit: '2mb' }));
-app.use(express.urlencoded({ extended: false }));
 
 const { db, findDuplicateMedia, getDuplicateMediaDetails, deleteDuplicateMedia, deleteMediaByIds, getDuplicateStats } = require('../database/index.js');
 let whatsappClient = null;
@@ -443,8 +444,28 @@ console.timeEnd('[BOOT] requires');
 const PORT = process.env.PORT || 3000;
 
 const ROOT_DIR = path.resolve(__dirname, '..');
-const STICKERS_DIR = process.env.STICKERS_DIR || path.join(ROOT_DIR, 'media');
+const DEFAULT_MEDIA_DIR = path.join(ROOT_DIR, 'media');
+const resolveDir = (preferred, fallback) => {
+  if (preferred) {
+    const resolved = path.resolve(preferred);
+    if (fs.existsSync(resolved)) return resolved;
+    console.warn('[WEB] Diretório não encontrado, usando fallback:', resolved, '->', fallback);
+  }
+  return fallback;
+};
+
+const STICKERS_DIR = resolveDir(process.env.STICKERS_DIR, DEFAULT_MEDIA_DIR);
 console.log('[WEB] STICKERS_DIR:', STICKERS_DIR, 'exists:', fs.existsSync(STICKERS_DIR));
+
+const oldStickersConfigured = process.env.OLD_STICKERS_DIR || process.env.OLD_STICKERS_PATH;
+const OLD_STICKERS_DIRS = Array.from(new Set([
+  oldStickersConfigured && path.resolve(oldStickersConfigured),
+  path.join(STICKERS_DIR, 'old-stickers'),
+  path.join(DEFAULT_MEDIA_DIR, 'old-stickers'),
+].filter(Boolean)));
+const PRIMARY_OLD_STICKERS_DIR = OLD_STICKERS_DIRS.find((dir) => fs.existsSync(dir));
+console.log('[WEB] OLD_STICKERS_DIR candidates:', OLD_STICKERS_DIRS);
+console.log('[WEB] OLD_STICKERS_DIR primary:', PRIMARY_OLD_STICKERS_DIR, 'exists:', !!PRIMARY_OLD_STICKERS_DIR);
 const PUBLIC_DIR = process.env.PUBLIC_DIR || path.resolve(__dirname, 'public');
 
 // DEBUG: Add early middleware
@@ -493,14 +514,19 @@ app.use('/media', express.static(STICKERS_DIR, staticOpts));
 
 // Additional media directories for backward compatibility
 const BOT_MEDIA_DIR = path.join(ROOT_DIR, 'bot', 'media');
-const OLD_STICKERS_DIR = path.join(STICKERS_DIR, 'old-stickers');
 console.log('[WEB] BOT_MEDIA_DIR:', BOT_MEDIA_DIR, 'exists:', fs.existsSync(BOT_MEDIA_DIR));
-console.log('[WEB] OLD_STICKERS_DIR:', OLD_STICKERS_DIR, 'exists:', fs.existsSync(OLD_STICKERS_DIR));
+console.log('[WEB] OLD_STICKERS_DIR:', PRIMARY_OLD_STICKERS_DIR, 'exists:', PRIMARY_OLD_STICKERS_DIR ? fs.existsSync(PRIMARY_OLD_STICKERS_DIR) : false);
 
 // Serve bot media files
 app.use('/bot/media', express.static(BOT_MEDIA_DIR, staticOpts));
 // Serve old stickers
-app.use('/media/old-stickers', express.static(OLD_STICKERS_DIR, staticOpts));
+OLD_STICKERS_DIRS.forEach((dir) => {
+  if (fs.existsSync(dir)) {
+    app.use('/media/old-stickers', express.static(dir, staticOpts));
+  } else {
+    console.warn('[WEB] OLD_STICKERS_DIR inexistente, ignorando:', dir);
+  }
+});
 
 // Setup middlewares using modularized components
 const ipRulesMiddleware = createIPRulesMiddleware(db, { enableAnalytics: ENABLE_INTERNAL_ANALYTICS });
@@ -2028,34 +2054,92 @@ app.get('/api/rank/users', async (req, res) => {
     const nsfw = String(req.query.nsfw || 'all').toLowerCase();
     const groupId = (req.query.group_id || '').trim() || null;
 
-    const where = [];
+    const filters = [];
     const params = [];
-    if (groupId) { where.push('m.group_id = ?'); params.push(groupId); }
-    if (nsfw === 'safe') where.push('m.nsfw = 0');
-    else if (nsfw === 'nsfw') where.push('m.nsfw = 1');
-    const whereSql = where.length ? ('WHERE ' + where.join(' AND ')) : '';
+    if (groupId) { filters.push('nm.group_id = ?'); params.push(groupId); }
+    if (nsfw === 'safe') filters.push('nm.nsfw = 0');
+    else if (nsfw === 'nsfw') filters.push('nm.nsfw = 1');
+    const filtersSql = filters.length ? (' AND ' + filters.join(' AND ')) : '';
 
     const sql = `
-      SELECT
-        COALESCE(m.sender_id, m.chat_id, m.group_id) AS sender_id,
-        m.group_id,
-        COALESCE(NULLIF(TRIM(c.display_name), ''), '') AS display_name,
-        COUNT(*) AS sticker_count,
-        -- Identifica se é grupo
-        CASE WHEN m.group_id IS NOT NULL AND m.sender_id IS NULL THEN 1 ELSE 0 END as is_group
-      FROM media m
-      LEFT JOIN contacts c
-        ON replace(replace(lower(trim(c.sender_id)), '@s.whatsapp.net',''),'@c.us','')
-         = replace(replace(lower(trim(COALESCE(m.sender_id, m.chat_id, m.group_id))), '@s.whatsapp.net',''),'@c.us','')
-      ${whereSql}
-      GROUP BY COALESCE(m.sender_id, m.chat_id, m.group_id)
-      HAVING COALESCE(m.sender_id, m.chat_id, m.group_id) IS NOT NULL 
-        AND COALESCE(m.sender_id, m.chat_id, m.group_id) <> ''
-        -- Exclui envios do bot das contagens de ranking
-        AND NOT (
-          COALESCE(m.sender_id, m.chat_id) LIKE '%bot%' OR
-          (m.sender_id = m.chat_id AND m.group_id IS NULL)
+      WITH inferred_mapping AS (
+        SELECT lid, MAX(pn) AS pn
+        FROM (
+          SELECT
+            CASE
+              WHEN sender_id LIKE '%@lid' THEN sender_id
+              WHEN chat_id LIKE '%@lid' THEN chat_id
+              WHEN group_id LIKE '%@lid' THEN group_id
+            END AS lid,
+            CASE
+              WHEN sender_id LIKE '%@s.whatsapp.net' OR sender_id LIKE '%@c.us' THEN sender_id
+              WHEN chat_id LIKE '%@s.whatsapp.net' OR chat_id LIKE '%@c.us' THEN chat_id
+              WHEN group_id LIKE '%@s.whatsapp.net' OR group_id LIKE '%@c.us' THEN group_id
+            END AS pn
+          FROM media
         )
+        WHERE lid IS NOT NULL AND pn IS NOT NULL
+        GROUP BY lid
+      ),
+      normalized_media AS (
+        SELECT
+          m.*,
+          COALESCE(m.sender_id, m.chat_id, m.group_id) AS primary_id,
+          CASE
+            WHEN m.sender_id LIKE '%@lid' THEN m.sender_id
+            WHEN m.chat_id LIKE '%@lid' THEN m.chat_id
+            WHEN m.group_id LIKE '%@lid' THEN m.group_id
+          END AS lid_in_row,
+          CASE
+            WHEN m.sender_id LIKE '%@s.whatsapp.net' OR m.sender_id LIKE '%@c.us' THEN m.sender_id
+            WHEN m.chat_id LIKE '%@s.whatsapp.net' OR m.chat_id LIKE '%@c.us' THEN m.chat_id
+            WHEN m.group_id LIKE '%@s.whatsapp.net' OR m.group_id LIKE '%@c.us' THEN m.group_id
+          END AS pn_in_row
+        FROM media m
+      ),
+      resolved AS (
+        SELECT
+          CASE
+            WHEN nm.lid_in_row IS NOT NULL THEN
+              COALESCE(
+                NULLIF(lm.pn, ''),
+                im.pn,
+                nm.pn_in_row,
+                nm.lid_in_row
+              )
+            WHEN nm.pn_in_row IS NOT NULL THEN nm.pn_in_row
+            ELSE nm.primary_id
+          END AS effective_sender,
+          nm.group_id,
+          nm.chat_id,
+          nm.nsfw
+        FROM normalized_media nm
+        LEFT JOIN lid_mapping lm ON nm.lid_in_row IS NOT NULL AND lm.lid = nm.lid_in_row
+        LEFT JOIN inferred_mapping im ON nm.lid_in_row IS NOT NULL AND im.lid = nm.lid_in_row
+        WHERE nm.primary_id IS NOT NULL 
+          AND nm.primary_id <> ''
+          AND NOT (
+            COALESCE(nm.sender_id, nm.chat_id) LIKE '%bot%' OR
+            (nm.sender_id = nm.chat_id AND nm.group_id IS NULL)
+          )
+          ${filtersSql}
+      )
+      SELECT
+        (
+          SELECT COALESCE(NULLIF(TRIM(c.display_name), ''), '')
+          FROM contacts c
+          WHERE REPLACE(REPLACE(LOWER(TRIM(c.sender_id)), '@s.whatsapp.net',''),'@c.us','') =
+                REPLACE(REPLACE(LOWER(TRIM(r.effective_sender)), '@s.whatsapp.net',''),'@c.us','')
+          ORDER BY c.updated_at DESC
+          LIMIT 1
+        ) AS display_name,
+        r.effective_sender AS sender_id,
+        MAX(r.group_id) AS group_id,
+        COUNT(*) AS sticker_count,
+        CASE WHEN r.effective_sender LIKE '%@g.us' THEN 1 ELSE 0 END as is_group
+      FROM resolved r
+      GROUP BY r.effective_sender
+      HAVING r.effective_sender IS NOT NULL AND r.effective_sender <> '' AND r.effective_sender LIKE '%@%'
       ORDER BY sticker_count DESC
       LIMIT ?
     `;
@@ -2273,12 +2357,14 @@ function fixMediaUrl(row) {
         row.url = '/bot/media/' + base;
         return row;
       }
-      
-      // Check if file is in old-stickers directory
-      const oldStickersPath = path.join(STICKERS_DIR, 'old-stickers', base);
-      if (fs.existsSync(oldStickersPath)) {
-        row.url = '/media/old-stickers/' + base;
-        return row;
+     
+      // Check if file is in any old-stickers directory
+      for (const dir of OLD_STICKERS_DIRS) {
+        const oldStickersPath = path.join(dir, base);
+        if (fs.existsSync(oldStickersPath)) {
+          row.url = '/media/old-stickers/' + base;
+          return row;
+        }
       }
       
       // If the original file_path contains directory structure, try to match it
@@ -2296,16 +2382,24 @@ function fixMediaUrl(row) {
         // For paths like '/home/dev/work/sticker-bot2/media/old-stickers/filename.webp'
         if (c.includes('/old-stickers/')) {
           const filename = path.basename(c);
-          const oldStickersFullPath = path.join(STICKERS_DIR, 'old-stickers', filename);
-          if (fs.existsSync(oldStickersFullPath)) {
-            row.url = '/media/old-stickers/' + filename;
-            return row;
+          for (const dir of OLD_STICKERS_DIRS) {
+            const oldStickersFullPath = path.join(dir, filename);
+            if (fs.existsSync(oldStickersFullPath)) {
+              row.url = '/media/old-stickers/' + filename;
+              return row;
+            }
           }
         }
       }
     }
 
-    if (row?.url?.startsWith('/media/')) {
+    if (row?.url?.startsWith('/media/old-stickers/')) {
+      const base = path.basename(row.url);
+      const found = OLD_STICKERS_DIRS.some((dir) => fs.existsSync(path.join(dir, base)));
+      if (!found) {
+        console.warn('[MEDIA] Arquivo (old-stickers) não encontrado para URL:', row.url, 'id:', row?.id, 'file_path:', row?.file_path);
+      }
+    } else if (row?.url?.startsWith('/media/')) {
       const base = path.basename(row.url);
       const abs = path.join(STICKERS_DIR, base);
       if (!fs.existsSync(abs)) {

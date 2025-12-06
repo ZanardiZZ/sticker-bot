@@ -244,16 +244,67 @@ function countMediaBySenderWithDb(database, senderId) {
     // Use the same effective_sender logic as getTop5UsersByStickerCount
     // to ensure consistency between perfil and top5usuarios commands
     database.get(
-      `SELECT COUNT(*) AS total
-       FROM media m
-       LEFT JOIN lid_mapping lm ON lm.lid = COALESCE(m.sender_id, m.chat_id, m.group_id)
-       WHERE (
-         CASE
-           WHEN COALESCE(m.sender_id, m.chat_id, m.group_id) LIKE '%@lid'
-             THEN COALESCE(NULLIF(lm.pn, ''), m.chat_id, m.group_id, m.sender_id)
-           ELSE COALESCE(m.sender_id, m.chat_id, m.group_id)
-         END
-       ) = ?`,
+      `WITH inferred_mapping AS (
+         SELECT lid, MAX(pn) AS pn
+         FROM (
+           SELECT
+             CASE
+               WHEN sender_id LIKE '%@lid' THEN sender_id
+               WHEN chat_id LIKE '%@lid' THEN chat_id
+               WHEN group_id LIKE '%@lid' THEN group_id
+             END AS lid,
+             CASE
+               WHEN sender_id LIKE '%@s.whatsapp.net' OR sender_id LIKE '%@c.us' THEN sender_id
+               WHEN chat_id LIKE '%@s.whatsapp.net' OR chat_id LIKE '%@c.us' THEN chat_id
+               WHEN group_id LIKE '%@s.whatsapp.net' OR group_id LIKE '%@c.us' THEN group_id
+             END AS pn
+           FROM media
+         )
+         WHERE lid IS NOT NULL AND pn IS NOT NULL
+         GROUP BY lid
+       ),
+       normalized_media AS (
+         SELECT
+           m.*,
+           COALESCE(m.sender_id, m.chat_id, m.group_id) AS primary_id,
+           CASE
+             WHEN m.sender_id LIKE '%@lid' THEN m.sender_id
+             WHEN m.chat_id LIKE '%@lid' THEN m.chat_id
+             WHEN m.group_id LIKE '%@lid' THEN m.group_id
+           END AS lid_in_row,
+           CASE
+             WHEN m.sender_id LIKE '%@s.whatsapp.net' OR m.sender_id LIKE '%@c.us' THEN m.sender_id
+             WHEN m.chat_id LIKE '%@s.whatsapp.net' OR m.chat_id LIKE '%@c.us' THEN m.chat_id
+             WHEN m.group_id LIKE '%@s.whatsapp.net' OR m.group_id LIKE '%@c.us' THEN m.group_id
+           END AS pn_in_row
+         FROM media m
+       ),
+       resolved AS (
+         SELECT
+           CASE
+             WHEN nm.lid_in_row IS NOT NULL THEN
+               COALESCE(
+                 NULLIF(lm.pn, ''),
+                 im.pn,
+                 nm.pn_in_row,
+                 nm.lid_in_row
+               )
+             WHEN nm.pn_in_row IS NOT NULL THEN nm.pn_in_row
+             ELSE nm.primary_id
+           END AS effective_sender
+         FROM normalized_media nm
+         LEFT JOIN lid_mapping lm ON nm.lid_in_row IS NOT NULL AND lm.lid = nm.lid_in_row
+         LEFT JOIN inferred_mapping im ON nm.lid_in_row IS NOT NULL AND im.lid = nm.lid_in_row
+         WHERE nm.primary_id IS NOT NULL
+           AND nm.primary_id <> ''
+           AND NOT (
+             COALESCE(nm.sender_id, nm.chat_id) LIKE '%bot%' OR
+             (nm.sender_id = nm.chat_id AND nm.group_id IS NULL)
+           )
+       )
+       SELECT COUNT(*) AS total
+       FROM resolved
+       WHERE effective_sender = ?`,
       [senderId.trim()],
       (err, row) => {
         if (err) {

@@ -20,7 +20,7 @@ const {
 } = require('../services/ai');
 const { processVideo, processGif, processAnimatedWebp } = require('../services/videoProcessor');
 const { updateMediaDescription, updateMediaTags } = require('../database/index.js');
-const { forceMap, MAX_TAGS_LENGTH, clearDescriptionCmds } = require('../commands');
+const { forceMap, MAX_TAGS_LENGTH, clearDescriptionCmds, forceVideoToStickerMap } = require('../commands');
 const { cleanDescriptionTags } = require('../utils/messageUtils');
 const { generateResponseMessage } = require('../utils/responseMessage');
 const { safeReply } = require('../utils/safeMessaging');
@@ -448,13 +448,31 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
       extToSave = 'webp';
       mimetypeToSave = 'image/webp';
     } else if (message.mimetype.startsWith('video/')) {
-      // Detecta se é um vídeo GIF-like (curto, sem áudio, etc.)
-      let isGifLike = false;
-      try {
-        isGifLike = await isGifLikeVideo(tmpFilePath, message.mimetype);
-      } catch (e) {
-        console.warn('[MediaProcessor] Erro ao detectar GIF-like:', e.message);
+      // Detecta se é um vídeo GIF-like (curto, sem áudio, etc.) ou se o usuário forçou a conversão
+      const forceVideoSticker = !!(forceVideoToStickerMap instanceof Map
+        ? forceVideoToStickerMap.get(chatId)
+        : forceVideoToStickerMap?.[chatId]);
+
+      if (forceVideoSticker) {
+        if (forceVideoToStickerMap instanceof Map) {
+          forceVideoToStickerMap.delete(chatId);
+        } else {
+          forceVideoToStickerMap[chatId] = false;
+        }
+        console.log('[MediaProcessor] Conversão para figurinha animada forçada pelo usuário (ignorando áudio do vídeo)');
       }
+
+      let isGifLike = false;
+      if (forceVideoSticker) {
+        isGifLike = true;
+      } else {
+        try {
+          isGifLike = await isGifLikeVideo(tmpFilePath, message.mimetype);
+        } catch (e) {
+          console.warn('[MediaProcessor] Erro ao detectar GIF-like:', e.message);
+        }
+      }
+
       if (isGifLike) {
         // Converte vídeo GIF-like para webp animado usando ffmpeg
         gifSourceForAnalysis = tmpFilePath;
@@ -563,7 +581,7 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
 
   // ...
 
-    const forceInsert = !!forceMap[chatId];
+    const forceInsert = !!(forceMap instanceof Map ? forceMap.get(chatId) : forceMap?.[chatId]);
 
     if (!forceInsert && hashVisual) {
       const existing = await findByHashVisual(hashVisual);
@@ -576,6 +594,8 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
         );
         return;
       }
+    } else if (forceMap instanceof Map) {
+      forceMap.delete(chatId);
     } else {
       forceMap[chatId] = false;
     }

@@ -3,6 +3,9 @@
  */
 
 const { Sticker, StickerTypes } = require('../utils/stickerFormatter');
+const fs = require('fs');
+const fsp = require('fs/promises');
+const { isAnimatedWebpBuffer } = require('../bot/stickers');
 
 const { PACK_NAME, AUTHOR_NAME } = require('../config/stickers');
 
@@ -22,6 +25,7 @@ async function sendMediaByType(client, chatId, media) {
   const rawMime = media.mimetype || '';
   const normalizedMime = (rawMime || mime.lookup(filePath) || '').toLowerCase();
   const effectiveMime = normalizedMime || 'application/octet-stream';
+  const isWebp = normalizedMime === 'image/webp' || filePath.endsWith('.webp');
 
   const isGif = normalizedMime === 'image/gif' || filePath.endsWith('.gif');
   const isVideo = normalizedMime.startsWith('video/');
@@ -80,6 +84,18 @@ async function sendMediaByType(client, chatId, media) {
   }
 
   if (isImage) {
+    if (isWebp) {
+      try {
+        const webpBuffer = await fsp.readFile(filePath);
+        const animated = isAnimatedWebpBuffer(webpBuffer);
+        const dataUrl = `data:image/webp;base64,${webpBuffer.toString('base64')}`;
+        await client.sendRawWebpAsSticker(chatId, dataUrl, { pack: PACK_NAME, author: AUTHOR_NAME, animated });
+        return;
+      } catch (webpErr) {
+        console.warn(`[sendMediaByType] Falha ao enviar WebP raw, tentando conversão padrão: ${webpErr.message}`);
+      }
+    }
+
     if (Sticker && StickerTypes) {
       const sticker = new Sticker(filePath, {
         pack: PACK_NAME,
@@ -129,9 +145,9 @@ async function sendMediaAsOriginal(client, chatId, media) {
   const mimetype = media.mimetype || '';
   const normalizedMime = (mimetype || mime.lookup(filePath) || '').toLowerCase();
   const effectiveMime = normalizedMime || 'application/octet-stream';
+  const isWebp = normalizedMime === 'image/webp' || filePath.endsWith('.webp');
 
   // Check if file exists
-  const fs = require('fs');
   if (!fs.existsSync(filePath)) {
     console.error(`[sendMediaAsOriginal] Arquivo não encontrado: ${filePath}`);
     throw new Error(`Arquivo de mídia não encontrado: ${filePath}`);
@@ -212,6 +228,19 @@ async function sendMediaAsOriginal(client, chatId, media) {
 
     // Images can still be sent as stickers since that's expected behavior
     if (isImage) {
+      if (isWebp) {
+        try {
+          const webpBuffer = await fsp.readFile(filePath);
+          const animated = isAnimatedWebpBuffer(webpBuffer);
+          const dataUrl = `data:image/webp;base64,${webpBuffer.toString('base64')}`;
+          await client.sendRawWebpAsSticker(chatId, dataUrl, { pack: PACK_NAME, author: AUTHOR_NAME, animated });
+          console.log(`[sendMediaAsOriginal] WebP ${animated ? 'animado' : 'estático'} enviado como sticker raw`);
+          return;
+        } catch (webpErr) {
+          console.warn(`[sendMediaAsOriginal] Falha ao enviar WebP raw, tentando conversão padrão: ${webpErr.message}`);
+        }
+      }
+
       if (Sticker && StickerTypes) {
         try {
           const sticker = new Sticker(filePath, {
