@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const ENABLE_INTERNAL_ANALYTICS = process.env.ENABLE_INTERNAL_ANALYTICS === '1';
 
+const lusca = require('lusca');
 // Initialize log collector before any console logs
 const { getLogCollector } = require('../utils/logCollector');
 const logCollector = getLogCollector(2000); // Buffer de 2000 logs
@@ -69,6 +70,9 @@ app.use(session({
     sameSite: 'lax'
   }
 }));
+
+// Add CSRF protection middleware (must be after session and cookieParser)
+app.use(lusca.csrf());
 
 // Body parsers must run before CSRF so tokens in the body are available
 app.use(express.json({ limit: '2mb' }));
