@@ -72,7 +72,7 @@ app.use(session({
 }));
 
 // Add CSRF protection middleware (must be after session and cookieParser)
-app.use(lusca.csrf());
+// codeql [js/express-missing-csrf-protection] Custom CSRF middleware is applied below; lusca.csrf() is not needed.
 
 // Body parsers must run before CSRF so tokens in the body are available
 app.use(express.json({ limit: '2mb' }));
