@@ -5,7 +5,7 @@ A comprehensive WhatsApp bot for managing, automatically sending, and administer
 ## ✨ Features
 
 ### 🤖 WhatsApp Bot
-- **Automatic sticker sending** - Hourly stickers from 08:00-21:00
+- **Automatic sticker sending** - Default hourly schedule (08:00-21:00) with fallback matched-minute sends; configurable via bot settings
 - **Smart media processing** - Handles images, videos, GIFs, and audio
 - **AI-powered tagging** - Automatic content analysis and tagging
 - **NSFW filtering** - External moderation support and gated NSFW access
@@ -59,21 +59,17 @@ The bot continues to function normally with reduced video processing capabilitie
 
 ### 1. Installation
 
-**⚠️ Important:** Due to firewall restrictions, always use the following installation command:
-
 ```bash
 # Clone the repository
 git clone https://github.com/ZanardiZZ/sticker-bot.git
 cd sticker-bot
 
-# Install dependencies (REQUIRED: use this exact command)
-PUPPETEER_SKIP_DOWNLOAD=true npm install --ignore-scripts
+# Install dependencies (uses package-lock for reproducibility)
+npm ci
 
-# Rebuild native modules (required for SQLite3 and Sharp)
+# If you hit native module errors, rebuild the binaries
 npm rebuild sqlite3 sharp
 ```
-
-**Never use regular `npm install`** - it will fail due to network blocks on Chrome downloads and other dependencies.
 
 ### 2. Configuration
 
@@ -544,17 +540,14 @@ OPENAI_API_KEY=sk-your-api-key-here
 
 ### Installation Issues
 
-**"Chrome download failed":**
-```bash
-# Always use this command
-PUPPETEER_SKIP_DOWNLOAD=true npm install --ignore-scripts
-```
+**Native module build failed (sqlite3/sharp/tfjs-node):**
+- Make sure build tooling is installed (Linux: `build-essential python3 make gcc g++`)
+- Re-run `npm ci` and then `npm rebuild sqlite3 sharp`
+- Ensure the machine has internet access to download prebuilt binaries
 
-**"Failed to launch the browser process":**
-- If you see browser launch errors after using `PUPPETEER_SKIP_DOWNLOAD=true`:
-- Add `CHROME_EXECUTABLE_PATH=/usr/bin/google-chrome` to your `.env` file
-- Or try other paths: `/usr/bin/chromium`, `/usr/bin/chromium-browser`
-- Alternative: Install Chrome for puppeteer: `npx puppeteer browsers install chrome`
+**Dependency download blocked/firewalled:**
+- Retry on a network that allows downloads from npm/CDN mirrors
+- If corporate proxies are involved, configure `npm config set proxy/https-proxy`
 
 **"SQLITE_BUSY errors":**
 - Database uses WAL mode and queue system

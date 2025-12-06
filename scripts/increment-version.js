@@ -18,9 +18,9 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-// Database setup
+// Database setup (uses the live media database)
 const sqlite3 = require('sqlite3').verbose();
-const dbPath = path.join(__dirname, '..', 'stickers.db');
+const dbPath = path.join(__dirname, '..', 'media.db');
 const db = new sqlite3.Database(dbPath);
 
 /**

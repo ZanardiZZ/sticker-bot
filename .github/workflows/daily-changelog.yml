@@ -27,8 +27,7 @@ jobs:
           node-version: '20'
 
       - name: Instalar dependências
-        run: |
-          PUPPETEER_SKIP_DOWNLOAD=true npm install --ignore-scripts
+        run: npm ci
 
       - name: Incrementar versão
         id: version

@@ -2,34 +2,28 @@
 
 **Always reference these instructions first and fallback to search or bash commands only when you encounter unexpected information that does not match the info here.**
 
-## Network and Firewall Restrictions
+## Network and Firewall Notes
 
-**CRITICAL**: This repository has known network dependencies that are commonly blocked by firewalls. Always use the workaround commands below:
+This project installs native modules (`sqlite3`, `sharp`, `@tensorflow/tfjs-node`) that download prebuilt binaries during install. Make sure npm can reach its CDN/proxy; otherwise installation will fail.
 
-### Blocked Domains and Services
-- `esm.ubuntu.com` - Ubuntu package repository (DNS block, affects apt commands)  
-- `googlechromelabs.github.io` - Chrome browser downloads (HTTP block, affects puppeteer installation)
-- `storage.googleapis.com` - Chrome binaries and TensorFlow models (HTTP block, affects AI features)
+### Recommended Install Command
+- **Installation**: `npm ci`
+- If native binaries fail to build, rerun `npm rebuild sqlite3 sharp`
+- Configure corporate proxies via `npm config set proxy/https-proxy` when required
 
-### Required Workaround Commands
-- **Installation**: `PUPPETEER_SKIP_DOWNLOAD=true npm install --ignore-scripts`
-- **NEVER use**: Regular `npm install` (will fail with network blocks)
-- **NOTE**: `npm run postinstall` is no longer used (postinstall script removed)
-
-### What Works vs. What Doesn't
-✅ **Works without network access**:
+### What Works vs. What Needs Network
+✅ Works offline after install:
 - Basic bot functionality (WhatsApp integration)
 - Web administration interface 
 - Database operations and migrations
 - Local sticker processing
 - Command handling
 
-❌ **Requires network access (may fail)**:
-- Chrome/Chromium installation for puppeteer
-- TensorFlow binary downloads
-- Ubuntu package updates
+❌ Needs network access:
+- TensorFlow binary downloads during install
+- Ubuntu package updates (only if you choose to install build tools)
 
-**NOTE**: Audio transcription now uses OpenAI Whisper API (cloud-based) instead of local Whisper.cpp installation
+**NOTE**: Audio transcription uses OpenAI Whisper API (cloud); provide `OPENAI_API_KEY` to enable.
 
 ## Working Effectively
 
@@ -39,31 +33,25 @@
 - Set up environment variables:
   - `cp .env.example .env`
   - Edit `.env` with required WhatsApp configuration (AUTO_SEND_GROUP_ID, ADMIN_NUMBER)
-- **CRITICAL FIREWALL WORKAROUNDS**: Install dependencies with network restrictions bypass:
-  - `PUPPETEER_SKIP_DOWNLOAD=true npm install --ignore-scripts`
-  - **NEVER use regular `npm install`** - fails due to multiple network blocks:
-    - `esm.ubuntu.com` (Ubuntu packages) - blocked by DNS/firewall
-    - `googlechromelabs.github.io` (Chrome binaries) - blocked by firewall  
-    - `storage.googleapis.com` (Chrome + TensorFlow binaries) - blocked by firewall
-  - The `--ignore-scripts` flag prevents postinstall script execution that triggers network calls
-  - The `PUPPETEER_SKIP_DOWNLOAD=true` prevents Chrome download attempts
-- Database initialization: Happens automatically on first run
-- NEVER CANCEL: Installation takes 2-5 minutes. Set timeout to 10+ minutes.
+- Install dependencies with lockfile: `npm ci`
+  - If you see native module errors, run `npm rebuild sqlite3 sharp`
+  - Ensure network access for downloading prebuilt binaries
+- Database initialization happens automatically on first run
 
 ### Build and Test Process
-- **No formal build step required** - This is a Node.js application that runs directly
-- **No unit test suite available** - `npm test` exits with error message
-- Validate installation and basic functionality:
-  - `npm run web` - starts web interface on port 3000 (takes ~1 second)
-  - `node index.js` - starts WhatsApp bot (waits for connection, requires WhatsApp setup)
-  - Test database migrations: `node scripts/test-migration.js` (takes <1 second)
-  - Verify contacts migration: `node scripts/verify-contacts-migration.js` (takes <1 second)
+- No build step required; run directly with Node.js
+- Full test suite available: `npm test` (runs unit + integration)
+- Quick checks:
+  - `npm run web` - starts web interface on port 3000
+  - `node index.js` - starts WhatsApp bot (requires WhatsApp setup)
+  - Test database migrations: `node scripts/test-migration.js`
+  - Verify contacts migration: `node scripts/verify-contacts-migration.js`
 
 ### Running the Application
 - **Main WhatsApp bot**: `node index.js`
   - Requires WhatsApp connection and .env configuration
   - Will display QR code for WhatsApp Web authentication
-  - Automatically sends stickers every hour from 08:00-21:00
+  - Automatic send schedule is driven by DB config (default cron 0 8-21 plus matching-minute fallbacks)
 - **Web administration interface**: `npm run web`
   - Runs on port 3000 by default
   - Provides user management, sticker browsing, and analytics
@@ -166,16 +154,10 @@ After making changes, always validate through these scenarios:
 ## Troubleshooting Common Issues
 
 ### Installation Problems
-- **puppeteer Chrome download fails**: Use `PUPPETEER_SKIP_DOWNLOAD=true npm install --ignore-scripts`
+- **Native module build fails (sqlite3/sharp/tfjs-node)**: Install build tools (Linux: `build-essential python3 make gcc g++`), re-run `npm ci`, then `npm rebuild sqlite3 sharp`
 - **Audio transcription not working**: Add `OPENAI_API_KEY` to your `.env` file 
-- **System dependency errors**: Only Chrome/Chromium dependencies may be needed for puppeteer
-- **Network/Firewall Blocks**: If you encounter blocked domains during installation:
-  - `esm.ubuntu.com` - Ubuntu package repository (affects apt commands)
-  - `googlechromelabs.github.io` - Chrome browser downloads (affects puppeteer)
-  - `storage.googleapis.com` - Chrome binaries and TensorFlow models (affects AI features)
-  - **Solution**: Always use `PUPPETEER_SKIP_DOWNLOAD=true npm install --ignore-scripts`
-  - **For CI/CD**: Configure allowlists in repository settings or use pre-built environments
-  - **Alternative**: Use Docker containers with pre-installed dependencies
+- **Network/Firewall Blocks**: Ensure npm can reach its CDN; configure `npm config set proxy/https-proxy` when behind corporate proxies
+- **CI/CD**: Prefer `npm ci` with cached npm directories; ensure binaries can be downloaded during install
 
 ### Runtime Issues
 - **Database errors**: Ensure write permissions in project directory
@@ -346,32 +328,16 @@ $ node index.js
 
 ## Exact Command Timing Reference
 
-**CRITICAL**: Always use these exact timeout values and commands to prevent premature cancellation:
+**Typical durations (approximate):**
 
-- `PUPPETEER_SKIP_DOWNLOAD=true npm install --ignore-scripts` - 2-5 minutes, use 10-minute timeout
-  - **ONLY safe installation command** - bypasses all network blocks
-  - Regular `npm install` will fail due to firewall restrictions
+- `npm ci` - 2-5 minutes depending on native binary downloads  
 - `npm run web` - 1-2 seconds startup, immediate availability  
 - `node index.js` - 3-5 seconds to WhatsApp connection screen
-- `node scripts/test-migration.js` - 0.17 seconds
-- `node scripts/verify-contacts-migration.js` - 0.17 seconds
-- `node scripts/migrate-historical-contacts.js` - 0.17 seconds
-- `bash scripts/setup-whisper.sh` - **DEPRECATED** (now only installs Chromium deps, ~1-2 minutes)
+- `node scripts/test-migration.js` - ~0.2 seconds
+- `node scripts/verify-contacts-migration.js` - ~0.2 seconds
+- `node scripts/migrate-historical-contacts.js` - ~0.2 seconds
 
-**NEVER CANCEL any of these commands - always wait for completion.**
-
-## Firewall Block Examples
-
-If you see errors like these, it confirms the network restrictions are active:
-
-```
-Error: Failed to download Chrome from https://storage.googleapis.com/...
-Error: getaddrinfo ENOTFOUND esm.ubuntu.com
-Error: connect ETIMEDOUT googlechromelabs.github.io:443
-Error: Failed to fetch https://storage.googleapis.com/tf-builds/...
-```
-
-These are expected in restricted environments. Use the workaround commands above.
+**If installs fail with CDN timeouts**, retry on a network that allows downloads for npm binaries (sharp/sqlite3/tfjs-node) or configure your proxy settings.
 
 ## Web Interface Screenshot
 

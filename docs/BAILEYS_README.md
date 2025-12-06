@@ -29,10 +29,10 @@ This separation allows you to restart the bot without rescanning QR codes.
 ### 1. Installation
 
 ```bash
-# Install dependencies (use this exact command due to firewall restrictions)
-PUPPETEER_SKIP_DOWNLOAD=true npm install --ignore-scripts
+# Install dependencies (uses package-lock for reproducibility)
+npm ci
 
-# Rebuild native modules
+# Rebuild native modules if you hit binary errors
 npm rebuild sqlite3 sharp
 ```
 

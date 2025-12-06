@@ -6,7 +6,7 @@ This document describes the automated version management system for the Sticker 
 
 The bot uses a decimal versioning system (0.5, 0.6, 0.7, etc.) that automatically increments when the changelog is generated. The current version is stored in both:
 - `package.json` - for npm and application metadata
-- Database (`version_info` table) - for version history and tracking
+- Database (`version_info` table inside `media.db`) - for version history and tracking
 
 ## Version Format
 
@@ -148,7 +148,7 @@ The daily changelog workflow (`.github/workflows/daily-changelog.yml`) includes 
 
 1. **Checkout repository** - with full history
 2. **Setup Node.js** - version 20
-3. **Install dependencies** - using `PUPPETEER_SKIP_DOWNLOAD=true npm install --ignore-scripts`
+3. **Install dependencies** - using `npm ci`
 4. **Increment version** - runs the increment script
 5. **Commit version** - commits the new version to package.json
 6. **Generate changelog** - creates changelog entry with version number
