@@ -12,6 +12,7 @@ const http = require('http');
 const { WebSocketServer } = require('ws');
 const mime = require('mime-types');
 const qrcode = require('qrcode-terminal')
+const pino = require('pino');
 const {
   default: makeWASocket,
   DisconnectReason,
@@ -19,6 +20,7 @@ const {
   fetchLatestBaileysVersion,
   downloadContentFromMessage
 } = require('@whiskeysockets/baileys');
+const { normalizeJid } = require('./utils/jidUtils');
 
 // agora importa o store do caminho certo
 //const { makeInMemoryStore } = require('@whiskeysockets/baileys/lib/store');
@@ -440,6 +442,41 @@ function normalizeOpenWAMessage(msg, opts = {}) {
     }
   }
 
+  const mentionedSet = new Set();
+  const addMentionCandidate = (value) => {
+    if (!value) return;
+    if (Array.isArray(value)) {
+      value.forEach(addMentionCandidate);
+      return;
+    }
+    if (typeof value === 'object' && value !== null) {
+      if (typeof value.jid === 'string') {
+        addMentionCandidate(value.jid);
+        return;
+      }
+      if (typeof value.id === 'string') {
+        addMentionCandidate(value.id);
+        return;
+      }
+    }
+    const normalized = normalizeJid(value);
+    if (normalized) {
+      mentionedSet.add(normalized);
+    }
+  };
+
+  addMentionCandidate(content?.mentions);
+  addMentionCandidate(content?.contextInfo?.mentionedJid);
+  addMentionCandidate(contextInfo?.mentionedJid);
+  addMentionCandidate(contextInfo?.participants);
+  addMentionCandidate(contextInfo?.participant);
+  addMentionCandidate(m.message?.extendedTextMessage?.contextInfo?.mentionedJid);
+  addMentionCandidate(m.message?.imageMessage?.contextInfo?.mentionedJid);
+  addMentionCandidate(m.message?.videoMessage?.contextInfo?.mentionedJid);
+  addMentionCandidate(m.message?.documentMessage?.contextInfo?.mentionedJid);
+
+  const mentionedJids = Array.from(mentionedSet);
+
   const normalized = {
     from: remoteJid,
     chatId,
@@ -458,6 +495,10 @@ function normalizeOpenWAMessage(msg, opts = {}) {
     quotedMsg: quotedMsg || null,
     timestamp: Number(m.messageTimestamp) || Date.now() / 1000,
     fromMe,
+    contextInfo: contextInfo || null,
+    mentionedJid: mentionedJids,
+    mentions: mentionedJids,
+    mentionedIds: mentionedJids,
     // raw for advanced usage
     _raw: m
   };
@@ -509,6 +550,7 @@ async function start() {
   const MESSAGE_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
   const messageCache = new Map(); // messageId -> { normalized, raw, timestamp }
   const msgRetryCounterCache = new Map();
+  msgRetryCounterCache.del = (key) => msgRetryCounterCache.delete(key);
   const IDENTICAL_MESSAGE_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
   const IDENTICAL_MESSAGE_THRESHOLD = 3;
   const identicalMessageTracker = new Map(); // key -> [timestamps]
@@ -592,18 +634,176 @@ async function start() {
   const { version } = await fetchLatestBaileysVersion();
   const store = createSimpleStore();
 
+  const RETRY_SUPPRESSION_MSG = 'will not send message again, as sent too many times';
+  const TIMEOUT_MSG = 'timed out waiting for message';
+
+  const retryInspectorLogger = pino({
+    level: process.env.BAILEYS_RETRY_LOG_LEVEL || process.env.BAILEYS_LOG_LEVEL || 'info',
+    base: { class: 'baileys-retry' }
+  });
+
+  const queryInspectorLogger = pino({
+    level: process.env.BAILEYS_QUERY_LOG_LEVEL || process.env.BAILEYS_LOG_LEVEL || 'info',
+    base: { class: 'baileys-query' }
+  });
+
+  const pendingQueries = new Map(); // msgId -> { timestamp, summary }
+
+  const extractTextPreviewFromContent = (type, content) => {
+    if (!type || !content) return '';
+    if (typeof content === 'string') return content;
+    return (
+      content.text
+      || content.caption
+      || content.conversation
+      || content.body
+      || content.contentText
+      || ''
+    );
+  };
+
+  const buildRetryPreview = (rawMessageContent) => {
+    try {
+      const { type, content } = unwrapBaileysMessageContent(rawMessageContent);
+      const preview = extractTextPreviewFromContent(type, content);
+      return {
+        messageType: type || null,
+        bodyPreview: preview ? String(preview).slice(0, 160) : ''
+      };
+    } catch {
+      return { messageType: null, bodyPreview: '' };
+    }
+  };
+
+  const describeJid = (jid) => {
+    if (!jid) return null;
+    const chat = getChatFromStore(store, jid);
+    if (chat?.subject || chat?.name || chat?.formattedTitle) {
+      return chat.subject || chat.name || chat.formattedTitle;
+    }
+    const contact = buildContactPayloadFromStore(store, jid);
+    return contact?.pushname || contact?.name || contact?.number || null;
+  };
+
+  const buildRetryContext = (logPayload = {}) => {
+    if (!logPayload || typeof logPayload !== 'object') return null;
+    const attrs = logPayload.attrs || {};
+    const key = logPayload.key || {};
+    const messageId = attrs.id || key.id || '';
+    const participant = key.participant || attrs.participant || '';
+    const chatId = key.remoteJid || attrs.from || '';
+    const cacheEntry = messageId ? messageCache.get(messageId) : null;
+    const rawMessageContent = cacheEntry?.raw?.message || cacheEntry?.raw?.msg || cacheEntry?.raw || null;
+    const { messageType, bodyPreview } = rawMessageContent
+      ? buildRetryPreview(rawMessageContent)
+      : { messageType: null, bodyPreview: '' };
+    const normalizedBody = typeof cacheEntry?.normalized?.body === 'string'
+      ? cacheEntry.normalized.body
+      : '';
+    const retryKey = messageId && participant ? `${messageId}:${participant}` : messageId;
+    const retryCount = typeof msgRetryCounterCache.get === 'function'
+      ? (msgRetryCounterCache.get(retryKey) || msgRetryCounterCache.get(messageId) || 0)
+      : 0;
+
+    return {
+      chatId: chatId || undefined,
+      chatName: describeJid(chatId) || undefined,
+      participant: participant || undefined,
+      participantName: describeJid(participant) || undefined,
+      messageId: messageId || undefined,
+      messageType: messageType || cacheEntry?.normalized?.messageType || undefined,
+      bodyPreview: (normalizedBody || bodyPreview || '').slice(0, 160) || undefined,
+      retryCount,
+      hasCachedMessage: !!cacheEntry
+    };
+  };
+
+  const summarizeNodeForLog = (node) => {
+    if (!node) return null;
+    const childTags = Array.isArray(node.content)
+      ? node.content.map((c) => c?.tag).filter(Boolean)
+      : undefined;
+    const attrs = node.attrs || {};
+    const safeAttrs = {};
+    for (const key of Object.keys(attrs)) {
+      if (['id', 'to', 'from', 'jid', 'participant', 'type', 'count', 'code', 'xmlns', 'device'].includes(key)) {
+        safeAttrs[key] = attrs[key];
+      }
+    }
+    return {
+      tag: node.tag || undefined,
+      attrs: Object.keys(safeAttrs).length ? safeAttrs : undefined,
+      childTags: childTags && childTags.length ? childTags : undefined
+    };
+  };
+
+  const baileysLogger = pino({
+    level: process.env.BAILEYS_LOG_LEVEL || 'info',
+    hooks: {
+      logMethod(args, method) {
+        try {
+          const logMessage = args?.[args.length - 1];
+          if (typeof logMessage === 'string' && logMessage.includes(RETRY_SUPPRESSION_MSG)) {
+            const context = buildRetryContext(args[0]);
+            if (context) {
+              retryInspectorLogger.warn(context, 'baileys retry suppressed');
+            }
+          }
+          if (typeof logMessage === 'string' && logMessage.includes(TIMEOUT_MSG)) {
+            const msgId = args?.[0]?.msgId;
+            const pending = msgId ? pendingQueries.get(msgId) : null;
+            const elapsedMs = pending?.timestamp ? Date.now() - pending.timestamp : undefined;
+            queryInspectorLogger.warn({
+              msgId,
+              elapsedMs,
+              query: pending?.summary,
+              pendingCount: pendingQueries.size
+            }, 'baileys query timed out');
+          }
+        } catch (err) {
+          console.error('[Baileys] Failed to enrich retry log:', err);
+        }
+        method.apply(this, args);
+      }
+    }
+  }).child({ class: 'baileys' });
+
   const sock = makeWASocket({
     version,
     auth: state,
     syncFullHistory: false,
     browser: ['StickerBot', 'Chrome', '1.0'],
-    msgRetryCounterMap: msgRetryCounterCache,
+    logger: baileysLogger,
+    msgRetryCounterCache,
     getMessage: async (key) => {
       if (!key?.id) return null;
       const cached = messageCache.get(key.id);
       return cached?.raw || null;
     }
   });
+
+  // Wrap query to track pending requests and aid timeout diagnostics
+  const originalQuery = sock.query;
+  if (typeof originalQuery === 'function') {
+    sock.query = async (node, timeoutMs) => {
+      let trackedId = node?.attrs?.id;
+      const summary = summarizeNodeForLog(node);
+      let result;
+      try {
+        result = originalQuery(node, timeoutMs);
+        // node.attrs.id is set synchronously inside originalQuery if missing
+        trackedId = trackedId || node?.attrs?.id;
+        if (trackedId) {
+          pendingQueries.set(trackedId, { timestamp: Date.now(), summary });
+        }
+        return await result;
+      } finally {
+        if (trackedId) {
+          pendingQueries.delete(trackedId);
+        }
+      }
+    };
+  }
 
   const toArray = (value) => (Array.isArray(value) ? value : []);
 

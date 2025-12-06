@@ -194,12 +194,15 @@ async function resolveSenderId(sock, jid) {
     if (!normalizedJid) return null;
 
     let preferredId = normalizedJid;
+    let lidCandidate = isLidUser(normalizedJid) ? normalizedJid : null;
+    let pnCandidate = isPnUser(normalizedJid) ? normalizedJid : null;
 
     if (isPnUser(normalizedJid)) {
         try {
             const existingLid = await getLidForPn(normalizedJid);
             if (existingLid) {
                 preferredId = existingLid;
+                lidCandidate = existingLid;
                 return preferredId;
             }
         } catch (error) {
@@ -213,6 +216,7 @@ async function resolveSenderId(sock, jid) {
                 const normalizedLid = normalizeJid(lid);
                 if (normalizedLid) {
                     preferredId = normalizedLid;
+                    lidCandidate = normalizedLid;
                     storeLidPnMapping(normalizedLid, normalizedJid);
                 }
             } catch (error) {
@@ -225,12 +229,36 @@ async function resolveSenderId(sock, jid) {
         try {
             const existingPn = await getPnForLid(normalizedJid);
             if (existingPn) {
+                pnCandidate = normalizeJid(existingPn);
                 storeLidPnMapping(normalizedJid, existingPn);
             }
         } catch (error) {
             console.log(`[JID] Falha ao consultar PN local para ${normalizedJid}:`, error?.message || error);
         }
-        // For LIDs, return as-is to avoid unnecessary network lookups that can timeout
+
+        // Try remote PN resolution for LIDs if available (helps consolidate counts)
+        if (!pnCandidate) {
+            const remotePnResolver = sock?.signalRepository?.lidMapping?.getPNForLID;
+            if (typeof remotePnResolver === 'function') {
+                try {
+                    const pn = await remotePnResolver.call(sock.signalRepository.lidMapping, normalizedJid);
+                    const normalizedPn = normalizeJid(pn);
+                    if (normalizedPn) {
+                        pnCandidate = normalizedPn;
+                        storeLidPnMapping(normalizedJid, normalizedPn);
+                    }
+                } catch (error) {
+                    if (error?.message !== 'ack_timeout') {
+                        console.log(`[JID] Erro ao resolver PN remoto para ${normalizedJid}:`, error?.message || error);
+                    }
+                }
+            }
+        }
+    }
+
+    // If we learned both sides, persist the mapping explicitly
+    if (lidCandidate && pnCandidate) {
+        storeLidPnMapping(lidCandidate, pnCandidate);
     }
 
     return preferredId;

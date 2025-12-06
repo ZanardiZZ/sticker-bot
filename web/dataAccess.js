@@ -4,13 +4,29 @@ const { db } = require('../database/index.js');
 const fs = require('fs');
 
 // Ajuste o caminho raiz dos stickers se for diferente:
-const FIGURINHAS_DIR_ABS = '/mnt/nas/Media/Figurinhas';
+const FIGURINHAS_DIR_ABS = process.env.FIGURINHAS_DIR_ABS || '/mnt/nas/Media/Figurinhas';
+const ROOT_DIR = path.resolve(__dirname, '..');
+const BOT_MEDIA_DIR = path.join(ROOT_DIR, 'bot', 'media');
+const OLD_STICKERS_DIR = path.resolve(process.env.OLD_STICKERS_DIR || process.env.OLD_STICKERS_PATH || path.join(ROOT_DIR, 'media', 'old-stickers'));
+const FIGURINHAS_DIR_NORM = FIGURINHAS_DIR_ABS.replace(/\\/g, '/');
+const BOT_MEDIA_DIR_NORM = BOT_MEDIA_DIR.replace(/\\/g, '/');
+const OLD_STICKERS_DIR_NORM = OLD_STICKERS_DIR.replace(/\\/g, '/');
 
 // Helper: transforma file_path em URL servida pelo web
 function filePathToUrl(file_path, mimetype) {
   if (!file_path) return null;
 
-  if (file_path.startsWith(FIGURINHAS_DIR_ABS)) {
+  const normalized = file_path.replace(/\\/g, '/');
+
+  if (normalized.startsWith(OLD_STICKERS_DIR_NORM) || normalized.includes('/old-stickers/')) {
+    return '/media/old-stickers/' + path.basename(normalized);
+  }
+
+  if (normalized.startsWith(BOT_MEDIA_DIR_NORM) || normalized.includes('/bot/media/')) {
+    return '/bot/media/' + path.basename(normalized);
+  }
+
+  if (normalized.startsWith(FIGURINHAS_DIR_NORM)) {
     const rel = path.relative(FIGURINHAS_DIR_ABS, file_path).replace(/\\/g, '/');
     return '/figurinhas/' + rel;
   }
@@ -57,13 +73,28 @@ function get(sql, params = {}) {
 }
 
 function buildStickerURL(file_path) {
-  if (file_path.includes('/media/')) {
-    return '/media/' + encodeURIComponent(path.basename(file_path));
+  if (!file_path) return '/media/';
+
+  const normalized = file_path.replace(/\\/g, '/');
+  const base = encodeURIComponent(path.basename(file_path));
+
+  if (normalized.startsWith(OLD_STICKERS_DIR_NORM) || normalized.includes('/old-stickers/')) {
+    return '/media/old-stickers/' + base;
   }
-  if (file_path.includes('/mnt/nas/Media/Figurinhas/')) {
-    return '/figurinhas/' + encodeURIComponent(path.basename(file_path));
+
+  if (normalized.startsWith(BOT_MEDIA_DIR_NORM) || normalized.includes('/bot/media/')) {
+    return '/bot/media/' + base;
   }
-  return '/media/' + encodeURIComponent(path.basename(file_path));
+
+  if (normalized.startsWith(FIGURINHAS_DIR_NORM)) {
+    return '/figurinhas/' + base;
+  }
+
+  if (normalized.includes('/media/')) {
+    return '/media/' + base;
+  }
+
+  return '/media/' + base;
 }
 
 async function listMedia({ q = '', tags = [], anyTag = [], nsfw = 'all', sort = 'newest', page = 1, perPage = 60, senderId = null } = {}) {

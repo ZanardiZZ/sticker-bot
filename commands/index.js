@@ -41,6 +41,7 @@ const MAX_TAGS_LENGTH = 500;
 // State maps
 const taggingMap = new Map();
 const forceMap = new Map();
+const forceVideoToStickerMap = new Map();
 const clearDescriptionCmds = [];
 
 /**
@@ -99,8 +100,8 @@ async function handleCommand(client, message, chatId, context = {}) {
         shouldTrackUsage = true;
         break;
 
-      case '#forçar':
-        await handleForceCommand(client, message, chatId, forceMap);
+      case '#forcar':
+        await handleForceCommand(client, message, chatId, forceMap, forceVideoToStickerMap);
         handled = true;
         shouldTrackUsage = true;
         break;
@@ -336,6 +337,7 @@ module.exports = {
   // Constants
   MAX_TAGS_LENGTH,
   forceMap,
+  forceVideoToStickerMap,
   clearDescriptionCmds,
   
   // Utilities
