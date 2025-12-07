@@ -152,6 +152,7 @@ Send these commands to the bot in WhatsApp:
 | `#perfil` | Show your user profile and statistics | `#perfil` |
 | `#fotohd` | Upscale photo to HD quality | `#fotohd` (reply to image) |
 | `#tema <theme>` | Get random sticker by theme | `#tema cats` |
+| `#pinga` | Get the least-used beverage sticker | `#pinga` |
 | `#addpack <name>` | Add sticker to a pack | `#addpack MyPack` (reply to sticker info) |
 | `#pack [name]` | List packs or get pack stickers | `#pack` or `#pack MyPack` |
 | `#ping` | Check bot status and uptime | `#ping` |

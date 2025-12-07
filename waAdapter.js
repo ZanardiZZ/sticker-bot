@@ -18,7 +18,7 @@ class BaileysWsAdapter {
     this._pendingMedia = new Map(); // messageId -> resolver
     this._pendingQuoted = new Map(); // messageId -> resolver
     this._pendingContacts = new Map(); // jid -> resolver
-  this._pendingAcks = new Map(); // requestId -> { resolve, reject, timeout }
+    this._pendingAcks = new Map(); // requestId -> { resolve, reject, timeout }
   }
 
   async connect() {
@@ -140,6 +140,37 @@ class BaileysWsAdapter {
     });
     this._send(payload);
     return p;
+  }
+
+  async _ensureReady(timeoutMs = 5000) {
+    if (!this.ws || this.ws.readyState === WebSocket.CLOSED || this.ws.readyState === WebSocket.CLOSING) {
+      await this.connect();
+    }
+
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN && this._ready) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw new Error('ws_not_ready');
+  }
+
+  async waitUntilReady(timeoutMs = 5000) {
+    return this._ensureReady(timeoutMs);
+  }
+
+  async getAllChats() {
+    await this._ensureReady(8000);
+    const resp = await this._sendAndWaitForAck({ type: 'listChats' }, 10000);
+    const chats = Array.isArray(resp?.chats) ? resp.chats : [];
+    return chats.map((chat) => {
+      if (chat && !chat.name && chat.subject) {
+        return { ...chat, name: chat.subject };
+      }
+      return chat;
+    });
   }
 
   async getMediaBuffer(messageId) {

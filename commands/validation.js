@@ -28,7 +28,8 @@ const VALID_COMMANDS = [
   '#downloadmp3',
   '#baixarmp3',
   '#baixaraudio',
-  '#fotohd'
+  '#fotohd',
+  '#pinga'
 ];
 
 const HELP_ENTRIES = [
@@ -106,6 +107,11 @@ const HELP_ENTRIES = [
     command: '#ping',
     description: 'Exibe informações de status do bot.',
     example: '#ping'
+  },
+  {
+    command: '#pinga',
+    description: 'Envia uma figurinha de bebida priorizando a menos usada do tema.',
+    example: '#pinga'
   },
   {
     command: '#fotohd (respondendo a uma figurinha) 4x',

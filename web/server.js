@@ -137,6 +137,42 @@ app.use(async (req, res, next) => {
 
 const { db, findDuplicateMedia, getDuplicateMediaDetails, deleteDuplicateMedia, deleteMediaByIds, getDuplicateStats } = require('../database/index.js');
 let whatsappClient = null;
+let whatsappClientPromise = null;
+
+async function resolveWhatsAppClient() {
+  if (global.getCurrentWhatsAppClient) {
+    try {
+      return global.getCurrentWhatsAppClient();
+    } catch (err) {
+      console.warn('[WEB] Failed to access global WhatsApp client:', err?.message || err);
+    }
+  }
+
+  if (whatsappClient && typeof whatsappClient.getAllChats === 'function') {
+    return whatsappClient;
+  }
+
+  if (whatsappClientPromise) {
+    return whatsappClientPromise;
+  }
+
+  whatsappClientPromise = (async () => {
+    try {
+      const { createAdapter } = require('../waAdapter');
+      const client = await createAdapter();
+      whatsappClient = client;
+      return client;
+    } catch (err) {
+      console.warn('[WEB] Unable to initialize WhatsApp adapter for group listing:', err?.message || err);
+      whatsappClient = null;
+      return null;
+    } finally {
+      whatsappClientPromise = null;
+    }
+  })();
+
+  return whatsappClientPromise;
+}
 
 // Function to check if string contains WhatsApp group ID pattern
 function isGroupId(str) {
@@ -344,11 +380,12 @@ const {
 const { canEditDirectly, hasEnoughVotesToApprove, hasEnoughVotesToReject } = require('../utils/approvalUtils');
 
 // Tenta obter o client WhatsApp da instância principal
-try {
-  whatsappClient = require('../bot/messageHandler').getCurrentClient?.() || null;
-} catch (e) {
-  whatsappClient = null;
-}
+// whatsappClient é resolvido sob demanda via resolveWhatsAppClient()
+
+console.time('[BOOT] auth');
+authMiddleware(app);
+registerAuthRoutes(app);
+console.timeEnd('[BOOT] auth');
 
 // ====== API: Listar grupos conectados ======
 app.get('/api/admin/connected-groups', requireAdmin, async (req, res) => {
@@ -369,13 +406,12 @@ app.get('/api/admin/connected-groups', requireAdmin, async (req, res) => {
       });
     });
 
-    if (global.getCurrentWhatsAppClient) {
-      console.log('[DEBUG] WhatsApp client getter available');
-      const client = global.getCurrentWhatsAppClient();
-      if (client && typeof client.getAllChats === 'function') {
+    const client = await resolveWhatsAppClient();
+    if (client && typeof client.getAllChats === 'function') {
+      try {
         console.log('[DEBUG] Getting chats from WhatsApp client...');
         const chats = await client.getAllChats();
-        const whatsappGroups = chats.filter((c) => c?.isGroup && c?.id);
+        const whatsappGroups = chats.filter((c) => isGroupId(c?.id));
         console.log('[DEBUG] WhatsApp groups found:', whatsappGroups.length);
 
         if (whatsappGroups.length) {
@@ -387,22 +423,28 @@ app.get('/api/admin/connected-groups', requireAdmin, async (req, res) => {
             const cleanedName = cleanGroupDisplayName(rawName, id);
             const displayName = cleanedName || rawName || id;
             const existing = groupMap.get(id) || { id };
+            const lastInteractionTs =
+              chat?.conversationTimestamp
+              || chat?.lastInteractionTs
+              || chat?.lastInteraction
+              || existing.lastInteractionTs
+              || null;
 
             // Update the group in our map with WhatsApp data
             groupMap.set(id, {
               id,
               name: displayName,
-              lastInteractionTs: existing.lastInteractionTs || null,
+              lastInteractionTs,
               source: 'whatsapp'
             });
 
-            // Only update database if we have a valid name
-            if (cleanedName) {
+            // Only update database if we have useful metadata to persist
+            if (cleanedName || lastInteractionTs) {
               upserts.push(
                 upsertGroupMetadata({
                   groupId: id,
-                  displayName: cleanedName,
-                  lastInteractionTs: existing.lastInteractionTs || null
+                  displayName: cleanedName || rawName || null,
+                  lastInteractionTs
                 }).catch((err) => {
                   console.warn('[WEB] failed to persist group metadata', id, err?.message || err);
                   return null;
@@ -415,11 +457,12 @@ app.get('/api/admin/connected-groups', requireAdmin, async (req, res) => {
             await Promise.allSettled(upserts);
           }
         }
-      } else {
-        console.log('[DEBUG] WhatsApp client not available or missing getAllChats method');
+      } catch (err) {
+        console.warn('[WEB] Failed to fetch chats from WhatsApp client:', err?.message || err);
+        whatsappClient = null; // force re-init on next request
       }
     } else {
-      console.log('[DEBUG] WhatsApp client getter not available - using database-only group data');
+      console.log('[DEBUG] WhatsApp client not available - using database-only group data');
     }
 
     const groups = Array.from(groupMap.values())
@@ -476,11 +519,6 @@ const PUBLIC_DIR = process.env.PUBLIC_DIR || path.resolve(__dirname, 'public');
 //   next();
 // });
 console.log('[WEB] PUBLIC_DIR:', PUBLIC_DIR, 'exists:', fs.existsSync(PUBLIC_DIR));
-
-console.time('[BOOT] auth');
-authMiddleware(app);
-registerAuthRoutes(app);
-console.timeEnd('[BOOT] auth');
 
 console.time('[BOOT] static');
 app.use(express.static(PUBLIC_DIR, {
