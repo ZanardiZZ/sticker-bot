@@ -6,9 +6,11 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const mime = require('mime-types');
+const crypto = require('crypto');
 const { PACK_NAME, AUTHOR_NAME } = require('../config/stickers');
 
 const MEDIA_DIR = path.resolve(__dirname, '..', 'media');
+const FIXED_WEBP_DIR = path.resolve(__dirname, '..', 'temp', 'fixed-webp');
 
 // Conditional loading for FFmpeg
 let ffmpeg = null;
@@ -39,9 +41,8 @@ function isAnimatedWebpBuffer(buf) {
     if (!buf || buf.length < 21) return false;
     const riff = buf.slice(0, 4).toString('ascii') === 'RIFF';
     const webp = buf.slice(8, 12).toString('ascii') === 'WEBP';
-    const vp8x = buf.slice(12, 16).toString('ascii') === 'VP8X';
-    const animBit = (buf[20] & 0x10) === 0x10; // bit 5
-    return riff && webp && vp8x && animBit;
+    const hasAnimChunk = buf.indexOf('ANIM') !== -1 || buf.indexOf('ANMF') !== -1;
+    return riff && webp && hasAnimChunk;
   } catch { return false; }
 }
 
@@ -91,6 +92,55 @@ async function convertToMp4ForSticker(inputPath) {
 }
 
 /**
+ * Normalizes static WebP stickers into a WhatsApp-friendly format (cached by hash)
+ * so malformed files don't render as placeholders on the client.
+ * Animated WebPs are returned untouched.
+ */
+async function ensureSafeWebpSticker(filePath) {
+  const originalBuffer = await fsp.readFile(filePath);
+  const animated = isAnimatedWebpBuffer(originalBuffer);
+
+  if (animated) {
+    return { buffer: originalBuffer, animated: true, filePath };
+  }
+
+  try {
+    ensureDirSync(FIXED_WEBP_DIR);
+  } catch (dirErr) {
+    console.warn('[Sticker] Falha ao preparar cache de WebP:', dirErr.message);
+  }
+
+  const hash = crypto.createHash('md5').update(originalBuffer).digest('hex');
+  const cachedPath = path.join(FIXED_WEBP_DIR, `${hash}.webp`);
+
+  if (fs.existsSync(cachedPath)) {
+    try {
+      const cachedBuffer = await fsp.readFile(cachedPath);
+      if (cachedBuffer.length > 0) {
+        return { buffer: cachedBuffer, animated: false, filePath: cachedPath };
+      }
+    } catch (readErr) {
+      console.warn('[Sticker] Falha ao ler WebP do cache:', readErr.message);
+    }
+  }
+
+  try {
+    const sticker = new Sticker(originalBuffer, {
+      pack: PACK_NAME,
+      author: AUTHOR_NAME,
+      type: StickerTypes.FULL,
+      quality: 80,
+    });
+    const rebuiltBuffer = await sticker.build();
+    await fsp.writeFile(cachedPath, rebuiltBuffer);
+    return { buffer: rebuiltBuffer, animated: false, filePath: cachedPath };
+  } catch (rebuildErr) {
+    console.warn('[Sticker] Falha ao reconstruir WebP, enviando original:', rebuildErr.message);
+    return { buffer: originalBuffer, animated: false, filePath };
+  }
+}
+
+/**
  * Sends raw WebP as sticker
  * @param {Object} client - WhatsApp client
  * @param {string} chatId - Chat ID
@@ -132,14 +182,8 @@ async function sendStickerForMediaRecord(client, chatId, media) {
   try {
     // 1) WebP → enviar utilizando caminho otimizado
     if (isWebp) {
-      const animated = await isAnimatedWebpFile(filePath);
-      if (animated) {
-        await sendRawWebp(client, chatId, filePath, { animated: true });
-        return;
-      }
-
-      // WebP estático: reenvia diretamente mantendo metadata
-      await sendRawWebp(client, chatId, filePath, { animated: false });
+      const { filePath: safePath, animated } = await ensureSafeWebpSticker(filePath);
+      await sendRawWebp(client, chatId, safePath, { animated });
       return;
     }
 
@@ -208,5 +252,6 @@ module.exports = {
   sendStickerForMediaRecord,
   isAnimatedWebpBuffer,
   isAnimatedWebpFile,
-  ensureDirSync
+  ensureDirSync,
+  ensureSafeWebpSticker
 };

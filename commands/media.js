@@ -5,7 +5,7 @@
 const { Sticker, StickerTypes } = require('../utils/stickerFormatter');
 const fs = require('fs');
 const fsp = require('fs/promises');
-const { isAnimatedWebpBuffer } = require('../bot/stickers');
+const { ensureSafeWebpSticker } = require('../bot/stickers');
 
 const { PACK_NAME, AUTHOR_NAME } = require('../config/stickers');
 
@@ -86,8 +86,7 @@ async function sendMediaByType(client, chatId, media) {
   if (isImage) {
     if (isWebp) {
       try {
-        const webpBuffer = await fsp.readFile(filePath);
-        const animated = isAnimatedWebpBuffer(webpBuffer);
+        const { buffer: webpBuffer, animated } = await ensureSafeWebpSticker(filePath);
         const dataUrl = `data:image/webp;base64,${webpBuffer.toString('base64')}`;
         await client.sendRawWebpAsSticker(chatId, dataUrl, { pack: PACK_NAME, author: AUTHOR_NAME, animated });
         return;
@@ -230,8 +229,7 @@ async function sendMediaAsOriginal(client, chatId, media) {
     if (isImage) {
       if (isWebp) {
         try {
-          const webpBuffer = await fsp.readFile(filePath);
-          const animated = isAnimatedWebpBuffer(webpBuffer);
+          const { buffer: webpBuffer, animated } = await ensureSafeWebpSticker(filePath);
           const dataUrl = `data:image/webp;base64,${webpBuffer.toString('base64')}`;
           await client.sendRawWebpAsSticker(chatId, dataUrl, { pack: PACK_NAME, author: AUTHOR_NAME, animated });
           console.log(`[sendMediaAsOriginal] WebP ${animated ? 'animado' : 'estático'} enviado como sticker raw`);

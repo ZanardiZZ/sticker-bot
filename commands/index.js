@@ -23,6 +23,7 @@ const { handlePerfilCommand } = require('./handlers/perfil');
 const { handleFotoHdCommand } = require('./handlers/fotohd');
 const { handleAddPackCommand } = require('./handlers/addpack');
 const { handlePackCommand } = require('./handlers/pack');
+const { handlePingaCommand } = require('./handlers/pinga');
 
 // Utilities
 const validation = require('./validation');
@@ -195,6 +196,12 @@ async function handleCommand(client, message, chatId, context = {}) {
         shouldTrackUsage = true;
         break;
 
+      case '#pinga':
+        await handlePingaCommand(client, message, chatId);
+        handled = true;
+        shouldTrackUsage = true;
+        break;
+
       case '#ping': {
           // Build ping response
           const uptimeSeconds = Math.floor(process.uptime());
@@ -206,13 +213,52 @@ async function handleCommand(client, message, chatId, context = {}) {
           }
 
           const uptime = formatUptime(uptimeSeconds);
-          const latency = 0; // We don't have a roundtrip measurement here in handler tests
+          // Estima latência com base no timestamp da mensagem (fallback se indisponível)
+          const nowMs = Date.now();
+          const rawTs = Number(message.timestamp || message.messageTimestamp || message.messageTimestampLow || 0);
+          const msgTsMs = rawTs > 0 ? (rawTs > 1e12 ? rawTs : rawTs * 1000) : null;
+          const receiveLatency = msgTsMs ? Math.max(0, nowMs - msgTsMs) : null;
+
+          // Mede latência de envio/ack com fallback para ambientes sem hrtime.bigint
+          let sendLatency = null;
+          try {
+            const useHr = typeof process.hrtime === 'function' && typeof process.hrtime.bigint === 'function';
+            const start = useHr ? process.hrtime.bigint() : Date.now();
+
+            if (typeof client.sendText === 'function') {
+              await client.sendText(chatId, '🏓 Medindo latência...');
+            } else if (typeof client.sendMessage === 'function') {
+              await client.sendMessage(chatId, { text: '🏓 Medindo latência...' });
+            } else {
+              await safeReply(client, chatId, '🏓 Medindo latência...', message);
+            }
+
+            const end = useHr ? process.hrtime.bigint() : Date.now();
+            const elapsedMs = useHr ? Number(end - start) / 1e6 : end - start;
+            sendLatency = Math.max(0, elapsedMs);
+          } catch (sendErr) {
+            console.warn('[Ping] Falha ao medir latência de envio:', sendErr?.message || sendErr);
+          }
+
+          // Roundtrip total = recebimento + envio/ack (quando ambos existem)
+          const roundTrip = (receiveLatency !== null && sendLatency !== null)
+            ? receiveLatency + sendLatency
+            : (sendLatency !== null ? sendLatency : receiveLatency);
+
+          const formatLatency = (value) => {
+            if (value === null || value === undefined || Number.isNaN(value)) return 'indisponível';
+            if (value < 1) return '<1 ms';
+            return `${Math.round(value)} ms`;
+          };
+
           const cronSchedule = process.env.BOT_CRON_SCHEDULE || '0 0-23 * * *';
           const botVersion = (packageJson && packageJson.version) ? packageJson.version : '1.0.0';
 
           const response = `🤖 *Sticker Bot` + `*\n` +
             `🟢 Uptime: ${uptime}\n` +
-            `📡 Latência: ${latency} ms\n` +
+            `📡 Latência (recebimento): ${formatLatency(receiveLatency)}\n` +
+            `📤 Envio→ack: ${formatLatency(sendLatency)}\n` +
+            `🔁 Roundtrip: ${formatLatency(roundTrip)}\n` +
             `⏰ CRON: ${cronSchedule}\n` +
             `🛠️ Versão: ${botVersion}`;
 
@@ -333,6 +379,7 @@ module.exports = {
   handleForceCommand,
   handleEditCommand,
   handleThemeCommand,
+  handlePingaCommand,
   
   // Constants
   MAX_TAGS_LENGTH,

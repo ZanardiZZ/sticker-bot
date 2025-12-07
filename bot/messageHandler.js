@@ -55,7 +55,8 @@ mediaProcessingQueue.on('queueWarning', (currentSize, maxSize, usage) => {
  * @param {Object} message - Incoming message object
  */
 async function handleMessage(client, message) {
-  await logReceivedMessage(client, message);
+  // Não bloquear o fluxo de resposta esperando log (evita latência se o cliente estiver lento)
+  logReceivedMessage(client, message).catch(err => console.warn('[MessageHandler] Log failed:', err));
   
   // Ignore messages sent by the bot itself to avoid re-processing forwarded media
   if (message.fromMe) return;
@@ -63,9 +64,12 @@ async function handleMessage(client, message) {
   // Extract message ID for duplicate detection
   const messageId = message.id || message.key?.id;
   const chatId = message.from;
+  const rawBody = (message.body || message.caption || '').trim();
+  const isPingCommand = typeof rawBody === 'string' && rawBody.toLowerCase().startsWith('#ping');
+  const shouldMarkProcessed = messageId && chatId && !isPingCommand;
 
   // Check if message was already processed (for history recovery)
-  if (messageId && chatId) {
+  if (shouldMarkProcessed) {
     try {
       const alreadyProcessed = await isMessageProcessed(messageId);
       if (alreadyProcessed) {
@@ -101,8 +105,10 @@ async function handleMessage(client, message) {
       senderId = messageKey.remoteJid || messageKey.remoteJidAlt || message.sender?.id || message.author || message.from;
     }
     
-    // Resolve the preferred sender ID (LID if available, PN otherwise)
-    const resolvedSenderId = await resolveSenderId(client?.sock || client, senderId);
+    // Resolve the preferred sender ID (LID if available, PN otherwise). Para ping, evita resolução remota para não adicionar latência.
+    const resolvedSenderId = isPingCommand
+      ? normalizeJid(senderId || remoteJid)
+      : await resolveSenderId(client?.sock || client, senderId);
     
     // Enforce DM authorization: if message is not from a group, only respond if
     // the sender is allowed (or is admin number configured via ENV).
@@ -171,7 +177,7 @@ async function handleMessage(client, message) {
     });
     if (commandHandled) {
       // Mark message as processed after successful command handling
-      if (messageId && chatId) {
+      if (shouldMarkProcessed) {
         try {
           await markMessageAsProcessed(messageId, chatId);
         } catch (err) {
@@ -186,7 +192,7 @@ async function handleMessage(client, message) {
       const handled = await handleTaggingMode(client, message, chatId);
       if (handled) {
         // Mark message as processed after successful tagging mode handling
-        if (messageId && chatId) {
+        if (shouldMarkProcessed) {
           try {
             await markMessageAsProcessed(messageId, chatId);
           } catch (err) {
@@ -207,7 +213,7 @@ async function handleMessage(client, message) {
       });
       if (conversationHandled) {
         // Mark message as processed after successful conversation handling
-        if (messageId && chatId) {
+        if (shouldMarkProcessed) {
           try {
             await markMessageAsProcessed(messageId, chatId);
           } catch (err) {
@@ -229,7 +235,7 @@ async function handleMessage(client, message) {
         
         // Mark message as processed ONLY after successful media processing
         // This ensures failed downloads can be retried by history recovery
-        if (messageId && chatId) {
+        if (shouldMarkProcessed) {
           try {
             await markMessageAsProcessed(messageId, chatId);
           } catch (err) {

@@ -193,6 +193,11 @@ async function resolveSenderId(sock, jid) {
     const normalizedJid = normalizeJid(jid);
     if (!normalizedJid) return null;
 
+    // Se já for LID, devolve direto para evitar roundtrip desnecessário.
+    if (isLidUser(normalizedJid)) {
+        return normalizedJid;
+    }
+
     let preferredId = normalizedJid;
     let lidCandidate = isLidUser(normalizedJid) ? normalizedJid : null;
     let pnCandidate = isPnUser(normalizedJid) ? normalizedJid : null;

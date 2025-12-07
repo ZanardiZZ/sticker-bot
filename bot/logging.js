@@ -7,28 +7,13 @@ module.exports = {
         message?.from ||
         null;
 
-      // Melhor tentativa de nome a partir do payload já recebido
+      // Melhor tentativa de nome a partir do payload já recebido (sem consultas externas)
       let name =
         message?.sender?.pushname ||
         message?.sender?.formattedName ||
         message?.sender?.notifyName ||
         message?.sender?.name ||
         null;
-
-      // Se ainda não tiver nome, tenta buscar via API do cliente
-      if (!name && contactId) {
-        try {
-          const contact = await client.getContact(contactId);
-          name =
-            contact?.pushname ||
-            contact?.formattedName ||
-            contact?.notifyName ||
-            contact?.name ||
-            null;
-        } catch {
-          // ignora falha de getContact
-        }
-      }
 
       if (!name) {
         name = contactId ? contactId.split('@')[0] : 'Desconhecido';

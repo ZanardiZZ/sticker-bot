@@ -48,7 +48,7 @@ const ALLOWED_TOKENS = (process.env.BAILEYS_ALLOWED_TOKENS || '')
   .filter(Boolean);
 
 // In-memory registry of connected clients
-// token -> { ws, allowedChats: Set<string> }
+// token -> Set<{ ws, allowedChats: Set<string> }>
 const clientsByToken = new Map();
 
 function isAnimatedWebpBuffer(buf) {
@@ -879,8 +879,10 @@ async function start() {
       try { await sock.end?.(); } catch {}
 
       try {
-        for (const [, entry] of clientsByToken) {
-          try { entry.ws?.close(1012, 'server_restart'); } catch {}
+        for (const [, entrySet] of clientsByToken) {
+          for (const entry of entrySet || []) {
+            try { entry.ws?.close(1012, 'server_restart'); } catch {}
+          }
         }
       } catch {}
       clientsByToken.clear();
@@ -964,9 +966,13 @@ async function start() {
       return;
     }
 
-    for (const [token, entry] of clientsByToken) {
-      if (entry.allowedChats.has('*') || entry.allowedChats.has(chatId)) {
-        send(entry.ws, { type: 'message', data: messagePayload });
+    for (const [, entrySet] of clientsByToken) {
+      if (!entrySet || entrySet.size === 0) continue;
+      for (const entry of entrySet) {
+        if (!entry?.ws) continue;
+        if (entry.allowedChats.has('*') || entry.allowedChats.has(chatId)) {
+          send(entry.ws, { type: 'message', data: messagePayload });
+        }
       }
     }
   }
@@ -1045,6 +1051,7 @@ async function start() {
 
   wss.on('connection', (ws) => {
     let registeredToken = null;
+    let clientEntry = null;
 
     ws.on('message', async (data) => {
       let msg;
@@ -1062,30 +1069,71 @@ async function start() {
         registeredToken = token;
         const allowedChats = new Set(Array.isArray(chats) && chats.length ? chats : []);
         if (allowedChats.size === 0) allowedChats.add('*'); // default open if none provided
-        clientsByToken.set(token, { ws, allowedChats });
+        clientEntry = { ws, allowedChats };
+        if (!clientsByToken.has(token)) {
+          clientsByToken.set(token, new Set());
+        }
+        clientsByToken.get(token).add(clientEntry);
         send(ws, { type: 'registered', ok: true });
         return;
       }
 
-      if (!registeredToken || !clientsByToken.has(registeredToken)) {
+      if (!registeredToken || !clientEntry || !clientsByToken.has(registeredToken) || !clientsByToken.get(registeredToken).has(clientEntry)) {
         send(ws, { type: 'error', error: 'not_registered' });
         return;
       }
 
-      const entry = clientsByToken.get(registeredToken);
-
       if (type === 'subscribe') {
         const { chats } = msg || {};
         if (Array.isArray(chats)) {
-          entry.allowedChats = new Set(chats.length ? chats : ['*']);
-          clientsByToken.set(registeredToken, entry);
+          clientEntry.allowedChats = new Set(chats.length ? chats : ['*']);
           send(ws, { type: 'subscribed', ok: true });
         }
         return;
       }
 
       // Enforce authorization helper
-      const canSendTo = (chatId) => entry.allowedChats.has('*') || entry.allowedChats.has(chatId);
+      const canSendTo = (chatId) => clientEntry.allowedChats.has('*') || clientEntry.allowedChats.has(chatId);
+
+      if (type === 'listChats') {
+        const normalizeChat = (chat = {}) => {
+          const id = chat.id || chat.jid || chat.remoteJid;
+          if (!id) return null;
+          const subject = chat.subject || chat.name || chat.formattedTitle || chat.title || '';
+          const tsCandidate = Number(chat.conversationTimestamp || chat.t || chat.timestamp || chat.lastConversationTimestamp || 0);
+          const conversationTimestamp = Number.isFinite(tsCandidate) ? tsCandidate : null;
+          return {
+            id,
+            subject,
+            name: chat.name || subject || '',
+            isGroup: id.endsWith('@g.us'),
+            conversationTimestamp
+          };
+        };
+
+        const chatMap = new Map();
+        const addChat = (chat) => {
+          const normalized = normalizeChat(chat);
+          if (!normalized || !normalized.id) return;
+          const existing = chatMap.get(normalized.id) || {};
+          chatMap.set(normalized.id, { ...existing, ...normalized });
+        };
+
+        const chatCollection = store?.chats instanceof Map
+          ? Array.from(store.chats.values())
+          : Object.values(store?.chats || {});
+        const groupCollection = store?.groupMetadata instanceof Map
+          ? Array.from(store.groupMetadata.values())
+          : Object.values(store?.groupMetadata || {});
+
+        chatCollection.forEach(addChat);
+        groupCollection.forEach(addChat);
+
+        const chats = Array.from(chatMap.values())
+          .filter((chat) => chat.id && (clientEntry.allowedChats.has('*') || clientEntry.allowedChats.has(chat.id)));
+
+        return send(ws, { type: 'chats', chats, requestId: incomingRequestId });
+      }
 
       // Messaging commands
       if (type === 'sendText') {
@@ -1248,7 +1296,7 @@ async function start() {
           return send(ws, { type: 'error', action: 'downloadMedia', messageId, error: 'media_not_found' });
         }
         const { m, chatId } = cached;
-        const entryCan = entry.allowedChats.has('*') || entry.allowedChats.has(chatId);
+        const entryCan = clientEntry.allowedChats.has('*') || clientEntry.allowedChats.has(chatId);
         if (!entryCan) return send(ws, { type: 'error', action: 'downloadMedia', messageId, error: 'forbidden' });
         try {
           const buf = await buildMediaBuffer(m);
@@ -1316,8 +1364,16 @@ async function start() {
     });
 
     ws.on('close', () => {
-      if (registeredToken && clientsByToken.get(registeredToken)?.ws === ws) {
-        clientsByToken.delete(registeredToken);
+      if (registeredToken && clientsByToken.has(registeredToken)) {
+        const set = clientsByToken.get(registeredToken);
+        if (clientEntry && set.has(clientEntry)) {
+          set.delete(clientEntry);
+        }
+        if (set.size === 0) {
+          clientsByToken.delete(registeredToken);
+        } else {
+          clientsByToken.set(registeredToken, set);
+        }
       }
     });
   });

@@ -4,10 +4,11 @@
  */
 
 class LogCollector {
-  constructor(maxLogs = 1000) {
+  constructor(maxLogs = 1000, options = {}) {
     this.maxLogs = maxLogs;
     this.logs = [];
     this.logIndex = 0;
+    this.captureSource = Boolean(options.captureSource);
     this.originalConsole = {
       log: console.log,
       warn: console.warn,
@@ -72,11 +73,13 @@ class LogCollector {
       return String(arg);
     }).join(' ');
 
+    const source = this.captureSource ? this.getCallerInfo() : 'n/a';
+
     const logEntry = {
       timestamp,
       level,
       message,
-      source: this.getCallerInfo()
+      source
     };
 
     // Buffer circular - substituir logs antigos
@@ -215,10 +218,22 @@ LogCollector._activeInstance = null;
 // Singleton instance
 let logCollectorInstance = null;
 
-function getLogCollector(maxLogs = 1000) {
+function readBoolEnv(name, defaultValue = false) {
+  const raw = process.env[name];
+  if (raw === undefined) return defaultValue;
+  const normalized = String(raw).toLowerCase().trim();
+  return ['1', 'true', 'yes', 'on'].includes(normalized);
+}
+
+function getLogCollector(maxLogs = 1000, options = {}) {
+  const captureSource = options.captureSource ?? readBoolEnv('LOG_COLLECTOR_CAPTURE_SOURCE', false);
+
   if (!logCollectorInstance || (!logCollectorInstance.isIntercepting && !LogCollector._isConsoleIntercepted)) {
-    logCollectorInstance = new LogCollector(maxLogs);
+    logCollectorInstance = new LogCollector(maxLogs, { captureSource });
+  } else if (typeof captureSource === 'boolean') {
+    logCollectorInstance.captureSource = captureSource;
   }
+
   return logCollectorInstance;
 }
 
