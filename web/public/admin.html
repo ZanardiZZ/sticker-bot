@@ -10,7 +10,7 @@
     body { background: #f1f5f9 !important; }
     .dash { padding: 1rem; max-width: 95%; width: 95%; margin: auto; color: #334155; }
     .panel { background:#ffffff; border: 1px solid #e2e8f0; border-radius:8px; padding:1.5rem; margin-bottom:12px; color: #334155; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1); }
-    .panel-full-width { max-width: 100vw; width: calc(100vw - 2rem); margin-left: calc(-50vw + 50%); }
+    .panel-full-width { width: 100%; max-width: 100%; margin: 0; }
     .panel h3 { margin:.2rem 0 .6rem 0; font-size:1rem; color: #1e293b; }
     .muted { color:#64748b; font-size:.9rem; }
     .warn { background:#fef3c7; color:#92400e; padding:.6rem; border:1px solid #fde68a; border-radius:6px; margin-bottom:10px; }
@@ -20,8 +20,8 @@
     /* Better space utilization for user management controls */
     .panel .row select { flex: 2 1 300px; max-width: 400px; }
     .panel .row button { flex: 0 0 auto; min-width: 140px; }
-    table { width:100%; border-collapse:collapse; color: #334155; table-layout: fixed; }
-    th, td { text-align:left; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    table { width:100%; border-collapse:collapse; color: #334155; table-layout: auto; }
+    th, td { text-align:left; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; overflow-wrap: anywhere; white-space: normal; }
     th { color: #1e293b; background: #f8fafc; font-weight: 600; }
     
     /* Optimize column widths for better space usage on full page spanning panel */
@@ -37,7 +37,7 @@
     #tblUsers th:nth-child(10) { width: 10%; }    /* Criado em */
     
     /* Fix table overflow issue - responsive table sizing */
-    #usersContainer { margin-top: 1rem; width: 100%; }
+    #usersContainer { margin-top: 1rem; width: 100%; overflow-x: auto; }
     #tblUsers { width: 100%; min-width: 0; table-layout: fixed; }
     
     /* Table responsiveness - no horizontal scroll on large screens */
@@ -83,15 +83,14 @@
     
     /* Main navigation and workspace */
     .admin-layout {
-      display: flex;
+      display: grid;
+      grid-template-columns: 280px 1fr;
       gap: 1.5rem;
       align-items: flex-start;
       margin-bottom: 2rem;
-      flex-wrap: wrap;
     }
 
     .admin-menu {
-      flex: 0 0 260px;
       background: #ffffff;
       border: 1px solid #e2e8f0;
       border-radius: 12px;
@@ -102,6 +101,7 @@
       gap: 1.25rem;
       position: sticky;
       top: 1.5rem;
+      align-self: flex-start;
     }
 
     .admin-menu-header {
@@ -202,7 +202,7 @@
     }
 
     @media (max-width: 1024px) {
-      .admin-layout { flex-direction: column; }
+      .admin-layout { grid-template-columns: 1fr; }
       .admin-menu { position: static; width: 100%; }
       .main-tab-nav { flex-direction: row; flex-wrap: wrap; overflow-x: auto; padding-bottom: 0.5rem; }
       .main-tab-button { flex: 1 1 180px; justify-content: center; text-align: center; }
@@ -283,7 +283,6 @@
         </div>
         <div class="main-tab-nav" role="tablist">
           <button id="main-tab-button-settings" type="button" role="tab" class="main-tab-button active" data-tab="settings" data-title="Configurações" data-description="Gerencie sua conta, grupos e preferências do bot." aria-controls="main-tab-settings" aria-selected="true" tabindex="0"><span class="tab-label">Configurações</span></button>
-          <button id="main-tab-button-group-users" type="button" role="tab" class="main-tab-button admin-only" data-tab="group-users" data-title="Usuários do Grupo" data-description="Visualize e gerencie os membros dos grupos conectados." aria-controls="main-tab-group-users" aria-selected="false" tabindex="-1"><span class="tab-label">Usuários do Grupo</span></button>
           <button id="main-tab-button-bot-frequency" type="button" role="tab" class="main-tab-button admin-only" data-tab="bot-frequency" data-title="Frequência do Bot" data-description="Defina a janela diária de envio automático e o intervalo entre disparos." aria-controls="main-tab-bot-frequency" aria-selected="false" tabindex="-1"><span class="tab-label">Frequência do Bot</span></button>
           <button id="main-tab-button-group-config" type="button" role="tab" class="main-tab-button admin-only" data-tab="group-config" data-title="Configurações de Grupo" data-description="Ajuste permissões e comportamentos específicos de cada grupo." aria-controls="main-tab-group-config" aria-selected="false" tabindex="-1"><span class="tab-label">Configurações de Grupo</span></button>
           <button id="main-tab-button-logs" type="button" role="tab" class="main-tab-button admin-only" data-tab="logs" data-title="Logs" data-description="Acompanhe eventos recentes e monitore atividades técnicas." aria-controls="main-tab-logs" aria-selected="false" tabindex="-1"><span class="tab-label">Logs</span></button>
@@ -341,48 +340,6 @@
           <div id="deleteVoteThresholdStatus" class="muted" style="margin-top:.8rem;"></div>
         </div>
       </div>
-      <div class="main-tab-content admin-only" id="main-tab-group-users" data-title="Usuários do Grupo" data-description="Visualize membros, funções e bloqueios dos grupos conectados." role="tabpanel" aria-labelledby="main-tab-button-group-users" aria-hidden="true">
-        <div class="panel">
-          <h3>Usuários por Grupo</h3>
-          <div class="muted">Visualize membros, funções e bloqueios dos grupos conectados.</div>
-          <div class="row" style="align-items:flex-end; gap:1rem; margin-top:1rem; flex-wrap:wrap;">
-            <div style="flex:2 1 280px; display:flex; flex-direction:column; gap:.4rem;">
-              <label for="groupUsersSelect" class="muted">Grupos conectados</label>
-              <select id="groupUsersSelect">
-                <option value="">Selecione um grupo...</option>
-              </select>
-            </div>
-            <div style="flex:1 1 240px; display:flex; flex-direction:column; gap:.4rem;">
-              <label for="groupUsersId" class="muted">ID manual (opcional)</label>
-              <input id="groupUsersId" type="text" placeholder="ex: 123456@g.us">
-            </div>
-            <div style="flex:0 0 auto;">
-              <button id="loadGroupUsersBtn" class="btn-primary">Carregar</button>
-            </div>
-          </div>
-          <div id="groupUsersStatus" class="muted" style="margin-top:.8rem;"></div>
-          <div id="groupUsersTableWrapper" style="margin-top:1rem; overflow-x:auto;">
-            <table id="groupUsersTable">
-              <thead>
-                <tr>
-                  <th>User ID</th>
-                  <th>Função</th>
-                  <th>Bloqueado</th>
-                  <th>Última Atividade</th>
-                  <th>Interações</th>
-                  <th>Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td colspan="6" style="text-align:center; color:#94a3b8;">Selecione um grupo para exibir os usuários.</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
       <div class="main-tab-content admin-only" id="main-tab-bot-frequency" data-title="Frequência do Bot" data-description="Defina a janela diária de envio automático e o intervalo entre disparos." role="tabpanel" aria-labelledby="main-tab-button-bot-frequency" aria-hidden="true">
         <div class="panel">
           <h3>Frequência do Bot</h3>
@@ -567,7 +524,47 @@
                 <button id="runGroupCommandTestBtn" class="btn-primary">Testar</button>
               </div>
             </div>
-            <div id="groupCommandTestResult" class="muted" style="margin-top:.8rem;"></div>
+          <div id="groupCommandTestResult" class="muted" style="margin-top:.8rem;"></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h3>Usuários por Grupo</h3>
+          <div class="muted">Visualize membros, funções e bloqueios dos grupos conectados.</div>
+          <div class="row" style="align-items:flex-end; gap:1rem; margin-top:1rem; flex-wrap:wrap;">
+            <div style="flex:2 1 280px; display:flex; flex-direction:column; gap:.4rem;">
+              <label for="groupUsersSelect" class="muted">Grupos conectados</label>
+              <select id="groupUsersSelect">
+                <option value="">Selecione um grupo...</option>
+              </select>
+            </div>
+            <div style="flex:1 1 240px; display:flex; flex-direction:column; gap:.4rem;">
+              <label for="groupUsersId" class="muted">ID manual (opcional)</label>
+              <input id="groupUsersId" type="text" placeholder="ex: 123456@g.us">
+            </div>
+            <div style="flex:0 0 auto;">
+              <button id="loadGroupUsersBtn" class="btn-primary">Carregar</button>
+            </div>
+          </div>
+          <div id="groupUsersStatus" class="muted" style="margin-top:.8rem;"></div>
+          <div id="groupUsersTableWrapper" style="margin-top:1rem; overflow-x:auto;">
+            <table id="groupUsersTable">
+              <thead>
+                <tr>
+                  <th>User ID</th>
+                  <th>Função</th>
+                  <th>Bloqueado</th>
+                  <th>Última Atividade</th>
+                  <th>Interações</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td colspan="6" style="text-align:center; color:#94a3b8;">Selecione um grupo para exibir os usuários.</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -729,11 +726,13 @@
                   <th style="text-align:left; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; width: 5%;">ID</th>
                   <th style="text-align:left; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; width: 10%;">Tipo</th>
                   <th style="text-align:left; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; width: 12%;">Editor</th>
-                  <th style="text-align:left; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; width: 20%;">Valor Antigo</th>
-                  <th style="text-align:left; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; width: 20%;">Valor Novo</th>
-                  <th style="text-align:center; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; width: 8%;">👍</th>
-                  <th style="text-align:center; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; width: 8%;">👎</th>
-                  <th style="text-align:left; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; width: 12%;">Criado</th>
+                  <th style="text-align:left; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; width: 8%;">ID Usuário</th>
+                  <th style="text-align:left; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; width: 12%;">Telefone</th>
+                  <th style="text-align:left; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; width: 18%;">Valor Antigo</th>
+                  <th style="text-align:left; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; width: 18%;">Valor Novo</th>
+                  <th style="text-align:center; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; width: 6%;">👍</th>
+                  <th style="text-align:center; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; width: 6%;">👎</th>
+                  <th style="text-align:left; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; width: 10%;">Criado</th>
                   <th style="text-align:left; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; width: 15%;">Ações</th>
                 </tr>
               </thead>

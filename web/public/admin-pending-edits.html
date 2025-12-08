@@ -86,6 +86,8 @@
               <th>ID</th>
               <th>Tipo</th>
               <th>Editor</th>
+              <th>ID Usuário</th>
+              <th>Telefone</th>
               <th>Valor Antigo</th>
               <th>Valor Novo</th>
               <th>👍 Aprovar</th>
@@ -116,9 +118,14 @@
     // Check authentication and load user info
     async function checkAuth() {
       try {
-        const response = await fetch('/auth/me');
+        const response = await fetch('/api/me');
         if (response.ok) {
-          currentUser = await response.json();
+          const data = await response.json();
+          currentUser = data.user;
+          if (!currentUser) {
+            window.location.href = '/login.html';
+            return;
+          }
           if (currentUser.role !== 'admin') {
             // Non-admins can view but have limited actions
             console.log('Non-admin user detected');
@@ -165,6 +172,8 @@
         const oldValue = formatEditValue(edit.edit_type, edit.old_value);
         const newValue = formatEditValue(edit.edit_type, edit.new_value);
         const createdAt = new Date(edit.created_at).toLocaleString('pt-BR');
+        const editorId = edit.user_id ?? '—';
+        const editorPhone = edit.editor_phone_number || '—';
         
         // Determine status class
         const statusClass = `status-${edit.status}`;
@@ -173,6 +182,8 @@
           <td>${edit.id}</td>
           <td class="edit-type">${translateEditType(edit.edit_type)}</td>
           <td>${edit.editor_username}</td>
+          <td>${editorId}</td>
+          <td>${editorPhone}</td>
           <td class="edit-value">${oldValue}</td>
           <td class="edit-value">${newValue}</td>
           <td style="text-align: center;">${edit.approve_votes || 0}</td>

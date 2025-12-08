@@ -1135,6 +1135,30 @@ async function start() {
         return send(ws, { type: 'chats', chats, requestId: incomingRequestId });
       }
 
+      if (type === 'getAllGroupsMetadata') {
+        if (!sock || typeof sock.groupFetchAllParticipating !== 'function') {
+          return send(ws, { type: 'error', error: 'not_supported', requestId: incomingRequestId });
+        }
+        try {
+          const metaMap = await sock.groupFetchAllParticipating();
+          const groups = Object.values(metaMap || {})
+            .map((g) => ({
+              id: g?.id,
+              subject: g?.subject || '',
+              name: g?.subject || g?.name || g?.formattedTitle || '',
+              conversationTimestamp: g?.conversationTimestamp || g?.lastActivity,
+              participants: Array.isArray(g?.participants) ? g.participants.map((p) => ({
+                id: p?.id || p?.jid,
+                admin: p?.admin
+              })) : []
+            }))
+            .filter((g) => g.id && canSendTo(g.id));
+          return send(ws, { type: 'ack', action: 'getAllGroupsMetadata', groups, requestId: incomingRequestId });
+        } catch (e) {
+          return send(ws, { type: 'error', error: e.message || String(e), requestId: incomingRequestId });
+        }
+      }
+
       // Messaging commands
       if (type === 'sendText') {
         const { chatId, text } = msg || {};
