@@ -279,6 +279,12 @@ class BaileysWsAdapter {
   return this._sendAndWaitForAck({ type: 'sendMp4AsSticker', chatId, filePath, options });
   }
 
+  async getAllGroupsMetadata() {
+    await this._ensureReady(8000);
+    const resp = await this._sendAndWaitForAck({ type: 'getAllGroupsMetadata' }, 15000);
+    return Array.isArray(resp?.groups) ? resp.groups : [];
+  }
+
   /**
    * Update group participants (add, remove, promote, demote)
    * @param {string} groupId - Group JID

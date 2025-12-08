@@ -25,6 +25,90 @@ function initContactsTable() {
   `);
   db.run(`CREATE INDEX IF NOT EXISTS idx_groups_display_name ON groups(display_name)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_groups_last_interaction ON groups(last_interaction_ts DESC)`);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS group_users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      group_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'user',
+      blocked INTEGER NOT NULL DEFAULT 0,
+      last_activity DATETIME,
+      interaction_count INTEGER NOT NULL DEFAULT 0,
+      allowed_commands TEXT,
+      restricted_commands TEXT,
+      UNIQUE(group_id, user_id)
+    )
+  `);
+}
+
+function looksLikePersonName(raw) {
+  if (!raw) return false;
+  const clean = raw.trim();
+  // Reject if it contains common group-ish words
+  if (/grupo|figurinhas|stickers|turma|clube/i.test(clean)) return false;
+  const words = clean.split(/\s+/);
+  if (words.length < 2 || words.length > 4) return false;
+  // Consider it a person name if 2–4 capitalized words and no hashtags/prefixes
+  const capitalizedWords = words.filter((w) => /^[A-ZÀ-Ý][a-zà-ÿ.'-]{1,}$/.test(w));
+  return capitalizedWords.length === words.length;
+}
+
+function sanitizeGroupName(name, groupId) {
+  const raw = typeof name === 'string' ? name.trim() : '';
+  if (!raw) return null;
+
+  const normalized = raw.toLowerCase();
+  const normalizedGroup = String(groupId || '').trim().toLowerCase();
+  const normalizedGroupBase = normalizedGroup.replace('@g.us', '');
+  const normalizedNameBase = normalized.replace('@g.us', '');
+
+  // Avoid persisting the JID or its numeric portion as the display name
+  if (normalized === normalizedGroup || normalizedNameBase === normalizedGroupBase) {
+    return null;
+  }
+
+  // Drop anything that still looks like a group JID
+  if (normalized.endsWith('@g.us')) {
+    return null;
+  }
+
+  // Avoid persisting contact/person names as group names
+  if (looksLikePersonName(raw)) {
+    return null;
+  }
+
+  return raw;
+}
+
+function upsertGroupUser(groupId, userId, role = 'user', lastActivitySec = null) {
+  if (!groupId || !userId) return;
+  const lastActivity = Number.isFinite(lastActivitySec) ? Number(lastActivitySec) : null;
+  db.run(
+    `
+    INSERT INTO group_users (group_id, user_id, role, blocked, last_activity, interaction_count)
+    VALUES (?, ?, ?, 0, ?, 0)
+    ON CONFLICT(group_id, user_id) DO UPDATE SET
+      role = excluded.role,
+      blocked = COALESCE(group_users.blocked, 0),
+      last_activity = COALESCE(excluded.last_activity, group_users.last_activity)
+    `,
+    [groupId, userId, role, lastActivity],
+    (err) => {
+      if (err) console.error('[group_users] upsert error:', err);
+    }
+  );
+}
+
+function upsertGroupMembers(groupId, participants = []) {
+  if (!groupId || !groupId.endsWith('@g.us')) return;
+  for (const p of Array.isArray(participants) ? participants : []) {
+    const userId = p?.id || p?.jid || p?.user || p;
+    if (!userId || typeof userId !== 'string') continue;
+    const adminFlag = String(p?.admin || '').toLowerCase();
+    const role = adminFlag === 'admin' || adminFlag === 'superadmin' ? 'admin' : 'user';
+    upsertGroupUser(groupId, userId, role);
+  }
 }
 
 /**
@@ -85,7 +169,7 @@ function upsertContactFromMessage(message) {
 function upsertGroup(groupId, displayName, timestampSec) {
   if (!groupId || !groupId.endsWith('@g.us')) return;
 
-  const name = String(displayName || '').trim();
+  const name = sanitizeGroupName(displayName, groupId);
   const interactionTs = Number.isFinite(timestampSec) ? Number(timestampSec) : Math.floor(Date.now() / 1000);
   const now = Math.floor(Date.now() / 1000);
 
@@ -107,7 +191,7 @@ function upsertGroup(groupId, displayName, timestampSec) {
         END,
         updated_at = excluded.updated_at
     `,
-    [groupId, name || null, interactionTs || null, now, now],
+    [groupId, name, interactionTs || null, now, now],
     (err) => {
       if (err) {
         console.error('[groups] upsert error:', err);
@@ -124,11 +208,12 @@ function extractGroupNameFromMessage(message) {
     chat.formattedName,
     chat.subject,
     chat.title,
-    message?.sender?.shortName,
-    message?.sender?.formattedName
+    message?.groupName,
+    message?.chatName
   ];
   const picked = candidates.find((v) => typeof v === 'string' && v.trim() !== '');
-  return picked ? picked.trim() : null;
+  const sanitized = sanitizeGroupName(picked, chat.id || message?.chatId || message?.from);
+  return sanitized || null;
 }
 
 function upsertGroupFromMessage(message) {
@@ -151,5 +236,7 @@ module.exports = {
   upsertContact,
   upsertGroupFromMessage,
   upsertGroup,
+  upsertGroupMembers,
+  upsertGroupUser,
   extractDisplayNameFromMessage,
 };

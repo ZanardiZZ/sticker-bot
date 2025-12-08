@@ -5,7 +5,7 @@
 const { handleCommand, handleTaggingMode, taggingMap } = require('../commands');
 const { normalizeText } = require('../utils/commandNormalizer');
 const { logReceivedMessage } = require('./logging');
-const { upsertContactFromMessage, upsertGroupFromMessage } = require('./contacts');
+const { upsertContactFromMessage, upsertGroupFromMessage, upsertGroupUser } = require('./contacts');
 const { processIncomingMedia } = require('./mediaProcessor');
 const { withTyping } = require('../utils/typingIndicator');
 const { safeReply } = require('../utils/safeMessaging');
@@ -112,7 +112,7 @@ async function handleMessage(client, message) {
     
     // Enforce DM authorization: if message is not from a group, only respond if
     // the sender is allowed (or is admin number configured via ENV).
-    const isGroup = !!message.isGroupMsg || !!message.isGroup || isJidGroup(remoteJid);
+  const isGroup = !!message.isGroupMsg || !!message.isGroup || isJidGroup(remoteJid);
     const adminNumber = process.env.ADMIN_NUMBER;
 
     if (!isGroup) {
@@ -165,6 +165,22 @@ async function handleMessage(client, message) {
         console.error('[DM AUTH] erro ao checar permissoes de DM:', err);
         // Fail safe: do not reply if permission check fails
         return;
+      }
+    }
+
+    // Track group membership/activity
+    if (isGroup && remoteJid) {
+      try {
+        const ts = Number.isFinite(message?.timestamp) ? Number(message.timestamp) : Math.floor(Date.now() / 1000);
+        const memberId =
+          resolvedSenderId
+          || senderId
+          || messageKey.participant
+          || messageKey.participantAlt
+          || message.sender?.id;
+        upsertGroupUser(remoteJid, memberId, 'user', ts);
+      } catch (e) {
+        console.warn('[group_users] failed to upsert member from message:', e?.message || e);
       }
     }
     

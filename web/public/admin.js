@@ -516,38 +516,40 @@ async function openUserEditModal(userId) {
       alert('Usuário não encontrado');
       return;
     }
+
+    const normalizedUser = { ...user, can_edit: !!user.can_edit };
     
     // Populate modal with user data
     document.getElementById('userInfo').innerHTML = `
-      <div><strong>ID:</strong> ${user.id}</div>
-      <div><strong>Usuário:</strong> ${user.username}</div>
-      <div><strong>Criado em:</strong> ${new Date(user.created_at).toLocaleString('pt-BR')}</div>
-      <div><strong>WhatsApp Conectado:</strong> ${user.has_whatsapp_account ? 'Sim' : 'Não'}</div>
+      <div><strong>ID:</strong> ${normalizedUser.id}</div>
+      <div><strong>Usuário:</strong> ${normalizedUser.username}</div>
+      <div><strong>Criado em:</strong> ${new Date(normalizedUser.created_at).toLocaleString('pt-BR')}</div>
+      <div><strong>WhatsApp Conectado:</strong> ${normalizedUser.has_whatsapp_account ? 'Sim' : 'Não'}</div>
     `;
     
-    document.getElementById('editContactName').value = user.contact_display_name || '';
-    document.getElementById('editPhone').value = user.phone_number || '';
-    document.getElementById('editEmail').value = user.email || '';
+    document.getElementById('editContactName').value = normalizedUser.contact_display_name || '';
+    document.getElementById('editPhone').value = normalizedUser.phone_number || '';
+    document.getElementById('editEmail').value = normalizedUser.email || '';
     
     // Status buttons
     const statusButtons = document.getElementById('statusButtons');
     statusButtons.innerHTML = `
-      <button class="status-btn ${user.status === 'pending' ? 'active' : ''}" data-status="pending">Pendente</button>
-      <button class="status-btn ${user.status === 'approved' ? 'active' : ''}" data-status="approved">Aprovado</button>
-      <button class="status-btn ${user.status === 'rejected' ? 'active' : ''}" data-status="rejected">Rejeitado</button>
+      <button class="status-btn ${normalizedUser.status === 'pending' ? 'active' : ''}" data-status="pending">Pendente</button>
+      <button class="status-btn ${normalizedUser.status === 'approved' ? 'active' : ''}" data-status="approved">Aprovado</button>
+      <button class="status-btn ${normalizedUser.status === 'rejected' ? 'active' : ''}" data-status="rejected">Rejeitado</button>
     `;
     
     // Permission buttons
     const permissionButtons = document.getElementById('permissionButtons');
     permissionButtons.innerHTML = `
-      <button class="permission-btn ${user.can_edit ? 'active' : ''}" data-permission="can_edit">
-        ${user.can_edit ? 'Pode Editar (Ativo)' : 'Pode Editar (Inativo)'}
+      <button class="permission-btn ${normalizedUser.can_edit ? 'active' : ''}" data-permission="can_edit">
+        ${normalizedUser.can_edit ? 'Pode Editar (Ativo)' : 'Pode Editar (Inativo)'}
       </button>
     `;
     
     // Store current user data for comparison
     document.getElementById('userEditModal').dataset.userId = userId;
-    document.getElementById('userEditModal').dataset.originalData = JSON.stringify(user);
+    document.getElementById('userEditModal').dataset.originalData = JSON.stringify(normalizedUser);
     
     // Show modal
     document.getElementById('userEditModal').style.display = 'flex';
@@ -594,13 +596,14 @@ document.getElementById('saveUserChanges').addEventListener('click', async () =>
   const modal = document.getElementById('userEditModal');
   const userId = modal.dataset.userId;
   const originalData = JSON.parse(modal.dataset.originalData);
+  const originalCanEdit = !!originalData.can_edit;
   
   const newData = {
     contact_display_name: document.getElementById('editContactName').value.trim(),
     phone_number: document.getElementById('editPhone').value.trim(),
     email: document.getElementById('editEmail').value.trim(),
     status: document.querySelector('.status-btn.active').dataset.status,
-    can_edit: document.querySelector('.permission-btn').classList.contains('active') ? 1 : 0
+    can_edit: document.querySelector('.permission-btn').classList.contains('active')
   };
   
   // Check if anything changed
@@ -609,7 +612,7 @@ document.getElementById('saveUserChanges').addEventListener('click', async () =>
     newData.phone_number !== (originalData.phone_number || '') ||
     newData.email !== (originalData.email || '') ||
     newData.status !== originalData.status ||
-    newData.can_edit !== originalData.can_edit;
+    newData.can_edit !== originalCanEdit;
   
   if (!hasChanges) {
     closeUserEditModal();
@@ -641,7 +644,7 @@ document.getElementById('saveUserChanges').addEventListener('click', async () =>
     }
     
     // Update permissions if changed
-    if (newData.can_edit !== originalData.can_edit) {
+    if (newData.can_edit !== originalCanEdit) {
       await fetchJSON(`/api/admin/users/${userId}/permissions`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -698,7 +701,7 @@ let hashUpdateInProgress = false;
 let lastLoadedGroupUsersId = '';
 let lastLoadedGroupCommandsId = '';
 
-const mainTabIds = new Set(['settings', 'group-users', 'bot-frequency', 'group-config', 'logs', 'network', 'users', 'pending-edits', 'duplicates']);
+const mainTabIds = new Set(['settings', 'bot-frequency', 'group-config', 'logs', 'network', 'users', 'pending-edits', 'duplicates']);
 const initializedSubTabs = new Set();
 const tabPayload = {};
 
@@ -709,14 +712,14 @@ function runTabLoader(tabId, contextLabel) {
 
   let loader;
   switch (tabId) {
-    case 'group-users':
-      loader = initializeGroupUsersTab;
-      break;
     case 'bot-frequency':
       loader = loadBotSchedule;
       break;
     case 'group-config':
-      loader = initializeGroupCommandsTab;
+      loader = async () => {
+        await initializeGroupCommandsTab();
+        await initializeGroupUsersTab();
+      };
       break;
     default:
       return;
@@ -871,18 +874,10 @@ function updateLocationHash() {
   const parts = [currentMainTab];
   if (currentMainTab === 'settings' && currentSubTab) {
     parts.push(currentSubTab);
-    if (currentSubTab === 'group-users' && lastLoadedGroupUsersId) {
-      parts.push(encodeURIComponent(lastLoadedGroupUsersId));
-    }
-    if (currentSubTab === 'group-config' && lastLoadedGroupCommandsId) {
-      parts.push(encodeURIComponent(lastLoadedGroupCommandsId));
-    }
   } else {
-    if (currentMainTab === 'group-users' && lastLoadedGroupUsersId) {
-      parts.push(encodeURIComponent(lastLoadedGroupUsersId));
-    }
-    if (currentMainTab === 'group-config' && lastLoadedGroupCommandsId) {
-      parts.push(encodeURIComponent(lastLoadedGroupCommandsId));
+    if (currentMainTab === 'group-config') {
+      const payload = lastLoadedGroupCommandsId || lastLoadedGroupUsersId;
+      if (payload) parts.push(encodeURIComponent(payload));
     }
   }
   const hashValue = parts.filter(Boolean).join('/');
@@ -947,15 +942,17 @@ function applyHashNavigation() {
     }
   }
 
-  if (mainTab === 'settings' && ['group-users', 'bot-frequency', 'group-config'].includes(subTab)) {
+  // Backward compatibility: old URLs may reference group-users tab; map to group-config
+  if (mainTab === 'group-users') {
+    mainTab = 'group-config';
+  }
+
+  if (mainTab === 'settings' && ['bot-frequency', 'group-config'].includes(subTab)) {
     mainTab = subTab;
     subTab = 'account';
   }
 
   if (!payload) {
-    if ((mainTab === 'group-users' || subTab === 'group-users') && (params.get('group') || params.get('groupId'))) {
-      payload = params.get('group') || params.get('groupId') || '';
-    }
     if ((mainTab === 'group-config' || subTab === 'group-config') && (params.get('group') || params.get('groupId'))) {
       payload = params.get('group') || params.get('groupId') || '';
     }
@@ -1024,7 +1021,25 @@ async function fetchConnectedGroups(force = false) {
     }
 
     const groups = Array.isArray(parsed?.groups) ? parsed.groups : [];
-    connectedGroupsCache = groups.sort((a, b) => {
+    // Normalize fields to ensure names come through even if server keys vary
+    const normalized = groups.map((g) => {
+      const id = g.id || g.jid || g.group_id || '';
+      const name =
+        g.name
+        || g.display_name
+        || g.displayName
+        || g.subject
+        || g.group_name
+        || '';
+      return {
+        id,
+        name: name && name !== id ? name : name || id,
+        subject: g.subject || g.name || g.display_name || '',
+        lastInteractionTs: g.lastInteractionTs || g.last_interaction_ts || null
+      };
+    });
+
+    connectedGroupsCache = normalized.sort((a, b) => {
       const nameA = (a.name || a.subject || a.id || '').toLocaleLowerCase('pt-BR');
       const nameB = (b.name || b.subject || b.id || '').toLocaleLowerCase('pt-BR');
       return nameA.localeCompare(nameB);
@@ -1044,10 +1059,17 @@ function populateGroupSelect(selectEl, groups, placeholder) {
     `<option value="">${placeholder}</option>`,
     ...groups.map((group) => {
       const id = group?.id || group?.jid || '';
-      const labelName = group?.name || group?.subject || '';
-      const label = labelName ? `${escapeHtml(labelName)} (${escapeHtml(id)})` : escapeHtml(id);
+      const labelName =
+        group?.name
+        || group?.display_name
+        || group?.displayName
+        || group?.subject
+        || group?.group_name
+        || '';
+      const label = labelName ? escapeHtml(labelName) : escapeHtml(id);
+      const titleAttr = id ? ` title="${escapeHtml(id)}"` : '';
       const selected = currentValue && currentValue === id ? ' selected' : '';
-      return `<option value="${escapeHtml(id)}"${selected}>${label}</option>`;
+      return `<option value="${escapeHtml(id)}"${selected}${titleAttr}>${label}</option>`;
     })
   ];
   selectEl.innerHTML = options.join('');
@@ -1079,6 +1101,10 @@ async function ensureGroupSelectPopulated(selectEl, placeholder, force = false) 
   const groups = await fetchConnectedGroups(force);
   populateGroupSelect(selectEl, groups, placeholder);
   selectEl.dataset.populated = 'true';
+  // keep a data attribute for quick inspection/debug
+  if (groups && groups.length && !selectEl.dataset.sampleGroup) {
+    selectEl.dataset.sampleGroup = groups[0].name || groups[0].id || '';
+  }
 }
 
 async function initializeGroupUsersTab() {
@@ -1168,7 +1194,7 @@ async function initializeGroupUsersTab() {
     });
   }
 
-  const payload = consumeTabPayload('group-users');
+  const payload = consumeTabPayload('group-users') || consumeTabPayload('group-config');
   if (payload) {
     inputEl.value = payload;
     selectEl.value = payload;
@@ -1214,7 +1240,7 @@ async function loadGroupUsers(groupId) {
         ? `Exibindo ${users.length} usuário(s) para ${groupId}`
         : `Nenhum usuário encontrado para ${groupId}.`;
     }
-    if (currentMainTab === 'settings' && currentSubTab === 'group-users') {
+    if (currentMainTab === 'group-config') {
       updateLocationHash();
     }
   } catch (error) {
@@ -1449,7 +1475,7 @@ async function initializeGroupCommandsTab() {
   const saveBtn = document.getElementById('saveGroupCommandBtn');
   if (!selectEl || !inputEl || !loadBtn || !saveBtn) return;
 
-  await ensureGroupSelectPopulated(selectEl, 'Selecione um grupo...');
+  await ensureGroupSelectPopulated(selectEl, 'Selecione um grupo...', true);
   bindGroupInputs(selectEl, inputEl);
 
   if (!loadBtn.dataset.bound) {
@@ -2433,11 +2459,8 @@ async function loadPendingEditsTab() {
   const statusFilter = document.getElementById('pendingEditsStatusFilter').value;
   
   try {
-    const response = await fetchJSON('/api/pending-edits?status=' + statusFilter);
-    if (!response.ok) throw new Error('Failed to load pending edits');
-    
-    const data = await response.json();
-    displayPendingEditsInTab(data.pending_edits);
+    const data = await fetchJSON('/api/pending-edits?status=' + statusFilter);
+    displayPendingEditsInTab(data.pending_edits || []);
   } catch (error) {
     console.error('Error loading pending edits:', error);
     document.getElementById('pendingEditsTabBody').innerHTML = 
@@ -2463,6 +2486,8 @@ function displayPendingEditsInTab(edits) {
     const oldValue = formatEditValueForTab(edit.edit_type, edit.old_value);
     const newValue = formatEditValueForTab(edit.edit_type, edit.new_value);
     const createdAt = new Date(edit.created_at).toLocaleString('pt-BR');
+    const editorId = edit.user_id ?? '—';
+    const editorPhone = edit.editor_phone_number || '—';
     
     // Get vote counts from the API call later
     const approveVotes = edit.approve_votes || 0;
@@ -2472,6 +2497,8 @@ function displayPendingEditsInTab(edits) {
       <td style="padding:.5rem .6rem; font-size:.9rem;">${edit.id}</td>
       <td style="padding:.5rem .6rem; font-size:.9rem; text-transform: capitalize;">${translateEditTypeToPortuguese(edit.edit_type)}</td>
       <td style="padding:.5rem .6rem; font-size:.9rem;">${edit.editor_username}</td>
+      <td style="padding:.5rem .6rem; font-size:.9rem;">${editorId}</td>
+      <td style="padding:.5rem .6rem; font-size:.9rem;">${editorPhone}</td>
       <td style="padding:.5rem .6rem; font-size:.9rem; max-width: 200px; word-wrap: break-word; white-space: normal;">${oldValue}</td>
       <td style="padding:.5rem .6rem; font-size:.9rem; max-width: 200px; word-wrap: break-word; white-space: normal;">${newValue}</td>
       <td style="padding:.5rem .6rem; font-size:.9rem; text-align: center;">${approveVotes}</td>
@@ -2576,7 +2603,7 @@ function generateActionButtonsForTab(edit) {
 // Vote on pending edit from tab
 async function voteOnEditFromTab(editId, vote) {
   try {
-    const response = await fetchJSON(`/api/pending-edits/${editId}/vote`, {
+    const result = await fetchJSON(`/api/pending-edits/${editId}/vote`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -2584,13 +2611,6 @@ async function voteOnEditFromTab(editId, vote) {
       body: JSON.stringify({ vote })
     });
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to vote');
-    }
-
-    const result = await response.json();
-    
     if (result.auto_processed) {
       alert(`Edição ${result.auto_processed === 'approved' ? 'aprovada' : 'rejeitada'} automaticamente!`);
     } else {
@@ -2610,18 +2630,13 @@ async function adminDecisionFromTab(editId, decision) {
   if (decision === 'reject' && reason === null) return; // User cancelled
   
   try {
-    const response = await fetchJSON(`/api/pending-edits/${editId}/admin-decision`, {
+    await fetchJSON(`/api/pending-edits/${editId}/admin-decision`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ decision, reason })
     });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to process decision');
-    }
 
     alert(`Edição ${decision === 'approve' ? 'aprovada' : 'rejeitada'} com sucesso!`);
     loadPendingEditsTab(); // Reload table
@@ -2637,10 +2652,10 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('pendingEditsStatusFilter')?.addEventListener('change', loadPendingEditsTab);
   
   // Store current user info for pending edits functionality
-  fetch('/auth/me')
+  fetch('/api/me')
     .then(response => response.json())
-    .then(user => {
-      currentPendingEditsUser = user;
+    .then(data => {
+      currentPendingEditsUser = data.user;
     })
     .catch(error => {
       console.error('Failed to get current user info:', error);

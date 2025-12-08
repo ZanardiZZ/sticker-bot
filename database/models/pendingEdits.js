@@ -42,6 +42,7 @@ function getPendingEdits(status = 'pending') {
       `SELECT pe.*, 
               m.file_path, m.description as current_description, m.nsfw as current_nsfw,
               u.username as editor_username,
+              u.phone_number as editor_phone_number,
               approver.username as approver_username
        FROM pending_edits pe
        JOIN media m ON pe.media_id = m.id
@@ -74,7 +75,7 @@ function getPendingEdits(status = 'pending') {
 function getPendingEditsForMedia(mediaId) {
   return new Promise((resolve, reject) => {
     db.all(
-      `SELECT pe.*, u.username as editor_username
+      `SELECT pe.*, u.username as editor_username, u.phone_number as editor_phone_number
        FROM pending_edits pe
        JOIN users u ON pe.user_id = u.id
        WHERE pe.media_id = ? AND pe.status = 'pending'
@@ -180,7 +181,8 @@ function getPendingEditById(pendingEditId) {
     db.get(
       `SELECT pe.*, 
               m.file_path, m.description as current_description, m.nsfw as current_nsfw,
-              u.username as editor_username
+              u.username as editor_username,
+              u.phone_number as editor_phone_number
        FROM pending_edits pe
        JOIN media m ON pe.media_id = m.id
        JOIN users u ON pe.user_id = u.id

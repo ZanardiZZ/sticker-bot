@@ -12,6 +12,41 @@ const FIGURINHAS_DIR_NORM = FIGURINHAS_DIR_ABS.replace(/\\/g, '/');
 const BOT_MEDIA_DIR_NORM = BOT_MEDIA_DIR.replace(/\\/g, '/');
 const OLD_STICKERS_DIR_NORM = OLD_STICKERS_DIR.replace(/\\/g, '/');
 
+function looksLikePersonName(raw) {
+  if (!raw) return false;
+  const clean = raw.trim();
+  if (/grupo|figurinhas|stickers|turma|clube/i.test(clean)) return false;
+  const words = clean.split(/\s+/);
+  if (words.length < 2 || words.length > 4) return false;
+  const capitalizedWords = words.filter((w) => /^[A-ZÀ-Ý][a-zà-ÿ.'-]{1,}$/.test(w));
+  return capitalizedWords.length === words.length;
+}
+
+function sanitizeGroupDisplayName(name, groupId) {
+  const raw = typeof name === 'string' ? name.trim() : '';
+  if (!raw) return null;
+
+  const normalized = raw.toLowerCase();
+  const normalizedGroup = String(groupId || '').trim().toLowerCase();
+  const normalizedGroupBase = normalizedGroup.replace('@g.us', '');
+  const normalizedNameBase = normalized.replace('@g.us', '');
+
+  // Avoid persisting JIDs or their numeric portion as display names
+  if (normalized === normalizedGroup || normalizedNameBase === normalizedGroupBase) {
+    return null;
+  }
+
+  if (normalized.endsWith('@g.us')) {
+    return null;
+  }
+
+  if (looksLikePersonName(raw)) {
+    return null;
+  }
+
+  return raw;
+}
+
 // Helper: transforma file_path em URL servida pelo web
 function filePathToUrl(file_path, mimetype) {
   if (!file_path) return null;
@@ -542,7 +577,7 @@ module.exports = {
 
     return rows.map((row) => ({
       id: row.group_id,
-      name: row.display_name || row.group_id,
+      name: sanitizeGroupDisplayName(row.display_name, row.group_id) || row.group_id,
       lastInteractionTs: row.last_interaction_ts || null
     }));
   },
@@ -552,6 +587,7 @@ module.exports = {
       return { changes: 0 };
     }
 
+    const safeDisplayName = sanitizeGroupDisplayName(displayName, groupId);
     const now = Math.floor(Date.now() / 1000);
     return run(
       `
@@ -571,7 +607,7 @@ module.exports = {
           END,
           updated_at = excluded.updated_at
       `,
-      [groupId, displayName ? displayName.trim() : null, lastInteractionTs, now, now]
+      [groupId, safeDisplayName, lastInteractionTs, now, now]
     );
   },
 

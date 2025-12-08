@@ -179,6 +179,16 @@ function isGroupId(str) {
   return str && typeof str === 'string' && str.includes('@g.us');
 }
 
+function looksLikePersonName(raw) {
+  if (!raw) return false;
+  const clean = raw.trim();
+  if (/grupo|figurinhas|stickers|turma|clube/i.test(clean)) return false;
+  const words = clean.split(/\s+/);
+  if (words.length < 2 || words.length > 4) return false;
+  const capitalizedWords = words.filter((w) => /^[A-ZÀ-Ý][a-zà-ÿ.'-]{1,}$/.test(w));
+  return capitalizedWords.length === words.length;
+}
+
 // Function to validate and clean group display names
 function cleanGroupDisplayName(name, groupId) {
   if (!name || name.trim() === '') {
@@ -186,17 +196,25 @@ function cleanGroupDisplayName(name, groupId) {
   }
   
   const cleanName = name.trim();
-  
-  // If the name looks like a user name (contains full name pattern), 
-  // it's probably incorrect and should be flagged
-  const hasFullNamePattern = /^[A-Z][a-z]+ [A-Z][a-z]+$/.test(cleanName);
-  const isLikelyUserName = hasFullNamePattern && !cleanName.startsWith('#') && !cleanName.includes('Grupo');
-  
-  if (isLikelyUserName) {
-    console.warn(`[GROUP-SYNC] Suspicious group name "${cleanName}" for ${groupId} - appears to be a user name`);
-    return null; // Return null to indicate this name should not be trusted
+  const normalized = cleanName.toLowerCase();
+  const normalizedGroup = String(groupId || '').trim().toLowerCase();
+  const normalizedGroupBase = normalizedGroup.replace('@g.us', '');
+  const normalizedNameBase = normalized.replace('@g.us', '');
+
+  // Never trust a value that is literally the group JID (or its numeric base)
+  if (normalized === normalizedGroup || normalizedNameBase === normalizedGroupBase) {
+    return null;
   }
-  
+
+  // Drop anything that still looks like a JID
+  if (normalized.endsWith('@g.us')) {
+    return null;
+  }
+
+  if (looksLikePersonName(cleanName)) {
+    return null;
+  }
+
   return cleanName;
 }
 
@@ -391,12 +409,31 @@ console.timeEnd('[BOOT] auth');
 app.get('/api/admin/connected-groups', requireAdmin, async (req, res) => {
   try {
     const archivedGroups = await listGroups({ includeDormant: true });
+    const dbNameMap = new Map();
     const groupMap = new Map();
 
+    // Pull raw display names straight from the DB for stronger fallback
+    const rawDbNames = await new Promise((resolve) => {
+      db.all(`SELECT group_id, display_name FROM groups WHERE TRIM(COALESCE(display_name, '')) != ''`, (err, rows) => {
+        if (err || !rows) return resolve([]);
+        resolve(rows);
+      });
+    });
+    rawDbNames.forEach((row) => {
+      if (row?.group_id && row?.display_name) {
+        const cleaned = cleanGroupDisplayName(row.display_name, row.group_id);
+        if (cleaned) {
+          dbNameMap.set(row.group_id, cleaned);
+        }
+      }
+    });
+
     archivedGroups.forEach((group) => {
-      // Validate and clean the group name from database
-      const cleanedName = cleanGroupDisplayName(group.name, group.id);
+      // Validate and clean the group name from database, but keep the stored name as fallback
+      const rawName = (group.name || '').trim();
+      const cleanedName = cleanGroupDisplayName(rawName, group.id);
       const displayName = cleanedName || group.id;
+      if (cleanedName) dbNameMap.set(group.id, cleanedName);
       
       groupMap.set(group.id, {
         id: group.id,
@@ -421,7 +458,7 @@ app.get('/api/admin/connected-groups', requireAdmin, async (req, res) => {
             const id = chat.id;
             const rawName = (chat.subject || chat.name || '').trim();
             const cleanedName = cleanGroupDisplayName(rawName, id);
-            const displayName = cleanedName || rawName || id;
+            const displayName = cleanedName || '';
             const existing = groupMap.get(id) || { id };
             const lastInteractionTs =
               chat?.conversationTimestamp
@@ -430,10 +467,15 @@ app.get('/api/admin/connected-groups', requireAdmin, async (req, res) => {
               || existing.lastInteractionTs
               || null;
 
+            // Prefer any already-known name over an empty/ID-only fallback
+            const bestName = displayName
+              ? displayName
+              : (existing.name || id);
+
             // Update the group in our map with WhatsApp data
             groupMap.set(id, {
               id,
-              name: displayName,
+              name: bestName,
               lastInteractionTs,
               source: 'whatsapp'
             });
@@ -443,7 +485,7 @@ app.get('/api/admin/connected-groups', requireAdmin, async (req, res) => {
               upserts.push(
                 upsertGroupMetadata({
                   groupId: id,
-                  displayName: cleanedName || rawName || null,
+                  displayName: cleanedName || null,
                   lastInteractionTs
                 }).catch((err) => {
                   console.warn('[WEB] failed to persist group metadata', id, err?.message || err);
@@ -465,8 +507,27 @@ app.get('/api/admin/connected-groups', requireAdmin, async (req, res) => {
       console.log('[DEBUG] WhatsApp client not available - using database-only group data');
     }
 
+    // Reinforce display names from database metadata when we still only have IDs
+    archivedGroups.forEach((group) => {
+      const id = group.id;
+      const rawName = (group.name || '').trim();
+      if (!id || !groupMap.has(id)) return;
+      const entry = groupMap.get(id);
+      const hasMeaningfulName = entry.name && entry.name !== id;
+      if (!hasMeaningfulName && rawName && rawName !== id) {
+        groupMap.set(id, { ...entry, name: rawName, source: entry.source || 'database' });
+      }
+    });
+
     const groups = Array.from(groupMap.values())
       .filter(group => isGroupId(group.id)) // Only include actual WhatsApp groups
+      .map((group) => {
+        const dbName = dbNameMap.get(group.id);
+        if ((!group.name || group.name === group.id) && dbName && dbName !== group.id) {
+          return { ...group, name: dbName, source: group.source || 'database' };
+        }
+        return group;
+      })
       .sort((a, b) => {
         const nameA = (a.name || a.id || '').toLocaleLowerCase('pt-BR');
         const nameB = (b.name || b.id || '').toLocaleLowerCase('pt-BR');
