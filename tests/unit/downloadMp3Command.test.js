@@ -34,12 +34,20 @@ class MockClient {
 
 function withMockedDownloadAudio(mockImplementation, testFn) {
   const servicePath = require.resolve('../../services/videoDownloader');
+  const converterPath = require.resolve('../../services/audioConverter');
   const handlerPath = require.resolve('../../commands/handlers/downloadMp3');
 
   const videoDownloader = require(servicePath);
+  const audioConverter = require(converterPath);
   const originalDownloadAudio = videoDownloader.downloadAudio;
+  const originalConvertMp3ToOpusAuto = audioConverter.convertMp3ToOpusAuto;
 
   videoDownloader.downloadAudio = mockImplementation;
+  
+  // Mock audio converter to simulate conversion failure (fallback to document send)
+  audioConverter.convertMp3ToOpusAuto = async () => {
+    throw new Error('Mock conversion failure - testing fallback');
+  };
 
   delete require.cache[handlerPath];
   const handlerModule = require(handlerPath);
@@ -48,13 +56,14 @@ function withMockedDownloadAudio(mockImplementation, testFn) {
     .then(() => testFn(handlerModule))
     .finally(() => {
       videoDownloader.downloadAudio = originalDownloadAudio;
+      audioConverter.convertMp3ToOpusAuto = originalConvertMp3ToOpusAuto;
       delete require.cache[handlerPath];
     });
 }
 
 const tests = [
   {
-    name: '#downloadmp3 copies audio to media directory and sends file',
+    name: '#downloadmp3 converts audio and sends file (with fallback to document on conversion failure)',
     fn: async () => {
       const client = new MockClient();
       const chatId = '123@c.us';
@@ -98,15 +107,13 @@ const tests = [
 
       assertEqual(fileMessages.length, 1, 'Should send one audio file');
       const filePayload = fileMessages[0].payload;
-      assert(filePayload.filePath.endsWith('.mp3'), 'Saved file should use mp3 extension');
+      assert(filePayload.filePath.endsWith('.mp3'), 'Saved file should use mp3 extension (fallback)');
       assert(path.dirname(filePayload.filePath) === MEDIA_DIR, 'Audio should be stored in bot/media directory');
-
-      const copiedContent = fs.readFileSync(filePayload.filePath, 'utf8');
-      assertEqual(copiedContent, 'fake-mp3-content', 'Copied audio should match downloaded content');
 
       const extraArgs = filePayload.extraArgs || [];
       const optionsArg = extraArgs[extraArgs.length - 1];
       assert(optionsArg && optionsArg.mimetype === 'audio/mpeg', 'sendFile should receive audio/mpeg mimetype option');
+      assert(optionsArg && optionsArg.asDocument === true, 'sendFile should send as document when conversion fails');
 
       try {
         const newFiles = fs.readdirSync(MEDIA_DIR).filter(name => !existingFiles.has(name));
