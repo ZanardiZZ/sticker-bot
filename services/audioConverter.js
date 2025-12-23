@@ -11,7 +11,8 @@ ffmpeg.setFfmpegPath(ffmpegStatic);
 const AUDIO_CODEC = 'libopus';
 const AUDIO_BITRATE = '64k';      // Good quality for voice/music while keeping file size reasonable
 const AUDIO_SAMPLE_RATE = 48000;  // 48kHz - WhatsApp recommended sample rate for OPUS
-const AUDIO_CHANNELS = 1;         // Mono - reduces file size, sufficient for most audio
+const AUDIO_CHANNELS = 1;         // Mono - reduces file size, optimized for messaging (voice/spoken audio)
+                                  // Note: Stereo music may lose spatial quality, but file size reduction is prioritized
 const OUTPUT_FORMAT = 'ogg';      // OGG container for OPUS codec
 
 /**

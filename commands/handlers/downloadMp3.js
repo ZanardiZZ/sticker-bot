@@ -195,9 +195,8 @@ async function handleDownloadMp3Command(client, message, chatId, params) {
         }
       }
 
-      // Cleanup MP3 file only if conversion to OPUS succeeded
-      // (otherwise we sent it as document and need to keep it)
-      if (finalMediaPath && conversionSucceeded && fileSent) {
+      // Cleanup MP3 file when conversion succeeded (we keep only OPUS)
+      if (finalMediaPath && conversionSucceeded) {
         try {
           if (fs.existsSync(finalMediaPath)) {
             fs.unlinkSync(finalMediaPath);
@@ -207,18 +206,18 @@ async function handleDownloadMp3Command(client, message, chatId, params) {
         }
       }
 
-      // Cleanup MP3 file if sending failed completely
-      if (finalMediaPath && !fileSent) {
+      // Cleanup MP3 file if sending failed and no conversion happened (document send failed)
+      if (finalMediaPath && !fileSent && !conversionSucceeded) {
         try {
           if (fs.existsSync(finalMediaPath)) {
             fs.unlinkSync(finalMediaPath);
           }
         } catch (cleanupError) {
-          console.warn('[DownloadMp3Command] Failed to remove orphaned media file:', cleanupError.message);
+          console.warn('[DownloadMp3Command] Failed to remove orphaned MP3 file:', cleanupError.message);
         }
       }
 
-      // Cleanup converted audio if sending failed
+      // Cleanup converted OPUS file if sending failed
       if (convertedAudioPath && !fileSent) {
         try {
           if (fs.existsSync(convertedAudioPath)) {
