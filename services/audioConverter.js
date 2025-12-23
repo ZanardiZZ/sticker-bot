@@ -6,6 +6,14 @@ const path = require('path');
 // Set ffmpeg path
 ffmpeg.setFfmpegPath(ffmpegStatic);
 
+// Audio conversion settings optimized for WhatsApp
+// WhatsApp requires OPUS codec in OGG container for audio messages
+const AUDIO_CODEC = 'libopus';
+const AUDIO_BITRATE = '64k';      // Good quality for voice/music while keeping file size reasonable
+const AUDIO_SAMPLE_RATE = 48000;  // 48kHz - WhatsApp recommended sample rate for OPUS
+const AUDIO_CHANNELS = 1;         // Mono - reduces file size, sufficient for most audio
+const OUTPUT_FORMAT = 'ogg';      // OGG container for OPUS codec
+
 /**
  * Converts MP3 audio file to OPUS format (OGG container)
  * WhatsApp requires audio messages to be in OPUS format for proper playback
@@ -23,11 +31,11 @@ async function convertMp3ToOpus(inputPath, outputPath) {
     console.log('[AudioConverter] Converting MP3 to OPUS:', { inputPath, outputPath });
 
     ffmpeg(inputPath)
-      .audioCodec('libopus')
-      .audioBitrate('64k')
-      .audioFrequency(48000)
-      .audioChannels(1)
-      .format('ogg')
+      .audioCodec(AUDIO_CODEC)
+      .audioBitrate(AUDIO_BITRATE)
+      .audioFrequency(AUDIO_SAMPLE_RATE)
+      .audioChannels(AUDIO_CHANNELS)
+      .format(OUTPUT_FORMAT)
       .on('start', (commandLine) => {
         console.log('[AudioConverter] FFmpeg command:', commandLine);
       })

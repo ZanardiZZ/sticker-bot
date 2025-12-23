@@ -80,6 +80,7 @@ async function handleDownloadMp3Command(client, message, chatId, params) {
     let finalMediaPath = null;
     let convertedAudioPath = null;
     let fileSent = false;
+    let conversionSucceeded = false;
 
     try {
       await safeReply(
@@ -119,6 +120,7 @@ async function handleDownloadMp3Command(client, message, chatId, params) {
         convertedAudioPath = await convertMp3ToOpusAuto(finalMediaPath);
         audioPathToSend = convertedAudioPath;
         mimetypeToSend = 'audio/ogg; codecs=opus';
+        conversionSucceeded = true;
         console.log('[DownloadMp3Command] Audio converted successfully to OPUS');
       } catch (conversionError) {
         console.warn('[DownloadMp3Command] OPUS conversion failed, sending as document:', conversionError.message);
@@ -193,8 +195,9 @@ async function handleDownloadMp3Command(client, message, chatId, params) {
         }
       }
 
-      // Cleanup MP3 file (we keep the converted OPUS if successful)
-      if (finalMediaPath && fileSent) {
+      // Cleanup MP3 file only if conversion to OPUS succeeded
+      // (otherwise we sent it as document and need to keep it)
+      if (finalMediaPath && conversionSucceeded && fileSent) {
         try {
           if (fs.existsSync(finalMediaPath)) {
             fs.unlinkSync(finalMediaPath);
@@ -204,7 +207,7 @@ async function handleDownloadMp3Command(client, message, chatId, params) {
         }
       }
 
-      // Cleanup MP3 file if sending failed
+      // Cleanup MP3 file if sending failed completely
       if (finalMediaPath && !fileSent) {
         try {
           if (fs.existsSync(finalMediaPath)) {
