@@ -8,6 +8,7 @@ const {
   MAX_AUDIO_FILESIZE_MB,
   SUPPORTED_PLATFORMS
 } = require('../../services/videoDownloader');
+const { convertMp3ToOpusAuto } = require('../../services/audioConverter');
 const { safeReply } = require('../../utils/safeMessaging');
 const { withTyping } = require('../../utils/typingIndicator');
 
@@ -77,13 +78,15 @@ async function handleDownloadMp3Command(client, message, chatId, params) {
   await withTyping(client, chatId, async () => {
     let downloadResult = null;
     let finalMediaPath = null;
+    let convertedAudioPath = null;
     let fileSent = false;
+    let conversionSucceeded = false;
 
     try {
       await safeReply(
         client,
         chatId,
-        '⏬ *Baixando áudio...*\n\n🎧 Preparando conversão para MP3...',
+        '⏬ *Baixando áudio...*\n\n🎧 Preparando conversão para formato compatível com WhatsApp...',
         message.id
       );
 
@@ -97,6 +100,7 @@ async function handleDownloadMp3Command(client, message, chatId, params) {
         fs.mkdirSync(MEDIA_DIR, { recursive: true });
       }
 
+      // Copy MP3 to media directory first
       const baseName = `audio-${Date.now()}.mp3`;
       finalMediaPath = path.join(MEDIA_DIR, baseName);
       fs.copyFileSync(downloadResult.filePath, finalMediaPath);
@@ -107,18 +111,62 @@ async function handleDownloadMp3Command(client, message, chatId, params) {
         ? metadata.title.slice(0, 80) + (metadata.title.length > 80 ? '...' : '')
         : 'Áudio';
 
+      // Try to convert MP3 to OPUS for WhatsApp compatibility
+      let audioPathToSend;
+      let mimetypeToSend;
+      
+      try {
+        console.log('[DownloadMp3Command] Converting audio to OPUS format...');
+        convertedAudioPath = await convertMp3ToOpusAuto(finalMediaPath);
+        audioPathToSend = convertedAudioPath;
+        mimetypeToSend = 'audio/ogg; codecs=opus';
+        conversionSucceeded = true;
+        console.log('[DownloadMp3Command] Audio converted successfully to OPUS');
+      } catch (conversionError) {
+        console.warn('[DownloadMp3Command] OPUS conversion failed, sending as document:', conversionError.message);
+        // Fallback: send as document instead of audio message
+        await client.sendFile(
+          chatId,
+          finalMediaPath,
+          path.basename(finalMediaPath),
+          undefined,
+          undefined,
+          true,
+          false,
+          false,
+          undefined,
+          undefined,
+          { mimetype: 'audio/mpeg', asDocument: true }
+        );
+
+        fileSent = true;
+
+        const successMessageParts = [
+          '✅ *Áudio pronto!*',
+          '',
+          '📝 *Nota:* Enviado como arquivo MP3 (formato original)',
+          `🎵 *Título:* ${prettyTitle}`,
+          durationSeconds ? `⏱️ *Duração:* ${durationSeconds}s` : null,
+          `📁 *Arquivo:* ${path.basename(finalMediaPath)}`
+        ].filter(Boolean);
+
+        await safeReply(client, chatId, successMessageParts.join('\n'), message.id);
+        return;
+      }
+
+      // Send converted audio as audio message
       await client.sendFile(
         chatId,
-        finalMediaPath,
-        path.basename(finalMediaPath),
+        audioPathToSend,
+        path.basename(audioPathToSend),
         undefined,
         undefined,
         true,
-        true,
+        false,
         false,
         undefined,
         undefined,
-        { mimetype: 'audio/mpeg', asDocument: false }
+        { mimetype: mimetypeToSend, asDocument: false }
       );
 
       fileSent = true;
@@ -128,7 +176,7 @@ async function handleDownloadMp3Command(client, message, chatId, params) {
         '',
         `🎵 *Título:* ${prettyTitle}`,
         durationSeconds ? `⏱️ *Duração:* ${durationSeconds}s` : null,
-        `📁 *Arquivo:* ${path.basename(finalMediaPath)}`
+        `📁 *Formato:* OPUS (otimizado para WhatsApp)`
       ].filter(Boolean);
 
       await safeReply(client, chatId, successMessageParts.join('\n'), message.id);
@@ -136,6 +184,7 @@ async function handleDownloadMp3Command(client, message, chatId, params) {
       console.error('[DownloadMp3Command] Error:', error.message);
       await safeReply(client, chatId, `❌ ${error.message}`, message.id);
     } finally {
+      // Cleanup temporary download file
       if (downloadResult && downloadResult.filePath) {
         try {
           if (fs.existsSync(downloadResult.filePath)) {
@@ -146,13 +195,36 @@ async function handleDownloadMp3Command(client, message, chatId, params) {
         }
       }
 
-      if (finalMediaPath && !fileSent) {
+      // Cleanup MP3 file when conversion succeeded (we keep only OPUS)
+      if (finalMediaPath && conversionSucceeded) {
         try {
           if (fs.existsSync(finalMediaPath)) {
             fs.unlinkSync(finalMediaPath);
           }
         } catch (cleanupError) {
-          console.warn('[DownloadMp3Command] Failed to remove orphaned media file:', cleanupError.message);
+          console.warn('[DownloadMp3Command] Failed to remove MP3 file:', cleanupError.message);
+        }
+      }
+
+      // Cleanup MP3 file if sending failed and no conversion happened (document send failed)
+      if (finalMediaPath && !fileSent && !conversionSucceeded) {
+        try {
+          if (fs.existsSync(finalMediaPath)) {
+            fs.unlinkSync(finalMediaPath);
+          }
+        } catch (cleanupError) {
+          console.warn('[DownloadMp3Command] Failed to remove orphaned MP3 file:', cleanupError.message);
+        }
+      }
+
+      // Cleanup converted OPUS file if sending failed
+      if (convertedAudioPath && !fileSent) {
+        try {
+          if (fs.existsSync(convertedAudioPath)) {
+            fs.unlinkSync(convertedAudioPath);
+          }
+        } catch (cleanupError) {
+          console.warn('[DownloadMp3Command] Failed to remove converted audio file:', cleanupError.message);
         }
       }
     }

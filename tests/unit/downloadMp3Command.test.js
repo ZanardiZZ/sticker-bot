@@ -32,14 +32,27 @@ class MockClient {
   }
 }
 
-function withMockedDownloadAudio(mockImplementation, testFn) {
+function withMockedDownloadAudio(mockImplementation, converterMock, testFn) {
   const servicePath = require.resolve('../../services/videoDownloader');
+  const converterPath = require.resolve('../../services/audioConverter');
   const handlerPath = require.resolve('../../commands/handlers/downloadMp3');
 
   const videoDownloader = require(servicePath);
+  const audioConverter = require(converterPath);
   const originalDownloadAudio = videoDownloader.downloadAudio;
+  const originalConvertMp3ToOpusAuto = audioConverter.convertMp3ToOpusAuto;
 
   videoDownloader.downloadAudio = mockImplementation;
+  
+  // Use provided converter mock or default to failure
+  if (converterMock) {
+    audioConverter.convertMp3ToOpusAuto = converterMock;
+  } else {
+    // Mock audio converter to simulate conversion failure (fallback to document send)
+    audioConverter.convertMp3ToOpusAuto = async () => {
+      throw new Error('Mock conversion failure - testing fallback');
+    };
+  }
 
   delete require.cache[handlerPath];
   const handlerModule = require(handlerPath);
@@ -48,13 +61,14 @@ function withMockedDownloadAudio(mockImplementation, testFn) {
     .then(() => testFn(handlerModule))
     .finally(() => {
       videoDownloader.downloadAudio = originalDownloadAudio;
+      audioConverter.convertMp3ToOpusAuto = originalConvertMp3ToOpusAuto;
       delete require.cache[handlerPath];
     });
 }
 
 const tests = [
   {
-    name: '#downloadmp3 copies audio to media directory and sends file',
+    name: '#downloadmp3 converts audio and sends file (with fallback to document on conversion failure)',
     fn: async () => {
       const client = new MockClient();
       const chatId = '123@c.us';
@@ -85,7 +99,7 @@ const tests = [
           url: 'https://youtube.com/watch?v=abcd',
           fileExt: 'mp3'
         }
-      }), async ({ handleDownloadMp3Command }) => {
+      }), null, async ({ handleDownloadMp3Command }) => {
         await handleDownloadMp3Command(client, message, chatId, 'https://youtube.com/watch?v=abcd');
       });
 
@@ -98,18 +112,105 @@ const tests = [
 
       assertEqual(fileMessages.length, 1, 'Should send one audio file');
       const filePayload = fileMessages[0].payload;
-      assert(filePayload.filePath.endsWith('.mp3'), 'Saved file should use mp3 extension');
+      assert(filePayload.filePath.endsWith('.mp3'), 'Saved file should use mp3 extension (fallback)');
       assert(path.dirname(filePayload.filePath) === MEDIA_DIR, 'Audio should be stored in bot/media directory');
-
-      const copiedContent = fs.readFileSync(filePayload.filePath, 'utf8');
-      assertEqual(copiedContent, 'fake-mp3-content', 'Copied audio should match downloaded content');
 
       const extraArgs = filePayload.extraArgs || [];
       const optionsArg = extraArgs[extraArgs.length - 1];
       assert(optionsArg && optionsArg.mimetype === 'audio/mpeg', 'sendFile should receive audio/mpeg mimetype option');
+      assert(optionsArg && optionsArg.asDocument === true, 'sendFile should send as document when conversion fails');
 
       try {
         const newFiles = fs.readdirSync(MEDIA_DIR).filter(name => !existingFiles.has(name));
+        newFiles.forEach(name => {
+          const target = path.join(MEDIA_DIR, name);
+          if (fs.existsSync(target)) {
+            fs.unlinkSync(target);
+          }
+        });
+      } finally {
+        if (fs.existsSync(tempDir)) {
+          fs.readdirSync(tempDir).forEach(file => {
+            const target = path.join(tempDir, file);
+            if (fs.existsSync(target)) {
+              fs.unlinkSync(target);
+            }
+          });
+          fs.rmdirSync(tempDir, { recursive: false });
+        }
+      }
+    }
+  },
+  {
+    name: '#downloadmp3 successfully converts MP3 to OPUS and sends as audio message',
+    fn: async () => {
+      const client = new MockClient();
+      const chatId = '123@c.us';
+
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'download-audio-opus-'));
+      const tempFile = path.join(tempDir, 'temp-audio.mp3');
+      fs.writeFileSync(tempFile, 'fake-mp3-content');
+
+      const existingFiles = new Set();
+      if (fs.existsSync(MEDIA_DIR)) {
+        fs.readdirSync(MEDIA_DIR).forEach(file => existingFiles.add(file));
+      } else {
+        fs.mkdirSync(MEDIA_DIR, { recursive: true });
+      }
+
+      const message = {
+        body: '#downloadmp3 https://youtube.com/watch?v=xyz',
+        id: 'MSG-DL-AUDIO-OPUS'
+      };
+
+      // Mock successful OPUS conversion
+      const mockConverter = async (inputPath) => {
+        const dir = path.dirname(inputPath);
+        const basename = path.basename(inputPath, path.extname(inputPath));
+        const outputPath = path.join(dir, `${basename}.ogg`);
+        // Create a fake OPUS file
+        fs.writeFileSync(outputPath, 'fake-opus-content');
+        return outputPath;
+      };
+
+      await withMockedDownloadAudio(async () => ({
+        filePath: tempFile,
+        mimetype: 'audio/mpeg',
+        metadata: {
+          title: 'Test Audio for OPUS Conversion',
+          duration: 45,
+          source: 'YouTube',
+          url: 'https://youtube.com/watch?v=xyz',
+          fileExt: 'mp3'
+        }
+      }), mockConverter, async ({ handleDownloadMp3Command }) => {
+        await handleDownloadMp3Command(client, message, chatId, 'https://youtube.com/watch?v=xyz');
+      });
+
+      const textMessages = client.sent.filter(entry => entry.type === 'text');
+      const fileMessages = client.sent.filter(entry => entry.type === 'file');
+
+      assertEqual(textMessages.length, 2, 'Should send two text updates (start + success)');
+      assert(textMessages[0].payload.includes('Baixando áudio'), 'First message should mention download start');
+      assert(textMessages[1].payload.includes('Áudio pronto'), 'Success message should confirm completion');
+      assert(textMessages[1].payload.includes('OPUS'), 'Success message should mention OPUS format');
+
+      assertEqual(fileMessages.length, 1, 'Should send one audio file');
+      const filePayload = fileMessages[0].payload;
+      assert(filePayload.filePath.endsWith('.ogg'), 'Sent file should use ogg extension (OPUS)');
+      assert(path.dirname(filePayload.filePath) === MEDIA_DIR, 'Audio should be stored in bot/media directory');
+
+      const extraArgs = filePayload.extraArgs || [];
+      const optionsArg = extraArgs[extraArgs.length - 1];
+      assert(optionsArg && optionsArg.mimetype === 'audio/ogg; codecs=opus', 'sendFile should receive audio/ogg; codecs=opus mimetype');
+      assert(optionsArg && optionsArg.asDocument === false, 'sendFile should send as audio message when conversion succeeds');
+
+      // Verify MP3 file was cleaned up (only OPUS should remain)
+      const newFiles = fs.readdirSync(MEDIA_DIR).filter(name => !existingFiles.has(name));
+      const mp3Files = newFiles.filter(name => name.endsWith('.mp3'));
+      assertEqual(mp3Files.length, 0, 'MP3 file should be cleaned up after successful conversion');
+
+      try {
         newFiles.forEach(name => {
           const target = path.join(MEDIA_DIR, name);
           if (fs.existsSync(target)) {
