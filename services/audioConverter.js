@@ -1,10 +1,21 @@
-const ffmpeg = require('fluent-ffmpeg');
-const ffmpegStatic = require('ffmpeg-static');
 const fs = require('fs');
 const path = require('path');
 
-// Set ffmpeg path
-ffmpeg.setFfmpegPath(ffmpegStatic);
+// Conditional loading for FFmpeg - these may fail in some environments due to network restrictions
+let ffmpeg = null;
+let ffmpegStatic = null;
+
+try {
+  ffmpeg = require('fluent-ffmpeg');
+  ffmpegStatic = require('ffmpeg-static');
+  
+  if (ffmpegStatic) {
+    ffmpeg.setFfmpegPath(ffmpegStatic);
+  }
+} catch (error) {
+  console.warn('[AudioConverter] FFmpeg not available:', error.message);
+  console.warn('[AudioConverter] Audio conversion features will be disabled');
+}
 
 // Audio conversion settings optimized for WhatsApp
 // WhatsApp requires OPUS codec in OGG container for audio messages
@@ -25,6 +36,10 @@ const OUTPUT_FORMAT = 'ogg';      // OGG container for OPUS codec
  */
 async function convertMp3ToOpus(inputPath, outputPath) {
   return new Promise((resolve, reject) => {
+    if (!ffmpeg || !ffmpegStatic) {
+      return reject(new Error('FFmpeg is not available'));
+    }
+
     if (!fs.existsSync(inputPath)) {
       return reject(new Error('Input file does not exist'));
     }
