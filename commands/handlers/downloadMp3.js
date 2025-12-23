@@ -112,7 +112,7 @@ async function handleDownloadMp3Command(client, message, chatId, params) {
         : 'Áudio';
 
       // Try to convert MP3 to OPUS for WhatsApp compatibility
-      let audioPathToSend = finalMediaPath;
+      let audioPathToSend;
       let mimetypeToSend;
       
       try {
