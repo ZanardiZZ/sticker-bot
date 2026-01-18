@@ -2,11 +2,12 @@
 /**
  * Backfill script to compute visual hashes for legacy media rows.
  *
- * Usage: node scripts/backfill-hash-visual.js [--dry-run] [--recalculate-all]
+ * Usage: node scripts/backfill-hash-visual.js [--dry-run] [--recalculate-all] [--only-animated]
  *
  * Options:
  *   --dry-run          Show what would be updated without making changes
  *   --recalculate-all  Recalculate ALL hashes, not just missing ones
+ *   --only-animated    Recalculate only videos and animated GIFs/WebPs
  */
 
 try {
@@ -40,7 +41,21 @@ const { getHashVisual } = require('../database/utils');
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const RECALCULATE_ALL = process.argv.includes('--recalculate-all');
+const ONLY_ANIMATED = process.argv.includes('--only-animated');
 const MAX_VIDEO_FRAMES = 5;
+
+/**
+ * Checks if a hash is degenerate (should be filtered out)
+ */
+function isDegenerateHash(hash) {
+  if (!hash || hash.length !== 16) return true;
+  const h = hash.toLowerCase();
+  if (h === '0000000000000000' || h === 'ffffffffffffffff') return true;
+  const zeroCount = (h.match(/0/g) || []).length;
+  if (zeroCount > 12) return true;
+  const uniqueChars = new Set(h).size;
+  return uniqueChars < 4;
+}
 
 async function queryAll(sql, params = []) {
   return new Promise((resolve, reject) => {
@@ -74,7 +89,10 @@ async function hashAnimatedBuffer(buffer) {
       try {
         const frameBuf = await sharp(buffer, { animated: true, page }).png().toBuffer();
         const frameHash = await getHashVisual(frameBuf);
-        if (frameHash) hashes.push(frameHash);
+        // Only include non-degenerate hashes
+        if (frameHash && !isDegenerateHash(frameHash)) {
+          hashes.push(frameHash);
+        }
       } catch (frameErr) {
         console.warn('[Backfill] Falha ao extrair quadro para hash:', frameErr.message);
       }
@@ -140,7 +158,10 @@ async function hashVideo(filePath) {
         const framePath = path.join(tempDir, file);
         const frameBuf = await fsp.readFile(framePath);
         const frameHash = await getHashVisual(frameBuf);
-        if (frameHash) frameHashes.push(frameHash);
+        // Only include non-degenerate hashes
+        if (frameHash && !isDegenerateHash(frameHash)) {
+          frameHashes.push(frameHash);
+        }
       } catch (frameErr) {
         console.warn('[Backfill] Falha ao processar frame de vídeo:', frameErr.message);
       }
@@ -240,10 +261,21 @@ async function main() {
   if (RECALCULATE_ALL) {
     console.log('Modo --recalculate-all: recalculando TODOS os hashes.');
   }
+  if (ONLY_ANIMATED) {
+    console.log('Modo --only-animated: recalculando apenas vídeos e GIFs animados.');
+  }
 
-  const query = RECALCULATE_ALL
-    ? `SELECT id, file_path, mimetype, hash_md5 FROM media ORDER BY id ASC`
-    : `SELECT id, file_path, mimetype, hash_md5 FROM media WHERE hash_visual IS NULL OR hash_visual = '' ORDER BY id ASC`;
+  let query;
+  if (ONLY_ANIMATED) {
+    // Only recalculate videos and animated images (those with multi-frame hashes or video mimetypes)
+    query = `SELECT id, file_path, mimetype, hash_md5 FROM media
+             WHERE (mimetype LIKE 'video/%' OR mimetype LIKE '%gif%' OR hash_visual LIKE '%:%')
+             ORDER BY id ASC`;
+  } else if (RECALCULATE_ALL) {
+    query = `SELECT id, file_path, mimetype, hash_md5 FROM media ORDER BY id ASC`;
+  } else {
+    query = `SELECT id, file_path, mimetype, hash_md5 FROM media WHERE hash_visual IS NULL OR hash_visual = '' ORDER BY id ASC`;
+  }
 
   const rows = await queryAll(query);
 
