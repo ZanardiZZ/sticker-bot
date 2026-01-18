@@ -230,6 +230,21 @@ function hammingDistanceSingle(hash1, hash2) {
 }
 
 /**
+ * Checks if a hash is degenerate (all zeros, all ones, or mostly uniform)
+ * These hashes cause false positive matches
+ * @param {string} hash - 16-char hex hash
+ * @returns {boolean}
+ */
+function isDegenerateHash(hash) {
+  if (!hash || hash.length !== 16) return true;
+  // All zeros or all ones
+  if (hash === '0000000000000000' || hash === 'ffffffffffffffff') return true;
+  // Count unique characters - if less than 3, it's likely degenerate
+  const uniqueChars = new Set(hash.toLowerCase()).size;
+  return uniqueChars < 3;
+}
+
+/**
  * Calculates Hamming distance between two hash strings
  * Supports both single hashes and multi-frame hashes (separated by :)
  * @param {string} hash1 - First hash string (single or multi-frame)
@@ -241,9 +256,9 @@ function hammingDistance(hash1, hash2) {
     return 64; // Max distance if invalid
   }
 
-  // Split multi-frame hashes
-  const frames1 = hash1.split(':').filter(h => h && h.length === 16);
-  const frames2 = hash2.split(':').filter(h => h && h.length === 16);
+  // Split multi-frame hashes and filter out degenerate frames
+  const frames1 = hash1.split(':').filter(h => h && h.length === 16 && !isDegenerateHash(h));
+  const frames2 = hash2.split(':').filter(h => h && h.length === 16 && !isDegenerateHash(h));
 
   // If no valid frames, return max distance
   if (frames1.length === 0 || frames2.length === 0) {
