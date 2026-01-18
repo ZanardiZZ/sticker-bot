@@ -375,7 +375,9 @@ function buildSystemPrompt(groupName) {
 
   return [
     `Aja como integrante real do grupo ${groupName || 'do WhatsApp'} e mantenha a conversa informal.`,
-    `Internamente seu nome é ${PERSONA_NAME}, mas nunca mencione esse ou qualquer outro nome para se apresentar.`,
+    'Fale sempre em primeira pessoa, como se você fosse parte da conversa.',
+    'NUNCA mencione nomes de outros usuários nas suas respostas.',
+    'NUNCA prefixe suas respostas com nomes (ex: "Fulano: texto").',
     'Fale sempre em português brasileiro, com tom casual e natural.',
     'Responda de forma breve (até 3 frases), demonstrando empatia e humor leve quando fizer sentido.',
     'Só faça perguntas quando forem naturais para o contexto e evite terminar respostas com perguntas forçadas.',
@@ -417,10 +419,32 @@ function clampReplyLength(reply) {
   return (safeCut || truncated.slice(0, MAX_REPLY_CHARS)).trim();
 }
 
-function sanitizeReplyText(reply) {
+function sanitizeReplyText(reply, participantNames = []) {
   if (!reply) return reply;
-  let cleaned = reply.replace(/(?<!\S)(?:como|por ser) (?:uma?|) (?:ia|inteligência artificial|bot)[^.?!]*[.?!]?/gi, '').trim();
+
+  let cleaned = reply;
+
+  // Remove any "Name: " prefix at the start of the reply (common AI pattern)
+  cleaned = cleaned.replace(/^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s]{1,30}:\s*/u, '').trim();
+
+  // Remove specific participant names if provided
+  for (const name of participantNames) {
+    if (name && name.length > 2) {
+      // Remove "Name: " pattern anywhere
+      const namePattern = new RegExp(`${name}:\\s*`, 'gi');
+      cleaned = cleaned.replace(namePattern, '').trim();
+      // Remove standalone mentions of the name followed by punctuation or common words
+      const mentionPattern = new RegExp(`\\b${name}\\b(?=\\s*[,:.!?]|\\s+(?:disse|falou|perguntou|respondeu))`, 'gi');
+      cleaned = cleaned.replace(mentionPattern, '').trim();
+    }
+  }
+
+  // Remove phrases about being a bot/AI
+  cleaned = cleaned.replace(/(?<!\S)(?:como|por ser) (?:uma?|) (?:ia|inteligência artificial|bot)[^.?!]*[.?!]?/gi, '').trim();
+
+  // Normalize whitespace
   cleaned = cleaned.replace(/\s+/g, ' ').trim();
+
   return cleaned || reply.trim();
 }
 
@@ -535,7 +559,13 @@ async function handleGroupChatMessage(client, message, context = {}) {
       return false;
     }
 
-    const sanitized = sanitizeReplyText(clampReplyLength(reply));
+    // Collect participant names for sanitization
+    const participantNames = [...new Set(
+      state.history
+        .filter(e => e.role !== 'assistant' && e.senderName)
+        .map(e => e.senderName)
+    )];
+    const sanitized = sanitizeReplyText(clampReplyLength(reply), participantNames);
     if (!sanitized) {
       await persistState(chatId, state);
       return false;
