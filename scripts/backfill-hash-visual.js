@@ -2,7 +2,11 @@
 /**
  * Backfill script to compute visual hashes for legacy media rows.
  *
- * Usage: node scripts/backfill-hash-visual.js [--dry-run]
+ * Usage: node scripts/backfill-hash-visual.js [--dry-run] [--recalculate-all]
+ *
+ * Options:
+ *   --dry-run          Show what would be updated without making changes
+ *   --recalculate-all  Recalculate ALL hashes, not just missing ones
  */
 
 try {
@@ -35,6 +39,7 @@ const { db } = require('../database');
 const { getHashVisual } = require('../database/utils');
 
 const DRY_RUN = process.argv.includes('--dry-run');
+const RECALCULATE_ALL = process.argv.includes('--recalculate-all');
 const MAX_VIDEO_FRAMES = 5;
 
 async function queryAll(sql, params = []) {
@@ -232,13 +237,15 @@ async function main() {
   if (DRY_RUN) {
     console.log('Executando em modo DRY-RUN. Nenhuma alteração será gravada.');
   }
+  if (RECALCULATE_ALL) {
+    console.log('Modo --recalculate-all: recalculando TODOS os hashes.');
+  }
 
-  const rows = await queryAll(`
-    SELECT id, file_path, mimetype, hash_md5
-    FROM media
-    WHERE hash_visual IS NULL OR hash_visual = ''
-    ORDER BY id ASC
-  `);
+  const query = RECALCULATE_ALL
+    ? `SELECT id, file_path, mimetype, hash_md5 FROM media ORDER BY id ASC`
+    : `SELECT id, file_path, mimetype, hash_md5 FROM media WHERE hash_visual IS NULL OR hash_visual = '' ORDER BY id ASC`;
+
+  const rows = await queryAll(query);
 
   if (!rows.length) {
     console.log('Nenhuma mídia pendente de hash_visual. Nada a fazer.');
