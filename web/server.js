@@ -1,5 +1,6 @@
 // ... route definitions moved later so `app` is initialized first
 const express = require('express');
+const compression = require('compression');
 const { authMiddleware, registerAuthRoutes, requireLogin, requireAdmin } = require('./auth.js');
 const cors = require('cors');
 const fs = require('fs');
@@ -55,6 +56,16 @@ app.set('trust proxy', true);
 
 // Basic middleware setup - MUST be before any routes
 app.use(cors());
+app.use(compression({
+  level: 6, // Balance between compression ratio and CPU usage
+  threshold: 1024, // Only compress responses larger than 1KB
+  filter: (req, res) => {
+    // Don't compress if client doesn't accept it
+    if (req.headers['x-no-compression']) return false;
+    // Use compression filter defaults (compresses text, json, etc.)
+    return compression.filter(req, res);
+  }
+}));
 app.use(cookieParser());
 
 // Session middleware must run before CSRF protection
@@ -1101,6 +1112,23 @@ app.patch('/api/admin/group-users/:groupId/:userId', requireAdmin, async (req, r
     const { groupId, userId } = req.params;
     const { field, value } = req.body;
     // Field validation is now enforced in updateGroupUserField for defense in depth
+    if (field === 'display_name') {
+      const name = typeof value === 'string' && value.trim() ? value.trim() : null;
+      db.run(`
+        INSERT INTO contacts(sender_id, display_name, updated_at)
+        VALUES (?, ?, strftime('%s','now'))
+        ON CONFLICT(sender_id) DO UPDATE SET
+          display_name = excluded.display_name,
+          updated_at = excluded.updated_at
+      `, [userId, name], (err) => {
+        if (err) {
+          return res.status(500).json({ error: 'db_error', details: err.message });
+        }
+        invalidateGroupUserCache(groupId, userId);
+        return res.json({ ok: true });
+      });
+      return;
+    }
     await updateGroupUserField(groupId, userId, field, field.endsWith('_commands') ? JSON.stringify(value) : value);
     invalidateGroupUserCache(groupId, userId);
     res.json({ ok: true });
@@ -1638,7 +1666,7 @@ app.get('/api/bot-config', (_req, res) => {
 
 // Simple in-memory cache for API responses
 const apiCache = new Map();
-const CACHE_DURATION = 30000; // 30 seconds
+const CACHE_DURATION = 300000; // 5 minutes
 
 function getCacheKey(req) {
   const { q = '', page = '1', per_page = '60', tags = '', any_tag = '', nsfw = 'all', sort = 'newest' } = req.query;
