@@ -6,6 +6,7 @@ const {
   getMD5,
   getHashVisual,
   findByHashVisual,
+  findSimilarByHashVisual,
   findById,
   saveMedia,
   getTagsForMedia
@@ -584,12 +585,16 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
     const forceInsert = !!(forceMap instanceof Map ? forceMap.get(chatId) : forceMap?.[chatId]);
 
     if (!forceInsert && hashVisual) {
-      const existing = await findByHashVisual(hashVisual);
+      // Use Hamming distance matching with threshold of 15 bits (out of 64)
+      const existing = await findSimilarByHashVisual(hashVisual, 15);
       if (existing) {
+        const similarity = existing._hammingDistance === 0
+          ? 'idêntica'
+          : `${Math.round((64 - existing._hammingDistance) / 64 * 100)}% similar`;
         await safeReply(
           client,
           chatId,
-          `Mídia visualmente semelhante já existe no banco. ID: ${existing.id}. Use #forçar respondendo à mídia para salvar duplicado ou use #ID ${existing.id} para solicitar esta mídia.`,
+          `Mídia visualmente semelhante já existe no banco (${similarity}). ID: ${existing.id}. Use #forçar respondendo à mídia para salvar duplicado ou use #ID ${existing.id} para solicitar esta mídia.`,
           message.id
         );
         return;

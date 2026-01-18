@@ -197,6 +197,34 @@ function isValidSemVer(versionString) {
   }
 }
 
+/**
+ * Calculates Hamming distance between two hex hash strings
+ * @param {string} hash1 - First hex hash string (16 chars for 64-bit)
+ * @param {string} hash2 - Second hex hash string (16 chars for 64-bit)
+ * @returns {number} Number of differing bits (0-64)
+ */
+function hammingDistance(hash1, hash2) {
+  if (!hash1 || !hash2 || hash1.length !== hash2.length) {
+    return 64; // Max distance if invalid
+  }
+
+  // Convert hex strings to BigInt for XOR operation
+  const val1 = BigInt('0x' + hash1);
+  const val2 = BigInt('0x' + hash2);
+
+  // XOR to find differing bits
+  let xor = val1 ^ val2;
+
+  // Count set bits (popcount)
+  let distance = 0;
+  while (xor > 0n) {
+    distance += Number(xor & 1n);
+    xor >>= 1n;
+  }
+
+  return distance;
+}
+
 module.exports = {
   getMD5,
   getSynonyms,
@@ -204,6 +232,7 @@ module.exports = {
   getHashVisual,
   getDHash,
   getAnimatedDHashes,
+  hammingDistance,
   isFileProcessed,
   upsertProcessedFile,
   parseSemVer,

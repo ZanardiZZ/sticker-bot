@@ -3,6 +3,7 @@
  */
 
 const { db, dbHandler } = require('../connection');
+const { hammingDistance } = require('../utils');
 
 /**
  * Retrieves the next available media ID, preferring gaps from deletions
@@ -104,6 +105,72 @@ function findByHashVisual(hashVisual) {
       [hashVisual],
       (err, row) => {
         resolve(err ? null : row);
+      }
+    );
+  });
+}
+
+/**
+ * Finds media with similar visual hash using Hamming distance
+ * @param {string} hashVisual - Visual hash to compare
+ * @param {number} threshold - Maximum Hamming distance to consider similar (default: 10)
+ * @returns {Promise<object|null>} Media object with lowest distance or null
+ */
+async function findSimilarByHashVisual(hashVisual, threshold = 10) {
+  if (!hashVisual) return null;
+
+  return new Promise((resolve) => {
+    // First try exact match for performance
+    db.get(
+      'SELECT * FROM media WHERE hash_visual = ? LIMIT 1',
+      [hashVisual],
+      (err, exactMatch) => {
+        if (exactMatch) {
+          resolve({ ...exactMatch, _hammingDistance: 0 });
+          return;
+        }
+
+        // If no exact match, fetch all hashes and compare
+        db.all(
+          'SELECT id, hash_visual FROM media WHERE hash_visual IS NOT NULL',
+          [],
+          (err, rows) => {
+            if (err || !rows || rows.length === 0) {
+              resolve(null);
+              return;
+            }
+
+            let bestMatch = null;
+            let bestDistance = threshold + 1;
+
+            for (const row of rows) {
+              const distance = hammingDistance(hashVisual, row.hash_visual);
+              if (distance < bestDistance) {
+                bestDistance = distance;
+                bestMatch = row;
+              }
+              // Early exit on very close match
+              if (distance <= 2) break;
+            }
+
+            if (bestMatch && bestDistance <= threshold) {
+              // Fetch full record for best match
+              db.get(
+                'SELECT * FROM media WHERE id = ?',
+                [bestMatch.id],
+                (err, fullRecord) => {
+                  if (fullRecord) {
+                    resolve({ ...fullRecord, _hammingDistance: bestDistance });
+                  } else {
+                    resolve(null);
+                  }
+                }
+              );
+            } else {
+              resolve(null);
+            }
+          }
+        );
       }
     );
   });
@@ -392,6 +459,7 @@ function findMediaByTheme(keywords, limit = 5) {
 module.exports = {
   saveMedia,
   findByHashVisual,
+  findSimilarByHashVisual,
   findById,
   getRandomMedia,
   getMediaWithLowestRandomCount,
