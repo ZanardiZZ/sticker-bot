@@ -30,7 +30,7 @@ const validation = require('./validation');
 const media = require('./media');
 
 // Database functions
-const { updateMediaDescription, updateMediaTags, incrementCommandUsage } = require('../database/index.js');
+const { db, updateMediaDescription, updateMediaTags, incrementCommandUsage } = require('../database/index.js');
 const { safeReply } = require('../utils/safeMessaging');
 const { parseCommand } = require('../utils/commandNormalizer');
 const packageJson = require('../package.json');
@@ -44,6 +44,41 @@ const taggingMap = new Map();
 const forceMap = new Map();
 const forceVideoToStickerMap = new Map();
 const clearDescriptionCmds = [];
+
+// Helpers
+function querySingle(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => {
+      if (err) return reject(err);
+      resolve(row || null);
+    });
+  });
+}
+
+async function isGroupCommandAllowed(groupId, command, senderId) {
+  if (!groupId || !groupId.endsWith('@g.us')) return true;
+
+  // Admin bypass
+  const adminNumber = process.env.ADMIN_NUMBER;
+  if (adminNumber && senderId && senderId === adminNumber) {
+    return true;
+  }
+
+  const key = String(command || '').trim().toLowerCase();
+  if (!key) return true;
+
+  try {
+    const row = await querySingle(
+      `SELECT allowed FROM group_command_permissions WHERE group_id = ? AND LOWER(command) = ? LIMIT 1`,
+      [groupId, key]
+    );
+    if (!row) return true; // default allow if no rule
+    return row.allowed !== 0;
+  } catch (err) {
+    console.warn('[GroupCommand] fallback allow on error:', err?.message || err);
+    return true;
+  }
+}
 
 /**
  * Main command handler that routes commands to appropriate handlers
@@ -62,6 +97,17 @@ async function handleCommand(client, message, chatId, context = {}) {
 
   let handled = false;
   let shouldTrackUsage = false;
+
+  // Enforce per-group command permissions
+  const isGroup = context.isGroup || (chatId && chatId.endsWith('@g.us'));
+  if (isGroup) {
+    const senderId = context.resolvedSenderId || context.rawSenderId;
+    const allowed = await isGroupCommandAllowed(chatId, command, senderId);
+    if (!allowed) {
+      await safeReply(client, chatId, '🚫 Este comando está bloqueado neste grupo.', message.id);
+      return true; // command handled (blocked)
+    }
+  }
 
   try {
     switch (command) {

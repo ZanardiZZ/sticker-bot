@@ -2,7 +2,7 @@
  * WhatsApp verification command handler
  */
 
-const { createVerificationCode, getVerifiedUser } = require('../../database/index');
+const { db, createVerificationCode, getVerifiedUser } = require('../../database/index');
 const { safeReply } = require('../../utils/safeMessaging');
 
 /**
@@ -22,14 +22,14 @@ async function handleVerifyCommand(client, message, chatId) {
     const whatsappJid = message.from;
 
     // Check if user is already verified
-    const existingUser = await getVerifiedUser(client.db, whatsappJid);
+    const existingUser = await getVerifiedUser(db, whatsappJid);
     if (existingUser) {
       await safeReply(client, chatId, `✅ *Sua conta já está verificada!*\n\n👤 Usuário: *${existingUser.username}*\n\nVocê já pode editar figurinhas no site.`);
       return;
     }
 
     // Generate verification code
-    const code = await createVerificationCode(client.db, whatsappJid);
+    const code = await createVerificationCode(db, whatsappJid);
     
     const response = `🔐 *Código de Verificação Gerado*\n\n` +
       `Seu código: *${code}*\n\n` +

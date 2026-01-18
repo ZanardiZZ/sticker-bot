@@ -11,6 +11,43 @@ const { setupMessageHandler, handleMessage } = require('./bot/messageHandler');
 const { sendStickerForMediaRecord } = require('./bot/stickers');
 const { initContactsTable, upsertGroup, upsertGroupMembers } = require('./bot/contacts');
 const { initializeHistoryRecovery, setupPeriodicHistorySync } = require('./bot/historyRecovery');
+const { getMediaIdFromMessage, upsertReaction } = require('./database');
+
+/**
+ * Handles incoming reaction events
+ * @param {Object} reaction - Reaction data from server
+ */
+async function handleReaction(reaction) {
+  const { messageId, chatId, reactorJid, emoji } = reaction;
+
+  if (!messageId || !reactorJid) {
+    console.warn('[Reaction] Missing required fields:', { messageId, reactorJid });
+    return;
+  }
+
+  try {
+    // Find the media associated with this message
+    const mediaId = await getMediaIdFromMessage(messageId);
+
+    if (!mediaId) {
+      // Message is not linked to any media, ignore reaction
+      return;
+    }
+
+    // Store or remove the reaction
+    const result = await upsertReaction(mediaId, messageId, reactorJid, emoji);
+
+    if (result.action === 'added') {
+      console.log(`[Reaction] Added ${emoji} from ${reactorJid} to media ${mediaId}`);
+    } else if (result.action === 'removed') {
+      console.log(`[Reaction] Removed reaction from ${reactorJid} on media ${mediaId}`);
+    } else if (result.action === 'updated') {
+      console.log(`[Reaction] Updated to ${emoji} from ${reactorJid} on media ${mediaId}`);
+    }
+  } catch (err) {
+    console.error('[Reaction] Error handling reaction:', err.message);
+  }
+}
 
 async function syncAllGroupNames(client) {
   if (!client) {
@@ -93,6 +130,14 @@ async function start(client) {
 
   // Setup message handling
   setupMessageHandler(client, handleMessage);
+
+  // Setup reaction handling for tracking reactions to stickers
+  if (typeof client.onReaction === 'function') {
+    client.onReaction(handleReaction);
+    console.log('✅ Registrado handler de reações');
+  } else {
+    console.log('⚠️ Cliente não suporta eventos de reação');
+  }
 
   // Schedule automatic sending
   scheduleAutoSend(client, sendStickerForMediaRecord);

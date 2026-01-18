@@ -66,6 +66,8 @@ async function handleMessage(client, message) {
   const chatId = message.from;
   const rawBody = (message.body || message.caption || '').trim();
   const isPingCommand = typeof rawBody === 'string' && rawBody.toLowerCase().startsWith('#ping');
+  const isVerifyCommand = typeof rawBody === 'string'
+    && (rawBody.toLowerCase().startsWith('#verificar') || rawBody.toLowerCase().startsWith('#verify'));
   const shouldMarkProcessed = messageId && chatId && !isPingCommand;
 
   // Check if message was already processed (for history recovery)
@@ -125,6 +127,10 @@ async function handleMessage(client, message) {
           const dmUserRow = await getDmUser(resolvedSenderId);
           const allowed = dmUserRow && dmUserRow.allowed;
           const blocked = dmUserRow && dmUserRow.blocked;
+          // Permit #verificar / #verify even se não autorizado, desde que não esteja bloqueado
+          if (isVerifyCommand && !blocked) {
+            await upsertDmUser({ user_id: resolvedSenderId, allowed: 0, blocked: 0, note: 'verification-request', last_activity: Math.floor(Date.now() / 1000) });
+          } else
           if (!allowed) {
             // Record the request (ensure admin sees the user in admin panel)
             const now = Math.floor(Date.now() / 1000);

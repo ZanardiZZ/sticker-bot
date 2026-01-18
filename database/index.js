@@ -28,6 +28,8 @@ const configModel = require('./models/config');
 const commandUsageModel = require('./models/commandUsage');
 const packsModel = require('./models/packs');
 const processedMessagesModel = require('./models/processedMessages');
+const whatsappVerificationModel = require('./models/whatsappVerification');
+const reactionsModel = require('./models/reactions');
 
 // Utilities
 const utils = require('./utils');
@@ -92,6 +94,12 @@ module.exports = {
 
   // Processed messages operations
   ...processedMessagesModel,
+
+  // WhatsApp verification operations
+  ...whatsappVerificationModel,
+
+  // Reactions operations
+  ...reactionsModel,
 
   // Utilities
   ...utils

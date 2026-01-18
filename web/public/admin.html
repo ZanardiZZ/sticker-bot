@@ -447,7 +447,14 @@
           <div id="dmUsersTableWrapper" style="margin-top:1rem; overflow-x:auto;">
             <table id="dmUsersTable">
               <thead>
-                <tr><th>User ID</th><th>Permitido</th><th>Bloqueado</th><th>Última Atividade</th><th>Note</th><th>Ações</th></tr>
+                <tr>
+                  <th>Nome</th>
+                  <th>Função</th>
+                  <th>Bloqueado</th>
+                  <th>Última Atividade</th>
+                  <th>Interações</th>
+                  <th>Ações</th>
+                </tr>
               </thead>
               <tbody>
                 <tr><td colspan="6" style="text-align:center; color:#94a3b8;">Nenhum usuário selecionado.</td></tr>
@@ -551,7 +558,7 @@
             <table id="groupUsersTable">
               <thead>
                 <tr>
-                  <th>User ID</th>
+                  <th>Nome</th>
                   <th>Função</th>
                   <th>Bloqueado</th>
                   <th>Última Atividade</th>
@@ -834,6 +841,59 @@
       <button id="saveUserChanges" class="btn-primary" style="padding: 0.5rem 1rem;">Salvar</button>
       <button id="cancelUserEdit" class="btn-danger" style="padding: 0.5rem 1rem; background: #6c757d;">Cancelar</button>
       <button id="deleteUser" class="btn-danger" style="padding: 0.5rem 1rem;">Deletar Usuário</button>
+    </div>
+  </div>
+</div>
+
+<!-- Group User Edit Modal -->
+<div id="groupUserModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; z-index: 1000;">
+  <div class="box" style="background: #ffffff; border: 1px solid #e2e8f0; padding: 1.5rem; width: 560px; border-radius: 8px; display: flex; flex-direction: column; gap: 1rem; max-height: 85vh; overflow-y: auto;">
+    <h3 style="margin: 0; color: #1e293b;">Gerenciar Usuário do Grupo</h3>
+
+    <div id="groupUserInfo" style="background: #f8fafc; padding: 1rem; border-radius: 6px; border: 1px solid #e2e8f0; display:flex; flex-direction:column; gap:0.35rem;">
+      <!-- preenchido via JS -->
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+      <label style="font-weight: 500; color: #374151;">Nome exibido</label>
+      <input type="text" id="groupUserDisplayName" style="padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;" placeholder="Opcional">
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.75rem;">
+      <div style="display:flex; flex-direction:column; gap:0.4rem;">
+        <label style="font-weight: 500; color: #374151;">Função</label>
+        <select id="groupUserRole" style="padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+          <option value="user">user</option>
+          <option value="admin">admin</option>
+        </select>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:0.4rem;">
+        <label style="font-weight: 500; color: #374151;">Bloqueado</label>
+        <select id="groupUserBlocked" style="padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+          <option value="0">Não</option>
+          <option value="1">Sim</option>
+        </select>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem;">
+      <div style="display:flex; flex-direction:column; gap:0.5rem;">
+        <label style="font-weight: 500; color: #374151;">Comandos permitidos</label>
+        <div id="groupUserAllowedCmds" style="border:1px solid #e2e8f0; border-radius:6px; padding:0.5rem; max-height:200px; overflow:auto;"></div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:0.5rem;">
+        <label style="font-weight: 500; color: #374151;">Comandos bloqueados</label>
+        <div id="groupUserRestrictedCmds" style="border:1px solid #e2e8f0; border-radius:6px; padding:0.5rem; max-height:200px; overflow:auto;"></div>
+      </div>
+    </div>
+
+    <div id="groupUserMeta" style="font-size:0.9rem; color:#475569;">
+      <!-- meta info -->
+    </div>
+
+    <div style="display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 0.5rem;">
+      <button id="saveGroupUser" class="btn-primary" style="padding: 0.5rem 1rem;">Salvar</button>
+      <button id="cancelGroupUser" class="btn-danger" style="padding: 0.5rem 1rem; background: #6c757d;">Cancelar</button>
     </div>
   </div>
 </div>

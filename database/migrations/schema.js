@@ -196,6 +196,31 @@ function initializeTables(db) {
         )
       `);
 
+      // Message-media link table for reaction tracking
+      db.run(`
+        CREATE TABLE IF NOT EXISTS message_media_links (
+          message_id TEXT PRIMARY KEY,
+          media_id INTEGER NOT NULL,
+          chat_id TEXT NOT NULL,
+          created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+          FOREIGN KEY(media_id) REFERENCES media(id) ON DELETE CASCADE
+        )
+      `);
+
+      // Media reactions table
+      db.run(`
+        CREATE TABLE IF NOT EXISTS media_reactions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          media_id INTEGER NOT NULL,
+          message_id TEXT NOT NULL,
+          reactor_jid TEXT NOT NULL,
+          emoji TEXT NOT NULL,
+          created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+          UNIQUE(media_id, reactor_jid, emoji),
+          FOREIGN KEY(media_id) REFERENCES media(id) ON DELETE CASCADE
+        )
+      `);
+
       // Create indexes for performance
       createIndexes(db);
 
@@ -262,6 +287,16 @@ function createIndexes(db) {
   // Processed messages indexes
   db.run(`CREATE INDEX IF NOT EXISTS idx_processed_messages_chat_id ON processed_messages(chat_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_processed_messages_processed_at ON processed_messages(processed_at DESC)`);
+
+  // Message-media links indexes
+  db.run(`CREATE INDEX IF NOT EXISTS idx_message_media_links_media_id ON message_media_links(media_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_message_media_links_chat_id ON message_media_links(chat_id)`);
+
+  // Media reactions indexes
+  db.run(`CREATE INDEX IF NOT EXISTS idx_media_reactions_media_id ON media_reactions(media_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_media_reactions_message_id ON media_reactions(message_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_media_reactions_reactor_jid ON media_reactions(reactor_jid)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_media_reactions_emoji ON media_reactions(emoji)`);
 }
 
 module.exports = { initializeTables };

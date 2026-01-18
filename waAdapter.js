@@ -14,6 +14,7 @@ class BaileysWsAdapter {
     this.ws = null;
     this._listeners = new Set();
     this._anyListeners = new Set();
+    this._reactionListeners = new Set();
     this._ready = false;
     this._pendingMedia = new Map(); // messageId -> resolver
     this._pendingQuoted = new Map(); // messageId -> resolver
@@ -54,6 +55,9 @@ class BaileysWsAdapter {
         const m = msg.data;
         for (const fn of this._anyListeners) fn(m);
         for (const fn of this._listeners) fn(m);
+      } else if (msg.type === 'reaction' && msg.data) {
+        const r = msg.data;
+        for (const fn of this._reactionListeners) fn(r);
       } else if (msg.type === 'media' && msg.messageId) {
         const pending = this._pendingMedia.get(msg.messageId);
         if (pending) {
@@ -217,6 +221,7 @@ class BaileysWsAdapter {
   // OpenWA-like event APIs used by current code
   onAnyMessage(fn) { this._anyListeners.add(fn); }
   onMessage(fn) { this._listeners.add(fn); }
+  onReaction(fn) { this._reactionListeners.add(fn); }
 
   // Messaging primitives
   async sendText(chatId, text) {
