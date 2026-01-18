@@ -31,9 +31,9 @@ function getLastNotifiedVersion() {
  */
 function setLastNotifiedVersion(version) {
   return new Promise((resolve, reject) => {
+    // Try with updated_at first, fallback to without if column doesn't exist
     db.run(
-      `INSERT OR REPLACE INTO bot_config (key, value, updated_at)
-       VALUES ('last_notified_version', ?, strftime('%s','now'))`,
+      `INSERT OR REPLACE INTO bot_config (key, value) VALUES ('last_notified_version', ?)`,
       [version],
       (err) => {
         if (err) reject(err);
@@ -149,11 +149,11 @@ async function checkAndNotifyVersionUpdate(client) {
  */
 function initConfigTable() {
   return new Promise((resolve, reject) => {
+    // Simple table - just key/value, no extra columns
     db.run(`
       CREATE TABLE IF NOT EXISTS bot_config (
         key TEXT PRIMARY KEY,
-        value TEXT,
-        updated_at INTEGER DEFAULT (strftime('%s','now'))
+        value TEXT
       )
     `, (err) => {
       if (err) reject(err);

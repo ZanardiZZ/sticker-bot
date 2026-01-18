@@ -66,8 +66,7 @@ function getLastProcessedCommit() {
 function setLastProcessedCommit(sha) {
   return new Promise((resolve, reject) => {
     db.run(
-      `INSERT OR REPLACE INTO bot_config (key, value, updated_at)
-       VALUES ('last_version_commit', ?, strftime('%s','now'))`,
+      `INSERT OR REPLACE INTO bot_config (key, value) VALUES ('last_version_commit', ?)`,
       [sha],
       (err) => {
         if (err) reject(err);
@@ -134,8 +133,7 @@ function initializeTables() {
       db.run(`
         CREATE TABLE IF NOT EXISTS bot_config (
           key TEXT PRIMARY KEY,
-          value TEXT,
-          updated_at INTEGER DEFAULT (strftime('%s','now'))
+          value TEXT
         )
       `, (err) => {
         if (err) reject(err);
