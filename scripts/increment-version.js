@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 /**
- * Script to increment bot version
- * 
+ * Script to increment bot version following Conventional Commits
+ *
  * Usage:
- *   node scripts/increment-version.js              # Auto-increment minor by 0.1
- *   node scripts/increment-version.js --set 1.0    # Set specific version
- *   node scripts/increment-version.js --check      # Check for version in recent commits
- * 
- * Version format: Uses decimal minor versions (0.5, 0.6, 0.7, etc.)
- * - Major.Minor.Patch format where minor increments by 1 each changelog
- * - Supports manual bump via commit messages: "bump: version X.Y" or "bump: X.Y"
- * - Supports patch-only updates via commit keyword: "patch" (increments only patch version)
+ *   node scripts/increment-version.js              # Auto-increment based on commits
+ *   node scripts/increment-version.js --set 1.0.0  # Set specific version
+ *   node scripts/increment-version.js --check      # Check what version bump would happen
+ *
+ * Conventional Commits:
+ *   fix: ...           → Patch (0.6.0 → 0.6.1)
+ *   feat: ...          → Minor (0.6.0 → 0.7.0)
+ *   feat!: ...         → Major (0.6.0 → 1.0.0)
+ *   BREAKING CHANGE:   → Major (0.6.0 → 1.0.0)
+ *   bump: X.Y.Z        → Set exact version
  */
 
 require('dotenv').config();
@@ -22,6 +24,11 @@ const { execSync } = require('child_process');
 const sqlite3 = require('sqlite3').verbose();
 const dbPath = path.join(__dirname, '..', 'media.db');
 const db = new sqlite3.Database(dbPath);
+
+// Commit types that trigger version bumps
+const PATCH_TYPES = ['fix', 'perf', 'refactor', 'style'];
+const MINOR_TYPES = ['feat'];
+const NO_BUMP_TYPES = ['docs', 'test', 'ci', 'build', 'chore'];
 
 /**
  * Get current version from database
@@ -39,18 +46,43 @@ function getCurrentVersion() {
 }
 
 /**
+ * Get last processed commit SHA
+ */
+function getLastProcessedCommit() {
+  return new Promise((resolve) => {
+    db.get(
+      `SELECT value FROM bot_config WHERE key = 'last_version_commit'`,
+      (err, row) => {
+        if (err || !row) resolve(null);
+        else resolve(row.value);
+      }
+    );
+  });
+}
+
+/**
+ * Set last processed commit SHA
+ */
+function setLastProcessedCommit(sha) {
+  return new Promise((resolve, reject) => {
+    db.run(
+      `INSERT OR REPLACE INTO bot_config (key, value, updated_at)
+       VALUES ('last_version_commit', ?, strftime('%s','now'))`,
+      [sha],
+      (err) => {
+        if (err) reject(err);
+        else resolve();
+      }
+    );
+  });
+}
+
+/**
  * Set version in database
- * @param {number} major - Major version number
- * @param {number} minor - Minor version number
- * @param {number} patch - Patch version number
- * @param {string} createdBy - Who/what created this version
- * @param {string} description - Description of changes
- * @param {string} incrementType - Type of increment (minor, patch, manual)
  */
 function setVersion(major, minor, patch = 0, createdBy = 'changelog-system', description = 'Auto-increment', incrementType = 'minor') {
   return new Promise((resolve, reject) => {
     db.serialize(() => {
-      // Mark current version as not current
       db.run('UPDATE version_info SET is_current = 0 WHERE is_current = 1', (err) => {
         if (err) {
           reject(err);
@@ -63,7 +95,6 @@ function setVersion(major, minor, patch = 0, createdBy = 'changelog-system', des
           automated: createdBy === 'changelog-system'
         });
 
-        // Insert new version
         db.run(
           `INSERT INTO version_info (major, minor, patch, created_by, description, hidden_data, is_current)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -79,27 +110,37 @@ function setVersion(major, minor, patch = 0, createdBy = 'changelog-system', des
 }
 
 /**
- * Initialize version table if needed
+ * Initialize tables if needed
  */
-function initializeVersionTable() {
+function initializeTables() {
   return new Promise((resolve, reject) => {
-    db.run(`
-      CREATE TABLE IF NOT EXISTS version_info (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        major INTEGER NOT NULL DEFAULT 1,
-        minor INTEGER NOT NULL DEFAULT 0,
-        patch INTEGER NOT NULL DEFAULT 0,
-        pre_release TEXT,
-        build_metadata TEXT,
-        created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')*1000),
-        created_by TEXT,
-        description TEXT,
-        hidden_data TEXT,
-        is_current INTEGER DEFAULT 1
-      )
-    `, (err) => {
-      if (err) reject(err);
-      else resolve();
+    db.serialize(() => {
+      db.run(`
+        CREATE TABLE IF NOT EXISTS version_info (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          major INTEGER NOT NULL DEFAULT 1,
+          minor INTEGER NOT NULL DEFAULT 0,
+          patch INTEGER NOT NULL DEFAULT 0,
+          pre_release TEXT,
+          build_metadata TEXT,
+          created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')*1000),
+          created_by TEXT,
+          description TEXT,
+          hidden_data TEXT,
+          is_current INTEGER DEFAULT 1
+        )
+      `);
+
+      db.run(`
+        CREATE TABLE IF NOT EXISTS bot_config (
+          key TEXT PRIMARY KEY,
+          value TEXT,
+          updated_at INTEGER DEFAULT (strftime('%s','now'))
+        )
+      `, (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
     });
   });
 }
@@ -116,35 +157,131 @@ function updatePackageJson(major, minor, patch = 0) {
 }
 
 /**
- * Check recent commits for version bump or patch-only instructions
- * Format: "bump: version X.Y" or "bump: X.Y" for version bumps
- *         "patch" keyword for patch-only updates
+ * Parse a commit message and determine bump type
+ * @param {string} message - Commit message
+ * @returns {'major'|'minor'|'patch'|'none'|{type: 'set', version: string}}
  */
-function checkCommitsForVersionBump() {
+function parseCommitType(message) {
+  if (!message) return 'none';
+
+  const firstLine = message.split('\n')[0].trim();
+  const fullMessage = message.toLowerCase();
+
+  // Check for manual version set: "bump: X.Y.Z" or "bump: version X.Y.Z"
+  const bumpMatch = firstLine.match(/bump:\s*(?:version\s+)?(\d+\.\d+(?:\.\d+)?)/i);
+  if (bumpMatch) {
+    return { type: 'set', version: bumpMatch[1] };
+  }
+
+  // Check for BREAKING CHANGE (in body or footer)
+  if (fullMessage.includes('breaking change') || fullMessage.includes('breaking-change')) {
+    return 'major';
+  }
+
+  // Parse conventional commit format: type(scope)!: description
+  const conventionalMatch = firstLine.match(/^(\w+)(?:\([^)]*\))?(!)?:\s*.+/i);
+  if (conventionalMatch) {
+    const type = conventionalMatch[1].toLowerCase();
+    const hasBreaking = conventionalMatch[2] === '!';
+
+    if (hasBreaking) {
+      return 'major';
+    }
+
+    if (MINOR_TYPES.includes(type)) {
+      return 'minor';
+    }
+
+    if (PATCH_TYPES.includes(type)) {
+      return 'patch';
+    }
+
+    if (NO_BUMP_TYPES.includes(type)) {
+      return 'none';
+    }
+  }
+
+  // Default: no bump for unrecognized commits
+  return 'none';
+}
+
+/**
+ * Analyze recent commits and determine version bump
+ * @param {string|null} sinceCommit - Only analyze commits after this SHA
+ * @returns {{bumpType: string, commits: Array, description: string, setVersion?: string}}
+ */
+function analyzeCommits(sinceCommit = null) {
   try {
-    // Check last 10 commits since last changelog
-    const commits = execSync('git log -10 --pretty=format:"%s"', { encoding: 'utf8' }).split('\n');
-    
-    for (const commit of commits) {
-      // Match patterns like "bump: version 1.0" or "bump: 1.0"
-      const bumpMatch = commit.match(/bump:\s*(?:version\s+)?(\d+)\.(\d+)/i);
-      if (bumpMatch) {
-        const major = parseInt(bumpMatch[1], 10);
-        const minor = parseInt(bumpMatch[2], 10);
-        console.log(`[VERSION] Found version bump in commit: "${commit}"`);
-        return { major, minor, found: true, type: 'bump', commit };
+    // Get commits since last version bump, or last 50 if no reference
+    let gitCmd = 'git log --pretty=format:"%H|||%s|||%b|||END" -50';
+    if (sinceCommit) {
+      gitCmd = `git log ${sinceCommit}..HEAD --pretty=format:"%H|||%s|||%b|||END"`;
+    }
+
+    const output = execSync(gitCmd, { encoding: 'utf8' });
+    if (!output.trim()) {
+      return { bumpType: 'none', commits: [], description: 'No new commits' };
+    }
+
+    const commitBlocks = output.split('|||END').filter(b => b.trim());
+    const analyzedCommits = [];
+    let highestBump = 'none';
+    let setVersion = null;
+    const bumpPriority = { major: 3, minor: 2, patch: 1, none: 0 };
+
+    for (const block of commitBlocks) {
+      const parts = block.split('|||');
+      if (parts.length < 2) continue;
+
+      const sha = parts[0].trim();
+      const subject = parts[1].trim();
+      const body = parts[2] ? parts[2].trim() : '';
+
+      // Skip version bump commits from the workflow itself
+      if (subject.includes('chore: bump version') || subject.includes('docs(changelog)')) {
+        continue;
       }
-      
-      // Check for patch keyword
-      if (commit.toLowerCase().includes('patch')) {
-        console.log(`[VERSION] Found patch keyword in commit: "${commit}"`);
-        return { found: true, type: 'patch', commit };
+
+      const fullMessage = `${subject}\n${body}`;
+      const bumpType = parseCommitType(fullMessage);
+
+      if (typeof bumpType === 'object' && bumpType.type === 'set') {
+        setVersion = bumpType.version;
+        analyzedCommits.push({ sha, subject, bumpType: 'set', version: bumpType.version });
+        continue;
+      }
+
+      analyzedCommits.push({ sha, subject, bumpType });
+
+      if (bumpPriority[bumpType] > bumpPriority[highestBump]) {
+        highestBump = bumpType;
       }
     }
-    return { found: false };
+
+    // If explicit version set was found, use it
+    if (setVersion) {
+      return {
+        bumpType: 'set',
+        setVersion,
+        commits: analyzedCommits,
+        description: `Manual version set to ${setVersion}`
+      };
+    }
+
+    // Build description from commits
+    const relevantCommits = analyzedCommits.filter(c => c.bumpType !== 'none');
+    const description = relevantCommits.length > 0
+      ? relevantCommits.map(c => `- ${c.subject}`).join('\n')
+      : 'Maintenance updates';
+
+    return {
+      bumpType: highestBump,
+      commits: analyzedCommits,
+      description
+    };
   } catch (error) {
-    console.error('[VERSION] Error checking commits:', error.message);
-    return { found: false };
+    console.error('[VERSION] Error analyzing commits:', error.message);
+    return { bumpType: 'none', commits: [], description: 'Error analyzing commits' };
   }
 }
 
@@ -153,95 +290,129 @@ function checkCommitsForVersionBump() {
  */
 async function main() {
   const args = process.argv.slice(2);
-  
+
   try {
-    // Initialize version table
-    await initializeVersionTable();
-    
-    // Check for --check flag
+    await initializeTables();
+
+    // Check for --check flag (dry run)
     if (args.includes('--check')) {
-      const result = checkCommitsForVersionBump();
-      if (result.found) {
-        console.log(`[VERSION] Bump instruction found: ${result.major}.${result.minor}`);
-        process.exit(0);
-      } else {
-        console.log('[VERSION] No bump instruction found');
-        process.exit(1);
+      const currentVersion = await getCurrentVersion();
+      const lastCommit = await getLastProcessedCommit();
+      const analysis = analyzeCommits(lastCommit);
+
+      console.log('\n📊 Análise de Commits:');
+      console.log(`   Versão atual: ${currentVersion ? `${currentVersion.major}.${currentVersion.minor}.${currentVersion.patch}` : 'N/A'}`);
+      console.log(`   Tipo de bump: ${analysis.bumpType}`);
+      console.log(`   Commits analisados: ${analysis.commits.length}`);
+
+      if (analysis.commits.length > 0) {
+        console.log('\n   Commits relevantes:');
+        for (const c of analysis.commits.filter(x => x.bumpType !== 'none').slice(0, 10)) {
+          const icon = c.bumpType === 'major' ? '💥' : c.bumpType === 'minor' ? '✨' : c.bumpType === 'patch' ? '🐛' : '📝';
+          console.log(`   ${icon} [${c.bumpType}] ${c.subject.slice(0, 60)}`);
+        }
       }
+
+      if (currentVersion && analysis.bumpType !== 'none') {
+        let newVersion;
+        if (analysis.bumpType === 'set') {
+          newVersion = analysis.setVersion;
+        } else if (analysis.bumpType === 'major') {
+          newVersion = `${currentVersion.major + 1}.0.0`;
+        } else if (analysis.bumpType === 'minor') {
+          newVersion = `${currentVersion.major}.${currentVersion.minor + 1}.0`;
+        } else {
+          newVersion = `${currentVersion.major}.${currentVersion.minor}.${currentVersion.patch + 1}`;
+        }
+        console.log(`\n   ➡️  Nova versão seria: ${newVersion}`);
+      }
+
+      db.close();
+      process.exit(analysis.bumpType !== 'none' ? 0 : 1);
       return;
     }
-    
-    // Check if we should set a specific version
+
+    // Check for --set flag
     const setIndex = args.indexOf('--set');
     if (setIndex !== -1 && args[setIndex + 1]) {
       const versionStr = args[setIndex + 1];
-      const [major, minor] = versionStr.split('.').map(n => parseInt(n, 10));
-      
+      const parts = versionStr.split('.').map(n => parseInt(n, 10));
+      const [major, minor, patch = 0] = parts;
+
       if (isNaN(major) || isNaN(minor)) {
-        console.error('[VERSION] Invalid version format. Use: major.minor (e.g., 0.5)');
+        console.error('[VERSION] Invalid version format. Use: X.Y or X.Y.Z');
         process.exit(1);
       }
-      
-      await setVersion(major, minor, 0, 'manual', `Manual version set to ${major}.${minor}`, 'manual');
-      updatePackageJson(major, minor, 0);
-      console.log(`[VERSION] Version set to ${major}.${minor}.0`);
+
+      await setVersion(major, minor, patch, 'manual', `Manual version set to ${major}.${minor}.${patch}`, 'manual');
+      updatePackageJson(major, minor, patch);
+
+      // Update last processed commit
+      try {
+        const currentSha = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
+        await setLastProcessedCommit(currentSha);
+      } catch (e) { /* ignore */ }
+
+      console.log(`[VERSION] ✓ Version set to ${major}.${minor}.${patch}`);
       db.close();
       return;
     }
-    
-    // First, check commits for manual bump instructions
-    const bumpCheck = checkCommitsForVersionBump();
-    if (bumpCheck.found) {
-      const currentVersion = await getCurrentVersion();
-      
-      if (bumpCheck.type === 'bump') {
-        // Full version bump
-        console.log(`[VERSION] Using version from commit: ${bumpCheck.major}.${bumpCheck.minor}`);
-        await setVersion(bumpCheck.major, bumpCheck.minor, 0, 'commit-instruction', `Version bump via commit: ${bumpCheck.commit}`, 'bump');
-        updatePackageJson(bumpCheck.major, bumpCheck.minor, 0);
-        console.log(`[VERSION] Version set to ${bumpCheck.major}.${bumpCheck.minor}.0 from commit instruction`);
-        db.close();
-        return;
-      } else if (bumpCheck.type === 'patch') {
-        // Patch-only update
-        if (!currentVersion) {
-          // No version exists, initialize to 0.5.0
-          await setVersion(0, 5, 0, 'patch-only', 'Initial version with patch', 'patch');
-          updatePackageJson(0, 5, 0);
-          console.log('[VERSION] No existing version, initializing to 0.5.0 (patch-only commit)');
-        } else {
-          // Increment only patch version
-          const newPatch = currentVersion.patch + 1;
-          console.log(`[VERSION] Patch-only update: incrementing from ${currentVersion.major}.${currentVersion.minor}.${currentVersion.patch} to ${currentVersion.major}.${currentVersion.minor}.${newPatch}`);
-          await setVersion(currentVersion.major, currentVersion.minor, newPatch, 'patch-only', `Patch update via commit: ${bumpCheck.commit}`, 'patch');
-          updatePackageJson(currentVersion.major, currentVersion.minor, newPatch);
-          console.log(`[VERSION] ✓ Patch version incremented to ${currentVersion.major}.${currentVersion.minor}.${newPatch}`);
-        }
-        db.close();
-        return;
-      }
-    }
-    
-    // Auto-increment by 0.1 (minor version)
+
+    // Auto-increment based on commits
     const currentVersion = await getCurrentVersion();
-    
-    let newMajor, newMinor;
+    const lastCommit = await getLastProcessedCommit();
+    const analysis = analyzeCommits(lastCommit);
+
+    console.log(`[VERSION] Analyzing commits... Found bump type: ${analysis.bumpType}`);
+
+    if (analysis.bumpType === 'none') {
+      console.log('[VERSION] No version-relevant commits found. Skipping version bump.');
+      db.close();
+      return;
+    }
+
+    let newMajor, newMinor, newPatch;
+
     if (!currentVersion) {
-      // No version exists, initialize to 0.5
+      // No version exists, initialize to 0.6.0
       newMajor = 0;
-      newMinor = 5;
-      console.log('[VERSION] No existing version, initializing to 0.5.0');
-    } else {
-      // Increment minor by 1 (represents 0.1 increment), reset patch to 0
+      newMinor = 6;
+      newPatch = 0;
+      console.log('[VERSION] No existing version, initializing to 0.6.0');
+    } else if (analysis.bumpType === 'set') {
+      // Explicit version set
+      const parts = analysis.setVersion.split('.').map(n => parseInt(n, 10));
+      [newMajor, newMinor, newPatch = 0] = parts;
+      console.log(`[VERSION] Setting version to ${analysis.setVersion} from commit instruction`);
+    } else if (analysis.bumpType === 'major') {
+      newMajor = currentVersion.major + 1;
+      newMinor = 0;
+      newPatch = 0;
+      console.log(`[VERSION] 💥 MAJOR bump: ${currentVersion.major}.${currentVersion.minor}.${currentVersion.patch} → ${newMajor}.${newMinor}.${newPatch}`);
+    } else if (analysis.bumpType === 'minor') {
       newMajor = currentVersion.major;
       newMinor = currentVersion.minor + 1;
-      console.log(`[VERSION] Auto-incrementing from ${currentVersion.major}.${currentVersion.minor}.${currentVersion.patch} to ${newMajor}.${newMinor}.0`);
+      newPatch = 0;
+      console.log(`[VERSION] ✨ MINOR bump: ${currentVersion.major}.${currentVersion.minor}.${currentVersion.patch} → ${newMajor}.${newMinor}.${newPatch}`);
+    } else {
+      // patch
+      newMajor = currentVersion.major;
+      newMinor = currentVersion.minor;
+      newPatch = currentVersion.patch + 1;
+      console.log(`[VERSION] 🐛 PATCH bump: ${currentVersion.major}.${currentVersion.minor}.${currentVersion.patch} → ${newMajor}.${newMinor}.${newPatch}`);
     }
-    
-    await setVersion(newMajor, newMinor, 0, 'changelog-system', 'Auto-increment', 'minor');
-    updatePackageJson(newMajor, newMinor, 0);
-    console.log(`[VERSION] ✓ Version incremented to ${newMajor}.${newMinor}.0`);
-    
+
+    await setVersion(newMajor, newMinor, newPatch, 'changelog-system', analysis.description, analysis.bumpType);
+    updatePackageJson(newMajor, newMinor, newPatch);
+
+    // Update last processed commit
+    try {
+      const currentSha = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
+      await setLastProcessedCommit(currentSha);
+    } catch (e) { /* ignore */ }
+
+    console.log(`[VERSION] ✓ Version updated to ${newMajor}.${newMinor}.${newPatch}`);
+
     db.close();
   } catch (error) {
     console.error('[VERSION] Error:', error);
@@ -255,4 +426,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { getCurrentVersion, setVersion, checkCommitsForVersionBump };
+module.exports = { getCurrentVersion, setVersion, analyzeCommits, parseCommitType };
