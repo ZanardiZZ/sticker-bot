@@ -12,6 +12,7 @@ const { sendStickerForMediaRecord } = require('./bot/stickers');
 const { initContactsTable, upsertGroup, upsertGroupMembers } = require('./bot/contacts');
 const { initializeHistoryRecovery, setupPeriodicHistorySync } = require('./bot/historyRecovery');
 const { getMediaIdFromMessage, upsertReaction } = require('./database');
+const { checkAndNotifyVersionUpdate, initialize: initVersionNotifier } = require('./services/versionNotifier');
 
 /**
  * Handles incoming reaction events
@@ -144,6 +145,21 @@ async function start(client) {
 
   // Sync all group names from WhatsApp client into the DB
   syncAllGroupNames(client).catch(() => {});
+
+  // Initialize version notifier and check for updates
+  try {
+    await initVersionNotifier();
+    // Wait a bit for connection to stabilize before sending notification
+    setTimeout(async () => {
+      try {
+        await checkAndNotifyVersionUpdate(client);
+      } catch (notifyErr) {
+        console.warn('[Bot] Falha ao enviar notificação de versão:', notifyErr.message);
+      }
+    }, 5000);
+  } catch (versionErr) {
+    console.warn('[Bot] Erro ao inicializar notificador de versão:', versionErr.message);
+  }
 
   // Initialize message history recovery (runs in background)
   try {
