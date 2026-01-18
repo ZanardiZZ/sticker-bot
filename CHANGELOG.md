@@ -1,4 +1,23 @@
-# Changelog
+## [0.6.0] - 2026-01-18
+
+### Novidades
+- feat: Sistema de notificação de versão e workflow automático (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/6a7d6c3b0591b8c23223d4da230ad568e1782a4b))
+
+### Correções
+- fix: Remove permissão inválida 'metadata' do workflow (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/29353428bfbd7d70dabc5013891bfe5fa2abd4b4))
+- fix: Filtra hashes degenerados no backfill de mídia animada (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/6966e5b5f264a595e68bf3228e3a792298f42965))
+- fix: Melhora detecção de hashes degenerados (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/749d8577652836f0b7d24ee309c50fc8270a074c))
+- fix: Ignora hashes degenerados na comparação de similaridade (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/cb119315a4312b81a95a40f5747066c0fe30e4b2))
+- fix: Corrige hammingDistance para suportar hashes multi-frame (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/ec875913d452fa4167754babddf0a9399a30d678))
+- fix: Corrige erro de coluna updated_at na tabela bot_config (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/6e0aa6730948f38a980dcb85cf871bef152f68d9))
+- fix: Atualiza script de versão para seguir Conventional Commits (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/09ef2c00026b753d5c563fa12fc345e23dd18192))
+
+### Outros
+- Implementa contagem de reações para stickers e permissões de comandos por grupo (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/24ddba264b64ccfa23e8a71db1d110a75a5cde09))
+- Melhora performance do web server (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/ca9c6e52327d231628529c864592f590c22e09a8))
+- Remove menções de usuários e usa primeira pessoa nas respostas do bot (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/e23c086b197ebca677f273375714de90ef0d4a37))
+- Implementa detecção de duplicatas por distância de Hamming (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/486bc93242496df0a24e8103a2fcdc7cd09d0ba4))
+- Add CLAUDE.md for Claude Code guidance (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/4a5aaeeb153b46475e17f48e753b92bbf55923bc))
 
 > Log de mudanças com foco em usuários: novidades, correções e melhorias relevantes.
 
