@@ -9,7 +9,8 @@ const {
   findSimilarByHashVisual,
   findById,
   saveMedia,
-  getTagsForMedia
+  getTagsForMedia,
+  linkMessageToMedia
 } = require('../database/index.js');
 const { isNSFW } = require('../services/nsfwFilter');
 const { isVideoNSFW } = require('../services/nsfwVideoFilter');
@@ -924,6 +925,17 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
       await updateMediaTags(mediaId, tags);
     } else {
       console.log(`[MediaProcessor] Nenhuma tag para salvar para media ${mediaId}, tags: "${tags}"`);
+    }
+
+    // Link this message to the saved media for reaction tracking
+    const messageId = message.id || message.key?.id;
+    if (messageId && mediaId) {
+      try {
+        await linkMessageToMedia(messageId, mediaId, chatId);
+        console.log(`[MediaProcessor] Linked message ${messageId} to media ${mediaId}`);
+      } catch (linkErr) {
+        console.warn(`[MediaProcessor] Failed to link message to media: ${linkErr.message}`);
+      }
     }
 
     const savedMedia = await findById(mediaId);

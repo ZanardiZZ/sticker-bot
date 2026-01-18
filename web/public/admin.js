@@ -116,7 +116,11 @@ function decodeHashSegment(value) {
 function formatDateTime(value) {
   if (!value) return '—';
   try {
-    return new Date(value).toLocaleString('pt-BR');
+    const num = Number(value);
+    const tsMs = Number.isFinite(num)
+      ? (num < 1e12 ? num * 1000 : num) // handle seconds vs milliseconds
+      : value;
+    return new Date(tsMs).toLocaleString('pt-BR');
   } catch (error) {
     return '—';
   }
@@ -700,10 +704,44 @@ let currentSubTab = 'account';
 let hashUpdateInProgress = false;
 let lastLoadedGroupUsersId = '';
 let lastLoadedGroupCommandsId = '';
+let currentGroupUserContext = null;
+
+function parseCommaList(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.filter(Boolean);
+  const str = String(value);
+  return str.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean);
+}
 
 const mainTabIds = new Set(['settings', 'bot-frequency', 'group-config', 'logs', 'network', 'users', 'pending-edits', 'duplicates']);
 const initializedSubTabs = new Set();
 const tabPayload = {};
+
+const AVAILABLE_COMMANDS = [
+  '#random',
+  '#editar',
+  '#deletar',
+  '#top10',
+  '#top5users',
+  '#top5comandos',
+  '#id',
+  '#forçar',
+  '#forcar',
+  '#count',
+  '#tema',
+  '#theme',
+  '#verificar',
+  '#verify',
+  '#perfil',
+  '#ping',
+  '#criar',
+  '#exportarmemes',
+  '#downloadmp3',
+  '#baixarmp3',
+  '#baixaraudio',
+  '#fotohd',
+  '#pinga'
+];
 
 function runTabLoader(tabId, contextLabel) {
   if (initializedSubTabs.has(tabId)) {
@@ -1248,7 +1286,7 @@ async function loadGroupUsers(groupId) {
     if (statusEl) {
       statusEl.textContent = 'Erro ao carregar usuários do grupo.';
     }
-    tableBody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#ef4444;">Erro ao carregar usuários.</td></tr>`;
+    tableBody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#ef4444;">Erro ao carregar usuários.</td></tr>`;
   }
 }
 
@@ -1264,20 +1302,23 @@ function renderGroupUsersTable(users) {
   const rows = users.map((user) => {
     const userRawId = user.user_id || user.id || '';
     const userId = escapeHtml(userRawId);
+    const displayName = escapeHtml(user.display_name || user.user_contact_display_name || user.user_username || '');
+    const nameCell = displayName
+      ? `<div>${displayName}</div><div class="muted" style="font-size:0.85em;">${userId}</div>`
+      : userId || '—';
     const role = escapeHtml(user.role || '—');
     const blocked = user.blocked ? '<span style="color:#dc2626; font-weight:600;">Sim</span>' : 'Não';
     const lastActivity = user.last_activity ? formatDateTime(user.last_activity) : '—';
     const interactions = user.interaction_count === null || user.interaction_count === undefined
       ? '—'
       : escapeHtml(user.interaction_count);
-    const encodedUser = encodeURIComponent(userRawId);
     const actionButton = userId
-      ? `<button class="btn-primary" style="padding:0.25rem 0.6rem; font-size:0.8rem;" data-open-users="${encodedUser}">Gerenciar</button>`
+      ? `<button class="btn-primary" style="padding:0.25rem 0.6rem; font-size:0.8rem;" data-group-user="${encodeURIComponent(JSON.stringify(user))}" data-group-id="${encodeURIComponent(lastLoadedGroupUsersId || '')}">Gerenciar</button>`
       : '';
 
     return `
       <tr>
-        <td>${userId || '—'}</td>
+        <td>${nameCell}</td>
         <td>${role}</td>
         <td>${blocked}</td>
         <td>${lastActivity}</td>
@@ -1303,7 +1344,7 @@ async function loadDmUsers() {
   } catch (err) {
     console.error('Erro ao carregar DM users:', err);
     if (statusEl) statusEl.textContent = 'Erro ao carregar DM users.';
-    if (tableBody) tableBody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#ef4444;">Erro ao carregar usuários.</td></tr>`;
+    if (tableBody) tableBody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#ef4444;">Erro ao carregar usuários.</td></tr>`;
   }
 }
 
@@ -1311,22 +1352,31 @@ function renderDmUsersTable(users) {
   const tableBody = document.querySelector('#dmUsersTable tbody');
   if (!tableBody) return;
   if (!Array.isArray(users) || users.length === 0) {
-    tableBody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#94a3b8;">Nenhum usuário DM autorizado.</td></tr>`;
+    tableBody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#94a3b8;">Nenhum usuário DM autorizado.</td></tr>`;
     return;
   }
   const rows = users.map(u => {
-    const id = escapeHtml(u.user_id || '');
-    const allowed = u.allowed ? '<span style="color:#16a34a; font-weight:600;">Sim</span>' : 'Não';
+    const idRaw = u.user_id || '';
+    const id = escapeHtml(idRaw);
+    const displayNameRaw = u.display_name || u.user_contact_display_name || u.user_username || '';
+    const hasName = displayNameRaw && displayNameRaw.toLowerCase() !== (idRaw || '').toLowerCase();
+    const displayName = escapeHtml(hasName ? displayNameRaw : '');
+    const nameCell = hasName
+      ? `<div>${displayName}</div><div class="muted" style="font-size:0.85em;">${id || ''}</div>`
+      : `<div>${id || '—'}</div>`;
+    const role = u.allowed ? '<span style="color:#16a34a; font-weight:600;">Permitido</span>' : '<span class="muted">Pendente</span>';
     const blocked = u.blocked ? '<span style="color:#dc2626; font-weight:600;">Sim</span>' : 'Não';
     const last = u.last_activity ? formatDateTime(u.last_activity) : '—';
-    const note = escapeHtml(u.note || '');
+    const interactions = u.interaction_count === null || u.interaction_count === undefined
+      ? '—'
+      : escapeHtml(u.interaction_count);
     return `
       <tr>
-        <td>${id}</td>
-        <td>${allowed}</td>
+        <td>${nameCell}</td>
+        <td>${role}</td>
         <td>${blocked}</td>
         <td>${last}</td>
-        <td>${note}</td>
+        <td>${interactions}</td>
         <td><button class="btn-primary" style="padding:0.25rem 0.6rem; font-size:0.8rem;" data-dm-remove="${encodeURIComponent(u.user_id)}">Remover</button></td>
       </tr>`;
   }).join('');
@@ -1346,6 +1396,111 @@ async function removeDmUser(userId) {
   const resp = await fetchWithCSRF(`/api/admin/dm-users/${encodeURIComponent(userId)}`, { method: 'DELETE' });
   if (!resp.ok) throw new Error('Falha ao remover usuário');
   await loadDmUsers();
+}
+
+// ====== Group User Modal (rich editor) ======
+function openGroupUserModal(groupId, userData) {
+  const modal = document.getElementById('groupUserModal');
+  if (!modal) return;
+
+  const name = userData.display_name || userData.user_contact_display_name || userData.user_username || '';
+  const id = userData.user_id || userData.id || '';
+  const role = (userData.role || 'user').toLowerCase() === 'admin' ? 'admin' : 'user';
+  const blocked = userData.blocked ? '1' : '0';
+  const allowedList = parseCommaList(userData.allowed_commands);
+  const restrictedList = parseCommaList(userData.restricted_commands);
+  const last = userData.last_activity ? formatDateTime(userData.last_activity) : '—';
+  const interactions = userData.interaction_count === null || userData.interaction_count === undefined
+    ? '—'
+    : escapeHtml(userData.interaction_count);
+
+  document.getElementById('groupUserInfo').innerHTML = `
+    <div><strong>Grupo:</strong> ${escapeHtml(groupId)}</div>
+    <div><strong>User ID:</strong> ${escapeHtml(id)}</div>
+  `;
+
+  document.getElementById('groupUserDisplayName').value = name;
+  document.getElementById('groupUserRole').value = role;
+  document.getElementById('groupUserBlocked').value = blocked;
+  renderCommandList('groupUserAllowedCmds', allowedList);
+  renderCommandList('groupUserRestrictedCmds', restrictedList);
+  document.getElementById('groupUserMeta').innerHTML = `
+    <div><strong>Última atividade:</strong> ${last}</div>
+    <div><strong>Interações:</strong> ${interactions}</div>
+  `;
+
+  currentGroupUserContext = { groupId, user: userData };
+  modal.style.display = 'flex';
+}
+
+function closeGroupUserModal() {
+  const modal = document.getElementById('groupUserModal');
+  if (!modal) return;
+  modal.style.display = 'none';
+  currentGroupUserContext = null;
+}
+
+function renderCommandList(containerId, selectedList = []) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const selectedSet = new Set((selectedList || []).map((s) => s.toLowerCase()));
+  container.innerHTML = AVAILABLE_COMMANDS.map((cmd) => {
+    const checked = selectedSet.has(cmd.toLowerCase()) ? 'checked' : '';
+    return `
+      <label style="display:flex; align-items:center; gap:0.35rem; padding:0.2rem 0;">
+        <input type="checkbox" value="${cmd}" ${checked}>
+        <span>${cmd}</span>
+      </label>
+    `;
+  }).join('');
+}
+
+function collectCommandList(containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return [];
+  return Array.from(container.querySelectorAll('input[type="checkbox"]:checked'))
+    .map((el) => el.value)
+    .filter(Boolean);
+}
+
+async function saveGroupUserModal() {
+  if (!currentGroupUserContext) return;
+  const { groupId, user } = currentGroupUserContext;
+  const userId = user.user_id || user.id;
+  if (!groupId || !userId) return;
+
+  const displayName = document.getElementById('groupUserDisplayName').value.trim();
+  const role = document.getElementById('groupUserRole').value === 'admin' ? 'admin' : 'user';
+  const blocked = document.getElementById('groupUserBlocked').value === '1' ? 1 : 0;
+  const allowed = collectCommandList('groupUserAllowedCmds');
+  const restricted = collectCommandList('groupUserRestrictedCmds');
+
+  try {
+    // Update display name (contacts)
+    await fetchWithCSRF(`/api/admin/group-users/${encodeURIComponent(groupId)}/${encodeURIComponent(userId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ field: 'display_name', value: displayName })
+    });
+
+    // Update role, block, commands
+    await fetchWithCSRF(`/api/admin/group-users/${encodeURIComponent(groupId)}/${encodeURIComponent(userId)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        role,
+        blocked,
+        allowed_commands: allowed,
+        restricted_commands: restricted
+      })
+    });
+
+    await loadGroupUsers(groupId);
+    closeGroupUserModal();
+  } catch (err) {
+    console.error('Falha ao salvar usuário do grupo:', err);
+    alert('Erro ao salvar usuário do grupo.');
+  }
 }
 
 async function loadBotSchedule() {
@@ -1531,6 +1686,9 @@ async function initializeGroupCommandsTab() {
     inputEl.value = lastLoadedGroupCommandsId;
     selectEl.value = lastLoadedGroupCommandsId;
   }
+
+  // Pre-populate DM users table when opening this tab
+  await loadDmUsers();
 }
 
 async function loadGroupCommandsFromInputs() {
@@ -1795,9 +1953,18 @@ if (botScheduleSaveBtn && !botScheduleSaveBtn.dataset.bound) {
 }
 
 document.addEventListener('click', async (event) => {
-  const openUsersBtn = event.target instanceof Element ? event.target.closest('[data-open-users]') : null;
-  if (openUsersBtn) {
-    setActiveMainTab('users', { updateHash: true });
+  const manageGroupUserBtn = event.target instanceof Element ? event.target.closest('[data-group-user]') : null;
+  if (manageGroupUserBtn) {
+    event.preventDefault();
+    const userPayload = manageGroupUserBtn.getAttribute('data-group-user');
+    const groupAttr = manageGroupUserBtn.getAttribute('data-group-id');
+    const groupId = groupAttr ? decodeURIComponent(groupAttr) : (lastLoadedGroupUsersId || '');
+    const userData = userPayload ? JSON.parse(decodeURIComponent(userPayload)) : null;
+    if (!groupId || !userData || !userData.user_id) {
+      return alert('Dados do usuário/grupo indisponíveis.');
+    }
+    currentGroupUserContext = { groupId, user: userData };
+    openGroupUserModal(groupId, userData);
   }
 
   const deleteCommandBtn = event.target instanceof Element ? event.target.closest('[data-delete-group-command]') : null;
@@ -2664,3 +2831,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Expose the function globally so it can be called from HTML
 window.loadPendingEditsTab = loadPendingEditsTab;
+
+// Group user modal bindings
+document.getElementById('groupUserModal')?.addEventListener('click', (e) => {
+  if (e.target === document.getElementById('groupUserModal')) {
+    closeGroupUserModal();
+  }
+});
+document.getElementById('cancelGroupUser')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  closeGroupUserModal();
+});
+document.getElementById('saveGroupUser')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  saveGroupUserModal();
+});

@@ -1407,6 +1407,49 @@ async function start() {
     return mime.lookup(fp) || 'application/octet-stream';
   }
 
+  // Handle reaction events and broadcast to clients
+  sock.ev.on('messages.reaction', (reactions) => {
+    try {
+      for (const reaction of reactions) {
+        const messageKey = reaction.key;
+        const reactionInfo = reaction.reaction;
+
+        if (!messageKey || !reactionInfo) continue;
+
+        const messageId = messageKey.id;
+        const chatId = messageKey.remoteJid;
+        const reactorJid = reactionInfo.key?.participant || reactionInfo.key?.remoteJid;
+        const emoji = reactionInfo.text || '';
+
+        // Broadcast reaction to authorized clients
+        const reactionPayload = {
+          type: 'reaction',
+          data: {
+            messageId,
+            chatId,
+            reactorJid,
+            emoji,
+            timestamp: Date.now()
+          }
+        };
+
+        for (const [, entrySet] of clientsByToken) {
+          if (!entrySet || entrySet.size === 0) continue;
+          for (const entry of entrySet) {
+            if (!entry?.ws) continue;
+            if (entry.allowedChats.has('*') || entry.allowedChats.has(chatId)) {
+              send(entry.ws, reactionPayload);
+            }
+          }
+        }
+
+        console.log(`[Reaction] ${reactorJid} reacted with "${emoji}" to message ${messageId} in ${chatId}`);
+      }
+    } catch (err) {
+      console.error('[Reaction] Error processing reaction event:', err);
+    }
+  });
+
   // Forwarding incoming messages to authorized clients
   sock.ev.on('messages.upsert', (evt) => {
     if (!evt?.messages) return;

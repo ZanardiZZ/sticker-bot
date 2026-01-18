@@ -613,7 +613,35 @@ module.exports = {
 
   // ====== Group Users Management ======
   async listGroupUsers(groupId) {
-    return all(`SELECT * FROM group_users WHERE group_id = ?`, [groupId]);
+    return all(
+      `
+        SELECT 
+          gu.*,
+          COALESCE(c.display_name, c2.display_name, u.contact_display_name, u.username, '') AS display_name,
+          u.username AS user_username,
+          u.contact_display_name AS user_contact_display_name
+        FROM group_users gu
+        LEFT JOIN contacts c 
+          ON c.sender_id = gu.user_id
+        LEFT JOIN contacts c2 
+          ON
+            (CASE WHEN INSTR(gu.user_id, '@') > 0 THEN SUBSTR(gu.user_id, 1, INSTR(gu.user_id, '@') - 1) ELSE gu.user_id END) =
+            (CASE WHEN INSTR(c2.sender_id, '@') > 0 THEN SUBSTR(c2.sender_id, 1, INSTR(c2.sender_id, '@') - 1) ELSE c2.sender_id END)
+        LEFT JOIN users u
+          ON u.whatsapp_verified = 1
+          AND (
+            u.whatsapp_jid = gu.user_id
+            OR (CASE WHEN INSTR(u.whatsapp_jid, '@') > 0 THEN SUBSTR(u.whatsapp_jid, 1, INSTR(u.whatsapp_jid, '@') - 1) ELSE u.whatsapp_jid END) =
+               (CASE WHEN INSTR(gu.user_id, '@') > 0 THEN SUBSTR(gu.user_id, 1, INSTR(gu.user_id, '@') - 1) ELSE gu.user_id END)
+          )
+        WHERE gu.group_id = ?
+        ORDER BY 
+          COALESCE(gu.last_activity, 0) DESC,
+          CASE WHEN COALESCE(c.display_name, c2.display_name, u.contact_display_name, u.username, '') = '' THEN 1 ELSE 0 END,
+          LOWER(COALESCE(c.display_name, c2.display_name, u.contact_display_name, u.username, gu.user_id))
+      `,
+      [groupId]
+    );
   },
   async getGroupUser(groupId, userId) {
     return get(`SELECT * FROM group_users WHERE group_id = ? AND user_id = ?`, [groupId, userId]);
@@ -669,7 +697,35 @@ module.exports = {
   ,
   // ====== Direct-message (DM) users management for bot-level authorization ======
   async listDmUsers() {
-    return all(`SELECT * FROM dm_users ORDER BY last_activity DESC`);
+    return all(
+      `
+        SELECT
+          dm.*,
+          CASE
+            WHEN LOWER(COALESCE(c.display_name, c2.display_name, u.contact_display_name, u.username, '')) = LOWER(dm.user_id) THEN ''
+            ELSE COALESCE(c.display_name, c2.display_name, u.contact_display_name, u.username, '')
+          END AS display_name,
+          u.username AS user_username,
+          u.contact_display_name AS user_contact_display_name
+        FROM dm_users dm
+        LEFT JOIN contacts c ON c.sender_id = dm.user_id
+        LEFT JOIN contacts c2 
+          ON
+            (CASE WHEN INSTR(dm.user_id, '@') > 0 THEN SUBSTR(dm.user_id, 1, INSTR(dm.user_id, '@') - 1) ELSE dm.user_id END) =
+            (CASE WHEN INSTR(c2.sender_id, '@') > 0 THEN SUBSTR(c2.sender_id, 1, INSTR(c2.sender_id, '@') - 1) ELSE c2.sender_id END)
+        LEFT JOIN users u
+          ON u.whatsapp_verified = 1
+          AND (
+            u.whatsapp_jid = dm.user_id
+            OR (CASE WHEN INSTR(u.whatsapp_jid, '@') > 0 THEN SUBSTR(u.whatsapp_jid, 1, INSTR(u.whatsapp_jid, '@') - 1) ELSE u.whatsapp_jid END) =
+               (CASE WHEN INSTR(dm.user_id, '@') > 0 THEN SUBSTR(dm.user_id, 1, INSTR(dm.user_id, '@') - 1) ELSE dm.user_id END)
+          )
+        ORDER BY 
+          COALESCE(dm.last_activity, 0) DESC,
+          CASE WHEN COALESCE(c.display_name, c2.display_name, u.contact_display_name, u.username, '') = '' THEN 1 ELSE 0 END,
+          LOWER(COALESCE(c.display_name, c2.display_name, u.contact_display_name, u.username, dm.user_id))
+      `
+    );
   },
   async getDmUser(userId) {
     return get(`SELECT * FROM dm_users WHERE user_id = ? LIMIT 1`, [userId]);
