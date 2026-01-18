@@ -1,9 +1,15 @@
-name: Gerar changelog diário
+name: Gerar changelog e atualizar versão
 
 on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'CHANGELOG.md'
+      - 'package.json'
+      - 'package-lock.json'
   workflow_dispatch: {}
   schedule:
-    # Opcional: roda todo dia às 23:55 (UTC). Ajuste conforme necessário ou remova a seção schedule.
+    # Backup: roda todo dia às 23:55 caso algum push não tenha sido processado
     - cron: "55 02 * * *"  # 23:55 horário de Brasília (UTC-3)
 
 
