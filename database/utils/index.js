@@ -237,11 +237,15 @@ function hammingDistanceSingle(hash1, hash2) {
  */
 function isDegenerateHash(hash) {
   if (!hash || hash.length !== 16) return true;
+  const h = hash.toLowerCase();
   // All zeros or all ones
-  if (hash === '0000000000000000' || hash === 'ffffffffffffffff') return true;
-  // Count unique characters - if less than 3, it's likely degenerate
-  const uniqueChars = new Set(hash.toLowerCase()).size;
-  return uniqueChars < 3;
+  if (h === '0000000000000000' || h === 'ffffffffffffffff') return true;
+  // Count zeros - if more than 12 zeros (out of 16), it's degenerate
+  const zeroCount = (h.match(/0/g) || []).length;
+  if (zeroCount > 12) return true;
+  // Count unique characters - if less than 4, it's likely degenerate
+  const uniqueChars = new Set(h).size;
+  return uniqueChars < 4;
 }
 
 /**
