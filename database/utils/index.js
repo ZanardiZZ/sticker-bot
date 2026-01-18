@@ -198,31 +198,77 @@ function isValidSemVer(versionString) {
 }
 
 /**
- * Calculates Hamming distance between two hex hash strings
+ * Calculates Hamming distance between two single hex hash strings
  * @param {string} hash1 - First hex hash string (16 chars for 64-bit)
  * @param {string} hash2 - Second hex hash string (16 chars for 64-bit)
  * @returns {number} Number of differing bits (0-64)
  */
-function hammingDistance(hash1, hash2) {
+function hammingDistanceSingle(hash1, hash2) {
   if (!hash1 || !hash2 || hash1.length !== hash2.length) {
     return 64; // Max distance if invalid
   }
 
-  // Convert hex strings to BigInt for XOR operation
-  const val1 = BigInt('0x' + hash1);
-  const val2 = BigInt('0x' + hash2);
+  try {
+    // Convert hex strings to BigInt for XOR operation
+    const val1 = BigInt('0x' + hash1);
+    const val2 = BigInt('0x' + hash2);
 
-  // XOR to find differing bits
-  let xor = val1 ^ val2;
+    // XOR to find differing bits
+    let xor = val1 ^ val2;
 
-  // Count set bits (popcount)
-  let distance = 0;
-  while (xor > 0n) {
-    distance += Number(xor & 1n);
-    xor >>= 1n;
+    // Count set bits (popcount)
+    let distance = 0;
+    while (xor > 0n) {
+      distance += Number(xor & 1n);
+      xor >>= 1n;
+    }
+
+    return distance;
+  } catch (err) {
+    return 64; // Max distance on error
+  }
+}
+
+/**
+ * Calculates Hamming distance between two hash strings
+ * Supports both single hashes and multi-frame hashes (separated by :)
+ * @param {string} hash1 - First hash string (single or multi-frame)
+ * @param {string} hash2 - Second hash string (single or multi-frame)
+ * @returns {number} Minimum Hamming distance found between frames
+ */
+function hammingDistance(hash1, hash2) {
+  if (!hash1 || !hash2) {
+    return 64; // Max distance if invalid
   }
 
-  return distance;
+  // Split multi-frame hashes
+  const frames1 = hash1.split(':').filter(h => h && h.length === 16);
+  const frames2 = hash2.split(':').filter(h => h && h.length === 16);
+
+  // If no valid frames, return max distance
+  if (frames1.length === 0 || frames2.length === 0) {
+    return 64;
+  }
+
+  // For single frame hashes, compare directly
+  if (frames1.length === 1 && frames2.length === 1) {
+    return hammingDistanceSingle(frames1[0], frames2[0]);
+  }
+
+  // For multi-frame, find minimum distance between any pair of frames
+  let minDistance = 64;
+  for (const f1 of frames1) {
+    for (const f2 of frames2) {
+      const dist = hammingDistanceSingle(f1, f2);
+      if (dist < minDistance) {
+        minDistance = dist;
+      }
+      // Early exit on exact match
+      if (dist === 0) return 0;
+    }
+  }
+
+  return minDistance;
 }
 
 module.exports = {
