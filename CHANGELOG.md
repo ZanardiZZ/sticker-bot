@@ -1,3 +1,10 @@
+# Changelog
+
+## [0.6.0] - 2026-01-21
+
+### Documentação
+- docs(changelog): atualizações de 2026-01-20 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/55101fa28dbd57fa306aaaeda1629cd97ef19483))
+
 ## [0.6.0] - 2026-01-20
 
 ### Documentação
