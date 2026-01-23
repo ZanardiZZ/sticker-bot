@@ -242,6 +242,21 @@ function initializeTables(db) {
         )
       `);
 
+      // Media processing metrics for performance tracking
+      db.run(`
+        CREATE TABLE IF NOT EXISTS media_processing_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          media_id INTEGER,
+          processing_start_ts INTEGER NOT NULL,
+          processing_end_ts INTEGER NOT NULL,
+          duration_ms INTEGER NOT NULL,
+          media_type TEXT NOT NULL,
+          file_size_bytes INTEGER,
+          success INTEGER DEFAULT 1,
+          FOREIGN KEY(media_id) REFERENCES media(id) ON DELETE CASCADE
+        )
+      `);
+
       // Create indexes for performance
       createIndexes(db);
 
@@ -302,6 +317,10 @@ function createIndexes(db) {
 
   // Sender stats index
   db.run(`CREATE INDEX IF NOT EXISTS idx_sender_stats_count ON sender_stats(sticker_count DESC)`);
+
+  // Media processing log indexes
+  db.run(`CREATE INDEX IF NOT EXISTS idx_media_processing_log_ts ON media_processing_log(processing_end_ts DESC)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_media_processing_log_media_id ON media_processing_log(media_id)`);
 
   // Version indexes
   db.run(`CREATE INDEX IF NOT EXISTS idx_version_info_current ON version_info(is_current)`);

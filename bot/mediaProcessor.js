@@ -13,6 +13,7 @@ const {
   getTagsForMedia,
   linkMessageToMedia
 } = require('../database/index.js');
+const { logProcessing } = require('../database/models/mediaMetrics');
 const { isNSFW } = require('../services/nsfwFilter');
 const { isVideoNSFW } = require('../services/nsfwVideoFilter');
 const {
@@ -120,6 +121,13 @@ function fallbackCleanDescriptionTags(description, tags) {
 
 async function processIncomingMedia(client, message, resolvedSenderId = null) {
   const chatId = message.from;
+
+  // Metrics tracking
+  const processingStartTs = Math.floor(Date.now() / 1000);
+  const processingStartMs = Date.now();
+  let savedMediaId = null;
+  let mediaType = null;
+  let fileSizeBytes = null;
 
   // Show typing indicator while processing media
   await withTyping(client, chatId, async () => {
@@ -671,6 +679,7 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
     if (extToSave === 'webp') {
       if (bufferWebp) {
         await fs.promises.writeFile(filePath, bufferWebp);
+        fileSizeBytes = bufferWebp.length;
       } else {
         await safeReply(client, chatId, 'Erro ao converter a mídia para sticker. O formato pode não ser suportado.', message.id);
         return;
@@ -678,6 +687,8 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
     } else {
       try {
         fs.copyFileSync(tmpFilePath, filePath);
+        const stats = await fs.promises.stat(filePath);
+        fileSizeBytes = stats.size;
       } catch (copyErr) {
         console.error('[MediaProcessor] Falha ao persistir mídia original:', copyErr);
         throw copyErr;
@@ -975,6 +986,20 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
       extractedText
     });
 
+    // Capture media ID and type for metrics
+    savedMediaId = mediaId;
+    if (wasProcessedAsGifLike || mimetypeToSave === 'image/gif') {
+      mediaType = 'gif';
+    } else if (mimetypeToSave === 'image/webp' && extToSave === 'webp') {
+      mediaType = 'animated_webp';
+    } else if (mimetypeToSave.startsWith('video/')) {
+      mediaType = 'video';
+    } else if (mimetypeToSave.startsWith('image/')) {
+      mediaType = 'image';
+    } else {
+      mediaType = 'other';
+    }
+
     // Save tags if any were extracted
     if (tags && tags.trim()) {
       console.log(`[MediaProcessor] Salvando tags para media ${mediaId}: "${tags}"`);
@@ -1031,6 +1056,23 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
 
     await safeReply(client, chatId, responseMessage, message.id);
 
+    // Log processing metrics
+    try {
+      const processingEndTs = Math.floor(Date.now() / 1000);
+      const durationMs = Date.now() - processingStartMs;
+      await logProcessing({
+        mediaId: savedMediaId,
+        processingStartTs,
+        processingEndTs,
+        durationMs,
+        mediaType: mediaType || 'unknown',
+        fileSizeBytes,
+        success: true
+      });
+    } catch (metricsErr) {
+      console.warn('[MediaProcessor] Failed to log processing metrics:', metricsErr.message);
+    }
+
     } catch (e) {
       console.error('Erro ao processar mídia:', e);
       if (e.response && e.response.data) {
@@ -1055,6 +1097,23 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
       }
       
       await safeReply(client, message.from, userMessage, message.id);
+
+      // Log failed processing metrics
+      try {
+        const processingEndTs = Math.floor(Date.now() / 1000);
+        const durationMs = Date.now() - processingStartMs;
+        await logProcessing({
+          mediaId: savedMediaId,
+          processingStartTs,
+          processingEndTs,
+          durationMs,
+          mediaType: mediaType || 'unknown',
+          fileSizeBytes,
+          success: false
+        });
+      } catch (metricsErr) {
+        console.warn('[MediaProcessor] Failed to log error metrics:', metricsErr.message);
+      }
     } finally {
       if (tmpFilePath) {
         try {
