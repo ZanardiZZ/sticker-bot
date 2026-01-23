@@ -1,3 +1,14 @@
+# Changelog
+
+## [0.6.0] - 2026-01-23
+
+### Novidades
+- feat: Upgrade hash visual de 64-bit para 1024-bit e correções gerais (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/6429ee53681a1ca15aefca3928c0403e51da2e71))
+
+### Documentação
+- docs: Adiciona plano detalhado de otimizações (OTIMIZACOES.md) (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/cc15780634b2fa562035a2467785b2ae31df568a))
+- docs(changelog): atualizações de 2026-01-23 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/35ae81c99dfb8a4b8210115ad5af5861ac0b00d2))
+
 ## [0.6.0] - 2026-01-23
 
 ### Novidades
