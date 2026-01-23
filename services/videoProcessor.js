@@ -291,14 +291,17 @@ async function processVideo(filePath) {
     const framesPaths = Array.isArray(extractResult) ? extractResult : (extractResult.frames || []);
     const framesTempDir = extractResult.tempDir;
 
-    // Analisa cada frame individualmente
-    console.log('[VideoProcessor] Analisando frames individuais...');
-    const frameAnalyses = [];
-    
-    for (let i = 0; i < framesPaths.length; i++) {
-      const analysis = await analyzeFrame(framesPaths[i], i + 1);
-      frameAnalyses.push(analysis);
-    }
+    // Analisa frames em paralelo (com limite de concorrência para evitar rate limits)
+    console.log('[VideoProcessor] Analisando frames individuais em paralelo...');
+    const pMap = (await import('p-map')).default;
+
+    const frameAnalyses = await pMap(
+      framesPaths,
+      async (framePath, index) => {
+        return analyzeFrame(framePath, index + 1);
+      },
+      { concurrency: 3 } // Limite para evitar rate limits da OpenAI API
+    );
 
     // Verifica áudio
     const audioExists = await hasAudioTrack(filePath);
@@ -791,30 +794,34 @@ async function processAnimatedWebp(filePath) {
       throw new Error('Failed to extract any frames from animated WebP');
     }
     
-    // Analyze each extracted frame
-    console.log(`[VideoProcessor] Analyzing ${tempFramePaths.length} frames from animated WebP...`);
-    const frameAnalyses = [];
-    
-    for (let i = 0; i < tempFramePaths.length; i++) {
-      try {
-        const framePath = tempFramePaths[i];
-        const frameBuffer = await fs.promises.readFile(framePath);
-        const analysis = await getAiAnnotationsForGif(frameBuffer);
-        
-        if (analysis && typeof analysis === 'object' && (analysis.description || analysis.tags)) {
-          frameAnalyses.push({
-            frameIndex: i + 1,
-            description: analysis.description,
-            tags: Array.isArray(analysis.tags) ? analysis.tags : [],
-            text: analysis.text || null
-          });
-          console.log(`[VideoProcessor] Frame ${i + 1} analyzed successfully`);
+    // Analyze frames in parallel with concurrency limit
+    console.log(`[VideoProcessor] Analyzing ${tempFramePaths.length} frames from animated WebP in parallel...`);
+    const pMap = (await import('p-map')).default;
+
+    const frameAnalyses = await pMap(
+      tempFramePaths,
+      async (framePath, index) => {
+        try {
+          const frameBuffer = await fs.promises.readFile(framePath);
+          const analysis = await getAiAnnotationsForGif(frameBuffer);
+
+          if (analysis && typeof analysis === 'object' && (analysis.description || analysis.tags)) {
+            console.log(`[VideoProcessor] Frame ${index + 1} analyzed successfully`);
+            return {
+              frameIndex: index + 1,
+              description: analysis.description,
+              tags: Array.isArray(analysis.tags) ? analysis.tags : [],
+              text: analysis.text || null
+            };
+          }
+          return null;
+        } catch (frameError) {
+          console.warn(`[VideoProcessor] Error analyzing frame ${index + 1}: ${frameError.message}`);
+          return null;
         }
-      } catch (frameError) {
-        console.warn(`[VideoProcessor] Error analyzing frame ${i + 1}: ${frameError.message}`);
-        // Continue with other frames
-      }
-    }
+      },
+      { concurrency: 3 }
+    ).then(results => results.filter(r => r !== null));
     
     if (frameAnalyses.length === 0) {
       console.warn('[VideoProcessor] No frames analyzed successfully for animated WebP');
