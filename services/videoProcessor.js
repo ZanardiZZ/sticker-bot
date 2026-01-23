@@ -79,12 +79,17 @@ async function extractFrames(filePath, timestamps) {
     }
     
     console.log(`[VideoProcessor] Extraindo frame ${i + 1} no timestamp ${timeSec}s...`);
-    
+
+    let ffmpegProcess = null;
     const timeoutId = setTimeout(() => {
+      if (ffmpegProcess) {
+        console.warn(`[VideoProcessor] Killing ffmpeg process due to timeout`);
+        ffmpegProcess.kill('SIGKILL');
+      }
       reject(new Error(`Timeout ao extrair frame ${i} após 30 segundos`));
     }, 30000); // 30 second timeout per frame
-    
-    ffmpeg(filePath)
+
+    ffmpegProcess = ffmpeg(filePath)
       .on('error', (err) => {
         clearTimeout(timeoutId);
         console.warn(`[VideoProcessor] Erro ao extrair frame ${i + 1}:`, err.message);
@@ -188,13 +193,28 @@ async function extractAudio(filePath) {
   const uniqueId = crypto.randomBytes(16).toString('hex');
   const output = path.resolve(__dirname, '../temp', `audio_${uniqueId}.wav`);
   return new Promise((resolve, reject) => {
-    ffmpeg(filePath)
+    let ffmpegProcess = null;
+    const timeoutId = setTimeout(() => {
+      if (ffmpegProcess) {
+        console.warn('[VideoProcessor] Killing ffmpeg audio extraction process due to timeout');
+        ffmpegProcess.kill('SIGKILL');
+      }
+      reject(new Error('Audio extraction timeout after 30s'));
+    }, 30000);
+
+    ffmpegProcess = ffmpeg(filePath)
       .noVideo()
       .audioCodec('pcm_s16le')
       .format('wav')
       .save(output)
-      .on('end', () => resolve(output))
-      .on('error', reject);
+      .on('end', () => {
+        clearTimeout(timeoutId);
+        resolve(output);
+      })
+      .on('error', (err) => {
+        clearTimeout(timeoutId);
+        reject(err);
+      });
   });
 }
 

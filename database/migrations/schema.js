@@ -221,6 +221,27 @@ function initializeTables(db) {
         )
       `);
 
+      // Hash buckets for LSH (Locality-Sensitive Hashing) optimization
+      db.run(`
+        CREATE TABLE IF NOT EXISTS hash_buckets (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          media_id INTEGER NOT NULL,
+          bucket_key TEXT NOT NULL,
+          hash_visual TEXT NOT NULL,
+          created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+          FOREIGN KEY(media_id) REFERENCES media(id) ON DELETE CASCADE
+        )
+      `);
+
+      // Sender stats for materialized view optimization
+      db.run(`
+        CREATE TABLE IF NOT EXISTS sender_stats (
+          sender_id TEXT PRIMARY KEY,
+          sticker_count INTEGER DEFAULT 0,
+          last_updated INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+        )
+      `);
+
       // Create indexes for performance
       createIndexes(db);
 
@@ -274,6 +295,13 @@ function createIndexes(db) {
 
   // Media chat_id index for filtering
   db.run(`CREATE INDEX IF NOT EXISTS idx_media_chat_id ON media(chat_id)`);
+
+  // Hash buckets indexes for LSH
+  db.run(`CREATE INDEX IF NOT EXISTS idx_hash_buckets_bucket_key ON hash_buckets(bucket_key)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_hash_buckets_media_id ON hash_buckets(media_id)`);
+
+  // Sender stats index
+  db.run(`CREATE INDEX IF NOT EXISTS idx_sender_stats_count ON sender_stats(sticker_count DESC)`);
 
   // Version indexes
   db.run(`CREATE INDEX IF NOT EXISTS idx_version_info_current ON version_info(is_current)`);

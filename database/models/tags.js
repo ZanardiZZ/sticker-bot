@@ -4,6 +4,7 @@
 
 const { db } = require('../connection');
 const { expandTagsWithSynonyms } = require('../utils');
+const { normalizeTagList } = require('../../utils/tagUtils');
 
 /**
  * Updates media tags, replacing existing ones
@@ -22,7 +23,7 @@ function updateMediaTags(mediaId, tagsString) {
       return;
     }
 
-    const tags = tagsString.split(',').map(t => t.trim().toLowerCase()).filter(t => t);
+    const tags = normalizeTagList(tagsString);
 
     if (tags.length === 0) {
       // If no valid tags, just delete existing

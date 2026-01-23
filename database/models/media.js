@@ -130,47 +130,74 @@ async function findSimilarByHashVisual(hashVisual, threshold = 102) {
           return;
         }
 
-        // If no exact match, fetch all hashes and compare
+        // Extract bucket key (first 64 bits = 16 hex chars for LSH)
+        const bucketKey = hashVisual.substring(0, 16);
+
+        // Try LSH optimization first (search only in same bucket)
         db.all(
-          'SELECT id, hash_visual FROM media WHERE hash_visual IS NOT NULL',
-          [],
-          (err, rows) => {
-            if (err || !rows || rows.length === 0) {
-              resolve(null);
+          `SELECT hb.media_id, hb.hash_visual
+           FROM hash_buckets hb
+           WHERE hb.bucket_key = ?`,
+          [bucketKey],
+          (err, candidates) => {
+            if (err) {
+              console.warn('[LSH] Error querying hash_buckets, falling back to full scan:', err.message);
+              candidates = [];
+            }
+
+            // Fallback to full scan if bucket is empty or doesn't exist
+            if (!candidates || candidates.length === 0) {
+              db.all(
+                'SELECT id, hash_visual FROM media WHERE hash_visual IS NOT NULL LIMIT 1000',
+                [],
+                (err, fallbackRows) => {
+                  processCandidates(fallbackRows || []);
+                }
+              );
               return;
             }
 
-            let bestMatch = null;
-            let bestDistance = threshold + 1;
-
-            for (const row of rows) {
-              const distance = hammingDistance(hashVisual, row.hash_visual);
-              if (distance < bestDistance) {
-                bestDistance = distance;
-                bestMatch = row;
-              }
-              // Early exit on very close match
-              if (distance <= 2) break;
-            }
-
-            if (bestMatch && bestDistance <= threshold) {
-              // Fetch full record for best match
-              db.get(
-                'SELECT * FROM media WHERE id = ?',
-                [bestMatch.id],
-                (err, fullRecord) => {
-                  if (fullRecord) {
-                    resolve({ ...fullRecord, _hammingDistance: bestDistance });
-                  } else {
-                    resolve(null);
-                  }
-                }
-              );
-            } else {
-              resolve(null);
-            }
+            // Process bucket candidates
+            processCandidates(candidates.map(c => ({ id: c.media_id, hash_visual: c.hash_visual })));
           }
         );
+
+        function processCandidates(rows) {
+          if (!rows || rows.length === 0) {
+            resolve(null);
+            return;
+          }
+
+          let bestMatch = null;
+          let bestDistance = threshold + 1;
+
+          for (const row of rows) {
+            const distance = hammingDistance(hashVisual, row.hash_visual);
+            if (distance < bestDistance) {
+              bestDistance = distance;
+              bestMatch = row;
+            }
+            // Early exit on very close match
+            if (distance <= 2) break;
+          }
+
+          if (bestMatch && bestDistance <= threshold) {
+            // Fetch full record for best match
+            db.get(
+              'SELECT * FROM media WHERE id = ?',
+              [bestMatch.id],
+              (err, fullRecord) => {
+                if (fullRecord) {
+                  resolve({ ...fullRecord, _hammingDistance: bestDistance });
+                } else {
+                  resolve(null);
+                }
+              }
+            );
+          } else {
+            resolve(null);
+          }
+        }
       }
     );
   });
