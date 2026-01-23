@@ -253,13 +253,11 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
       (requiresImmediateHash && (pngBuffer === null || hashVisual === null || hashMd5 === null))
     ) {
       await safeReply(client, chatId, 'Erro: formato de imagem não suportado para processamento de sticker.', message.id);
-      try { fs.unlinkSync(tmpFilePath); } catch (e) {}
-      return;
+      return; // finally block will cleanup tmpFilePath
     }
     if (message.mimetype === 'image/gif' && (pngBuffer === null || hashMd5 === null)) {
       await safeReply(client, chatId, 'Erro: não foi possível processar este GIF para sticker.', message.id);
-      try { fs.unlinkSync(tmpFilePath); } catch (e) {}
-      return;
+      return; // finally block will cleanup tmpFilePath
     }
     if (message.mimetype.startsWith('image/') && message.mimetype !== 'image/gif') {
       const isStickerMessage = message.type === 'sticker' || message.isSticker === true;
@@ -335,78 +333,131 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
         let successfulDimension = null;
         let successfulQuality = null;
 
-        // First, try quality reduction without resizing
-        for (const qualityAttempt of qualityLevels) {
-          try {
-            const candidate = await gifSharp
-              .clone()
-              .webp({ ...animatedBase, lossless: false, ...qualityAttempt })
-              .toBuffer();
-            lastBuffer = candidate;
-            successfulQuality = qualityAttempt.quality;
-            
-            if (candidate.length <= MAX_STICKER_BYTES) {
-              console.log(`[MediaProcessor] GIF convertido com qualidade ${qualityAttempt.quality} - Tamanho: ${Math.round(candidate.length / 1024)}KB`);
-              break;
+        // Try quality reduction without resizing in parallel
+        try {
+          const qualityAttempts = qualityLevels.map(async (qualityAttempt) => {
+            try {
+              const candidate = await gifSharp
+                .clone()
+                .webp({ ...animatedBase, lossless: false, ...qualityAttempt })
+                .toBuffer();
+
+              if (candidate.length <= MAX_STICKER_BYTES) {
+                return {
+                  success: true,
+                  buffer: candidate,
+                  quality: qualityAttempt.quality,
+                  size: candidate.length
+                };
+              }
+              return { success: false, buffer: candidate, quality: qualityAttempt.quality };
+            } catch (attemptErr) {
+              console.warn('[MediaProcessor] GIF WebP quality attempt falhou:', attemptErr.message);
+              return { success: false, error: attemptErr.message };
             }
-          } catch (attemptErr) {
-            console.warn('[MediaProcessor] GIF WebP quality attempt falhou:', attemptErr.message);
+          });
+
+          // Wait for all attempts and find the best one
+          const results = await Promise.all(qualityAttempts);
+          const successful = results.find(r => r.success);
+
+          if (successful) {
+            lastBuffer = successful.buffer;
+            successfulQuality = successful.quality;
+            console.log(`[MediaProcessor] GIF convertido com qualidade ${successful.quality} - Tamanho: ${Math.round(successful.size / 1024)}KB`);
+          } else {
+            // Use the smallest buffer even if above limit
+            const sorted = results.filter(r => r.buffer).sort((a, b) => a.buffer.length - b.buffer.length);
+            if (sorted.length > 0) {
+              lastBuffer = sorted[0].buffer;
+              successfulQuality = sorted[0].quality;
+            }
           }
+        } catch (qualityErr) {
+          console.warn('[MediaProcessor] Erro nas tentativas paralelas de qualidade:', qualityErr.message);
         }
 
-        // If still too large, try combining dimension reduction with quality reduction
+        // If still too large, try combining dimension reduction with quality reduction in parallel
         if (lastBuffer && lastBuffer.length > MAX_STICKER_BYTES) {
-          console.log(`[MediaProcessor] GIF ainda grande (${Math.round(lastBuffer.length / 1024)}KB), tentando redução de dimensões...`);
-          
+          console.log(`[MediaProcessor] GIF ainda grande (${Math.round(lastBuffer.length / 1024)}KB), tentando redução de dimensões em paralelo...`);
+
+          // Generate all combinations of dimensions and qualities
+          const resizeAttempts = [];
           for (const targetSize of dimensionTargets) {
             // Skip if already smaller than target
             if (width <= targetSize && height <= targetSize) {
               continue;
             }
-            
+
             for (const qualityAttempt of qualityLevels) {
+              resizeAttempts.push({ targetSize, quality: qualityAttempt });
+            }
+          }
+
+          // Try all combinations in parallel
+          const resizeResults = await Promise.all(
+            resizeAttempts.map(async ({ targetSize, quality }) => {
               try {
-                // Reuse original Sharp instance with clone() for efficiency
-                const resizedMetadata = metadata; // Use already loaded metadata
+                const resizedMetadata = metadata;
                 const resizedPageHeight = resizedMetadata.pageHeight || resizedMetadata.height;
-                
+
                 const resizedBase = {
                   loop: 0,
                   effort: 6,
                   smartSubsample: true,
                 };
-                
+
                 if (resizedPageHeight) {
-                  // Calculate proportional pageHeight for resized image
                   const scaleFactor = targetSize / Math.max(width, height);
                   resizedBase.pageHeight = Math.round(resizedPageHeight * scaleFactor);
                 }
-                
+
                 const candidate = await gifSharp
                   .clone()
                   .resize(targetSize, targetSize, {
                     fit: 'inside',
                     withoutEnlargement: true
                   })
-                  .webp({ ...resizedBase, lossless: false, ...qualityAttempt })
+                  .webp({ ...resizedBase, lossless: false, ...quality })
                   .toBuffer();
-                
-                lastBuffer = candidate;
-                successfulDimension = targetSize;
-                successfulQuality = qualityAttempt.quality;
-                
+
                 if (candidate.length <= MAX_STICKER_BYTES) {
-                  console.log(`[MediaProcessor] GIF convertido com redimensionamento ${targetSize}px e qualidade ${qualityAttempt.quality} - Tamanho: ${Math.round(candidate.length / 1024)}KB`);
-                  break;
+                  return {
+                    success: true,
+                    buffer: candidate,
+                    dimension: targetSize,
+                    quality: quality.quality,
+                    size: candidate.length
+                  };
                 }
+                return {
+                  success: false,
+                  buffer: candidate,
+                  dimension: targetSize,
+                  quality: quality.quality,
+                  size: candidate.length
+                };
               } catch (resizeErr) {
                 console.warn(`[MediaProcessor] GIF resize to ${targetSize}px failed:`, resizeErr.message);
+                return { success: false, error: resizeErr.message };
               }
-            }
-            
-            // If we got under the limit, stop trying
-            if (lastBuffer && lastBuffer.length <= MAX_STICKER_BYTES) {
-              break;
+            })
+          );
+
+          // Find the best successful result or smallest buffer
+          const successfulResize = resizeResults.find(r => r.success);
+          if (successfulResize) {
+            lastBuffer = successfulResize.buffer;
+            successfulDimension = successfulResize.dimension;
+            successfulQuality = successfulResize.quality;
+            console.log(`[MediaProcessor] GIF convertido com redimensionamento ${successfulResize.dimension}px e qualidade ${successfulResize.quality} - Tamanho: ${Math.round(successfulResize.size / 1024)}KB`);
+          } else {
+            // Use the smallest result even if above limit
+            const sorted = resizeResults.filter(r => r.buffer).sort((a, b) => a.size - b.size);
+            if (sorted.length > 0) {
+              lastBuffer = sorted[0].buffer;
+              successfulDimension = sorted[0].dimension;
+              successfulQuality = sorted[0].quality;
             }
           }
         }
@@ -1007,7 +1058,7 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
     } finally {
       if (tmpFilePath) {
         try {
-          fs.unlinkSync(tmpFilePath);
+          await fs.promises.unlink(tmpFilePath);
         } catch (cleanupErr) {
           if (cleanupErr && cleanupErr.code !== 'ENOENT') {
             console.warn('[MediaProcessor] Falha ao remover arquivo temporário:', cleanupErr.message);
