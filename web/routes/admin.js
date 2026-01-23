@@ -40,7 +40,8 @@ function createAdminRoutes(db) {
       const hashMap = {};
       for (const row of rows) {
         try {
-          const buffer = require('fs').readFileSync(row.file_path);
+          const fs = require('fs').promises;
+          const buffer = await fs.readFile(row.file_path);
           let hashes = null;
           let isAnimated = false;
           try {

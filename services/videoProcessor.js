@@ -234,7 +234,7 @@ async function analyzeFrame(framePath, frameIndex) {
       return { description: '', tags: [] };
     }
     
-    const buffer = fs.readFileSync(framePath);
+    const buffer = await fs.promises.readFile(framePath);
     const result = await getAiAnnotations(buffer);
     
     console.log(`[VideoProcessor] Frame ${frameIndex} analisado: ${result.description?.slice(0, 30) || 'sem descrição'}...`);
@@ -716,8 +716,8 @@ async function processAnimatedWebp(filePath) {
   
   try {
     // Read the animated WebP file
-    const webpBuffer = fs.readFileSync(filePath);
-    
+    const webpBuffer = await fs.promises.readFile(filePath);
+
     // Get metadata to determine number of frames
     const metadata = await sharp(webpBuffer).metadata();
     console.log(`[VideoProcessor] WebP metadata: ${metadata.pages} frames, ${metadata.width}x${metadata.height}`);
@@ -778,7 +778,7 @@ async function processAnimatedWebp(filePath) {
       try {
         // Extract specific frame and convert to PNG
         const frameBuffer = await sharp(webpBuffer, { page: frameIndex }).png().toBuffer();
-        fs.writeFileSync(framePath, frameBuffer);
+        await fs.promises.writeFile(framePath, frameBuffer);
         tempFramePaths.push(framePath);
         console.log(`[VideoProcessor] Extracted frame ${i + 1} (index ${frameIndex}) to ${framePath}`);
       } catch (frameError) {
@@ -798,7 +798,7 @@ async function processAnimatedWebp(filePath) {
     for (let i = 0; i < tempFramePaths.length; i++) {
       try {
         const framePath = tempFramePaths[i];
-        const frameBuffer = fs.readFileSync(framePath);
+        const frameBuffer = await fs.promises.readFile(framePath);
         const analysis = await getAiAnnotationsForGif(frameBuffer);
         
         if (analysis && typeof analysis === 'object' && (analysis.description || analysis.tags)) {

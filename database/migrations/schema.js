@@ -270,6 +270,10 @@ function createIndexes(db) {
 
   // Contact indexes
   db.run(`CREATE INDEX IF NOT EXISTS idx_contacts_display_name ON contacts(display_name)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_contacts_sender_id ON contacts(sender_id)`);
+
+  // Media chat_id index for filtering
+  db.run(`CREATE INDEX IF NOT EXISTS idx_media_chat_id ON media(chat_id)`);
 
   // Version indexes
   db.run(`CREATE INDEX IF NOT EXISTS idx_version_info_current ON version_info(is_current)`);
