@@ -1,4 +1,19 @@
-# Changelog
+## [0.6.0] - 2026-01-23
+
+### Novidades
+- feat: Upgrade hash visual de 64-bit para 1024-bit e correções gerais (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/6429ee53681a1ca15aefca3928c0403e51da2e71))
+
+### Documentação
+- docs(changelog): atualizações de 2026-01-23 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/6742f3cb7cc2a3b04f72bbb12021dc6216d6ffd1))
+- docs(changelog): atualizações de 2026-01-23 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/7cc80867ef3d52822a6c9c91b7d3a389cc4bfd54))
+- docs(changelog): atualizações de 2026-01-23 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/ec6101aeb3161b0e1ace14f1bffa7a0ca375636e))
+- docs: Adiciona plano detalhado de otimizações (OTIMIZACOES.md) (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/cc15780634b2fa562035a2467785b2ae31df568a))
+- docs(changelog): atualizações de 2026-01-23 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/35ae81c99dfb8a4b8210115ad5af5861ac0b00d2))
+
+### Desempenho
+- perf: Implementa otimizações Fase 3 (Refatoração Profunda) (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/63f113dfa14160d230bae8b2e1eb848187e17651))
+- perf: Implementa otimizações Fase 2 (Processamento de Vídeo) (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/56f7d56c4f88644cb23f8ad86042b5c85077ee4e))
+- perf: Implementa otimizações Fase 1 (Quick Wins) (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/575519817f5bc9c0768860d3e475f8a822f3a3d4))
 
 ## [0.6.0] - 2026-01-23
 
