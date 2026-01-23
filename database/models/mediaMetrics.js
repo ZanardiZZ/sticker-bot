@@ -65,22 +65,37 @@ function getAverageProcessingTime(secondsAgo) {
 }
 
 /**
- * Gets total media storage size in bytes
+ * Gets total media storage size in bytes by calculating folder size
  * @returns {Promise<number>} Total size in bytes
  */
-function getTotalMediaSize() {
-  return new Promise((resolve, reject) => {
-    db.get(
-      `SELECT SUM(file_size_bytes) as total_size
-       FROM media_processing_log
-       WHERE file_size_bytes IS NOT NULL AND success = 1`,
-      [],
-      (err, row) => {
-        if (err) reject(err);
-        else resolve(row?.total_size || 0);
+async function getTotalMediaSize() {
+  const fs = require('fs').promises;
+  const path = require('path');
+
+  const mediaDir = path.resolve(__dirname, '../../bot/media');
+
+  try {
+    const files = await fs.readdir(mediaDir);
+    let totalSize = 0;
+
+    for (const file of files) {
+      try {
+        const filePath = path.join(mediaDir, file);
+        const stats = await fs.stat(filePath);
+        if (stats.isFile()) {
+          totalSize += stats.size;
+        }
+      } catch (err) {
+        // Skip files that can't be read
+        continue;
       }
-    );
-  });
+    }
+
+    return totalSize;
+  } catch (err) {
+    console.warn('[MediaMetrics] Failed to calculate media folder size:', err.message);
+    return 0;
+  }
 }
 
 /**
