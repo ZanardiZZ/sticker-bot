@@ -31,14 +31,56 @@ if (walExists && (!dbExists || fs.statSync(walPath).size > 0)) {
   }, 100); // Small delay to ensure DB is ready
 }
 
-// Set up periodic WAL checkpoints to prevent data loss
-setInterval(async () => {
-  try {
-    await dbHandler.checkpointWAL();
-    console.log('[DB] Periodic WAL checkpoint completed');
-  } catch (error) {
-    console.warn('[DB] Periodic WAL checkpoint warning:', error.message);
-  }
-}, 5 * 60 * 1000); // Every 5 minutes
+// Periodic WAL checkpoint with timeout and failure tracking
+let checkpointInterval = null;
+let checkpointFailures = 0;
+const MAX_CHECKPOINT_FAILURES = 3;
+const CHECKPOINT_TIMEOUT = 10000; // 10 seconds
 
-module.exports = { db, dbHandler };
+function startPeriodicCheckpoint() {
+  if (checkpointInterval) {
+    console.warn('[DB] Checkpoint interval already running');
+    return;
+  }
+
+  checkpointInterval = setInterval(async () => {
+    try {
+      // Create timeout promise
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Checkpoint timeout after 10s')), CHECKPOINT_TIMEOUT)
+      );
+
+      // Race between checkpoint and timeout
+      await Promise.race([
+        dbHandler.checkpointWAL(),
+        timeoutPromise
+      ]);
+
+      checkpointFailures = 0; // Reset on success
+      console.log('[DB] Periodic WAL checkpoint completed');
+    } catch (error) {
+      checkpointFailures++;
+      console.warn(`[DB] Checkpoint failed (${checkpointFailures}/${MAX_CHECKPOINT_FAILURES}):`, error.message);
+
+      if (checkpointFailures >= MAX_CHECKPOINT_FAILURES) {
+        console.error('[DB] Too many checkpoint failures, stopping periodic checkpoint');
+        stopPeriodicCheckpoint();
+      }
+    }
+  }, 5 * 60 * 1000); // Every 5 minutes
+
+  console.log('[DB] Started periodic WAL checkpoint');
+}
+
+function stopPeriodicCheckpoint() {
+  if (checkpointInterval) {
+    clearInterval(checkpointInterval);
+    checkpointInterval = null;
+    console.log('[DB] Stopped periodic WAL checkpoint');
+  }
+}
+
+// Start checkpoint automatically
+startPeriodicCheckpoint();
+
+module.exports = { db, dbHandler, startPeriodicCheckpoint, stopPeriodicCheckpoint };
