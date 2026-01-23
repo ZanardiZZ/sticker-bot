@@ -5,6 +5,7 @@ const { downloadMediaForMessage } = require('../utils/mediaDownload');
 const {
   getMD5,
   getHashVisual,
+  isDegenerateHash,
   findByHashVisual,
   findSimilarByHashVisual,
   findById,
@@ -209,7 +210,10 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
               if (!pngBuffer) pngBuffer = frameBuffer;
 
               const frameHash = await getHashVisual(frameBuffer);
-              if (frameHash) sampleHashes.push(frameHash);
+              // Only include non-degenerate hashes to prevent false positives
+              if (frameHash && !isDegenerateHash(frameHash)) {
+                sampleHashes.push(frameHash);
+              }
             } catch (frameErr) {
               console.warn(`[MediaProcessor] Falha ao extrair frame ${frameIndex} para hash (${contextLabel || 'sem contexto'}):`, frameErr.message);
             }
@@ -586,12 +590,13 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
     const forceInsert = !!(forceMap instanceof Map ? forceMap.get(chatId) : forceMap?.[chatId]);
 
     if (!forceInsert && hashVisual) {
-      // Use Hamming distance matching with threshold of 15 bits (out of 64)
-      const existing = await findSimilarByHashVisual(hashVisual, 15);
+      // Use Hamming distance matching with threshold of 102 bits (out of 1024)
+      // This represents ~90% similarity (10% difference allowed)
+      const existing = await findSimilarByHashVisual(hashVisual, 102);
       if (existing) {
         const similarity = existing._hammingDistance === 0
           ? 'idêntica'
-          : `${Math.round((64 - existing._hammingDistance) / 64 * 100)}% similar`;
+          : `${Math.round((1024 - existing._hammingDistance) / 1024 * 100)}% similar`;
         await safeReply(
           client,
           chatId,

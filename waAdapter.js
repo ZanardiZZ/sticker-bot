@@ -99,19 +99,25 @@ class BaileysWsAdapter {
       }
     });
 
-    this.ws.on('close', () => {
+    this.ws.on('close', (code, reason) => {
+      console.log(`[WA Adapter] WebSocket closed (code: ${code}, reason: ${reason || 'none'})`);
       this._ready = false;
-      setTimeout(() => this.connect().catch(() => {}), 2000);
+      console.log('[WA Adapter] Reconnecting in 2 seconds...');
+      setTimeout(() => this.connect().catch((err) => {
+        console.error('[WA Adapter] Reconnection failed:', err.message);
+      }), 2000);
     });
 
-    this.ws.on('error', () => {});
+    this.ws.on('error', (err) => {
+      console.error('[WA Adapter] WebSocket error:', err.message);
+    });
     return this;
   }
 
   async downloadMedia(messageId) {
     if (!messageId) throw new Error('messageId_required');
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) throw new Error('ws_not_ready');
-    
+    await this._ensureReady();
+
     // Increased timeout to 45 seconds for larger media files
     const MEDIA_DOWNLOAD_TIMEOUT = 45000;
     
@@ -146,8 +152,9 @@ class BaileysWsAdapter {
     return p;
   }
 
-  async _ensureReady(timeoutMs = 5000) {
+  async _ensureReady(timeoutMs = 10000) {
     if (!this.ws || this.ws.readyState === WebSocket.CLOSED || this.ws.readyState === WebSocket.CLOSING) {
+      console.log('[WA Adapter] WebSocket not connected, connecting...');
       await this.connect();
     }
 
@@ -158,6 +165,7 @@ class BaileysWsAdapter {
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
+    console.error('[WA Adapter] Timeout waiting for WebSocket to be ready');
     throw new Error('ws_not_ready');
   }
 
@@ -188,7 +196,7 @@ class BaileysWsAdapter {
 
   async getQuotedMessage(messageId) {
     if (!messageId) throw new Error('messageId_required');
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) throw new Error('ws_not_ready');
+    await this._ensureReady();
     const resultPromise = new Promise((resolve, reject) => {
       this._pendingQuoted.set(messageId, { resolve, reject });
       setTimeout(() => {
@@ -204,7 +212,7 @@ class BaileysWsAdapter {
 
   async getContact(jid) {
     if (!jid) throw new Error('jid_required');
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) throw new Error('ws_not_ready');
+    await this._ensureReady();
     const resultPromise = new Promise((resolve, reject) => {
       this._pendingContacts.set(jid, { resolve, reject });
       setTimeout(() => {
@@ -252,6 +260,7 @@ class BaileysWsAdapter {
     requestConfig
   ) {
     // For file sends, wait for server ack before resolving so callers can rely on delivery ordering
+    await this._ensureReady();
     return this._sendAndWaitForAck({
       type: 'sendFile',
       chatId,
@@ -269,19 +278,23 @@ class BaileysWsAdapter {
   }
 
   async sendRawWebpAsSticker(chatId, dataUrl, options = {}) {
+    await this._ensureReady();
     return this._sendAndWaitForAck({ type: 'sendRawWebpAsSticker', chatId, dataUrl, options });
   }
 
   async sendImageAsSticker(chatId, filePath, options = {}) {
+    await this._ensureReady();
     return this._sendAndWaitForAck({ type: 'sendImageAsSticker', chatId, filePath, options });
   }
 
   async sendImageAsStickerGif(chatId, filePath, options = {}) {
-  return this._sendAndWaitForAck({ type: 'sendImageAsStickerGif', chatId, filePath, options });
+    await this._ensureReady();
+    return this._sendAndWaitForAck({ type: 'sendImageAsStickerGif', chatId, filePath, options });
   }
 
   async sendMp4AsSticker(chatId, filePath, options = {}) {
-  return this._sendAndWaitForAck({ type: 'sendMp4AsSticker', chatId, filePath, options });
+    await this._ensureReady();
+    return this._sendAndWaitForAck({ type: 'sendMp4AsSticker', chatId, filePath, options });
   }
 
   async getAllGroupsMetadata() {
@@ -297,11 +310,12 @@ class BaileysWsAdapter {
    * @param {string} action - Action to perform: 'add', 'remove', 'promote', 'demote'
    */
   async groupParticipantsUpdate(groupId, participants, action) {
-    return this._sendAndWaitForAck({ 
-      type: 'groupParticipantsUpdate', 
-      groupId, 
-      participants, 
-      action 
+    await this._ensureReady();
+    return this._sendAndWaitForAck({
+      type: 'groupParticipantsUpdate',
+      groupId,
+      participants,
+      action
     });
   }
 

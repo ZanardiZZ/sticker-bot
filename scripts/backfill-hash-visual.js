@@ -46,15 +46,30 @@ const MAX_VIDEO_FRAMES = 5;
 
 /**
  * Checks if a hash is degenerate (should be filtered out)
+ * Supports both 64-bit (16 chars) and 1024-bit (256 chars) hashes
  */
 function isDegenerateHash(hash) {
-  if (!hash || hash.length !== 16) return true;
+  if (!hash) return true;
   const h = hash.toLowerCase();
-  if (h === '0000000000000000' || h === 'ffffffffffffffff') return true;
+  const len = h.length;
+
+  // Support both old 64-bit (16 chars) and new 1024-bit (256 chars) hashes
+  if (len !== 16 && len !== 256) return true;
+
+  // All zeros or all ones
+  const allZeros = '0'.repeat(len);
+  const allOnes = 'f'.repeat(len);
+  if (h === allZeros || h === allOnes) return true;
+
+  // Count zeros - if 75%+ zeros, it's degenerate
   const zeroCount = (h.match(/0/g) || []).length;
-  if (zeroCount > 12) return true;
+  const zeroThreshold = Math.floor(len * 0.75);
+  if (zeroCount >= zeroThreshold) return true;
+
+  // Count unique characters - if too few unique chars relative to length, it's degenerate
   const uniqueChars = new Set(h).size;
-  return uniqueChars < 4;
+  const uniqueThreshold = len === 16 ? 4 : 8;
+  return uniqueChars <= uniqueThreshold;
 }
 
 async function queryAll(sql, params = []) {

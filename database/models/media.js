@@ -113,10 +113,10 @@ function findByHashVisual(hashVisual) {
 /**
  * Finds media with similar visual hash using Hamming distance
  * @param {string} hashVisual - Visual hash to compare
- * @param {number} threshold - Maximum Hamming distance to consider similar (default: 10)
+ * @param {number} threshold - Maximum Hamming distance to consider similar (default: 102 for 1024-bit, ~90% similarity)
  * @returns {Promise<object|null>} Media object with lowest distance or null
  */
-async function findSimilarByHashVisual(hashVisual, threshold = 10) {
+async function findSimilarByHashVisual(hashVisual, threshold = 102) {
   if (!hashVisual) return null;
 
   return new Promise((resolve) => {
