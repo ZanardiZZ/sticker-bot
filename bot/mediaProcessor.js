@@ -141,7 +141,7 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
   const tmpDir = path.resolve(__dirname, 'temp');
   if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
   tmpFilePath = path.join(tmpDir, `media-tmp-${Date.now()}-${Math.floor(Math.random()*10000)}.${ext}`);
-  fs.writeFileSync(tmpFilePath, buffer);
+  await fs.promises.writeFile(tmpFilePath, buffer);
   console.log('[MediaProcessor] Arquivo temporário salvo em:', tmpFilePath);
 
     let wasProcessedAsGifLike = false;
@@ -526,7 +526,7 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
                   .on('error', reject);
               });
 
-              const candidate = fs.readFileSync(outPath);
+              const candidate = await fs.promises.readFile(outPath);
               convertedBuffer = candidate;
 
               const withinStickerLimit = candidate.length <= MAX_STICKER_BYTES;
@@ -619,7 +619,7 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
     // Salva webp para stickers (imagens e GIF-like), ou formato original para vídeos regulares
     if (extToSave === 'webp') {
       if (bufferWebp) {
-        fs.writeFileSync(filePath, bufferWebp);
+        await fs.promises.writeFile(filePath, bufferWebp);
       } else {
         await safeReply(client, chatId, 'Erro ao converter a mídia para sticker. O formato pode não ser suportado.', message.id);
         return;
