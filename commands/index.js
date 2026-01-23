@@ -33,6 +33,8 @@ const media = require('./media');
 const { db, updateMediaDescription, updateMediaTags, incrementCommandUsage } = require('../database/index.js');
 const { safeReply } = require('../utils/safeMessaging');
 const { parseCommand } = require('../utils/commandNormalizer');
+const { getAverageProcessingTime, getTotalMediaSize } = require('../database/models/mediaMetrics');
+const { getCommandCount } = require('../database/models/commandMetrics');
 const packageJson = require('../package.json');
 const os = require('os');
 
@@ -300,13 +302,43 @@ async function handleCommand(client, message, chatId, context = {}) {
           const cronSchedule = process.env.BOT_CRON_SCHEDULE || '0 0-23 * * *';
           const botVersion = (packageJson && packageJson.version) ? packageJson.version : '1.0.0';
 
-          const response = `🤖 *Sticker Bot` + `*\n` +
+          // Fetch metrics
+          let avgProcessing1h = null;
+          let avgProcessing24h = null;
+          let totalMediaSizeMB = null;
+          let commandCount1h = null;
+          let commandCount24h = null;
+
+          try {
+            avgProcessing1h = await getAverageProcessingTime(3600); // 1 hour
+            avgProcessing24h = await getAverageProcessingTime(86400); // 24 hours
+            const totalSizeBytes = await getTotalMediaSize();
+            totalMediaSizeMB = (totalSizeBytes / (1024 * 1024)).toFixed(2);
+            commandCount1h = await getCommandCount(3600);
+            commandCount24h = await getCommandCount(86400);
+          } catch (metricsErr) {
+            console.warn('[Ping] Failed to fetch metrics:', metricsErr.message);
+          }
+
+          const formatProcessingTime = (ms) => {
+            if (ms === null || ms === undefined) return 'sem dados';
+            if (ms < 1000) return `${Math.round(ms)}ms`;
+            return `${(ms / 1000).toFixed(2)}s`;
+          };
+
+          let response = `🤖 *Sticker Bot*\n` +
             `🟢 Uptime: ${uptime}\n` +
             `📡 Latência (recebimento): ${formatLatency(receiveLatency)}\n` +
             `📤 Envio→ack: ${formatLatency(sendLatency)}\n` +
             `🔁 Roundtrip: ${formatLatency(roundTrip)}\n` +
             `⏰ CRON: ${cronSchedule}\n` +
-            `🛠️ Versão: ${botVersion}`;
+            `🛠️ Versão: ${botVersion}\n\n` +
+            `📊 *Métricas de Performance*\n` +
+            `⏱️ Proc. médio (1h): ${formatProcessingTime(avgProcessing1h)}\n` +
+            `⏱️ Proc. médio (24h): ${formatProcessingTime(avgProcessing24h)}\n` +
+            `💾 Tamanho total: ${totalMediaSizeMB !== null ? totalMediaSizeMB + ' MB' : 'sem dados'}\n` +
+            `🎯 Comandos (1h): ${commandCount1h !== null ? commandCount1h : 0}\n` +
+            `🎯 Comandos (24h): ${commandCount24h !== null ? commandCount24h : 0}`;
 
           await safeReply(client, chatId, response, message);
           handled = true;
