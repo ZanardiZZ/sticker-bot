@@ -33,8 +33,6 @@
 - [ ] Horizontal scaling support
 
 ### Integration
-- [ ] Telegram bot support
-- [ ] Discord bot support
 - [ ] Public API with rate limiting
 - [ ] Webhook system for external integrations
 

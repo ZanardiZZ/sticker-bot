@@ -61,28 +61,31 @@ async function expandTagsWithSynonyms(tags) {
 
 /**
  * Generates dHash (difference hash) of an image buffer
+ * 1024-bit version using 32x32 grid for maximum precision
  * @param {Buffer} buffer - Image buffer
  * @returns {Promise<string|null>} dHash hex string or null if error
  */
 async function getDHash(buffer) {
   try {
-    // Resize to 9x8 (dHash needs n+1 x n)
+    // Resize to 33x32 (dHash needs n+1 x n for horizontal comparison)
     const small = await sharp(buffer)
-      .resize(9, 8, { fit: 'inside' })
+      .resize(33, 32, { fit: 'inside' })
       .grayscale()
       .raw()
       .toBuffer();
-    // Calculate dHash
+
+    // Calculate dHash (compare adjacent pixels horizontally)
     let hash = '';
-    for (let row = 0; row < 8; row++) {
-      for (let col = 0; col < 8; col++) {
-        const left = small[row * 9 + col];
-        const right = small[row * 9 + col + 1];
+    for (let row = 0; row < 32; row++) {
+      for (let col = 0; col < 32; col++) {
+        const left = small[row * 33 + col];
+        const right = small[row * 33 + col + 1];
         hash += left > right ? '1' : '0';
       }
     }
-    // Convert binary string to hex
-    return parseInt(hash, 2).toString(16).padStart(16, '0');
+
+    // Convert binary string to hex (1024 bits = 256 hex chars)
+    return BigInt('0b' + hash).toString(16).padStart(256, '0');
   } catch {
     return null;
   }
@@ -199,13 +202,15 @@ function isValidSemVer(versionString) {
 
 /**
  * Calculates Hamming distance between two single hex hash strings
- * @param {string} hash1 - First hex hash string (16 chars for 64-bit)
- * @param {string} hash2 - Second hex hash string (16 chars for 64-bit)
- * @returns {number} Number of differing bits (0-64)
+ * Supports both 64-bit (16 chars) and 1024-bit (256 chars) hashes
+ * @param {string} hash1 - First hex hash string (16 or 256 chars)
+ * @param {string} hash2 - Second hex hash string (16 or 256 chars)
+ * @returns {number} Number of differing bits
  */
 function hammingDistanceSingle(hash1, hash2) {
   if (!hash1 || !hash2 || hash1.length !== hash2.length) {
-    return 64; // Max distance if invalid
+    // Return max distance based on hash length
+    return hash1 && hash1.length === 256 ? 1024 : 64;
   }
 
   try {
@@ -225,48 +230,71 @@ function hammingDistanceSingle(hash1, hash2) {
 
     return distance;
   } catch (err) {
-    return 64; // Max distance on error
+    // Return max distance based on hash length
+    return hash1.length === 256 ? 1024 : 64;
   }
 }
 
 /**
  * Checks if a hash is degenerate (all zeros, all ones, or mostly uniform)
  * These hashes cause false positive matches
- * @param {string} hash - 16-char hex hash
+ * Supports both 64-bit (16 chars) and 1024-bit (256 chars) hashes
+ * @param {string} hash - Hex hash string (16 or 256 chars)
  * @returns {boolean}
  */
 function isDegenerateHash(hash) {
-  if (!hash || hash.length !== 16) return true;
+  if (!hash) return true;
   const h = hash.toLowerCase();
+  const len = h.length;
+
+  // Support both old 64-bit (16 chars) and new 1024-bit (256 chars) hashes
+  if (len !== 16 && len !== 256) return true;
+
   // All zeros or all ones
-  if (h === '0000000000000000' || h === 'ffffffffffffffff') return true;
-  // Count zeros - if more than 12 zeros (out of 16), it's degenerate
+  const allZeros = '0'.repeat(len);
+  const allOnes = 'f'.repeat(len);
+  if (h === allZeros || h === allOnes) return true;
+
+  // Count zeros - if 75%+ zeros, it's degenerate
   const zeroCount = (h.match(/0/g) || []).length;
-  if (zeroCount > 12) return true;
-  // Count unique characters - if less than 4, it's likely degenerate
+  const zeroThreshold = Math.floor(len * 0.75);
+  if (zeroCount >= zeroThreshold) return true;
+
+  // Count unique characters - if too few unique chars relative to length, it's degenerate
   const uniqueChars = new Set(h).size;
-  return uniqueChars < 4;
+  const uniqueThreshold = len === 16 ? 4 : 8; // Scale threshold with hash size
+  return uniqueChars <= uniqueThreshold;
 }
 
 /**
  * Calculates Hamming distance between two hash strings
  * Supports both single hashes and multi-frame hashes (separated by :)
+ * Supports both 64-bit (16 chars) and 1024-bit (256 chars) hashes
  * @param {string} hash1 - First hash string (single or multi-frame)
  * @param {string} hash2 - Second hash string (single or multi-frame)
  * @returns {number} Minimum Hamming distance found between frames
  */
 function hammingDistance(hash1, hash2) {
   if (!hash1 || !hash2) {
-    return 64; // Max distance if invalid
+    return 1024; // Max distance if invalid
   }
 
   // Split multi-frame hashes and filter out degenerate frames
-  const frames1 = hash1.split(':').filter(h => h && h.length === 16 && !isDegenerateHash(h));
-  const frames2 = hash2.split(':').filter(h => h && h.length === 16 && !isDegenerateHash(h));
+  // Support both 16-char (64-bit) and 256-char (1024-bit) hashes
+  const frames1 = hash1.split(':').filter(h => {
+    const len = h ? h.length : 0;
+    return h && (len === 16 || len === 256) && !isDegenerateHash(h);
+  });
+  const frames2 = hash2.split(':').filter(h => {
+    const len = h ? h.length : 0;
+    return h && (len === 16 || len === 256) && !isDegenerateHash(h);
+  });
 
   // If no valid frames, return max distance
   if (frames1.length === 0 || frames2.length === 0) {
-    return 64;
+    // Determine max distance from hash length
+    const maxBits = (hash1.length > 20 || hash2.length > 20) ? 1024 : 64;
+    return maxBits;
   }
 
   // For single frame hashes, compare directly
@@ -275,7 +303,9 @@ function hammingDistance(hash1, hash2) {
   }
 
   // For multi-frame, find minimum distance between any pair of frames
-  let minDistance = 64;
+  const maxBits = frames1[0].length === 256 ? 1024 : 64;
+  let minDistance = maxBits;
+
   for (const f1 of frames1) {
     for (const f2 of frames2) {
       const dist = hammingDistanceSingle(f1, f2);
@@ -298,6 +328,7 @@ module.exports = {
   getDHash,
   getAnimatedDHashes,
   hammingDistance,
+  isDegenerateHash,
   isFileProcessed,
   upsertProcessedFile,
   parseSemVer,
