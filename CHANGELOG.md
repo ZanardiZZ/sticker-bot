@@ -1,4 +1,32 @@
-# Changelog
+## [0.6.0] - 2026-01-24
+
+### Novidades
+- feat: Adiciona instalador web com wizard interativo (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/9949d92f298959ff4832efad841fea11b37760d9))
+- feat: Adiciona métricas de performance ao comando #ping (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/87ff940a6d2cc556ef7313c919d8d0a1d51935ea))
+- feat: Upgrade hash visual de 64-bit para 1024-bit e correções gerais (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/6429ee53681a1ca15aefca3928c0403e51da2e71))
+
+### Correções
+- fix: Calcula tamanho real da pasta mídia ao invés de soma parcial (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/acf2177ad6dd0a6473f7a60b13b6110ac5f22474))
+
+### Documentação
+- docs(changelog): atualizações de 2026-01-24 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/8656b54e7be7bf87ecd02faffd8075f49108933a))
+- docs(changelog): atualizações de 2026-01-24 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/f02a3604c35b09e6d8ea419770b626eb066b8cfb))
+- docs: Reorganização agressiva da pasta docs/ (Opção B) (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/9f3dcd668821b90658a67910c67159d824c953d9))
+- docs(changelog): atualizações de 2026-01-23 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/f2060ab4fe5ae05cf6e822672b7fc025f8576cff))
+- docs: Adiciona plano completo para instalador web cross-platform (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/c6a2baa89b830d160763e32d2eaf28301cc0a241))
+- docs(changelog): atualizações de 2026-01-23 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/0afd41c23dad94e7e8e73c7a86f04cfc0b0a4051))
+- docs(changelog): atualizações de 2026-01-23 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/8b684d1e030473aebe3e551181cbb05a5331dfbc))
+- docs(changelog): atualizações de 2026-01-23 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/d5462b9e0558e86222552218ac63f325b9e33246))
+- docs(changelog): atualizações de 2026-01-23 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/6742f3cb7cc2a3b04f72bbb12021dc6216d6ffd1))
+- docs(changelog): atualizações de 2026-01-23 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/7cc80867ef3d52822a6c9c91b7d3a389cc4bfd54))
+- docs(changelog): atualizações de 2026-01-23 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/ec6101aeb3161b0e1ace14f1bffa7a0ca375636e))
+- docs: Adiciona plano detalhado de otimizações (OTIMIZACOES.md) (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/cc15780634b2fa562035a2467785b2ae31df568a))
+- docs(changelog): atualizações de 2026-01-23 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/35ae81c99dfb8a4b8210115ad5af5861ac0b00d2))
+
+### Desempenho
+- perf: Implementa otimizações Fase 3 (Refatoração Profunda) (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/63f113dfa14160d230bae8b2e1eb848187e17651))
+- perf: Implementa otimizações Fase 2 (Processamento de Vídeo) (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/56f7d56c4f88644cb23f8ad86042b5c85077ee4e))
+- perf: Implementa otimizações Fase 1 (Quick Wins) (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/575519817f5bc9c0768860d3e475f8a822f3a3d4))
 
 ## [0.6.0] - 2026-01-24
 
