@@ -649,11 +649,15 @@ const limiter = createMainRateLimiter({
 });
 app.use(limiter);
 
-const requestLogger = createRequestLogger(db, { 
+const requestLogger = createRequestLogger(db, {
   enableAnalytics: ENABLE_INTERNAL_ANALYTICS,
   skipPaths: ['/media', '/figurinhas']
 });
 app.use(requestLogger);
+
+// Setup wizard routes (only active when SETUP_MODE=true)
+const setupRoutes = require('./routes/setup');
+app.use('/', setupRoutes);
 
 // Register modularized routes
 registerRoutes(app, db);

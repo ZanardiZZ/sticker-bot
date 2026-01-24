@@ -57,7 +57,38 @@ The bot continues to function normally with reduced video processing capabilitie
 
 ## ⚡ Quick Start
 
-### 1. Installation
+### Option 1: One-Command Installation (Recommended)
+
+The easiest way to install and configure Sticker Bot is using the automated installer with web-based setup wizard:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/ZanardiZZ/sticker-bot/main/install.sh | bash
+```
+
+This will:
+- Download and install the bot
+- Install dependencies automatically
+- Launch a web-based setup wizard
+- Guide you through configuration (WhatsApp, admin account, optional features)
+- Create your `.env` file automatically
+
+**After installation completes**, start all services with:
+```bash
+bash start.sh
+```
+
+Or use PM2 directly:
+```bash
+pm2 start ecosystem.config.js
+```
+
+---
+
+### Option 2: Manual Installation
+
+If you prefer manual installation or want more control:
+
+#### 1. Installation
 
 ```bash
 # Clone the repository
@@ -71,7 +102,7 @@ npm ci
 npm rebuild sqlite3 sharp
 ```
 
-### 2. Configuration
+#### 2. Configuration
 
 ```bash
 # Create environment file
@@ -87,7 +118,7 @@ AUTO_SEND_GROUP_ID=your_whatsapp_group_id
 ADMIN_NUMBER=5511999999999@c.us
 ```
 
-### 3. Start the Applications
+#### 3. Start the Applications
 
 #### 🚀 Baileys WebSocket Mode (Default)
 
@@ -513,15 +544,23 @@ OPENAI_API_KEY=sk-your-api-key-here
 
 2. **Process Management:**
    ```bash
-   # Using PM2
+   # Using the provided ecosystem file (recommended)
    npm install -g pm2
-   pm2 start index.js --name "sticker-bot"
-   pm2 start "npm run web" --name "sticker-web"
-   
-   # Save PM2 configuration
+   pm2 start ecosystem.config.js
+
+   # Or use the convenience scripts
+   bash start.sh  # Starts all services
+   bash stop.sh   # Stops all services
+
+   # Save PM2 configuration for auto-start on boot
    pm2 save
    pm2 startup
    ```
+
+   The `ecosystem.config.js` manages all three processes:
+   - `baileys-bridge` - WhatsApp session bridge
+   - `sticker-bot` - Main bot logic
+   - `web-interface` - Web administration panel
 
 3. **Reverse Proxy (nginx):**
    ```nginx

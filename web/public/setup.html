@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sticker Bot - Setup Wizard</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .container {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      max-width: 600px;
+      width: 100%;
+      overflow: hidden;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 28px;
+      margin-bottom: 10px;
+    }
+
+    .header p {
+      opacity: 0.9;
+      font-size: 14px;
+    }
+
+    .progress-bar {
+      display: flex;
+      justify-content: space-between;
+      padding: 20px 30px;
+      background: #f7f7f7;
+      border-bottom: 1px solid #e0e0e0;
+    }
+
+    .progress-step {
+      flex: 1;
+      text-align: center;
+      position: relative;
+      padding: 10px 0;
+    }
+
+    .progress-step::before {
+      content: '';
+      position: absolute;
+      top: 15px;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: #e0e0e0;
+      z-index: 0;
+    }
+
+    .progress-step:first-child::before {
+      left: 50%;
+    }
+
+    .progress-step:last-child::before {
+      right: 50%;
+    }
+
+    .progress-step.active::before {
+      background: #667eea;
+    }
+
+    .progress-step.completed::before {
+      background: #48bb78;
+    }
+
+    .step-circle {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: #e0e0e0;
+      color: #999;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 14px;
+      position: relative;
+      z-index: 1;
+      margin: 0 auto;
+    }
+
+    .progress-step.active .step-circle {
+      background: #667eea;
+      color: white;
+    }
+
+    .progress-step.completed .step-circle {
+      background: #48bb78;
+      color: white;
+    }
+
+    .step-label {
+      font-size: 12px;
+      margin-top: 8px;
+      color: #999;
+    }
+
+    .progress-step.active .step-label {
+      color: #667eea;
+      font-weight: 600;
+    }
+
+    .progress-step.completed .step-label {
+      color: #48bb78;
+    }
+
+    .content {
+      padding: 40px;
+    }
+
+    .step {
+      display: none;
+    }
+
+    .step.active {
+      display: block;
+      animation: fadeIn 0.3s ease-in;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    h2 {
+      color: #2d3748;
+      margin-bottom: 10px;
+      font-size: 22px;
+    }
+
+    .step-description {
+      color: #718096;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      color: #4a5568;
+      font-weight: 500;
+      font-size: 14px;
+    }
+
+    label .optional {
+      color: #a0aec0;
+      font-weight: 400;
+      font-size: 12px;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    select {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #e2e8f0;
+      border-radius: 6px;
+      font-size: 14px;
+      transition: border-color 0.2s;
+    }
+
+    input:focus,
+    select:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .input-help {
+      font-size: 12px;
+      color: #a0aec0;
+      margin-top: 4px;
+    }
+
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      margin-top: 8px;
+    }
+
+    .checkbox-group input[type="checkbox"] {
+      width: auto;
+      margin-right: 8px;
+    }
+
+    .checkbox-group label {
+      margin-bottom: 0;
+      font-weight: 400;
+    }
+
+    .password-strength {
+      margin-top: 8px;
+      height: 4px;
+      background: #e2e8f0;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .password-strength-bar {
+      height: 100%;
+      width: 0%;
+      transition: all 0.3s;
+      background: #e2e8f0;
+    }
+
+    .password-strength-bar.weak {
+      width: 33%;
+      background: #f56565;
+    }
+
+    .password-strength-bar.medium {
+      width: 66%;
+      background: #ed8936;
+    }
+
+    .password-strength-bar.strong {
+      width: 100%;
+      background: #48bb78;
+    }
+
+    .password-requirements {
+      font-size: 12px;
+      color: #718096;
+      margin-top: 8px;
+      padding-left: 20px;
+    }
+
+    .password-requirements li {
+      margin-bottom: 4px;
+    }
+
+    .alert {
+      padding: 12px 16px;
+      border-radius: 6px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      display: none;
+    }
+
+    .alert.show {
+      display: block;
+    }
+
+    .alert-error {
+      background: #fed7d7;
+      color: #c53030;
+      border: 1px solid #fc8181;
+    }
+
+    .alert-success {
+      background: #c6f6d5;
+      color: #22543d;
+      border: 1px solid #9ae6b4;
+    }
+
+    .alert-info {
+      background: #bee3f8;
+      color: #2c5282;
+      border: 1px solid #90cdf4;
+    }
+
+    .summary-section {
+      background: #f7fafc;
+      padding: 16px;
+      border-radius: 6px;
+      margin-bottom: 20px;
+    }
+
+    .summary-section h3 {
+      color: #2d3748;
+      font-size: 16px;
+      margin-bottom: 12px;
+    }
+
+    .summary-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid #e2e8f0;
+      font-size: 14px;
+    }
+
+    .summary-item:last-child {
+      border-bottom: none;
+    }
+
+    .summary-label {
+      color: #718096;
+    }
+
+    .summary-value {
+      color: #2d3748;
+      font-weight: 500;
+    }
+
+    .buttons {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 30px;
+      gap: 12px;
+    }
+
+    button {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-secondary {
+      background: #e2e8f0;
+      color: #4a5568;
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: #cbd5e0;
+    }
+
+    .btn-primary {
+      background: #667eea;
+      color: white;
+      flex: 1;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: #5a67d8;
+    }
+
+    .btn-success {
+      background: #48bb78;
+      color: white;
+      flex: 1;
+    }
+
+    .btn-success:hover:not(:disabled) {
+      background: #38a169;
+    }
+
+    .loading {
+      display: none;
+      text-align: center;
+      padding: 40px;
+    }
+
+    .loading.show {
+      display: block;
+    }
+
+    .spinner {
+      border: 4px solid #e2e8f0;
+      border-top: 4px solid #667eea;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .success-icon {
+      text-align: center;
+      padding: 40px;
+      display: none;
+    }
+
+    .success-icon.show {
+      display: block;
+    }
+
+    .success-icon .checkmark {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: #48bb78;
+      margin: 0 auto 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: scaleIn 0.5s ease-out;
+    }
+
+    @keyframes scaleIn {
+      0% {
+        transform: scale(0);
+      }
+      50% {
+        transform: scale(1.1);
+      }
+      100% {
+        transform: scale(1);
+      }
+    }
+
+    .success-icon .checkmark::after {
+      content: '✓';
+      color: white;
+      font-size: 48px;
+      font-weight: bold;
+    }
+
+    .success-message {
+      color: #2d3748;
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+
+    .success-description {
+      color: #718096;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🤖 Sticker Bot Setup</h1>
+      <p>Configure seu bot em poucos passos</p>
+    </div>
+
+    <div class="progress-bar">
+      <div class="progress-step active" data-step="1">
+        <div class="step-circle">1</div>
+        <div class="step-label">WhatsApp</div>
+      </div>
+      <div class="progress-step" data-step="2">
+        <div class="step-circle">2</div>
+        <div class="step-label">Admin</div>
+      </div>
+      <div class="progress-step" data-step="3">
+        <div class="step-circle">3</div>
+        <div class="step-label">Recursos</div>
+      </div>
+      <div class="progress-step" data-step="4">
+        <div class="step-circle">4</div>
+        <div class="step-label">Finalizar</div>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="alert alert-error" id="errorAlert"></div>
+
+      <!-- Step 1: WhatsApp Configuration -->
+      <div class="step active" id="step1">
+        <h2>Configuração do WhatsApp</h2>
+        <p class="step-description">Configure o grupo onde o bot enviará os stickers e o número do administrador.</p>
+
+        <div class="form-group">
+          <label for="groupId">ID do Grupo</label>
+          <input type="text" id="groupId" placeholder="120363123456789@g.us">
+          <div class="input-help">
+            Envie o comando <code>#groupinfo</code> no grupo para obter o ID
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="adminNumber">Número do Admin</label>
+          <input type="text" id="adminNumber" placeholder="5511999999999@c.us">
+          <div class="input-help">
+            Formato: código do país + DDD + número + @c.us (ex: 5511999999999@c.us)
+          </div>
+        </div>
+
+        <div class="buttons">
+          <button type="button" class="btn-primary" onclick="saveStep1()">Próximo →</button>
+        </div>
+      </div>
+
+      <!-- Step 2: Admin Account -->
+      <div class="step" id="step2">
+        <h2>Conta de Administrador</h2>
+        <p class="step-description">Crie a conta para acessar a interface web de administração.</p>
+
+        <div class="form-group">
+          <label for="username">Usuário</label>
+          <input type="text" id="username" placeholder="admin">
+          <div class="input-help">
+            Mínimo 3 caracteres. Apenas letras, números, _ e -
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="password">Senha</label>
+          <input type="password" id="password" placeholder="Digite uma senha forte" oninput="checkPasswordStrength()">
+          <div class="password-strength">
+            <div class="password-strength-bar" id="passwordStrengthBar"></div>
+          </div>
+          <ul class="password-requirements">
+            <li>Mínimo 8 caracteres</li>
+            <li>Pelo menos uma letra maiúscula</li>
+            <li>Pelo menos uma letra minúscula</li>
+            <li>Pelo menos um número</li>
+          </ul>
+        </div>
+
+        <div class="buttons">
+          <button type="button" class="btn-secondary" onclick="goToStep(1)">← Voltar</button>
+          <button type="button" class="btn-primary" onclick="saveStep2()">Próximo →</button>
+        </div>
+      </div>
+
+      <!-- Step 3: Optional Features -->
+      <div class="step" id="step3">
+        <h2>Recursos Opcionais</h2>
+        <p class="step-description">Configure recursos adicionais. Você pode pular esta etapa e configurar depois.</p>
+
+        <div class="form-group">
+          <label for="openaiKey">OpenAI API Key <span class="optional">(opcional)</span></label>
+          <input type="text" id="openaiKey" placeholder="sk-...">
+          <div class="input-help">
+            Para geração automática de tags usando IA
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="timezone">Fuso Horário</label>
+          <select id="timezone">
+            <option value="America/Sao_Paulo">America/São Paulo (BRT)</option>
+            <option value="America/New_York">America/New York (EST)</option>
+            <option value="America/Los_Angeles">America/Los Angeles (PST)</option>
+            <option value="Europe/London">Europe/London (GMT)</option>
+            <option value="Europe/Paris">Europe/Paris (CET)</option>
+            <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
+            <option value="UTC">UTC</option>
+          </select>
+        </div>
+
+        <details style="margin-top: 20px;">
+          <summary style="cursor: pointer; color: #667eea; font-weight: 600; margin-bottom: 16px;">
+            ⚙️ Configurações de Email (SMTP)
+          </summary>
+
+          <div class="form-group">
+            <label for="smtpHost">SMTP Host <span class="optional">(opcional)</span></label>
+            <input type="text" id="smtpHost" placeholder="smtp.gmail.com">
+          </div>
+
+          <div class="form-group">
+            <label for="smtpPort">SMTP Port <span class="optional">(opcional)</span></label>
+            <input type="text" id="smtpPort" placeholder="587">
+          </div>
+
+          <div class="form-group">
+            <label for="smtpUser">SMTP User <span class="optional">(opcional)</span></label>
+            <input type="text" id="smtpUser" placeholder="seu-email@gmail.com">
+          </div>
+
+          <div class="form-group">
+            <label for="smtpPass">SMTP Password <span class="optional">(opcional)</span></label>
+            <input type="password" id="smtpPass">
+          </div>
+
+          <div class="checkbox-group">
+            <input type="checkbox" id="smtpSecure">
+            <label for="smtpSecure">Usar conexão segura (TLS)</label>
+          </div>
+        </details>
+
+        <div class="buttons">
+          <button type="button" class="btn-secondary" onclick="goToStep(2)">← Voltar</button>
+          <button type="button" class="btn-primary" onclick="saveStep3()">Próximo →</button>
+        </div>
+      </div>
+
+      <!-- Step 4: Summary and Finalize -->
+      <div class="step" id="step4">
+        <h2>Resumo da Configuração</h2>
+        <p class="step-description">Revise suas configurações antes de finalizar.</p>
+
+        <div class="summary-section">
+          <h3>📱 WhatsApp</h3>
+          <div class="summary-item">
+            <span class="summary-label">Grupo:</span>
+            <span class="summary-value" id="summaryGroupId">-</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">Admin:</span>
+            <span class="summary-value" id="summaryAdminNumber">-</span>
+          </div>
+        </div>
+
+        <div class="summary-section">
+          <h3>👤 Administrador</h3>
+          <div class="summary-item">
+            <span class="summary-label">Usuário:</span>
+            <span class="summary-value" id="summaryUsername">-</span>
+          </div>
+        </div>
+
+        <div class="summary-section">
+          <h3>⚙️ Recursos</h3>
+          <div class="summary-item">
+            <span class="summary-label">OpenAI:</span>
+            <span class="summary-value" id="summaryOpenAI">-</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">Email (SMTP):</span>
+            <span class="summary-value" id="summarySMTP">-</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">Fuso Horário:</span>
+            <span class="summary-value" id="summaryTimezone">-</span>
+          </div>
+        </div>
+
+        <div class="alert alert-info show">
+          <strong>⚠️ Importante:</strong> O servidor será reiniciado após a configuração. Isso pode levar alguns segundos.
+        </div>
+
+        <div class="buttons">
+          <button type="button" class="btn-secondary" onclick="goToStep(3)">← Voltar</button>
+          <button type="button" class="btn-success" onclick="finalize()">✓ Finalizar Setup</button>
+        </div>
+      </div>
+
+      <!-- Loading State -->
+      <div class="loading" id="loadingState">
+        <div class="spinner"></div>
+        <p>Configurando o Sticker Bot...</p>
+        <p style="font-size: 12px; color: #718096; margin-top: 8px;">Isso pode levar alguns instantes</p>
+      </div>
+
+      <!-- Success State -->
+      <div class="success-icon" id="successState">
+        <div class="checkmark"></div>
+        <div class="success-message">Setup Concluído!</div>
+        <div class="success-description">
+          Redirecionando para a página de login...
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentStep = 1;
+    const setupData = {
+      whatsapp: {},
+      admin: {},
+      features: {}
+    };
+
+    // Check setup status on load
+    window.addEventListener('DOMContentLoaded', async () => {
+      try {
+        const response = await fetch('/setup/status');
+        const data = await response.json();
+
+        if (!data.setupMode) {
+          window.location.href = '/login';
+        }
+      } catch (err) {
+        console.error('Failed to check setup status:', err);
+      }
+    });
+
+    function showError(message) {
+      const alert = document.getElementById('errorAlert');
+      alert.textContent = message;
+      alert.classList.add('show');
+
+      setTimeout(() => {
+        alert.classList.remove('show');
+      }, 5000);
+    }
+
+    function goToStep(step) {
+      // Hide all steps
+      document.querySelectorAll('.step').forEach(el => {
+        el.classList.remove('active');
+      });
+
+      // Show target step
+      document.getElementById(`step${step}`).classList.add('active');
+
+      // Update progress bar
+      document.querySelectorAll('.progress-step').forEach(el => {
+        const stepNum = parseInt(el.dataset.step);
+        el.classList.remove('active', 'completed');
+
+        if (stepNum < step) {
+          el.classList.add('completed');
+        } else if (stepNum === step) {
+          el.classList.add('active');
+        }
+      });
+
+      currentStep = step;
+    }
+
+    async function saveStep1() {
+      const groupId = document.getElementById('groupId').value.trim();
+      const adminNumber = document.getElementById('adminNumber').value.trim();
+
+      if (!groupId || !adminNumber) {
+        showError('Por favor, preencha todos os campos obrigatórios');
+        return;
+      }
+
+      try {
+        const response = await fetch('/setup/whatsapp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ groupId, adminNumber })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          showError(data.error || 'Erro ao salvar configurações');
+          return;
+        }
+
+        setupData.whatsapp = { groupId, adminNumber };
+        goToStep(2);
+      } catch (err) {
+        showError('Erro de conexão. Tente novamente.');
+      }
+    }
+
+    async function saveStep2() {
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+
+      if (!username || !password) {
+        showError('Por favor, preencha todos os campos obrigatórios');
+        return;
+      }
+
+      try {
+        const response = await fetch('/setup/admin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          showError(data.error || 'Erro ao criar conta de administrador');
+          return;
+        }
+
+        setupData.admin = { username };
+        goToStep(3);
+      } catch (err) {
+        showError('Erro de conexão. Tente novamente.');
+      }
+    }
+
+    async function saveStep3() {
+      const features = {
+        openaiKey: document.getElementById('openaiKey').value.trim(),
+        smtpHost: document.getElementById('smtpHost').value.trim(),
+        smtpPort: document.getElementById('smtpPort').value.trim(),
+        smtpUser: document.getElementById('smtpUser').value.trim(),
+        smtpPass: document.getElementById('smtpPass').value.trim(),
+        smtpSecure: document.getElementById('smtpSecure').checked,
+        timezone: document.getElementById('timezone').value
+      };
+
+      try {
+        const response = await fetch('/setup/features', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(features)
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          showError(data.error || 'Erro ao salvar recursos');
+          return;
+        }
+
+        setupData.features = features;
+
+        // Load summary
+        await loadSummary();
+        goToStep(4);
+      } catch (err) {
+        showError('Erro de conexão. Tente novamente.');
+      }
+    }
+
+    async function loadSummary() {
+      try {
+        const response = await fetch('/setup/summary');
+        const data = await response.json();
+
+        document.getElementById('summaryGroupId').textContent = data.whatsapp.groupId || '-';
+        document.getElementById('summaryAdminNumber').textContent = data.whatsapp.adminNumber || '-';
+        document.getElementById('summaryUsername').textContent = data.admin.username || '-';
+        document.getElementById('summaryOpenAI').textContent = data.features.hasOpenAI ? 'Configurado ✓' : 'Não configurado';
+        document.getElementById('summarySMTP').textContent = data.features.hasSMTP ? 'Configurado ✓' : 'Não configurado';
+        document.getElementById('summaryTimezone').textContent = data.features.timezone || 'America/Sao_Paulo';
+      } catch (err) {
+        console.error('Failed to load summary:', err);
+      }
+    }
+
+    async function finalize() {
+      // Hide step content
+      document.getElementById('step4').style.display = 'none';
+
+      // Show loading
+      document.getElementById('loadingState').classList.add('show');
+
+      try {
+        const response = await fetch('/setup/finalize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          // Show error
+          document.getElementById('loadingState').classList.remove('show');
+          document.getElementById('step4').style.display = 'block';
+          showError(data.error || 'Erro ao finalizar setup');
+          return;
+        }
+
+        // Show success
+        document.getElementById('loadingState').classList.remove('show');
+        document.getElementById('successState').classList.add('show');
+
+        // Redirect after 3 seconds
+        setTimeout(() => {
+          window.location.href = '/login';
+        }, 3000);
+
+      } catch (err) {
+        document.getElementById('loadingState').classList.remove('show');
+        document.getElementById('step4').style.display = 'block';
+        showError('Erro de conexão. Tente novamente.');
+      }
+    }
+
+    function checkPasswordStrength() {
+      const password = document.getElementById('password').value;
+      const bar = document.getElementById('passwordStrengthBar');
+
+      let strength = 0;
+
+      if (password.length >= 8) strength++;
+      if (/[A-Z]/.test(password)) strength++;
+      if (/[a-z]/.test(password)) strength++;
+      if (/[0-9]/.test(password)) strength++;
+
+      bar.className = 'password-strength-bar';
+
+      if (strength <= 2) {
+        bar.classList.add('weak');
+      } else if (strength === 3) {
+        bar.classList.add('medium');
+      } else if (strength >= 4) {
+        bar.classList.add('strong');
+      }
+    }
+  </script>
+</body>
+</html>
