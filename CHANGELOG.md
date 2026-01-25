@@ -1,3 +1,13 @@
+# Changelog
+
+## [0.6.0] - 2026-01-25
+
+### Novidades
+- feat: Adiciona instalador web com wizard interativo (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/9949d92f298959ff4832efad841fea11b37760d9))
+
+### Documentação
+- docs(changelog): atualizações de 2026-01-24 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/486fbf9edc14dfe10da16e934180cacd1895a327))
+
 ## [0.6.0] - 2026-01-24
 
 ### Novidades
