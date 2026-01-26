@@ -1,4 +1,7 @@
-# Changelog
+## [0.6.0] - 2026-01-26
+
+### Novidades
+- feat: Sistema de auto-diagnóstico AdminWatcher e melhorias de integridade de hashes (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/5b9ba4368df1f0ae2b09589261a3dcd1e229cbfe))
 
 ## [0.6.0] - 2026-01-25
 
