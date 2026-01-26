@@ -48,7 +48,28 @@ function senderIsAdminFromMessage(message) {
   return false;
 }
 
+/**
+ * Check if a sender is an admin
+ * @param {string} senderId - Sender JID/ID
+ * @param {object} message - Optional message object for metadata check
+ * @returns {boolean} True if sender is admin
+ */
+function isAdmin(senderId, message) {
+  // First check message metadata
+  if (message && senderIsAdminFromMessage(message)) {
+    return true;
+  }
+
+  // Then check environment admin list
+  const adminSet = getEnvAdminSet();
+  if (!senderId) return false;
+
+  const normalized = normalizeJid(senderId);
+  return adminSet.has(normalized);
+}
+
 module.exports = {
   getEnvAdminSet,
-  senderIsAdminFromMessage
+  senderIsAdminFromMessage,
+  isAdmin
 };

@@ -238,8 +238,8 @@ function hammingDistanceSingle(hash1, hash2) {
 /**
  * Checks if a hash is degenerate (all zeros, all ones, or mostly uniform)
  * These hashes cause false positive matches
- * Supports both 64-bit (16 chars) and 1024-bit (256 chars) hashes
- * @param {string} hash - Hex hash string (16 or 256 chars)
+ * Supports both 64-bit (10-16 chars) and 1024-bit (200-256 chars) hashes
+ * @param {string} hash - Hex hash string
  * @returns {boolean}
  */
 function isDegenerateHash(hash) {
@@ -247,23 +247,38 @@ function isDegenerateHash(hash) {
   const h = hash.toLowerCase();
   const len = h.length;
 
-  // Support both old 64-bit (16 chars) and new 1024-bit (256 chars) hashes
-  if (len !== 16 && len !== 256) return true;
+  // Determine hash type based on length
+  const is64Bit = len >= 10 && len <= 16;
+  const is1024Bit = len >= 200 && len <= 256;
+
+  if (!is64Bit && !is1024Bit) return true;
 
   // All zeros or all ones
   const allZeros = '0'.repeat(len);
   const allOnes = 'f'.repeat(len);
   if (h === allZeros || h === allOnes) return true;
 
-  // Count zeros - if 75%+ zeros, it's degenerate
-  const zeroCount = (h.match(/0/g) || []).length;
-  const zeroThreshold = Math.floor(len * 0.75);
-  if (zeroCount >= zeroThreshold) return true;
-
   // Count unique characters - if too few unique chars relative to length, it's degenerate
+  // For 1024-bit hashes, we need at least 4 unique chars (very low bar)
+  // For 64-bit hashes, we need at least 3 unique chars
   const uniqueChars = new Set(h).size;
-  const uniqueThreshold = len === 16 ? 4 : 8; // Scale threshold with hash size
-  return uniqueChars <= uniqueThreshold;
+  const uniqueThreshold = is1024Bit ? 4 : 3;
+  if (uniqueChars <= uniqueThreshold) return true;
+
+  // Check for repeating patterns (e.g., "0000000000000000..." or "ababababab...")
+  // Split into chunks and check if they're all the same
+  const chunkSize = is1024Bit ? 32 : 4;
+  const chunks = [];
+  for (let i = 0; i < len; i += chunkSize) {
+    chunks.push(h.slice(i, i + chunkSize));
+  }
+
+  // If all chunks are identical, it's degenerate
+  const uniqueChunks = new Set(chunks);
+  if (uniqueChunks.size === 1) return true;
+
+  // Not degenerate
+  return false;
 }
 
 /**
@@ -320,6 +335,221 @@ function hammingDistance(hash1, hash2) {
   return minDistance;
 }
 
+/**
+ * Validates if a hash is valid (not null, not degenerate, correct size)
+ * @param {string} hash - Hash string to validate
+ * @param {boolean} allowMultiFrame - Allow multi-frame hashes (separated by :)
+ * @returns {boolean} True if hash is valid
+ */
+function isValidHash(hash, allowMultiFrame = true) {
+  if (!hash || typeof hash !== 'string') return false;
+
+  // Multi-frame hash check
+  if (allowMultiFrame && hash.includes(':')) {
+    const frames = hash.split(':');
+    return frames.every(frame => isValidHash(frame, false));
+  }
+
+  // Single hash validation
+  // Allow flexible lengths to account for leading zeros being stripped
+  // 64-bit hashes: 10-16 chars (some leading zeros might be missing)
+  // 1024-bit hashes: 200-256 chars (same reason)
+  const is64Bit = hash.length >= 10 && hash.length <= 16;
+  const is1024Bit = hash.length >= 200 && hash.length <= 256;
+
+  if (!is64Bit && !is1024Bit) return false;
+
+  // Check if it's hex
+  if (!/^[0-9a-f]+$/i.test(hash)) return false;
+
+  // Check if it's degenerate
+  if (isDegenerateHash(hash)) return false;
+
+  return true;
+}
+
+/**
+ * Validates hash integrity by comparing file hash vs database hash
+ * @param {string} filePath - Path to media file
+ * @param {string} dbHashMd5 - MD5 hash from database
+ * @param {string} dbHashVisual - Visual hash from database
+ * @returns {Promise<object>} Integrity status
+ */
+async function validateHashIntegrity(filePath, dbHashMd5, dbHashVisual) {
+  const fs = require('fs');
+
+  const result = {
+    valid: true,
+    md5Match: null,
+    visualHashMatch: null,
+    fileHashMd5: null,
+    fileHashVisual: null,
+    errors: []
+  };
+
+  try {
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      result.valid = false;
+      result.errors.push('File does not exist');
+      return result;
+    }
+
+    // Read file
+    const buffer = await fs.promises.readFile(filePath);
+
+    // Calculate MD5
+    const fileHashMd5 = getMD5(buffer);
+    result.fileHashMd5 = fileHashMd5;
+    result.md5Match = fileHashMd5 === dbHashMd5;
+
+    // Calculate visual hash (only for images)
+    try {
+      const metadata = await sharp(buffer).metadata();
+      if (metadata.format) {
+        // Try to generate PNG buffer for hash
+        let pngBuffer;
+        if (metadata.pages && metadata.pages > 1) {
+          // Animated - use first frame
+          pngBuffer = await sharp(buffer, { animated: true, page: 0 }).png().toBuffer();
+        } else {
+          pngBuffer = await sharp(buffer).png().toBuffer();
+        }
+
+        const fileHashVisual = await getHashVisual(pngBuffer);
+        result.fileHashVisual = fileHashVisual;
+
+        if (dbHashVisual) {
+          result.visualHashMatch = fileHashVisual === dbHashVisual;
+        }
+      }
+    } catch (err) {
+      result.errors.push(`Failed to calculate visual hash: ${err.message}`);
+    }
+
+    // Overall validity check
+    if (result.md5Match === false) {
+      result.valid = false;
+      result.errors.push('MD5 hash mismatch - file modified after save');
+    }
+
+    if (result.visualHashMatch === false) {
+      result.valid = false;
+      result.errors.push('Visual hash mismatch - file modified after save');
+    }
+
+  } catch (err) {
+    result.valid = false;
+    result.errors.push(`Validation error: ${err.message}`);
+  }
+
+  return result;
+}
+
+/**
+ * Recalculates hashes for a media file and updates database
+ * @param {number} mediaId - Media ID
+ * @param {string} filePath - Path to media file
+ * @param {boolean} dryRun - If true, only check without updating
+ * @returns {Promise<object>} Recalculation result
+ */
+async function recalculateHashForMedia(mediaId, filePath, dryRun = false) {
+  const fs = require('fs');
+  const { dbHandler } = require('../connection');
+
+  const result = {
+    mediaId,
+    updated: false,
+    md5Updated: false,
+    visualHashUpdated: false,
+    oldHashMd5: null,
+    newHashMd5: null,
+    oldHashVisual: null,
+    newHashVisual: null,
+    errors: []
+  };
+
+  try {
+    // Get current hashes from database
+    const media = await dbHandler.get(
+      'SELECT hash_md5, hash_visual FROM media WHERE id = ?',
+      [mediaId]
+    );
+
+    if (!media) {
+      result.errors.push('Media not found in database');
+      return result;
+    }
+
+    result.oldHashMd5 = media.hash_md5;
+    result.oldHashVisual = media.hash_visual;
+
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      result.errors.push('File does not exist');
+      return result;
+    }
+
+    // Read file
+    const buffer = await fs.promises.readFile(filePath);
+
+    // Calculate new MD5
+    const newHashMd5 = getMD5(buffer);
+    result.newHashMd5 = newHashMd5;
+    result.md5Updated = newHashMd5 !== media.hash_md5;
+
+    // Calculate new visual hash (only for images)
+    let newHashVisual = null;
+    try {
+      const metadata = await sharp(buffer).metadata();
+      if (metadata.format) {
+        let pngBuffer;
+        if (metadata.pages && metadata.pages > 1) {
+          // Animated - use first frame
+          pngBuffer = await sharp(buffer, { animated: true, page: 0 }).png().toBuffer();
+        } else {
+          pngBuffer = await sharp(buffer).png().toBuffer();
+        }
+
+        newHashVisual = await getHashVisual(pngBuffer);
+        result.newHashVisual = newHashVisual;
+        result.visualHashUpdated = newHashVisual !== media.hash_visual;
+      }
+    } catch (err) {
+      result.errors.push(`Failed to calculate visual hash: ${err.message}`);
+    }
+
+    // Update database if not dry run and hashes changed
+    if (!dryRun && (result.md5Updated || result.visualHashUpdated)) {
+      const updates = [];
+      const params = [];
+
+      if (result.md5Updated) {
+        updates.push('hash_md5 = ?');
+        params.push(newHashMd5);
+      }
+
+      if (result.visualHashUpdated && newHashVisual) {
+        updates.push('hash_visual = ?');
+        params.push(newHashVisual);
+      }
+
+      params.push(mediaId);
+
+      const sql = `UPDATE media SET ${updates.join(', ')} WHERE id = ?`;
+      await dbHandler.run(sql, params);
+
+      result.updated = true;
+      console.log(`[HashIntegrity] Updated hashes for media ${mediaId}`);
+    }
+
+  } catch (err) {
+    result.errors.push(`Recalculation error: ${err.message}`);
+  }
+
+  return result;
+}
+
 module.exports = {
   getMD5,
   getSynonyms,
@@ -333,7 +563,10 @@ module.exports = {
   upsertProcessedFile,
   parseSemVer,
   compareSemVer,
-  isValidSemVer
+  isValidSemVer,
+  isValidHash,
+  validateHashIntegrity,
+  recalculateHashForMedia
 };
 /**
  * Extracts 3 frames (10%, 50%, 90%) from animated image (webp/gif) and returns dHashes

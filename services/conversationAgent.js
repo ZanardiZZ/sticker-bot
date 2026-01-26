@@ -373,17 +373,25 @@ function buildSystemPrompt(groupName) {
       .replace(/\{grupo\}|\{group\}/gi, groupName || 'grupo');
   }
 
-  return [
-    `Aja como integrante real do grupo ${groupName || 'do WhatsApp'} e mantenha a conversa informal.`,
-    'Fale sempre em primeira pessoa, como se você fosse parte da conversa.',
-    'NUNCA mencione nomes de outros usuários nas suas respostas.',
-    'NUNCA prefixe suas respostas com nomes (ex: "Fulano: texto").',
-    'Fale sempre em português brasileiro, com tom casual e natural.',
-    'Responda de forma breve (até 3 frases), demonstrando empatia e humor leve quando fizer sentido.',
-    'Só faça perguntas quando forem naturais para o contexto e evite terminar respostas com perguntas forçadas.',
-    'Nunca diga que é um bot, IA ou assistente — comporte-se como mais uma pessoa do grupo.',
-    'Se não souber algo, seja honesto ou puxe um assunto relacionado sem inventar informações.'
-  ].join(' ');
+  // Random variations to make responses less predictable
+  const styles = [
+    // Casual e amigável
+    `Você é ${PERSONA_NAME}, integrante do grupo ${groupName || 'de WhatsApp'}. Participe da conversa de forma natural e casual, como qualquer pessoa do grupo faria. Use português brasileiro informal. Seja breve (1-2 frases). Se não souber algo, admita ou mude de assunto. Nunca revele que é IA.`,
+
+    // Direto e despojado
+    `Você faz parte do grupo ${groupName || 'de WhatsApp'}. Responda como se estivesse conversando com amigos, de forma simples e direta. Português informal, 1-2 frases no máximo. Se não souber, seja honesto ou ignore. Comporte-se como uma pessoa normal, nunca mencione ser bot ou IA.`,
+
+    // Mais engajado
+    `Você é ${PERSONA_NAME} e está no grupo ${groupName || 'de WhatsApp'} conversando com a galera. Fale naturalmente, use gírias se fizer sentido, seja breve (1-2 frases). Não precisa responder tudo, só quando tiver algo a adicionar. Nunca diga que é IA ou assistente.`,
+
+    // Minimalista
+    `Integrante do grupo ${groupName || ''}. Converse naturalmente em português informal. Respostas curtas (1-2 frases). Admita quando não souber. Nunca revele ser IA. Seja você mesmo.`
+  ];
+
+  // Pick random style to add variety
+  const randomStyle = styles[Math.floor(Math.random() * styles.length)];
+
+  return randomStyle;
 }
 
 function buildAiMessages(state, { groupName }) {
@@ -413,10 +421,25 @@ function buildAiMessages(state, { groupName }) {
 
 function clampReplyLength(reply) {
   if (!reply) return reply;
-  if (reply.length <= MAX_REPLY_CHARS) return reply.trim();
-  const truncated = reply.slice(0, MAX_REPLY_CHARS + 1);
+
+  // Add some variance to max length to avoid always cutting at same spot
+  const variance = Math.floor(Math.random() * 40) - 20; // ±20 chars
+  const effectiveMax = MAX_REPLY_CHARS + variance;
+
+  if (reply.length <= effectiveMax) return reply.trim();
+
+  // Try to cut at sentence boundary if possible
+  const truncated = reply.slice(0, effectiveMax + 1);
+
+  // Try to find last sentence ending (.!?)
+  const sentenceMatch = truncated.match(/^(.+[.!?])\s+/);
+  if (sentenceMatch && sentenceMatch[1].length > effectiveMax * 0.6) {
+    return sentenceMatch[1].trim();
+  }
+
+  // Otherwise cut at word boundary
   const safeCut = truncated.replace(/\s+\S*$/, '').trim();
-  return (safeCut || truncated.slice(0, MAX_REPLY_CHARS)).trim();
+  return (safeCut || truncated.slice(0, effectiveMax)).trim();
 }
 
 function sanitizeReplyText(reply, participantNames = []) {
@@ -424,23 +447,21 @@ function sanitizeReplyText(reply, participantNames = []) {
 
   let cleaned = reply;
 
-  // Remove any "Name: " prefix at the start of the reply (common AI pattern)
+  // Only remove obvious "Name: " prefix at the very start (common AI pattern)
   cleaned = cleaned.replace(/^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s]{1,30}:\s*/u, '').trim();
 
-  // Remove specific participant names if provided
+  // LESS aggressive name removal - only remove "Name: " pattern (not standalone mentions)
+  // This allows natural conversation where names might be mentioned casually
   for (const name of participantNames) {
     if (name && name.length > 2) {
-      // Remove "Name: " pattern anywhere
-      const namePattern = new RegExp(`${name}:\\s*`, 'gi');
+      // Only remove "Name: " pattern, not casual mentions
+      const namePattern = new RegExp(`\\b${name}:\\s*`, 'gi');
       cleaned = cleaned.replace(namePattern, '').trim();
-      // Remove standalone mentions of the name followed by punctuation or common words
-      const mentionPattern = new RegExp(`\\b${name}\\b(?=\\s*[,:.!?]|\\s+(?:disse|falou|perguntou|respondeu))`, 'gi');
-      cleaned = cleaned.replace(mentionPattern, '').trim();
     }
   }
 
-  // Remove phrases about being a bot/AI
-  cleaned = cleaned.replace(/(?<!\S)(?:como|por ser) (?:uma?|) (?:ia|inteligência artificial|bot)[^.?!]*[.?!]?/gi, '').trim();
+  // Remove obvious bot/AI self-references (but less aggressively)
+  cleaned = cleaned.replace(/\b(?:como|por ser|sou) (?:uma?|um) (?:ia|inteligência artificial|bot|assistente)\b[^.?!]*/gi, '').trim();
 
   // Normalize whitespace
   cleaned = cleaned.replace(/\s+/g, ' ').trim();
@@ -456,6 +477,7 @@ function computeShouldRespond(state, text, { mentionDetected }) {
   const now = Date.now();
   const sinceLastReply = now - (state.lastReplyAt || 0);
 
+  // Hard limits
   if (state.messagesSinceLastReply < MIN_MESSAGES_BEFORE_RESPONSE) {
     return false;
   }
@@ -463,19 +485,40 @@ function computeShouldRespond(state, text, { mentionDetected }) {
     return false;
   }
 
-  let probability = 0.18;
+  // More organic probability calculation
+  // Base probability starts lower and varies more randomly
+  let probability = 0.12 + (Math.random() * 0.08); // 12-20% base
+
   const lower = text.toLowerCase();
 
-  if (/[?？]$/.test(text)) probability += 0.25;
-  if (lower.includes('alguém sabe') || lower.includes('como faz') || lower.includes('o que')) probability += 0.15;
-  if (lower.includes('vc') || lower.includes('você') || lower.includes('tu')) probability += 0.1;
-  if (lower.includes('bot') || lower.includes('robô')) probability += 0.15;
+  // Stronger signals that warrant response
+  if (/[?？]$/.test(text)) probability += 0.3; // Questions are more likely
+  if (lower.includes('alguém') || lower.includes('alguem')) probability += 0.2;
+  if (lower.includes('como faz') || lower.includes('como fazer')) probability += 0.25;
+  if (lower.includes('o que é') || lower.includes('o que e')) probability += 0.2;
 
-  probability += Math.min(state.messagesSinceLastReply * 0.04, 0.25);
-  if (sinceLastReply > 10 * 60 * 1000) probability += 0.1;
-  if (text.length > 180) probability -= 0.05;
+  // Slight boost for second-person references (more conversational)
+  if (lower.includes('vc') || lower.includes('você') || lower.includes('tu')) probability += 0.08;
 
-  probability = Math.max(0, Math.min(probability, 0.95));
+  // Don't over-respond to "bot" mentions - let it be more subtle
+  if (lower.includes('bot') || lower.includes('robô')) probability += 0.05;
+
+  // Gradual increase based on conversation activity (less linear)
+  const activityBoost = Math.min(state.messagesSinceLastReply * 0.03, 0.2);
+  probability += activityBoost;
+
+  // If it's been a while, slight boost (but not too much)
+  if (sinceLastReply > 10 * 60 * 1000) probability += 0.08;
+
+  // Very long messages might be monologues - less likely to respond
+  if (text.length > 200) probability -= 0.08;
+
+  // Add random variation to make it feel less predictable
+  probability += (Math.random() - 0.5) * 0.1; // ±5% random variance
+
+  // Clamp probability
+  probability = Math.max(0.05, Math.min(probability, 0.9));
+
   return Math.random() < probability;
 }
 

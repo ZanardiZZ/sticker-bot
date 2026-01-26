@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ path: __dirname + '/.env' });
 
 // Initialize log collector to capture bot logs
 const { getLogCollector } = require('./utils/logCollector');
@@ -13,6 +13,7 @@ const { initContactsTable, upsertGroup, upsertGroupMembers } = require('./bot/co
 const { initializeHistoryRecovery, setupPeriodicHistorySync } = require('./bot/historyRecovery');
 const { getMediaIdFromMessage, upsertReaction } = require('./database');
 const { checkAndNotifyVersionUpdate, initialize: initVersionNotifier } = require('./services/versionNotifier');
+const { AdminWatcher } = require('./services/adminWatcher');
 
 /**
  * Handles incoming reaction events
@@ -131,6 +132,27 @@ async function start(client) {
 
   // Setup message handling
   setupMessageHandler(client, handleMessage);
+
+  // Initialize Admin Watcher (self-healing system)
+  console.log('[Bot] Checking AdminWatcher...', {
+    enabled: process.env.ADMIN_WATCHER_ENABLED,
+    hasOpenAI: !!process.env.OPENAI_API_KEY
+  });
+
+  if (process.env.ADMIN_WATCHER_ENABLED === 'true') {
+    try {
+      console.log('[Bot] Creating AdminWatcher instance...');
+      const adminWatcher = new AdminWatcher(client);
+      console.log('[Bot] Starting AdminWatcher...');
+      await adminWatcher.start();
+      console.log('✅ Admin Watcher iniciado (self-healing habilitado)');
+    } catch (watcherErr) {
+      console.error('[Bot] Erro ao inicializar Admin Watcher:', watcherErr);
+      console.error('[Bot] Stack:', watcherErr.stack);
+    }
+  } else {
+    console.log('[Bot] AdminWatcher disabled');
+  }
 
   // Setup reaction handling for tracking reactions to stickers
   if (typeof client.onReaction === 'function') {
