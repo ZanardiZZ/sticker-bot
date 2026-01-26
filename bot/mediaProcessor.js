@@ -6,6 +6,7 @@ const {
   getMD5,
   getHashVisual,
   isDegenerateHash,
+  isValidHash,
   findByHashVisual,
   findSimilarByHashVisual,
   findById,
@@ -179,7 +180,16 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
       try {
         const sharpSource = sharp(tmpFilePath);
         pngBuffer = await sharpSource.png().toBuffer();
-        hashVisual = await getHashVisual(pngBuffer);
+        const calculatedHash = await getHashVisual(pngBuffer);
+
+        // Validate hash before using
+        if (calculatedHash && isValidHash(calculatedHash, false) && !isDegenerateHash(calculatedHash)) {
+          hashVisual = calculatedHash;
+        } else {
+          console.warn('[MediaProcessor] Calculated hash is invalid or degenerate for static image, not using');
+          hashVisual = null;
+        }
+
         hashMd5 = getMD5(await fs.promises.readFile(tmpFilePath));
       } catch (err) {
         console.warn('Erro ao processar mídia com sharp (formato não suportado):', err.message);
@@ -218,9 +228,11 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
               if (!pngBuffer) pngBuffer = frameBuffer;
 
               const frameHash = await getHashVisual(frameBuffer);
-              // Only include non-degenerate hashes to prevent false positives
-              if (frameHash && !isDegenerateHash(frameHash)) {
+              // Only include valid, non-degenerate hashes to prevent false positives
+              if (frameHash && isValidHash(frameHash, false) && !isDegenerateHash(frameHash)) {
                 sampleHashes.push(frameHash);
+              } else if (frameHash) {
+                console.warn(`[MediaProcessor] Frame ${frameIndex} hash is invalid or degenerate (${contextLabel}), skipping`);
               }
             } catch (frameErr) {
               console.warn(`[MediaProcessor] Falha ao extrair frame ${frameIndex} para hash (${contextLabel || 'sem contexto'}):`, frameErr.message);
@@ -230,6 +242,11 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
 
         if (sampleHashes.length > 0) {
           hashVisual = sampleHashes.join(':');
+          // Validate multi-frame hash
+          if (!isValidHash(hashVisual, true)) {
+            console.warn(`[MediaProcessor] Multi-frame hash is invalid (${contextLabel}), discarding`);
+            hashVisual = null;
+          }
           return;
         }
 
@@ -247,7 +264,14 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
 
       if (!hashVisual && pngBuffer) {
         try {
-          hashVisual = await getHashVisual(pngBuffer);
+          const calculatedHash = await getHashVisual(pngBuffer);
+          // Validate hash before using
+          if (calculatedHash && isValidHash(calculatedHash, false) && !isDegenerateHash(calculatedHash)) {
+            hashVisual = calculatedHash;
+          } else {
+            console.warn(`[MediaProcessor] Calculated hash is invalid or degenerate (${contextLabel}), not using`);
+            hashVisual = null;
+          }
         } catch (hashErr) {
           console.warn(`[MediaProcessor] Falha ao calcular hash visual (${contextLabel || 'sem contexto'}):`, hashErr.message);
           hashVisual = null;
@@ -680,6 +704,13 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
       if (bufferWebp) {
         await fs.promises.writeFile(filePath, bufferWebp);
         fileSizeBytes = bufferWebp.length;
+
+        // Protect file from modification (readonly)
+        try {
+          await fs.promises.chmod(filePath, 0o444);
+        } catch (chmodErr) {
+          console.warn('[MediaProcessor] Failed to set file readonly:', chmodErr.message);
+        }
       } else {
         await safeReply(client, chatId, 'Erro ao converter a mídia para sticker. O formato pode não ser suportado.', message.id);
         return;
@@ -689,6 +720,13 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
         fs.copyFileSync(tmpFilePath, filePath);
         const stats = await fs.promises.stat(filePath);
         fileSizeBytes = stats.size;
+
+        // Protect file from modification (readonly)
+        try {
+          await fs.promises.chmod(filePath, 0o444);
+        } catch (chmodErr) {
+          console.warn('[MediaProcessor] Failed to set file readonly:', chmodErr.message);
+        }
       } catch (copyErr) {
         console.error('[MediaProcessor] Falha ao persistir mídia original:', copyErr);
         throw copyErr;

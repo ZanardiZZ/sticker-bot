@@ -39,17 +39,11 @@ async function safeReply(client, chatId, responseMessage, originalMessageOrId = 
  //   console.error(`[safeReply] client.reply failed:`, replyError.message);
   //}
 
-  // Fallback to sendText with simulated reply format
+  // Fallback to sendText - just send the message directly
   try {
     if (typeof client.sendText === 'function') {
-      let finalMessage = responseMessage;
-      
-      // If we have original message info, create simulated reply format
-      if (originalMessage && originalMessage.body) {
-        finalMessage = `Respondendo à sua mensagem: "${originalMessage.body}"\nMinha resposta: ${responseMessage}`;
-      }
-      
-      await client.sendText(chatId, finalMessage);
+      // Just send the response message directly, no reply simulation
+      await client.sendText(chatId, responseMessage);
       return true;
     } else {
       console.error(`[safeReply] client.sendText not available`);

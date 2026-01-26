@@ -10,16 +10,67 @@ Sticker Bot 2 is a WhatsApp bot for managing and distributing stickers with an i
 
 ### Running the Application
 
+**⚠️ IMPORTANT: Use PM2 to avoid process duplication**
+
+The application uses PM2 for process management. **NEVER** run processes manually with `npm run` or `node` in production as this creates duplicate processes.
+
 ```bash
-# Start Baileys WebSocket bridge (maintains WhatsApp session - run first)
-npm run baileys:server
+# ✅ CORRECT: Start all services via PM2 (as user dev)
+sudo -u dev pm2 start ecosystem.config.js
 
-# Start bot process (connects to bridge)
-npm run bot
+# ✅ Check status
+sudo -u dev pm2 list
 
-# Start web interface (port 3000)
-npm run web
+# ✅ View logs
+sudo -u dev pm2 logs Bot-Client          # Main bot
+sudo -u dev pm2 logs WS-Socket-Server    # Baileys bridge
+sudo -u dev pm2 logs WebServer           # Web interface
+
+# ✅ Restart services
+sudo -u dev pm2 restart Bot-Client
+sudo -u dev pm2 restart all
+
+# ✅ Stop all services
+sudo -u dev pm2 stop all
+
+# ❌ WRONG: Manual start (creates duplicates!)
+npm run baileys:server  # Don't use this
+npm run bot             # Don't use this
+npm run web             # Don't use this
+node index.js           # Don't use this
 ```
+
+**Process Duplication Prevention:**
+
+If you see duplicate processes, follow this cleanup procedure:
+
+```bash
+# 1. Check for duplicates
+ps aux | grep -E '(index.js|server.js)' | grep -v grep
+
+# 2. Kill ALL processes first
+pkill -f 'node.*index.js'
+pkill -f 'node.*server.js'
+
+# 3. Stop all PM2 instances (both root and dev)
+pm2 delete all
+sudo -u dev pm2 delete all
+
+# 4. Wait for processes to fully stop
+sleep 3
+
+# 5. Start ONLY via dev user's PM2
+sudo -u dev pm2 start ecosystem.config.js
+
+# 6. Verify no duplicates (should see exactly 3-4 processes)
+ps aux | grep -E '(index.js|server.js)' | grep -v grep | wc -l
+```
+
+**PM2 Process Names:**
+- `Bot-Client` - Main bot (index.js) with AdminWatcher
+- `WS-Socket-Server` - Baileys WebSocket bridge (server.js)
+- `WebServer` - Web interface (web/server.js)
+- `Wordnet` - NLP service (app.py)
 
 ### Testing
 
@@ -147,7 +198,7 @@ User commands implemented in `commands/handlers/`:
 - `bot/` - WhatsApp bot modules (client, messageHandler, mediaProcessor, scheduler, contacts, stickers, historyRecovery)
 - `commands/handlers/` - Individual command handlers (see Available Commands section below)
 - `database/models/` - SQLite CRUD operations for each entity (see Database Models section below)
-- `services/` - Business logic (ai.js, nsfwFilter.js, videoProcessor.js, videoDownloader.js)
+- `services/` - Business logic (ai.js, nsfwFilter.js, videoProcessor.js, videoDownloader.js, adminWatcher.js, openaiTools.js)
 - `web/routes/` - Express API routes (index, admin, packs, account, captcha)
 - `web/middlewares/` - Rate limiting, CSRF, IP rules, CSP, request logger
 - `utils/` - Shared utilities (jidUtils, safeMessaging, commandNormalizer)
@@ -240,6 +291,37 @@ Client library that wraps WebSocket communication with the Baileys bridge. Used 
 - Periodic sync (optional)
 - See `docs/MESSAGE_HISTORY_RECOVERY.md` for details
 
+**Admin Watcher (Self-Healing System)** (`services/adminWatcher.js`, `services/openaiTools.js`):
+- Monitors admin messages for problem reports
+- Detects keywords: "erro", "falha", "parou", "bug", "problema", "crashou", etc.
+- **15 specialized tools** (9 diagnostic + 6 remediation) for autonomous problem-solving:
+  - **Diagnostic (9)**: `getBotLogs`, `searchLogsForPattern`, `getServiceStatus`, `getLastSentSticker`, `getSchedulerStatus`, `getQueueStatus`, `readFile`, `runHealthCheck`, `analyzeDatabaseSchema`
+  - **Remediation (6)**: `restartService`, `executeSqlQuery`, `createDatabaseTable`, `modifyBotConfig`, `clearProcessingQueue`, `writeFile`
+- **Automatically diagnoses AND fixes issues** - no manual intervention needed
+- Example: Missing table → detects error → creates table → restarts service → reports fix
+- Security controls: blocks DELETE/DROP/TRUNCATE, protects sensitive files
+- Reports diagnosis back to admin via WhatsApp in **natural, casual Portuguese**
+- Intelligent cooldown (5 minutes) to prevent spam
+- Cost-effective: ~$0.60/month with gpt-4o-mini (recommended)
+- Enable via `ADMIN_WATCHER_ENABLED=true` in .env (requires `OPENAI_API_KEY`)
+- See `docs/agents.md` for complete documentation and `docs/ADMIN_WATCHER_REMEDIATION_TOOLS.md` for tool details
+
+**Conversation Agent** (`services/conversationAgent.js`):
+- AI-powered group chat participant that converses naturally with users
+- **Improved for naturalness**: less robotic, more casual and authentic
+- 4 random system prompt variations to avoid predictable responses
+- Organic probability calculation (less mechanical, more human-like)
+- Detects mentions via name aliases and @mentions
+- Smart response timing: waits for MIN_MESSAGES before participating
+- Cooldown system to avoid spam (default: 2 minutes between responses)
+- Conversation memory: maintains context across messages (default: 16 messages)
+- Less aggressive sanitization: allows natural name mentions, removes only AI patterns
+- Intelligent text truncation: cuts at sentence boundaries when possible
+- Configurable persona name and behavior via env vars
+- Enable/disable via `CONVERSATION_AGENT_ENABLED` (default: enabled)
+- Requires OpenAI API key (uses `generateConversationalReply` from `services/ai.js`)
+- See `docs/CONVERSATION_AGENT_IMPROVEMENTS.md` for details and examples
+
 ## Key Patterns
 
 ### Command Handler Structure
@@ -321,6 +403,17 @@ UMAMI_ORIGIN=https://analytics.domain.com
 HISTORY_RECOVERY_ENABLED=true
 HISTORY_BATCH_SIZE=10
 HISTORY_MAX_MESSAGES=50
+
+# Admin Watcher (self-healing system)
+ADMIN_WATCHER_ENABLED=false
+ADMIN_WATCHER_MODEL=gpt-4o-mini  # gpt-4o-mini (~$0.60/mo) or gpt-4o (~$10/mo)
+
+# Conversation Agent (group chat bot)
+CONVERSATION_AGENT_ENABLED=1
+CONVERSATION_PERSONA_NAME=Lia
+CONVERSATION_HISTORY_LIMIT=16
+CONVERSATION_COOLDOWN_MS=120000
+CONVERSATION_MIN_MESSAGES=3
 ```
 
 See `.env.example` for full configuration options with detailed comments.
@@ -392,6 +485,14 @@ See `docs/TESTING.md` for comprehensive testing documentation.
 - Handled automatically with retry logic (up to 5 attempts)
 - Check for long-running transactions
 - Consider reducing queue concurrency
+- **May indicate process duplication** - see below
+
+**Process duplication (CRITICAL):**
+- **Symptoms:** Multiple node processes, SQLITE_BUSY errors, double message processing
+- **Cause:** Running both root and dev PM2 instances, or manual `node` commands while PM2 is active
+- **Check:** `ps aux | grep -E '(index.js|server.js)' | grep -v grep | wc -l` should return 3-4, not 6+
+- **Fix:** Follow cleanup procedure in "Running the Application" section above or see `docs/agents.md`
+- **Prevention:** ALWAYS use `sudo -u dev pm2` commands, NEVER mix PM2 instances or run manual node commands
 
 **WhatsApp connection issues:**
 - Ensure Baileys bridge is running: `npm run baileys:server`
@@ -410,6 +511,13 @@ See `docs/TESTING.md` for comprehensive testing documentation.
 
 ## Key Documentation
 
+**⭐ Process Management & AI Agents:**
+- `docs/agents.md` - **Complete guide to AdminWatcher (self-healing), ConversationAgent, and process management**
+- `docs/ADMIN_WATCHER_REMEDIATION_TOOLS.md` - AdminWatcher's 15 tools (diagnostic + remediation)
+- `docs/ADMIN_WATCHER_EXAMPLES.md` - Self-healing system response examples (natural language)
+- `docs/CONVERSATION_AGENT_IMPROVEMENTS.md` - Conversation agent naturalness improvements
+
+**Features & Systems:**
 - `docs/COMMAND_USAGE_ANALYTICS.md` - Analytics implementation guide
 - `docs/TESTING.md` - Comprehensive test suite documentation
 - `docs/PACK_FEATURE_GUIDE.md` - Sticker packs system
