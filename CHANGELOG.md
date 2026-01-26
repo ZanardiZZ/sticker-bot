@@ -1,4 +1,18 @@
-# Changelog
+## [0.6.1] - 2026-01-26
+
+### Novidades
+- feat: Sistema de auto-diagnóstico AdminWatcher e melhorias de integridade de hashes (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/5b9ba4368df1f0ae2b09589261a3dcd1e229cbfe))
+
+### Correções
+- fix: Script de versionamento agora funciona no CI sem banco de dados (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/108bdd4c77324695acd6b222b4d92dff251fc0c3))
+- fix: WAL checkpoint timer leak causing SQLITE_MISUSE warnings (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/acc053d0790054812dbc00a529879291be86d0f3))
+
+### Documentação
+- docs(changelog): atualizações de 2026-01-26 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/ea480237793f5f18c48ab642ff613fa31acd1b3a))
+- docs(changelog): atualizações de 2026-01-26 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/acf606bd78ac24bb7ced654bf2de7c35dfc8c1a5))
+
+### Tarefas
+- chore: bump version to 0.6.1 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/d4f12b2994696a0e8ac5eeb2470b531f4a9f40ea))
 
 ## [0.6.0] - 2026-01-26
 
