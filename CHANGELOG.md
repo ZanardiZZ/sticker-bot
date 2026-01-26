@@ -1,3 +1,16 @@
+# Changelog
+
+## [0.6.0] - 2026-01-26
+
+### Novidades
+- feat: Sistema de auto-diagnóstico AdminWatcher e melhorias de integridade de hashes (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/5b9ba4368df1f0ae2b09589261a3dcd1e229cbfe))
+
+### Correções
+- fix: WAL checkpoint timer leak causing SQLITE_MISUSE warnings (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/acc053d0790054812dbc00a529879291be86d0f3))
+
+### Documentação
+- docs(changelog): atualizações de 2026-01-26 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/acf606bd78ac24bb7ced654bf2de7c35dfc8c1a5))
+
 ## [0.6.0] - 2026-01-26
 
 ### Novidades
