@@ -10,7 +10,8 @@ class DatabaseHandler {
     this.busyTimeout = 30000; // 30 seconds
     this.maxRetries = 5;
     this.retryDelay = 100; // Initial delay in ms
-    
+    this.isClosed = false; // Track if database is closed
+
     // Configure SQLite for better concurrency
     this.db.configure('busyTimeout', this.busyTimeout);
     this.db.run('PRAGMA journal_mode = WAL'); // Write-Ahead Logging for better concurrency
@@ -182,12 +183,43 @@ class DatabaseHandler {
    * Perform WAL checkpoint to commit WAL data to main database
    */
   async checkpointWAL() {
+    // Skip checkpoint if database is closed
+    if (this.isClosed) {
+      return;
+    }
+
     return this.executeWithRetry(() => {
       return new Promise((resolve, reject) => {
+        // Double-check before executing
+        if (this.isClosed) {
+          resolve();
+          return;
+        }
+
         this.db.run('PRAGMA wal_checkpoint(TRUNCATE)', (err) => {
           if (err) reject(err);
           else resolve();
         });
+      });
+    });
+  }
+
+  /**
+   * Close the database connection and stop periodic operations
+   */
+  close() {
+    this.isClosed = true;
+
+    // Stop periodic checkpoint if running
+    const connection = require('../database/connection');
+    if (connection.stopPeriodicCheckpoint) {
+      connection.stopPeriodicCheckpoint();
+    }
+
+    return new Promise((resolve, reject) => {
+      this.db.close((err) => {
+        if (err) reject(err);
+        else resolve();
       });
     });
   }
