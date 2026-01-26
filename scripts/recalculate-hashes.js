@@ -251,10 +251,15 @@ async function main() {
 
   } catch (err) {
     console.error('❌ Fatal error:', err);
-    process.exit(1);
-  } finally {
-    // Close database
     await dbHandler.close();
+    process.exit(1);
+  }
+
+  // Close database properly
+  try {
+    await dbHandler.close();
+  } catch (closeErr) {
+    console.warn('Warning: Database close error:', closeErr.message);
   }
 
   console.log('\n✅ Hash recalculation completed');

@@ -44,6 +44,12 @@ function startPeriodicCheckpoint() {
   }
 
   checkpointInterval = setInterval(async () => {
+    // Skip if database is closed
+    if (dbHandler.isClosed) {
+      stopPeriodicCheckpoint();
+      return;
+    }
+
     try {
       // Create timeout promise
       const timeoutPromise = new Promise((_, reject) =>
@@ -59,8 +65,14 @@ function startPeriodicCheckpoint() {
       checkpointFailures = 0; // Reset on success
       console.log('[DB] Periodic WAL checkpoint completed');
     } catch (error) {
+      // Ignore errors if database is closed
+      if (dbHandler.isClosed) {
+        stopPeriodicCheckpoint();
+        return;
+      }
+
       checkpointFailures++;
-      console.warn(`[DB] Checkpoint failed (${checkpointFailures}/${MAX_CHECKPOINT_FAILURES}):`, error.message);
+      console.warn(`[DB] Periodic WAL checkpoint warning: ${error.message}`);
 
       if (checkpointFailures >= MAX_CHECKPOINT_FAILURES) {
         console.error('[DB] Too many checkpoint failures, stopping periodic checkpoint');
