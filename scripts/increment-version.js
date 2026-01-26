@@ -31,30 +31,80 @@ const MINOR_TYPES = ['feat'];
 const NO_BUMP_TYPES = ['docs', 'test', 'ci', 'build', 'chore'];
 
 /**
- * Get current version from database
+ * Get current version from database or package.json (fallback for CI)
  */
 function getCurrentVersion() {
   return new Promise((resolve, reject) => {
     db.get(
       'SELECT * FROM version_info WHERE is_current = 1 ORDER BY created_at DESC LIMIT 1',
       (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
+        if (err) {
+          // Database error - try fallback to package.json
+          try {
+            const packagePath = path.join(__dirname, '..', 'package.json');
+            const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+            const version = packageJson.version || '0.6.0';
+            const parts = version.split('.').map(n => parseInt(n, 10));
+            const [major, minor, patch = 0] = parts;
+            console.log(`[VERSION] Using package.json version as fallback: ${major}.${minor}.${patch}`);
+            resolve({ major, minor, patch });
+          } catch (pkgErr) {
+            reject(new Error(`Failed to read version from both database and package.json: ${err.message}, ${pkgErr.message}`));
+          }
+        } else if (!row) {
+          // No version in database - try package.json as fallback
+          try {
+            const packagePath = path.join(__dirname, '..', 'package.json');
+            const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+            const version = packageJson.version || '0.6.0';
+            const parts = version.split('.').map(n => parseInt(n, 10));
+            const [major, minor, patch = 0] = parts;
+            console.log(`[VERSION] No version in database, using package.json: ${major}.${minor}.${patch}`);
+            resolve({ major, minor, patch });
+          } catch (pkgErr) {
+            // If package.json also fails, resolve as null (will initialize)
+            console.log('[VERSION] No version found in database or package.json');
+            resolve(null);
+          }
+        } else {
+          resolve(row);
+        }
       }
     );
   });
 }
 
 /**
- * Get last processed commit SHA
+ * Get last processed commit SHA from database or git history (fallback for CI)
  */
 function getLastProcessedCommit() {
   return new Promise((resolve) => {
     db.get(
       `SELECT value FROM bot_config WHERE key = 'last_version_commit'`,
       (err, row) => {
-        if (err || !row) resolve(null);
-        else resolve(row.value);
+        if (err || !row) {
+          // No record in database - try to find last changelog commit in git history
+          // (changelog commits are created after version bumps)
+          try {
+            const lastChangelogCommit = execSync(
+              'git log --grep="docs(changelog)" --format=%H -1',
+              { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }
+            ).trim();
+
+            if (lastChangelogCommit) {
+              console.log(`[VERSION] Using last changelog commit from git history: ${lastChangelogCommit.slice(0, 8)}`);
+              resolve(lastChangelogCommit);
+            } else {
+              console.log('[VERSION] No previous changelog commit found in git history');
+              resolve(null);
+            }
+          } catch (gitErr) {
+            // Git command failed, resolve as null
+            resolve(null);
+          }
+        } else {
+          resolve(row.value);
+        }
       }
     );
   });
