@@ -34,14 +34,25 @@ if (walExists && (!dbExists || fs.statSync(walPath).size > 0)) {
 // Periodic WAL checkpoint with timeout and failure tracking
 let checkpointInterval = null;
 let checkpointFailures = 0;
-const MAX_CHECKPOINT_FAILURES = 3;
+let consecutiveFailures = 0;
+const MAX_CONSECUTIVE_FAILURES = 10; // Higher threshold to avoid stopping too early
 const CHECKPOINT_TIMEOUT = 10000; // 10 seconds
+const CHECKPOINT_INTERVAL = 3 * 60 * 1000; // 3 minutes (more frequent to prevent WAL growth)
 
 function startPeriodicCheckpoint() {
   if (checkpointInterval) {
     console.warn('[DB] Checkpoint interval already running');
     return;
   }
+
+  // Enable WAL autocheckpoint as fallback (checkpoint every 1000 pages = ~4MB)
+  db.run('PRAGMA wal_autocheckpoint = 1000', (err) => {
+    if (err) {
+      console.warn('[DB] Failed to set wal_autocheckpoint:', err.message);
+    } else {
+      console.log('[DB] WAL autocheckpoint enabled (1000 pages)');
+    }
+  });
 
   checkpointInterval = setInterval(async () => {
     // Skip if database is closed
@@ -62,7 +73,8 @@ function startPeriodicCheckpoint() {
         timeoutPromise
       ]);
 
-      checkpointFailures = 0; // Reset on success
+      consecutiveFailures = 0; // Reset on success
+      checkpointFailures = 0;
       console.log('[DB] Periodic WAL checkpoint completed');
     } catch (error) {
       // Ignore errors if database is closed
@@ -71,17 +83,20 @@ function startPeriodicCheckpoint() {
         return;
       }
 
+      consecutiveFailures++;
       checkpointFailures++;
-      console.warn(`[DB] Periodic WAL checkpoint warning: ${error.message}`);
+      console.warn(`[DB] Periodic WAL checkpoint warning: ${error.message} (${consecutiveFailures} consecutive failures)`);
 
-      if (checkpointFailures >= MAX_CHECKPOINT_FAILURES) {
-        console.error('[DB] Too many checkpoint failures, stopping periodic checkpoint');
-        stopPeriodicCheckpoint();
+      // Only warn, but keep trying (never stop permanently)
+      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        console.error(`[DB] WARNING: ${consecutiveFailures} consecutive checkpoint failures! WAL may grow large. Check database health.`);
+        // Reset counter to avoid log spam
+        consecutiveFailures = 0;
       }
     }
-  }, 5 * 60 * 1000); // Every 5 minutes
+  }, CHECKPOINT_INTERVAL);
 
-  console.log('[DB] Started periodic WAL checkpoint');
+  console.log('[DB] Started periodic WAL checkpoint (every 3 minutes)');
 }
 
 function stopPeriodicCheckpoint() {
