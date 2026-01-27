@@ -1,3 +1,32 @@
+# Changelog
+
+## [0.10.0] - 2026-01-27
+
+### Novidades
+- feat: Adiciona comando #reacts para ranking de stickers mais reagidas (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/574608634a43b91eadc23618e85cd7c57c3b2d0b))
+- feat: Linkar messageId de stickers enviadas para tracking de reações (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/41cd6ca5619d136cd93d6dfcc25956324221ed30))
+- feat: Script para reprocessar WebPs sem hash_md5 (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/91b6a46c27df1d02a02be86183417a405a37be0f))
+- feat: Bloqueia AdminWatcher de criar tabelas desnecessárias (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/ef0707fce19a914119b31ca25d3656f2477450d2))
+
+### Correções
+- fix: Checkpoint WAL mais resiliente para prevenir crescimento descontrolado (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/2e35ab6b14b0cc7be8cd6a42015ee06e1694a68e))
+
+### Documentação
+- docs(changelog): atualizações de 2026-01-27 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/b95bcfa765393504e5a6307c0b66be5346f9df3c))
+- docs: Adiciona guia de teste para tracking de reações (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/455aa13487fa874ccf6ce8053932ce6458f1fc2a))
+- docs(changelog): atualizações de 2026-01-27 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/5e740a9821978c91f5f859fde090f35f51cfc88c))
+- docs(changelog): atualizações de 2026-01-27 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/c05bdba436319d55d44b8571d24652bff675280d))
+- docs(changelog): atualizações de 2026-01-27 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/a4b7d0efb7452e0c445785872435b87d567cd5f5))
+- docs(changelog): atualizações de 2026-01-27 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/7dd2a539305370d6efd187ed0a9dff61d8378624))
+- docs(changelog): atualizações de 2026-01-27 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/0cad8f476f993f78963f43a7ead553a75e2c561b))
+
+### Tarefas
+- chore: bump version to 0.10.0 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/8cafeb4fa57e36bd713f80e342d49bf070ce0b7c))
+- chore: bump version to 0.9.0 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/60332e704b7f6be93b922bf0166d66b9e7bd6d3b))
+- chore: bump version to 0.8.1 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/be116d62d0835955202939001609fc1bd96ddc87))
+- chore: bump version to 0.8.0 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/1c96d313f28a566d3413a33cb6ea56214ca6c889))
+- chore: bump version to 0.7.0 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/e4e1103aa365e089c01d954edef45b29a7866088))
+
 ## [0.9.0] - 2026-01-27
 
 ### Novidades
