@@ -16,11 +16,10 @@
  *
  * FIX/REMEDIATION TOOLS:
  * 10. restartService - Restart PM2 service
- * 11. executeSqlQuery - Execute SQL queries (safe operations only)
- * 12. createDatabaseTable - Create missing database tables
- * 13. modifyBotConfig - Modify bot configuration values
- * 14. clearProcessingQueue - Clear stuck processing queue
- * 15. writeFile - Write content to files (restricted paths)
+ * 11. executeSqlQuery - Execute SQL queries (safe operations only, NO TABLE CREATION)
+ * 12. modifyBotConfig - Modify bot configuration values
+ * 13. clearProcessingQueue - Clear stuck processing queue
+ * 14. writeFile - Write content to files (restricted paths)
  */
 
 const fs = require('fs').promises;
@@ -231,7 +230,7 @@ function getOpenAITools() {
       type: 'function',
       function: {
         name: 'executeSqlQuery',
-        description: 'Executa query SQL no banco de dados. APENAS operações seguras: SELECT, INSERT, UPDATE, CREATE TABLE, CREATE INDEX. USE para corrigir dados corrompidos ou criar estruturas faltantes.',
+        description: 'Executa query SQL no banco de dados. APENAS operações seguras: SELECT, INSERT, UPDATE, CREATE INDEX. PROIBIDO criar tabelas novas - use apenas para queries de leitura ou correção de dados existentes. NUNCA use esta tool para adicionar estruturas novas ao schema.',
         parameters: {
           type: 'object',
           properties: {
@@ -248,28 +247,6 @@ function getOpenAITools() {
             }
           },
           required: ['query']
-        }
-      }
-    },
-
-    {
-      type: 'function',
-      function: {
-        name: 'createDatabaseTable',
-        description: 'Cria uma tabela no banco de dados. Use quando detectar que uma tabela necessária está faltando (ex: media_queue).',
-        parameters: {
-          type: 'object',
-          properties: {
-            tableName: {
-              type: 'string',
-              description: 'Nome da tabela a criar'
-            },
-            schema: {
-              type: 'string',
-              description: 'Schema SQL completo da tabela (CREATE TABLE ...)'
-            }
-          },
-          required: ['tableName', 'schema']
         }
       }
     },
@@ -387,9 +364,6 @@ async function handleToolCall(toolName, toolInput) {
 
       case 'executeSqlQuery':
         return await executeSqlQuery(toolInput);
-
-      case 'createDatabaseTable':
-        return await createDatabaseTable(toolInput);
 
       case 'modifyBotConfig':
         return await modifyBotConfig(toolInput);
@@ -1047,23 +1021,26 @@ async function executeSqlQuery({ query, params = [] }) {
   try {
     const { db } = require('../database/connection');
 
-    // Security: only allow safe operations
+    // Security: only allow safe read/update operations - NO SCHEMA CHANGES
     const normalizedQuery = query.trim().toUpperCase();
-    const allowedOperations = ['SELECT', 'INSERT', 'UPDATE', 'CREATE TABLE', 'CREATE INDEX', 'ALTER TABLE'];
+    const allowedOperations = ['SELECT', 'INSERT', 'UPDATE', 'CREATE INDEX'];
 
     const isAllowed = allowedOperations.some(op => normalizedQuery.startsWith(op));
 
-    // Block dangerous operations
-    const forbiddenPatterns = ['DROP', 'DELETE FROM', 'TRUNCATE', 'PRAGMA'];
+    // Block dangerous operations AND schema modifications
+    const forbiddenPatterns = [
+      'DROP', 'DELETE FROM', 'TRUNCATE', 'PRAGMA',
+      'CREATE TABLE', 'ALTER TABLE', 'DROP TABLE'  // Block all schema modifications
+    ];
     const isForbidden = forbiddenPatterns.some(pattern => normalizedQuery.includes(pattern));
 
     if (!isAllowed || isForbidden) {
       return {
         success: false,
-        error: 'Query contains forbidden operation',
+        error: 'Query contains forbidden operation. Schema modifications (CREATE TABLE, ALTER TABLE, DROP) are BLOCKED.',
         allowed: allowedOperations,
         forbidden: forbiddenPatterns,
-        hint: 'Only SELECT, INSERT, UPDATE, CREATE TABLE, CREATE INDEX, ALTER TABLE are allowed'
+        hint: 'Only SELECT, INSERT, UPDATE, CREATE INDEX are allowed. NO TABLE CREATION OR MODIFICATION.'
       };
     }
 
@@ -1109,62 +1086,9 @@ async function executeSqlQuery({ query, params = [] }) {
   }
 }
 
-/**
- * Create database table
- */
-async function createDatabaseTable({ tableName, schema }) {
-  try {
-    const { db } = require('../database/connection');
-
-    // Security: validate table name
-    if (!/^[a-z_][a-z0-9_]*$/i.test(tableName)) {
-      return {
-        success: false,
-        error: 'Invalid table name',
-        hint: 'Table name must contain only letters, numbers and underscores'
-      };
-    }
-
-    // Ensure schema starts with CREATE TABLE
-    if (!schema.trim().toUpperCase().startsWith('CREATE TABLE')) {
-      return {
-        success: false,
-        error: 'Schema must start with CREATE TABLE',
-        providedSchema: schema.substring(0, 100)
-      };
-    }
-
-    console.log(`[createDatabaseTable] Creating table: ${tableName}`);
-
-    return new Promise((resolve, reject) => {
-      db.run(schema, (err) => {
-        if (err) {
-          reject(err);
-        } else {
-          // Verify table was created
-          db.get(`
-            SELECT name FROM sqlite_master
-            WHERE type='table' AND name=?
-          `, [tableName], (err2, row) => {
-            if (err2) return reject(err2);
-
-            resolve({
-              success: true,
-              tableName,
-              created: !!row,
-              schema
-            });
-          });
-        }
-      });
-    });
-  } catch (err) {
-    return {
-      success: false,
-      error: `Failed to create table: ${err.message}`
-    };
-  }
-}
+// createDatabaseTable tool REMOVED
+// Schema modifications should be done via code changes and migrations, NOT by AI agents
+// This prevents agents from creating unnecessary tables like media_queue
 
 /**
  * Modify bot configuration
