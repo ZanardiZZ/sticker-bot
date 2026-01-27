@@ -24,6 +24,7 @@ const { handleFotoHdCommand } = require('./handlers/fotohd');
 const { handleAddPackCommand } = require('./handlers/addpack');
 const { handlePackCommand } = require('./handlers/pack');
 const { handlePingaCommand } = require('./handlers/pinga');
+const { handleReactsCommand } = require('./handlers/reacts');
 
 // Utilities
 const validation = require('./validation');
@@ -245,6 +246,12 @@ async function handleCommand(client, message, chatId, context = {}) {
 
       case '#pinga':
         await handlePingaCommand(client, message, chatId);
+        handled = true;
+        shouldTrackUsage = true;
+        break;
+
+      case '#reacts':
+        await handleReactsCommand(client, message, params);
         handled = true;
         shouldTrackUsage = true;
         break;
