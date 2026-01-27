@@ -1,3 +1,28 @@
+# Changelog
+
+## [0.8.0] - 2026-01-27
+
+### Novidades
+- feat: Script para reprocessar WebPs sem hash_md5 (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/91b6a46c27df1d02a02be86183417a405a37be0f))
+- feat: Bloqueia AdminWatcher de criar tabelas desnecessárias (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/ef0707fce19a914119b31ca25d3656f2477450d2))
+- feat: Sistema de auto-diagnóstico AdminWatcher e melhorias de integridade de hashes (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/5b9ba4368df1f0ae2b09589261a3dcd1e229cbfe))
+
+### Correções
+- fix: Script de versionamento agora funciona no CI sem banco de dados (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/108bdd4c77324695acd6b222b4d92dff251fc0c3))
+- fix: WAL checkpoint timer leak causing SQLITE_MISUSE warnings (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/acc053d0790054812dbc00a529879291be86d0f3))
+
+### Documentação
+- docs(changelog): atualizações de 2026-01-27 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/7dd2a539305370d6efd187ed0a9dff61d8378624))
+- docs(changelog): atualizações de 2026-01-27 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/0cad8f476f993f78963f43a7ead553a75e2c561b))
+- docs(changelog): atualizações de 2026-01-26 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/5d423fb78664f58d0b74903abebf8cc225737bb1))
+- docs(changelog): atualizações de 2026-01-26 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/ea480237793f5f18c48ab642ff613fa31acd1b3a))
+- docs(changelog): atualizações de 2026-01-26 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/acf606bd78ac24bb7ced654bf2de7c35dfc8c1a5))
+
+### Tarefas
+- chore: bump version to 0.8.0 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/1c96d313f28a566d3413a33cb6ea56214ca6c889))
+- chore: bump version to 0.7.0 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/e4e1103aa365e089c01d954edef45b29a7866088))
+- chore: bump version to 0.6.1 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/d4f12b2994696a0e8ac5eeb2470b531f4a9f40ea))
+
 ## [0.7.0] - 2026-01-27
 
 ### Novidades
