@@ -8,6 +8,7 @@ const path = require('path');
 const mime = require('mime-types');
 const crypto = require('crypto');
 const { PACK_NAME, AUTHOR_NAME } = require('../config/stickers');
+const { linkMessageToMedia } = require('../database/models/reactions');
 
 const MEDIA_DIR = path.resolve(__dirname, '..', 'media');
 const FIXED_WEBP_DIR = path.resolve(__dirname, '..', 'temp', 'fixed-webp');
@@ -145,6 +146,7 @@ async function ensureSafeWebpSticker(filePath) {
  * @param {Object} client - WhatsApp client
  * @param {string} chatId - Chat ID
  * @param {string} filePath - WebP file path
+ * @returns {Promise<string|null>} messageId or null
  */
 async function sendRawWebp(client, chatId, filePath, extraOptions = {}) {
   const buf = await fsp.readFile(filePath);
@@ -153,12 +155,13 @@ async function sendRawWebp(client, chatId, filePath, extraOptions = {}) {
   const animatedFlag = typeof extraOptions.animated === 'boolean'
     ? extraOptions.animated
     : isAnimatedWebpBuffer(buf);
-  await client.sendRawWebpAsSticker(chatId, withHeader, {
+  const response = await client.sendRawWebpAsSticker(chatId, withHeader, {
     pack: PACK_NAME,
     author: AUTHOR_NAME,
     ...extraOptions,
     animated: animatedFlag,
   });
+  return response?.messageId || null;
 }
 
 /**
@@ -169,7 +172,7 @@ async function sendRawWebp(client, chatId, filePath, extraOptions = {}) {
  */
 async function sendStickerForMediaRecord(client, chatId, media) {
   if (!media) return;
-  
+
   const filePath = media.file_path;
   const mimetype = media.mimetype || mime.lookup(filePath) || '';
 
@@ -179,11 +182,22 @@ async function sendStickerForMediaRecord(client, chatId, media) {
   const isWebp = mimetype === 'image/webp' || filePath.endsWith('.webp');
   const isVideo = mimetype.startsWith('video/');
 
+  let messageId = null;
+
   try {
     // 1) WebP → enviar utilizando caminho otimizado
     if (isWebp) {
       const { filePath: safePath, animated } = await ensureSafeWebpSticker(filePath);
-      await sendRawWebp(client, chatId, safePath, { animated });
+      messageId = await sendRawWebp(client, chatId, safePath, { animated });
+
+      // Link message to media for reaction tracking
+      if (messageId && media.id) {
+        try {
+          await linkMessageToMedia(messageId, media.id, chatId);
+        } catch (linkErr) {
+          console.warn('[Sticker] Failed to link message to media:', linkErr.message);
+        }
+      }
       return;
     }
 
@@ -204,17 +218,37 @@ async function sendStickerForMediaRecord(client, chatId, media) {
 
       if (typeof client.sendMp4AsSticker === 'function') {
         try {
-          await client.sendMp4AsSticker(chatId, mp4Path, { pack: PACK_NAME, author: AUTHOR_NAME });
+          const response = await client.sendMp4AsSticker(chatId, mp4Path, { pack: PACK_NAME, author: AUTHOR_NAME });
+          messageId = response?.messageId || null;
+
+          // Link message to media for reaction tracking
+          if (messageId && media.id) {
+            try {
+              await linkMessageToMedia(messageId, media.id, chatId);
+            } catch (linkErr) {
+              console.warn('[Sticker] Failed to link message to media:', linkErr.message);
+            }
+          }
           return;
         } catch (e) {
           console.warn('sendMp4AsSticker falhou, tentando sendImageAsStickerGif (se existir):', e?.message || e);
         }
       }
       if (isGif && typeof client.sendImageAsStickerGif === 'function') {
-        await client.sendImageAsStickerGif(chatId, filePath, { author: AUTHOR_NAME, pack: PACK_NAME });
+        const response = await client.sendImageAsStickerGif(chatId, filePath, { author: AUTHOR_NAME, pack: PACK_NAME });
+        messageId = response?.messageId || null;
+
+        // Link message to media for reaction tracking
+        if (messageId && media.id) {
+          try {
+            await linkMessageToMedia(messageId, media.id, chatId);
+          } catch (linkErr) {
+            console.warn('[Sticker] Failed to link message to media:', linkErr.message);
+          }
+        }
         return;
       }
-      // Fallback: envia como arquivo
+      // Fallback: envia como arquivo (não linkamos arquivo)
       await client.sendFile(chatId, filePath, 'media');
       return;
     }
@@ -231,14 +265,34 @@ async function sendStickerForMediaRecord(client, chatId, media) {
         });
         const webpBuf = await sticker.build();
         const withHeader = `data:image/webp;base64,${webpBuf.toString('base64')}`;
-        await client.sendRawWebpAsSticker(chatId, withHeader, { pack: PACK_NAME, author: AUTHOR_NAME });
+        const response = await client.sendRawWebpAsSticker(chatId, withHeader, { pack: PACK_NAME, author: AUTHOR_NAME });
+        messageId = response?.messageId || null;
+
+        // Link message to media for reaction tracking
+        if (messageId && media.id) {
+          try {
+            await linkMessageToMedia(messageId, media.id, chatId);
+          } catch (linkErr) {
+            console.warn('[Sticker] Failed to link message to media:', linkErr.message);
+          }
+        }
         return;
       }
-      await client.sendImageAsSticker(chatId, filePath, { pack: PACK_NAME, author: AUTHOR_NAME });
+      const response = await client.sendImageAsSticker(chatId, filePath, { pack: PACK_NAME, author: AUTHOR_NAME });
+      messageId = response?.messageId || null;
+
+      // Link message to media for reaction tracking
+      if (messageId && media.id) {
+        try {
+          await linkMessageToMedia(messageId, media.id, chatId);
+        } catch (linkErr) {
+          console.warn('[Sticker] Failed to link message to media:', linkErr.message);
+        }
+      }
       return;
     }
 
-    // 4) Fallback final
+    // 4) Fallback final (não linkamos arquivo)
     await client.sendFile(chatId, filePath, 'media');
   } catch (err) {
     console.error('Falha ao enviar mídia como figurinha. Fallback para arquivo. Motivo:', err?.message || err);

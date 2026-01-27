@@ -1248,7 +1248,8 @@ async function start() {
           const animated = typeof options?.animated === 'boolean' ? options.animated : isAnimatedWebpBuffer(buf);
           const sent = await sock.sendMessage(chatId, { sticker: buf, mimetype: 'image/webp', isAnimated: animated });
           rememberOutgoing(sent);
-          send(ws, { type: 'ack', action: 'sendRawWebpAsSticker', chatId, requestId: incomingRequestId });
+          const messageId = sent?.key?.id || null;
+          send(ws, { type: 'ack', action: 'sendRawWebpAsSticker', chatId, messageId, requestId: incomingRequestId });
         } catch (e) {
           send(ws, { type: 'error', error: e.message, requestId: incomingRequestId });
         }
@@ -1264,7 +1265,8 @@ async function start() {
           const animated = typeof options?.animated === 'boolean' ? options.animated : isAnimatedWebpBuffer(buf);
           const sent = await sock.sendMessage(chatId, { sticker: buf, mimetype: 'image/webp', isAnimated: animated });
           rememberOutgoing(sent);
-          send(ws, { type: 'ack', action: 'sendImageAsSticker', chatId, requestId: incomingRequestId });
+          const messageId = sent?.key?.id || null;
+          send(ws, { type: 'ack', action: 'sendImageAsSticker', chatId, messageId, requestId: incomingRequestId });
         } catch (e) {
           send(ws, { type: 'error', error: e.message, requestId: incomingRequestId });
         }
@@ -1278,7 +1280,8 @@ async function start() {
           const stickerBuf = await convertToAnimatedWebp(filePath);
           const sent = await sock.sendMessage(chatId, { sticker: stickerBuf, mimetype: 'image/webp', isAnimated: true });
           rememberOutgoing(sent);
-          return send(ws, { type: 'ack', action: type, chatId, requestId: incomingRequestId });
+          const messageId = sent?.key?.id || null;
+          return send(ws, { type: 'ack', action: type, chatId, messageId, requestId: incomingRequestId });
         } catch (e) {
           return send(ws, { type: 'error', error: e.message || String(e), requestId: incomingRequestId });
         }
