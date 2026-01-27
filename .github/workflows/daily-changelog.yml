@@ -133,6 +133,19 @@ jobs:
               if (m) mergeShas.add(c.sha);
             }
 
+            // Ignora commits do próprio workflow de changelog (evita recursão)
+            const isChangelogCommit = (msg = '', author = '') => {
+              const lowerMsg = msg.toLowerCase();
+              const lowerAuthor = author.toLowerCase();
+              // Ignora commits do bot de changelog
+              if (lowerAuthor.includes('github-actions') || lowerAuthor.includes('github actions')) {
+                if (lowerMsg.includes('docs(changelog)') || lowerMsg.includes('chore: bump version')) {
+                  return true;
+                }
+              }
+              return false;
+            };
+
             // Mensagens "ruins"
             const badMsg = (msg = '') =>
               /^(wip|fix|update|updates|minor|small|ajuste|ajustes|misc|temp|test|teste)$/i.test(msg.trim());
@@ -219,7 +232,17 @@ jobs:
             }
 
             const directCommits = await (async () => {
-              const toSummarize = commitsResp.filter(c => !mergeShas.has(c.sha));
+              const toSummarize = commitsResp.filter(c => {
+                // Ignora merges de PR
+                if (mergeShas.has(c.sha)) return false;
+
+                // Ignora commits do workflow de changelog (evita duplicação)
+                const msg = c.commit?.message || '';
+                const author = c.commit?.author?.name || c.author?.login || '';
+                if (isChangelogCommit(msg, author)) return false;
+
+                return true;
+              });
               const results = await Promise.all(toSummarize.map(summarizeCommit));
               return results;
             })();
