@@ -1,4 +1,21 @@
-# Changelog
+## [0.8.1] - 2026-01-27
+
+### Novidades
+- feat: Script para reprocessar WebPs sem hash_md5 (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/91b6a46c27df1d02a02be86183417a405a37be0f))
+- feat: Bloqueia AdminWatcher de criar tabelas desnecessárias (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/ef0707fce19a914119b31ca25d3656f2477450d2))
+
+### Correções
+- fix: Checkpoint WAL mais resiliente para prevenir crescimento descontrolado (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/2e35ab6b14b0cc7be8cd6a42015ee06e1694a68e))
+
+### Documentação
+- docs(changelog): atualizações de 2026-01-27 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/a4b7d0efb7452e0c445785872435b87d567cd5f5))
+- docs(changelog): atualizações de 2026-01-27 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/7dd2a539305370d6efd187ed0a9dff61d8378624))
+- docs(changelog): atualizações de 2026-01-27 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/0cad8f476f993f78963f43a7ead553a75e2c561b))
+
+### Tarefas
+- chore: bump version to 0.8.1 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/be116d62d0835955202939001609fc1bd96ddc87))
+- chore: bump version to 0.8.0 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/1c96d313f28a566d3413a33cb6ea56214ca6c889))
+- chore: bump version to 0.7.0 (por github-actions[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/e4e1103aa365e089c01d954edef45b29a7866088))
 
 ## [0.8.0] - 2026-01-27
 
