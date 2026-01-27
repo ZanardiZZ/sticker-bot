@@ -163,6 +163,7 @@ User commands implemented in `commands/handlers/`:
 - `#top10` - Top 10 most used stickers
 - `#top5users` - Top 5 contributors by sticker count
 - `#top5comandos` - Top 5 most used commands
+- `#reacts [limit]` - Show most reacted stickers (default: 10, max: 20)
 
 **Pack Management:**
 - `#pack` - List all packs or get pack stickers
