@@ -17,14 +17,14 @@ This document describes the autonomous agents and AI-powered systems in the Stic
 
 ### Overview
 
-AdminWatcher is an autonomous agent that monitors admin messages in WhatsApp, detects problem reports, and automatically diagnoses and fixes common issues using OpenAI GPT-4 with 15 specialized tools.
+AdminWatcher is an autonomous agent that monitors admin messages in WhatsApp, detects problem reports, and automatically diagnoses and fixes common issues using OpenAI GPT-4 with 14 specialized tools.
 
 **Location:** `services/adminWatcher.js` + `services/openaiTools.js`
 
 ### Features
 
 - 🔍 **Automatic Problem Detection** - Detects keywords like "erro", "falha", "parou", "bug", "problema"
-- 🛠️ **15 Diagnostic & Remediation Tools** - 9 for diagnosis + 6 for automatic fixes
+- 🛠️ **14 Diagnostic & Remediation Tools** - 9 for diagnosis + 5 for automatic fixes
 - 🤖 **Natural Language Responses** - Casual Brazilian Portuguese responses
 - ⏱️ **Cooldown System** - 5-minute cooldown per chat to prevent spam
 - 🔒 **Security Controls** - Blocks destructive operations (DROP, DELETE, etc.)
@@ -71,7 +71,7 @@ criei ela e reiniciei o bot. agora a verificação de duplicadas tá
 funcionando de boa"
 ```
 
-### 15 Available Tools
+### 14 Available Tools
 
 #### 🔍 Diagnostic Tools (9)
 
@@ -85,28 +85,34 @@ funcionando de boa"
 8. **runHealthCheck** - Complete system health check
 9. **analyzeDatabaseSchema** - Analyze database structure
 
-#### 🛠️ Remediation Tools (6)
+#### 🛠️ Remediation Tools (5)
 
-10. **restartService** - Restart PM2 service
-11. **executeSqlQuery** - Execute SQL (SELECT/INSERT/UPDATE/CREATE only)
-12. **createDatabaseTable** - Create missing database tables
-13. **modifyBotConfig** - Modify bot configuration
-14. **clearProcessingQueue** - Clear stuck processing queue
-15. **writeFile** - Write temporary fix files
+10. **restartService** - Restart PM2 service (EXCEPT Bot-Client itself to prevent suicide)
+11. **executeSqlQuery** - Execute SQL (SELECT/INSERT/UPDATE/CREATE INDEX only)
+12. **modifyBotConfig** - Modify bot configuration values in bot_config table
+13. **clearProcessingQueue** - Clear stuck processing queue
+14. **writeFile** - Write temporary fix files (restricted paths)
 
-### Security
+### Security & Restrictions
+
+**⚠️ CRITICAL: Schema Modifications are BLOCKED**
+
+The agent **CANNOT** create or modify database tables. This prevents unnecessary structures like `media_queue` from being created when they don't exist in the codebase.
 
 **Blocked Operations:**
 - ❌ DELETE queries
 - ❌ DROP tables
 - ❌ TRUNCATE
+- ❌ CREATE TABLE (schema changes)
+- ❌ ALTER TABLE (schema changes)
 - ❌ PRAGMA commands
+- ❌ Restarting Bot-Client or sticker-bot services (would kill itself)
 - ❌ Writing to .env, auth files, node_modules, .git
 - ❌ Writing .key, .pem, .crt files
 
 **Allowed Operations:**
 - ✅ SELECT queries
-- ✅ INSERT queries
+- ✅ INSERT queries (data only, not schema)
 - ✅ UPDATE queries
 - ✅ CREATE TABLE
 - ✅ CREATE INDEX
