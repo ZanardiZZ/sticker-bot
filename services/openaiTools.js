@@ -273,24 +273,6 @@ function getOpenAITools() {
       }
     },
 
-    {
-      type: 'function',
-      function: {
-        name: 'clearProcessingQueue',
-        description: 'Limpa fila de processamento travada. Remove jobs stuck ou failed. Use quando detectar fila com muitos jobs travados.',
-        parameters: {
-          type: 'object',
-          properties: {
-            status: {
-              type: 'string',
-              enum: ['failed', 'stuck', 'all'],
-              description: 'Qual tipo de jobs limpar (padrão: failed)',
-              default: 'failed'
-            }
-          }
-        }
-      }
-    },
 
     {
       type: 'function',
@@ -367,9 +349,6 @@ async function handleToolCall(toolName, toolInput) {
 
       case 'modifyBotConfig':
         return await modifyBotConfig(toolInput);
-
-      case 'clearProcessingQueue':
-        return await clearProcessingQueue(toolInput);
 
       case 'writeFile':
         return await writeFileContent(toolInput);
@@ -684,73 +663,46 @@ async function getQueueStatus() {
     const { db } = require('../database/connection');
 
     return new Promise((resolve) => {
-      // First check if media_queue table exists
-      db.get(`
-        SELECT name FROM sqlite_master
-        WHERE type='table' AND name='media_queue'
-      `, (err, row) => {
-        if (err || !row) {
-          // Table doesn't exist - check media_processing_log instead
-          db.all(`
-            SELECT
-              success,
-              COUNT(*) as count,
-              AVG(duration_ms) as avg_duration_ms
-            FROM media_processing_log
-            WHERE processing_start_ts > strftime('%s', 'now', '-1 day')
-            GROUP BY success
-          `, (err2, rows) => {
-            if (err2) {
-              return resolve({
-                note: 'No processing queue table exists (media_queue)',
-                alternativeData: 'Showing processing log from last 24h',
-                error: err2.message
-              });
-            }
-
-            const summary = {
-              note: 'No media_queue table exists. Showing media_processing_log (last 24h) instead.',
-              successful: 0,
-              failed: 0,
-              total: 0
-            };
-
-            rows.forEach(r => {
-              if (r.success === 1) {
-                summary.successful = r.count;
-                summary.avgDurationMs = Math.round(r.avg_duration_ms);
-              } else {
-                summary.failed = r.count;
-              }
-              summary.total += r.count;
-            });
-
-            resolve(summary);
-          });
-        } else {
-          // media_queue exists, query it
-          db.all(`
-            SELECT status, COUNT(*) as count
-            FROM media_queue
-            GROUP BY status
-          `, (err3, rows) => {
-            if (err3) {
-              return resolve({ error: `Database error: ${err3.message}` });
-            }
-
-            const summary = { total: 0 };
-            rows.forEach(r => {
-              summary[r.status] = r.count;
-              summary.total += r.count;
-            });
-
-            if (rows.length === 0) {
-              summary.note = 'Queue is empty';
-            }
-
-            resolve(summary);
+      // Query media_processing_log to see recent processing activity
+      // Note: This system does NOT use a media_queue table - processing is handled in-memory
+      db.all(`
+        SELECT
+          success,
+          COUNT(*) as count,
+          AVG(duration_ms) as avg_duration_ms
+        FROM media_processing_log
+        WHERE processing_start_ts > strftime('%s', 'now', '-1 day')
+        GROUP BY success
+      `, (err, rows) => {
+        if (err) {
+          return resolve({
+            note: 'Processing log shows activity from last 24h',
+            error: err.message
           });
         }
+
+        const summary = {
+          note: 'Media processing activity (last 24h)',
+          successful: 0,
+          failed: 0,
+          total: 0
+        };
+
+        rows.forEach(r => {
+          if (r.success === 1) {
+            summary.successful = r.count;
+            summary.avgDurationMs = Math.round(r.avg_duration_ms);
+          } else {
+            summary.failed = r.count;
+          }
+          summary.total += r.count;
+        });
+
+        if (summary.total === 0) {
+          summary.note = 'No media processing in last 24h';
+        }
+
+        resolve(summary);
       });
     });
   } catch (err) {
@@ -1135,57 +1087,10 @@ async function modifyBotConfig({ key, value }) {
 /**
  * Clear processing queue
  */
-async function clearProcessingQueue({ status = 'failed' }) {
-  try {
-    const { db } = require('../database/connection');
-
-    console.log(`[clearProcessingQueue] Clearing ${status} jobs`);
-
-    return new Promise((resolve, reject) => {
-      let query;
-      let params = [];
-
-      if (status === 'all') {
-        query = 'DELETE FROM media_queue';
-      } else if (status === 'stuck') {
-        // Stuck = processing for more than 10 minutes
-        query = `
-          DELETE FROM media_queue
-          WHERE status='processing'
-          AND created_at < datetime('now', '-10 minutes')
-        `;
-      } else {
-        query = 'DELETE FROM media_queue WHERE status=?';
-        params = [status];
-      }
-
-      db.run(query, params, function(err) {
-        if (err) {
-          // If table doesn't exist, that's fine
-          if (err.message.includes('no such table')) {
-            return resolve({
-              success: true,
-              cleared: 0,
-              note: 'media_queue table does not exist (queue is empty)'
-            });
-          }
-          reject(err);
-        } else {
-          resolve({
-            success: true,
-            cleared: this.changes,
-            status: status
-          });
-        }
-      });
-    });
-  } catch (err) {
-    return {
-      success: false,
-      error: `Failed to clear queue: ${err.message}`
-    };
-  }
-}
+// clearProcessingQueue REMOVED
+// This system does NOT use a media_queue table - processing is in-memory
+// The existence of this function was confusing the agent into thinking
+// a media_queue table should exist but was missing
 
 /**
  * Write file content
