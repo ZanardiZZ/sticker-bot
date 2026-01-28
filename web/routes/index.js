@@ -6,6 +6,7 @@ const createAccountRoutes = require('./account');
 const createCaptchaRoutes = require('./captcha');
 const createAdminRoutes = require('./admin');
 const createPackRoutes = require('./packs');
+const webhookRoutes = require('./webhook');
 
 /**
  * Registers all API routes with the Express app
@@ -17,11 +18,14 @@ function registerRoutes(app, db) {
   app.use('/api', createAccountRoutes(db));
   app.use('/api', createCaptchaRoutes());
   app.use('/api', createAdminRoutes(db));
-  
+
   // Pack routes (includes both /api/packs and /pack/:name)
   const packRouter = createPackRoutes(db);
   app.use('/', packRouter);
-  
+
+  // GitHub webhook for auto-deployment
+  app.use('/webhook', webhookRoutes);
+
   // TODO: Add other route modules:
   // - Registration routes
   // - Media/sticker routes
