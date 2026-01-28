@@ -277,6 +277,28 @@ function getOpenAITools() {
     {
       type: 'function',
       function: {
+        name: 'compareMediaHashes',
+        description: 'Compara hashes visuais de dois IDs de mídia para investigar falsos positivos em detecção de duplicatas. Calcula Hamming distance e mostra detalhes das mídias.',
+        parameters: {
+          type: 'object',
+          properties: {
+            mediaId1: {
+              type: 'number',
+              description: 'ID da primeira mídia'
+            },
+            mediaId2: {
+              type: 'number',
+              description: 'ID da segunda mídia'
+            }
+          },
+          required: ['mediaId1', 'mediaId2']
+        }
+      }
+    },
+
+    {
+      type: 'function',
+      function: {
         name: 'writeFile',
         description: 'Escreve conteúdo em arquivo. APENAS para scripts de correção temporários ou patches. PROIBIDO: arquivos .sql, .db, .env, auth, node_modules. NUNCA use para criar schemas de banco de dados.',
         parameters: {
@@ -349,6 +371,9 @@ async function handleToolCall(toolName, toolInput) {
 
       case 'modifyBotConfig':
         return await modifyBotConfig(toolInput);
+
+      case 'compareMediaHashes':
+        return await compareMediaHashes(toolInput);
 
       case 'writeFile':
         return await writeFileContent(toolInput);
@@ -1150,6 +1175,122 @@ async function writeFileContent({ filePath, content, append = false }) {
     return {
       success: false,
       error: `Failed to write file: ${err.message}`
+    };
+  }
+}
+
+/**
+ * Compare media hashes for investigating false positives
+ */
+async function compareMediaHashes({ mediaId1, mediaId2 }) {
+  try {
+    const { db } = require('../database/connection');
+    const { hammingDistance } = require('../database/utils');
+
+    console.log(`[compareMediaHashes] Comparing media #${mediaId1} vs #${mediaId2}`);
+
+    // Get both media records
+    const media1 = await new Promise((resolve, reject) => {
+      db.get(`
+        SELECT id, description, mimetype, hash_visual, file_path, width, height, duration, file_size
+        FROM media
+        WHERE id = ?
+      `, [mediaId1], (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+      });
+    });
+
+    const media2 = await new Promise((resolve, reject) => {
+      db.get(`
+        SELECT id, description, mimetype, hash_visual, file_path, width, height, duration, file_size
+        FROM media
+        WHERE id = ?
+      `, [mediaId2], (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+      });
+    });
+
+    if (!media1) {
+      return {
+        success: false,
+        error: `Media ID ${mediaId1} not found`
+      };
+    }
+
+    if (!media2) {
+      return {
+        success: false,
+        error: `Media ID ${mediaId2} not found`
+      };
+    }
+
+    if (!media1.hash_visual || !media2.hash_visual) {
+      return {
+        success: false,
+        error: 'One or both media items are missing hash_visual values',
+        media1_has_hash: !!media1.hash_visual,
+        media2_has_hash: !!media2.hash_visual
+      };
+    }
+
+    // Calculate Hamming distance
+    const distance = hammingDistance(media1.hash_visual, media2.hash_visual);
+    const totalBits = 1024; // Standard dHash size
+    const similarity = Math.round((totalBits - distance) / totalBits * 100);
+    const threshold = 102; // 90% similarity threshold
+
+    // Analyze hash structure
+    const hash1Frames = media1.hash_visual.split(':');
+    const hash2Frames = media2.hash_visual.split(':');
+
+    return {
+      success: true,
+      media1: {
+        id: media1.id,
+        description: media1.description || '(sem descrição)',
+        mimetype: media1.mimetype,
+        dimensions: media1.width && media1.height ? `${media1.width}x${media1.height}` : 'unknown',
+        duration: media1.duration ? `${media1.duration}s` : null,
+        file_size: media1.file_size ? `${Math.round(media1.file_size / 1024)}KB` : 'unknown',
+        hash_visual: media1.hash_visual,
+        hash_frames: hash1Frames.length,
+        file_path: media1.file_path
+      },
+      media2: {
+        id: media2.id,
+        description: media2.description || '(sem descrição)',
+        mimetype: media2.mimetype,
+        dimensions: media2.width && media2.height ? `${media2.width}x${media2.height}` : 'unknown',
+        duration: media2.duration ? `${media2.duration}s` : null,
+        file_size: media2.file_size ? `${Math.round(media2.file_size / 1024)}KB` : 'unknown',
+        hash_visual: media2.hash_visual,
+        hash_frames: hash2Frames.length,
+        file_path: media2.file_path
+      },
+      comparison: {
+        hamming_distance: distance,
+        similarity_percent: similarity,
+        threshold_bits: threshold,
+        threshold_percent: 90,
+        would_block_as_duplicate: distance <= threshold,
+        bits_different: distance,
+        total_bits: totalBits,
+        hash1_prefix: media1.hash_visual.substring(0, 32) + '...',
+        hash2_prefix: media2.hash_visual.substring(0, 32) + '...',
+        hash1_is_multiframe: hash1Frames.length > 1,
+        hash2_is_multiframe: hash2Frames.length > 1
+      },
+      diagnosis: distance <= threshold
+        ? '🚨 FALSE POSITIVE: These media are flagged as duplicates but are completely different!'
+        : '✅ Correctly identified as different media (distance above threshold)'
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: `Comparison failed: ${err.message}`,
+      stack: err.stack
     };
   }
 }

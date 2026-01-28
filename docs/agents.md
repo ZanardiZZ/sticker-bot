@@ -71,9 +71,9 @@ funcionando. o erro é porque não tem figurinha pra verificar ainda.
 quando processarem as primeiras mídias vai funcionar normal"
 ```
 
-### 12 Available Tools
+### 13 Available Tools
 
-#### 🔍 Diagnostic Tools (9)
+#### 🔍 Diagnostic Tools (10)
 
 1. **getBotLogs** - Read recent logs (bot/baileys/web)
 2. **searchLogsForPattern** - Search logs with regex
@@ -84,12 +84,13 @@ quando processarem as primeiras mídias vai funcionar normal"
 7. **readFile** - Read source code files
 8. **runHealthCheck** - Complete system health check
 9. **analyzeDatabaseSchema** - Analyze database structure
+10. **compareMediaHashes** - Compare visual hashes of two media IDs to investigate duplicate detection false positives
 
 #### 🛠️ Remediation Tools (3)
 
-10. **restartService** - Restart PM2 service (EXCEPT Bot-Client itself to prevent suicide)
-11. **executeSqlQuery** - Execute SQL (SELECT/INSERT/UPDATE/CREATE INDEX only, NO TABLE CREATION)
-12. **modifyBotConfig** - Modify bot configuration values in bot_config table
+11. **restartService** - Restart PM2 service (EXCEPT Bot-Client itself to prevent suicide)
+12. **executeSqlQuery** - Execute SQL (SELECT/INSERT/UPDATE/CREATE INDEX only, NO TABLE CREATION)
+13. **modifyBotConfig** - Modify bot configuration values in bot_config table
 
 ### Security & Restrictions
 
@@ -437,6 +438,6 @@ sudo -u dev pm2 restart Bot-Client
 
 ---
 
-**Last Updated:** 2026-01-25
-**Bot Version:** 0.6.0
-**AdminWatcher Tools:** 15 (9 diagnostic + 6 remediation)
+**Last Updated:** 2026-01-28
+**Bot Version:** 0.12.2
+**AdminWatcher Tools:** 13 (10 diagnostic + 3 remediation)
