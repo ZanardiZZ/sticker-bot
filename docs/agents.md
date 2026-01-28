@@ -24,7 +24,7 @@ AdminWatcher is an autonomous agent that monitors admin messages in WhatsApp, de
 ### Features
 
 - 🔍 **Automatic Problem Detection** - Detects keywords like "erro", "falha", "parou", "bug", "problema"
-- 🛠️ **14 Diagnostic & Remediation Tools** - 9 for diagnosis + 5 for automatic fixes
+- 🛠️ **13 Diagnostic & Remediation Tools** - 9 for diagnosis + 4 for automatic fixes
 - 🤖 **Natural Language Responses** - Casual Brazilian Portuguese responses
 - ⏱️ **Cooldown System** - 5-minute cooldown per chat to prevent spam
 - 🔒 **Security Controls** - Blocks destructive operations (DROP, DELETE, etc.)
@@ -59,19 +59,19 @@ OPENAI_API_KEY=sk-your-key-here
 Admin: "erro na verificação de duplicadas"
 
 Bot thinks:
-[getBotLogs] → sees "SQLITE_ERROR: no such table: media_queue"
-[analyzeDatabaseSchema] → confirms media_queue doesn't exist
-[readFile('database/migrations/schema.js')] → finds table schema
-[createDatabaseTable] → creates the missing table
-[restartService('sticker-bot')] → restarts bot
+[getBotLogs] → sees "SQLITE_ERROR: no such table: media"
+[analyzeDatabaseSchema] → confirms media table has 0 records
+[readFile('database/models/media.js')] → analyzes media model
+[executeSqlQuery("SELECT COUNT(*) FROM media")] → gets count
+[getQueueStatus] → checks processing queue
 
 Bot responds:
-"achei o problema 👍 a tabela media_queue tava faltando no banco.
-criei ela e reiniciei o bot. agora a verificação de duplicadas tá
-funcionando de boa"
+"dei uma olhada aqui 👍 a tabela media tá vazia mesmo, mas o banco tá
+funcionando. o erro é porque não tem figurinha pra verificar ainda.
+quando processarem as primeiras mídias vai funcionar normal"
 ```
 
-### 14 Available Tools
+### 13 Available Tools
 
 #### 🔍 Diagnostic Tools (9)
 
@@ -85,13 +85,12 @@ funcionando de boa"
 8. **runHealthCheck** - Complete system health check
 9. **analyzeDatabaseSchema** - Analyze database structure
 
-#### 🛠️ Remediation Tools (5)
+#### 🛠️ Remediation Tools (4)
 
 10. **restartService** - Restart PM2 service (EXCEPT Bot-Client itself to prevent suicide)
-11. **executeSqlQuery** - Execute SQL (SELECT/INSERT/UPDATE/CREATE INDEX only)
+11. **executeSqlQuery** - Execute SQL (SELECT/INSERT/UPDATE/CREATE INDEX only, NO TABLE CREATION)
 12. **modifyBotConfig** - Modify bot configuration values in bot_config table
-13. **clearProcessingQueue** - Clear stuck processing queue
-14. **writeFile** - Write temporary fix files (restricted paths)
+13. **writeFile** - Write temporary fix files (BLOCKS .sql, .db, .env, auth files)
 
 ### Security & Restrictions
 
@@ -108,17 +107,15 @@ The agent **CANNOT** create or modify database tables. This prevents unnecessary
 - ❌ PRAGMA commands
 - ❌ Restarting Bot-Client or sticker-bot services (would kill itself)
 - ❌ Writing to .env, auth files, node_modules, .git
-- ❌ Writing .key, .pem, .crt files
+- ❌ Writing .key, .pem, .crt, .sql, .db files
 
 **Allowed Operations:**
 - ✅ SELECT queries
 - ✅ INSERT queries (data only, not schema)
 - ✅ UPDATE queries
-- ✅ CREATE TABLE
-- ✅ CREATE INDEX
-- ✅ ALTER TABLE
+- ✅ CREATE INDEX (performance optimization only)
 - ✅ Reading .env.example (but not .env)
-- ✅ Writing to temp/scripts directories
+- ✅ Writing to temp/scripts directories (except .sql/.db files)
 
 ### Testing
 

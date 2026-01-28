@@ -236,7 +236,7 @@ function getOpenAITools() {
           properties: {
             query: {
               type: 'string',
-              description: 'Query SQL a executar. Apenas SELECT, INSERT, UPDATE, CREATE TABLE e CREATE INDEX são permitidos.'
+              description: 'Query SQL a executar. Apenas SELECT, INSERT, UPDATE, CREATE INDEX são permitidos. CREATE TABLE é PROIBIDO.'
             },
             params: {
               type: 'array',
@@ -296,7 +296,7 @@ function getOpenAITools() {
       type: 'function',
       function: {
         name: 'writeFile',
-        description: 'Escreve conteúdo em arquivo. APENAS para scripts de correção temporários ou patches. NÃO pode escrever em arquivos sensíveis (.env, auth, node_modules).',
+        description: 'Escreve conteúdo em arquivo. APENAS para scripts de correção temporários ou patches. PROIBIDO: arquivos .sql, .db, .env, auth, node_modules. NUNCA use para criar schemas de banco de dados.',
         parameters: {
           type: 'object',
           properties: {
@@ -1205,7 +1205,7 @@ async function writeFileContent({ filePath, content, append = false }) {
 
     // Security: block sensitive paths
     const forbiddenPaths = ['.env', 'auth_info_baileys', 'node_modules', '.git', 'media.db'];
-    const forbiddenExtensions = ['.key', '.pem', '.crt'];
+    const forbiddenExtensions = ['.key', '.pem', '.crt', '.sql', '.db'];  // Block SQL and DB files
 
     const pathLower = filePath.toLowerCase();
     const isForbiddenPath = forbiddenPaths.some(p => pathLower.includes(p));
@@ -1215,7 +1215,7 @@ async function writeFileContent({ filePath, content, append = false }) {
       return {
         success: false,
         error: `Access denied: ${filePath} is a sensitive path`,
-        hint: 'Cannot write to .env, auth files, node_modules, .git, database or key files'
+        hint: 'Cannot write to .env, auth files, node_modules, .git, database files (.db, .sql) or key files (.key, .pem, .crt)'
       };
     }
 
