@@ -166,8 +166,8 @@ sudo -u dev pm2 logs Bot-Client --lines 50 | grep -i admin
 
 **Bot suggests fixes but doesn't apply them:**
 - This was the old behavior before remediation tools were added
-- Make sure you're running the latest version with all 15 tools
-- Check logs for "executeSqlQuery", "createDatabaseTable" calls
+- Make sure you're running the latest version with all 12 tools
+- Check logs for "executeSqlQuery", "restartService" calls
 
 ---
 
