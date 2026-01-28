@@ -317,22 +317,68 @@ function hammingDistance(hash1, hash2) {
     return hammingDistanceSingle(frames1[0], frames2[0]);
   }
 
-  // For multi-frame, find minimum distance between any pair of frames
   const maxBits = frames1[0].length === 256 ? 1024 : 64;
-  let minDistance = maxBits;
+  const threshold = Math.floor(maxBits * 0.1); // 10% difference = 90% similarity
+
+  // For multi-frame comparison, use more robust logic to prevent false positives
+  // Case 1: Single-frame vs Multi-frame (e.g., static image vs GIF)
+  if (frames1.length === 1 || frames2.length === 1) {
+    const singleFrame = frames1.length === 1 ? frames1[0] : frames2[0];
+    const multiFrames = frames1.length === 1 ? frames2 : frames1;
+
+    // Count how many frames are similar to the single frame
+    let similarFrameCount = 0;
+    let bestDistance = maxBits;
+
+    for (const frame of multiFrames) {
+      const dist = hammingDistanceSingle(singleFrame, frame);
+      if (dist < bestDistance) {
+        bestDistance = dist;
+      }
+      if (dist <= threshold) {
+        similarFrameCount++;
+      }
+      // Early exit on exact match
+      if (dist === 0) return 0;
+    }
+
+    // Require majority of frames to be similar (>50%) to avoid false positives
+    // e.g., if GIF has 5 frames, need at least 3 to be similar to static image
+    const requiredSimilarFrames = Math.ceil(multiFrames.length / 2);
+    if (similarFrameCount >= requiredSimilarFrames) {
+      return bestDistance;
+    } else {
+      // Not enough similar frames - likely different content
+      return maxBits;
+    }
+  }
+
+  // Case 2: Multi-frame vs Multi-frame (e.g., GIF vs GIF)
+  // Count matching frame pairs
+  let matchingPairs = 0;
+  let bestDistance = maxBits;
 
   for (const f1 of frames1) {
     for (const f2 of frames2) {
       const dist = hammingDistanceSingle(f1, f2);
-      if (dist < minDistance) {
-        minDistance = dist;
+      if (dist < bestDistance) {
+        bestDistance = dist;
+      }
+      if (dist <= threshold) {
+        matchingPairs++;
       }
       // Early exit on exact match
       if (dist === 0) return 0;
     }
   }
 
-  return minDistance;
+  // Require at least 2 matching frame pairs to consider it a duplicate
+  // This prevents single-frame coincidences in complex animations
+  if (matchingPairs >= 2) {
+    return bestDistance;
+  } else {
+    return maxBits;
+  }
 }
 
 /**

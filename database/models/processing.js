@@ -388,7 +388,7 @@ async function processOldStickers() {
 
         let isDuplicate = false;
         if (hashes && hashes.length > 0) {
-          hashVisual = isAnimated ? hashes.join(',') : hashes[0];
+          hashVisual = isAnimated ? hashes.join(':') : hashes[0];
 
           if (isAnimated) {
             const db = require('../connection').db;
@@ -402,7 +402,7 @@ async function processOldStickers() {
             for (const row of rows) {
               if (!row?.hash_visual) continue;
               try {
-                const otherHashes = row.hash_visual.split(',');
+                const otherHashes = row.hash_visual.split(':');
                 let count = 0;
                 for (const h of hashes) {
                   if (otherHashes.includes(h)) count++;
