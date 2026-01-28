@@ -351,6 +351,46 @@ module.exports = {
 
 Use `safeReply()` from `utils/safeMessaging.js` for all user-facing messages to handle send failures gracefully.
 
+## Auto-Deploy via GitHub Webhook
+
+The bot includes automatic deployment when code is pushed to the `main` branch on GitHub.
+
+**How it works:**
+1. GitHub sends webhook POST to `/webhook/github` endpoint
+2. Server verifies webhook signature
+3. Executes `git pull origin main`
+4. Installs dependencies (if package.json changed)
+5. Restarts PM2 services in order: baileys-bridge → sticker-bot → web-interface
+
+**Setup:**
+```bash
+# 1. Generate webhook secret
+openssl rand -hex 32
+
+# 2. Add to .env
+GITHUB_WEBHOOK_SECRET=your-generated-secret
+
+# 3. Configure in GitHub:
+# Repository → Settings → Webhooks → Add webhook
+# Payload URL: https://yourdomain.com/webhook/github
+# Content type: application/json
+# Secret: (paste the generated secret)
+# Events: Just the push event
+```
+
+**Test endpoint:**
+```bash
+curl http://localhost:3000/webhook/status
+# Should return: {"status":"active","webhook_secret_configured":true,...}
+```
+
+**Monitor deployments:**
+```bash
+pm2 logs web-interface | grep Webhook
+```
+
+See `docs/AUTO_DEPLOY_WEBHOOK.md` for complete documentation, troubleshooting, and security details.
+
 ## Environment Variables
 
 **Required:**
