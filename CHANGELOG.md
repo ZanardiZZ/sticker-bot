@@ -1,4 +1,15 @@
-# Changelog
+## [0.13.1] - 2026-01-28
+
+### Novidades
+- feat: Adiciona tool compareMediaHashes ao AdminWatcher (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/06ba4ed45939f86b82f33b192657d5270f46e300))
+- feat: Sistema de auto-deploy via GitHub webhook (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/9b0ee51ffbd9d39247d87c0a5aca29bef6bbf542))
+- feat: Adiciona changelog resumido nas notificações de versão (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/03e3e55178f364b35b28ecd3ca935ecb3264b414))
+
+### Correções
+- fix: Corrige falsos positivos na detecção de duplicatas (estática vs GIF) (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/111ca4ae4e8240e1f365c5f624358f72d208b0a9))
+- fix: CAUSA RAIZ FINAL - Remove documentação obsoleta que ensinava agent a criar media_queue (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/e62fb600f77a064fc9964c0f95e586ebccfa4243))
+- fix: Remove referências enganosas a media_queue que confundiam o agent (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/677acdcf02d9c06de859e382d5f0a382f5c9c6cf))
+- fix: Fortalece restrições do AdminWatcher contra criação de tabelas (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/5a47e3f80bafc9beab3efddbf4bfb5e900bb4b65))
 
 ## [0.13.0] - 2026-01-28
 
