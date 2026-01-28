@@ -1,4 +1,16 @@
-# Changelog
+## [0.11.0] - 2026-01-28
+
+### Novidades
+- feat: Adiciona changelog resumido nas notificações de versão (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/03e3e55178f364b35b28ecd3ca935ecb3264b414))
+- feat: Adiciona comando #reacts para ranking de stickers mais reagidas (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/574608634a43b91eadc23618e85cd7c57c3b2d0b))
+- feat: Linkar messageId de stickers enviadas para tracking de reações (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/41cd6ca5619d136cd93d6dfcc25956324221ed30))
+
+### Correções
+- fix: Evita duplicação de commits do bot no changelog (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/e07e443c2e5d9b3c2ee60f27361a298e1bd7296e))
+- fix: Checkpoint WAL mais resiliente para prevenir crescimento descontrolado (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/2e35ab6b14b0cc7be8cd6a42015ee06e1694a68e))
+
+### Documentação
+- docs: Adiciona guia de teste para tracking de reações (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/455aa13487fa874ccf6ce8053932ce6458f1fc2a))
 
 ## [0.10.0] - 2026-01-28
 
