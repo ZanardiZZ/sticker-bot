@@ -24,7 +24,7 @@ AdminWatcher is an autonomous agent that monitors admin messages in WhatsApp, de
 ### Features
 
 - 🔍 **Automatic Problem Detection** - Detects keywords like "erro", "falha", "parou", "bug", "problema"
-- 🛠️ **13 Diagnostic & Remediation Tools** - 9 for diagnosis + 4 for automatic fixes
+- 🛠️ **12 Diagnostic & Remediation Tools** - 9 for diagnosis + 3 for automatic fixes
 - 🤖 **Natural Language Responses** - Casual Brazilian Portuguese responses
 - ⏱️ **Cooldown System** - 5-minute cooldown per chat to prevent spam
 - 🔒 **Security Controls** - Blocks destructive operations (DROP, DELETE, etc.)
@@ -71,7 +71,7 @@ funcionando. o erro é porque não tem figurinha pra verificar ainda.
 quando processarem as primeiras mídias vai funcionar normal"
 ```
 
-### 13 Available Tools
+### 12 Available Tools
 
 #### 🔍 Diagnostic Tools (9)
 
@@ -80,17 +80,16 @@ quando processarem as primeiras mídias vai funcionar normal"
 3. **getServiceStatus** - Check PM2 service status
 4. **getLastSentSticker** - Info of last sent sticker
 5. **getSchedulerStatus** - Scheduler status
-6. **getQueueStatus** - Processing queue status
+6. **getQueueStatus** - Shows media processing activity (last 24h from media_processing_log)
 7. **readFile** - Read source code files
 8. **runHealthCheck** - Complete system health check
 9. **analyzeDatabaseSchema** - Analyze database structure
 
-#### 🛠️ Remediation Tools (4)
+#### 🛠️ Remediation Tools (3)
 
 10. **restartService** - Restart PM2 service (EXCEPT Bot-Client itself to prevent suicide)
 11. **executeSqlQuery** - Execute SQL (SELECT/INSERT/UPDATE/CREATE INDEX only, NO TABLE CREATION)
 12. **modifyBotConfig** - Modify bot configuration values in bot_config table
-13. **writeFile** - Write temporary fix files (BLOCKS .sql, .db, .env, auth files)
 
 ### Security & Restrictions
 
