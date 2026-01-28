@@ -1,4 +1,11 @@
-# Changelog
+## [0.12.1] - 2026-01-28
+
+### Novidades
+- feat: Sistema de auto-deploy via GitHub webhook (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/9b0ee51ffbd9d39247d87c0a5aca29bef6bbf542))
+- feat: Adiciona changelog resumido nas notificações de versão (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/03e3e55178f364b35b28ecd3ca935ecb3264b414))
+
+### Correções
+- fix: Fortalece restrições do AdminWatcher contra criação de tabelas (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/5a47e3f80bafc9beab3efddbf4bfb5e900bb4b65))
 
 ## [0.12.0] - 2026-01-28
 
