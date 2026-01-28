@@ -3,6 +3,8 @@
  * Sends update notifications to a configured group when bot version changes
  */
 
+const fs = require('fs').promises;
+const path = require('path');
 const { db } = require('../database/connection');
 const packageJson = require('../package.json');
 
@@ -65,14 +67,71 @@ function getRecentVersions(limit = 5) {
 }
 
 /**
+ * Parses CHANGELOG.md and extracts user-friendly changes for a version
+ * @param {string} version - Version to extract (e.g., "0.10.0")
+ * @returns {Promise<Object>} - Object with novidades and correcoes arrays
+ */
+async function parseChangelogForVersion(version) {
+  try {
+    const changelogPath = path.join(__dirname, '..', 'CHANGELOG.md');
+    const content = await fs.readFile(changelogPath, 'utf-8');
+
+    // Find the section for this version
+    const versionHeader = `## [${version}]`;
+    const versionIndex = content.indexOf(versionHeader);
+
+    if (versionIndex === -1) {
+      return { novidades: [], correcoes: [] };
+    }
+
+    // Extract content until next version header or end
+    const nextVersionIndex = content.indexOf('\n## [', versionIndex + 1);
+    const versionSection = nextVersionIndex !== -1
+      ? content.substring(versionIndex, nextVersionIndex)
+      : content.substring(versionIndex);
+
+    // Extract "Novidades" section
+    const novidades = [];
+    const novidadesMatch = versionSection.match(/### Novidades\n([\s\S]*?)(?=\n###|$)/);
+    if (novidadesMatch) {
+      const lines = novidadesMatch[1].trim().split('\n');
+      for (const line of lines) {
+        // Parse: "- feat: Description (por author) ([link]...)"
+        const match = line.match(/^-\s*(?:feat|feature):\s*([^(]+)/i);
+        if (match) {
+          novidades.push(match[1].trim());
+        }
+      }
+    }
+
+    // Extract "Correções" section
+    const correcoes = [];
+    const correcoesMatch = versionSection.match(/### Correções\n([\s\S]*?)(?=\n###|$)/);
+    if (correcoesMatch) {
+      const lines = correcoesMatch[1].trim().split('\n');
+      for (const line of lines) {
+        // Parse: "- fix: Description (por author) ([link]...)"
+        const match = line.match(/^-\s*fix:\s*([^(]+)/i);
+        if (match) {
+          correcoes.push(match[1].trim());
+        }
+      }
+    }
+
+    return { novidades, correcoes };
+  } catch (err) {
+    console.error('[VersionNotifier] Erro ao ler CHANGELOG:', err.message);
+    return { novidades: [], correcoes: [] };
+  }
+}
+
+/**
  * Builds update notification message
  * @param {string} currentVersion
  * @param {string} previousVersion
  * @returns {Promise<string>}
  */
 async function buildUpdateMessage(currentVersion, previousVersion) {
-  const versions = await getRecentVersions(3);
-
   let message = `🚀 *Bot Atualizado!*\n\n`;
   message += `📦 Versão: *${currentVersion}*\n`;
 
@@ -82,8 +141,30 @@ async function buildUpdateMessage(currentVersion, previousVersion) {
 
   message += `\n`;
 
-  // Add recent changes if available
-  if (versions.length > 0) {
+  // Parse changelog for user-friendly changes
+  const changelog = await parseChangelogForVersion(currentVersion);
+
+  // Add features (Novidades)
+  if (changelog.novidades.length > 0) {
+    message += `✨ *Novidades:*\n`;
+    for (const item of changelog.novidades) {
+      message += `  • ${item}\n`;
+    }
+    message += `\n`;
+  }
+
+  // Add fixes (Correções)
+  if (changelog.correcoes.length > 0) {
+    message += `🐛 *Correções:*\n`;
+    for (const item of changelog.correcoes) {
+      message += `  • ${item}\n`;
+    }
+    message += `\n`;
+  }
+
+  // Fallback to database version_info if no changelog
+  if (changelog.novidades.length === 0 && changelog.correcoes.length === 0) {
+    const versions = await getRecentVersions(3);
     const currentVersionInfo = versions.find(v =>
       `${v.major}.${v.minor}.${v.patch}` === currentVersion
     );
