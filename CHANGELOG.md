@@ -1,3 +1,26 @@
+# Changelog
+
+## [0.13.5] - 2026-01-29
+
+### Novidades
+- feat: Adiciona tool compareMediaHashes ao AdminWatcher (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/06ba4ed45939f86b82f33b192657d5270f46e300))
+
+### Correções
+- fix: Corrige detecção de duplicatas - saveMedia não populava hash_buckets (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/f598c3771becf032833f77e2f28a7695e42bb650))
+- fix: Reduz threshold de detecção de hashes degenerados (90% → 80%) (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/3b008ff0bca32d06b6bb0d76290062939c1ba36c))
+- fix: Corrige detecção de hashes degenerados que causavam falsos positivos (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/d786ef08b2e052f4b4e230929b6e63f6ec869a7d))
+- fix: Corrige nome de coluna em getLastSentSticker (file_hash → hash_md5) (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/26b5c4b65ed6ccde9472185453625aad75cc9fe6))
+- fix: Corrige falsos positivos na detecção de duplicatas (estática vs GIF) (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/111ca4ae4e8240e1f365c5f624358f72d208b0a9))
+- fix: CAUSA RAIZ FINAL - Remove documentação obsoleta que ensinava agent a criar media_queue (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/e62fb600f77a064fc9964c0f95e586ebccfa4243))
+- fix: Remove referências enganosas a media_queue que confundiam o agent (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/677acdcf02d9c06de859e382d5f0a382f5c9c6cf))
+- fix: Fortalece restrições do AdminWatcher contra criação de tabelas (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/5a47e3f80bafc9beab3efddbf4bfb5e900bb4b65))
+
+### Outros
+- debug: Adiciona logs detalhados para diagnóstico de erro "formato não suportado" (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/7f87103b0cbc51f39456afcf885b706eba28405a))
+- debug: Adiciona logs detalhados de verificação de duplicatas (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/ed410a009fa495ac0ef2f051730b1ea52084659d))
+- debug: Adiciona log de entrada em findSimilarByHashVisual (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/c18d010793066a3e1ee871a93c910f478c61f440))
+- debug: Adiciona logs detalhados para detecção de duplicatas (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/5d6a04a43b1f8cca09bc245499b5c5edb21fa828))
+
 ## [0.13.5] - 2026-01-29
 
 ### Novidades
