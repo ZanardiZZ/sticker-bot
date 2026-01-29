@@ -433,8 +433,9 @@ function isValidHash(hash, allowMultiFrame = true) {
   // Check if it's hex
   if (!/^[0-9a-f]+$/i.test(hash)) return false;
 
-  // Check if it's degenerate
-  if (isDegenerateHash(hash)) return false;
+  // NOTE: We don't check if degenerate here - degenerate hashes are still VALID hashes
+  // (they just indicate low visual entropy, like transparent images)
+  // Degenerate filtering happens only during duplicate comparison, not during validation
 
   return true;
 }
