@@ -672,14 +672,19 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
 
     const forceInsert = !!(forceMap instanceof Map ? forceMap.get(chatId) : forceMap?.[chatId]);
 
+    console.log(`[DuplicateCheck] forceInsert: ${forceInsert}, hashVisual: ${hashVisual ? hashVisual.substring(0, 40) + '...' : 'NULL'}`);
+
     if (!forceInsert && hashVisual) {
       // Use Hamming distance matching with threshold of 102 bits (out of 1024)
       // This represents ~90% similarity (10% difference allowed)
+      console.log(`[DuplicateCheck] Calling findSimilarByHashVisual with threshold 102`);
       const existing = await findSimilarByHashVisual(hashVisual, 102);
+      console.log(`[DuplicateCheck] findSimilarByHashVisual returned: ${existing ? `ID ${existing.id}, distance ${existing._hammingDistance}` : 'NULL (no match)'}`);
       if (existing) {
         const similarity = existing._hammingDistance === 0
           ? 'idêntica'
           : `${Math.round((1024 - existing._hammingDistance) / 1024 * 100)}% similar`;
+        console.log(`[DuplicateCheck] BLOCKING save - duplicate found (ID ${existing.id}, ${similarity})`);
         await safeReply(
           client,
           chatId,
@@ -688,10 +693,18 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
         );
         return;
       }
-    } else if (forceMap instanceof Map) {
-      forceMap.delete(chatId);
+      console.log(`[DuplicateCheck] No duplicate found - proceeding with save`);
     } else {
-      forceMap[chatId] = false;
+      if (!hashVisual) {
+        console.log(`[DuplicateCheck] SKIPPED - hashVisual is NULL/empty`);
+      } else if (forceInsert) {
+        console.log(`[DuplicateCheck] SKIPPED - forceInsert is true`);
+      }
+      if (forceMap instanceof Map) {
+        forceMap.delete(chatId);
+      } else {
+        forceMap[chatId] = false;
+      }
     }
 
     const dir = path.resolve(__dirname, 'media');
