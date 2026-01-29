@@ -182,6 +182,13 @@ async function findSimilarByHashVisual(hashVisual, threshold = 102) {
           }
 
           if (bestMatch && bestDistance <= threshold) {
+            // DEBUG LOG
+            console.log(`[DuplicateDetection] DUPLICATE FOUND:
+  Media ID: ${bestMatch.id}
+  Hamming distance: ${bestDistance}/${threshold} (${Math.round((1024-bestDistance)/1024*100)}% similar)
+  New hash: ${hashVisual.substring(0, 40)}...
+  Existing hash: ${bestMatch.hash_visual?.substring(0, 40)}...`);
+
             // Fetch full record for best match
             db.get(
               'SELECT * FROM media WHERE id = ?',
