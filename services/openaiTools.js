@@ -599,7 +599,7 @@ async function getLastSentSticker() {
 
     return new Promise((resolve, reject) => {
       db.get(`
-        SELECT id, file_hash, sent_at, nsfw, tags, description
+        SELECT id, hash_md5, sent_at, nsfw, tags, description
         FROM media
         WHERE sent_at IS NOT NULL
         ORDER BY sent_at DESC
@@ -615,7 +615,7 @@ async function getLastSentSticker() {
         } else {
           resolve({
             id: row.id,
-            fileHash: row.file_hash,
+            hashMd5: row.hash_md5,
             sentAt: row.sent_at,
             sentAtHuman: new Date(row.sent_at * 1000).toISOString(),
             timeSinceLastSend: formatUptime(Date.now() - (row.sent_at * 1000)),
