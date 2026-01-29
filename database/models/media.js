@@ -119,6 +119,16 @@ function findByHashVisual(hashVisual) {
 async function findSimilarByHashVisual(hashVisual, threshold = 102) {
   if (!hashVisual) return null;
 
+  // Skip search if the new hash is degenerate (prevents false positives)
+  const { isDegenerateHash } = require('../utils');
+  const frames = hashVisual.split(':');
+  const validFrames = frames.filter(f => f && !isDegenerateHash(f));
+
+  if (validFrames.length === 0) {
+    console.log('[DuplicateDetection] Skipping search - new hash is degenerate');
+    return null;
+  }
+
   return new Promise((resolve) => {
     // First try exact match for performance
     db.get(
@@ -168,10 +178,29 @@ async function findSimilarByHashVisual(hashVisual, threshold = 102) {
             return;
           }
 
+          // Filter out candidates with degenerate hashes BEFORE comparing
+          const { isDegenerateHash } = require('../utils');
+          const validCandidates = rows.filter(row => {
+            if (!row.hash_visual) return false;
+
+            // Check each frame in multi-frame hashes
+            const frames = row.hash_visual.split(':');
+            const validFrames = frames.filter(f => f && !isDegenerateHash(f));
+
+            // Keep only if at least one valid frame exists
+            return validFrames.length > 0;
+          });
+
+          if (validCandidates.length === 0) {
+            console.log('[DuplicateDetection] All candidates filtered out (degenerate hashes)');
+            resolve(null);
+            return;
+          }
+
           let bestMatch = null;
           let bestDistance = threshold + 1;
 
-          for (const row of rows) {
+          for (const row of validCandidates) {
             const distance = hammingDistance(hashVisual, row.hash_visual);
             if (distance < bestDistance) {
               bestDistance = distance;
