@@ -258,15 +258,15 @@ function isDegenerateHash(hash) {
   const allOnes = 'f'.repeat(len);
   if (h === allZeros || h === allOnes) return true;
 
-  // Check if hash is mostly zeros (>90% zeros indicates very low entropy)
+  // Check if hash is mostly zeros (>80% zeros indicates very low entropy)
   const zeroCount = (h.match(/0/g) || []).length;
   const zeroRatio = zeroCount / len;
-  if (zeroRatio > 0.9) return true;
+  if (zeroRatio > 0.8) return true;
 
-  // Check if hash is mostly ones (>90% 'f's indicates very low entropy)
+  // Check if hash is mostly ones (>80% 'f's indicates very low entropy)
   const onesCount = (h.match(/f/g) || []).length;
   const onesRatio = onesCount / len;
-  if (onesRatio > 0.9) return true;
+  if (onesRatio > 0.8) return true;
 
   // Count unique characters - if too few unique chars relative to length, it's degenerate
   // For 1024-bit hashes, we need at least 4 unique chars (very low bar)
