@@ -186,7 +186,13 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
         if (calculatedHash && isValidHash(calculatedHash, false) && !isDegenerateHash(calculatedHash)) {
           hashVisual = calculatedHash;
         } else {
-          console.warn('[MediaProcessor] Calculated hash is invalid or degenerate for static image, not using');
+          const isValid = calculatedHash ? isValidHash(calculatedHash, false) : false;
+          const isDegenerate = calculatedHash ? isDegenerateHash(calculatedHash) : false;
+          console.warn(`[MediaProcessor] Calculated hash rejected for static image:
+  Hash: ${calculatedHash ? calculatedHash.substring(0, 40) + '...' : 'NULL'}
+  isValid: ${isValid}
+  isDegenerate: ${isDegenerate}
+  Reason: ${!calculatedHash ? 'null hash' : !isValid ? 'invalid hash' : 'degenerate hash (>80% zeros/ones)'}`);
           hashVisual = null;
         }
 
