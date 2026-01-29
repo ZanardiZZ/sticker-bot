@@ -269,7 +269,13 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
           if (calculatedHash && isValidHash(calculatedHash, false) && !isDegenerateHash(calculatedHash)) {
             hashVisual = calculatedHash;
           } else {
-            console.warn(`[MediaProcessor] Calculated hash is invalid or degenerate (${contextLabel}), not using`);
+            const isValid = calculatedHash ? isValidHash(calculatedHash, false) : false;
+            const isDegenerate = calculatedHash ? isDegenerateHash(calculatedHash) : false;
+            console.warn(`[MediaProcessor] Calculated hash rejected (${contextLabel}):
+  Hash: ${calculatedHash ? calculatedHash.substring(0, 40) + '...' : 'NULL'}
+  isValid: ${isValid}
+  isDegenerate: ${isDegenerate}
+  Reason: ${!calculatedHash ? 'null hash' : !isValid ? 'invalid hash' : 'degenerate hash (>80% zeros/ones)'}`);
             hashVisual = null;
           }
         } catch (hashErr) {
@@ -284,6 +290,12 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
     if (
       (requiresImmediateHash && (pngBuffer === null || hashVisual === null || hashMd5 === null))
     ) {
+      console.error(`[MediaProcessor] Image processing failed:
+  Mimetype: ${message.mimetype}
+  pngBuffer: ${pngBuffer === null ? 'NULL' : 'OK'}
+  hashVisual: ${hashVisual === null ? 'NULL' : hashVisual ? hashVisual.substring(0, 30) + '...' : 'empty'}
+  hashMd5: ${hashMd5 === null ? 'NULL' : 'OK'}
+  File: ${tmpFilePath}`);
       await safeReply(client, chatId, 'Erro: formato de imagem não suportado para processamento de sticker.', message.id);
       return; // finally block will cleanup tmpFilePath
     }
