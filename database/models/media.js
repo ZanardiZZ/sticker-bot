@@ -117,7 +117,12 @@ function findByHashVisual(hashVisual) {
  * @returns {Promise<object|null>} Media object with lowest distance or null
  */
 async function findSimilarByHashVisual(hashVisual, threshold = 102) {
-  if (!hashVisual) return null;
+  if (!hashVisual) {
+    console.log('[DuplicateDetection] Skipping - hashVisual is null/empty');
+    return null;
+  }
+
+  console.log(`[DuplicateDetection] Starting search for hash: ${hashVisual.substring(0, 40)}... (threshold: ${threshold})`);
 
   // Skip search if the new hash is degenerate (prevents false positives)
   const { isDegenerateHash } = require('../utils');
