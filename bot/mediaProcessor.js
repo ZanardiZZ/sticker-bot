@@ -183,16 +183,19 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
         const calculatedHash = await getHashVisual(pngBuffer);
 
         // Validate hash before using
-        if (calculatedHash && isValidHash(calculatedHash, false) && !isDegenerateHash(calculatedHash)) {
+        // NOTE: Accept degenerate hashes (e.g. transparent images with many zeros)
+        // Degenerate filtering happens only during duplicate comparison
+        if (calculatedHash && isValidHash(calculatedHash, false)) {
           hashVisual = calculatedHash;
+          const isDegenerate = isDegenerateHash(calculatedHash);
+          if (isDegenerate) {
+            console.log(`[MediaProcessor] Accepting degenerate hash for static image (likely transparent/low entropy): ${calculatedHash.substring(0, 40)}...`);
+          }
         } else {
-          const isValid = calculatedHash ? isValidHash(calculatedHash, false) : false;
-          const isDegenerate = calculatedHash ? isDegenerateHash(calculatedHash) : false;
           console.warn(`[MediaProcessor] Calculated hash rejected for static image:
   Hash: ${calculatedHash ? calculatedHash.substring(0, 40) + '...' : 'NULL'}
-  isValid: ${isValid}
-  isDegenerate: ${isDegenerate}
-  Reason: ${!calculatedHash ? 'null hash' : !isValid ? 'invalid hash' : 'degenerate hash (>80% zeros/ones)'}`);
+  isValid: ${calculatedHash ? isValidHash(calculatedHash, false) : false}
+  Reason: ${!calculatedHash ? 'null hash' : 'invalid hash format'}`);
           hashVisual = null;
         }
 
@@ -272,16 +275,18 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
         try {
           const calculatedHash = await getHashVisual(pngBuffer);
           // Validate hash before using
-          if (calculatedHash && isValidHash(calculatedHash, false) && !isDegenerateHash(calculatedHash)) {
+          // NOTE: Accept degenerate hashes - filtering happens during duplicate comparison
+          if (calculatedHash && isValidHash(calculatedHash, false)) {
             hashVisual = calculatedHash;
+            const isDegenerate = isDegenerateHash(calculatedHash);
+            if (isDegenerate) {
+              console.log(`[MediaProcessor] Accepting degenerate hash (${contextLabel}, likely low entropy): ${calculatedHash.substring(0, 40)}...`);
+            }
           } else {
-            const isValid = calculatedHash ? isValidHash(calculatedHash, false) : false;
-            const isDegenerate = calculatedHash ? isDegenerateHash(calculatedHash) : false;
             console.warn(`[MediaProcessor] Calculated hash rejected (${contextLabel}):
   Hash: ${calculatedHash ? calculatedHash.substring(0, 40) + '...' : 'NULL'}
-  isValid: ${isValid}
-  isDegenerate: ${isDegenerate}
-  Reason: ${!calculatedHash ? 'null hash' : !isValid ? 'invalid hash' : 'degenerate hash (>80% zeros/ones)'}`);
+  isValid: ${calculatedHash ? isValidHash(calculatedHash, false) : false}
+  Reason: ${!calculatedHash ? 'null hash' : 'invalid hash format'}`);
             hashVisual = null;
           }
         } catch (hashErr) {
