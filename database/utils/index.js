@@ -329,9 +329,11 @@ function hammingDistance(hash1, hash2) {
     // Count how many frames are similar to the single frame
     let similarFrameCount = 0;
     let bestDistance = maxBits;
+    const distances = [];
 
     for (const frame of multiFrames) {
       const dist = hammingDistanceSingle(singleFrame, frame);
+      distances.push(dist);
       if (dist < bestDistance) {
         bestDistance = dist;
       }
@@ -345,6 +347,19 @@ function hammingDistance(hash1, hash2) {
     // Require majority of frames to be similar (>50%) to avoid false positives
     // e.g., if GIF has 5 frames, need at least 3 to be similar to static image
     const requiredSimilarFrames = Math.ceil(multiFrames.length / 2);
+
+    // DEBUG LOG
+    if (similarFrameCount > 0) {
+      console.log(`[HammingDistance] Static vs Animated comparison:
+  Total frames: ${multiFrames.length}
+  Similar frames (≤${threshold}): ${similarFrameCount}
+  Required frames: ${requiredSimilarFrames}
+  Best distance: ${bestDistance}
+  All distances: ${distances.join(', ')}
+  Single frame hash: ${singleFrame.substring(0, 32)}...
+  Result: ${similarFrameCount >= requiredSimilarFrames ? 'DUPLICATE' : 'DIFFERENT'}`);
+    }
+
     if (similarFrameCount >= requiredSimilarFrames) {
       return bestDistance;
     } else {
