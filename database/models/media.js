@@ -81,6 +81,16 @@ async function saveMedia(mediaData) {
       ]
     );
 
+    // Insert into hash_buckets for LSH optimization (if hash exists)
+    if (hashVisual) {
+      const bucketKey = hashVisual.substring(0, 16); // First 64 bits
+      await dbHandler.run(
+        `INSERT OR REPLACE INTO hash_buckets (media_id, bucket_key, hash_visual)
+         VALUES (?, ?, ?)`,
+        [mediaId, bucketKey, hashVisual]
+      );
+    }
+
     await dbHandler.run('COMMIT');
     return mediaId;
   } catch (error) {
