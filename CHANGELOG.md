@@ -1,4 +1,16 @@
-# Changelog
+## [0.13.6] - 2026-01-30
+
+### Correções
+- fix: Aceita hashes degenerados (imagens transparentes) na inserção (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/2cb55621313563d7113972faddf169d1e1f69e92))
+- fix: Corrige detecção de duplicatas - saveMedia não populava hash_buckets (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/f598c3771becf032833f77e2f28a7695e42bb650))
+- fix: Reduz threshold de detecção de hashes degenerados (90% → 80%) (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/3b008ff0bca32d06b6bb0d76290062939c1ba36c))
+- fix: Corrige detecção de hashes degenerados que causavam falsos positivos (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/d786ef08b2e052f4b4e230929b6e63f6ec869a7d))
+
+### Outros
+- debug: Adiciona logs detalhados também para rejeição de hash de imagem estática (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/366d65b26dfd950b98905a87c21ee21e2c2805d6))
+- debug: Adiciona logs detalhados para diagnóstico de erro "formato não suportado" (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/7f87103b0cbc51f39456afcf885b706eba28405a))
+- debug: Adiciona logs detalhados de verificação de duplicatas (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/ed410a009fa495ac0ef2f051730b1ea52084659d))
+- debug: Adiciona log de entrada em findSimilarByHashVisual (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/c18d010793066a3e1ee871a93c910f478c61f440))
 
 ## [0.13.6] - 2026-01-29
 
