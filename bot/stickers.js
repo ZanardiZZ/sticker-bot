@@ -171,9 +171,17 @@ async function sendRawWebp(client, chatId, filePath, extraOptions = {}) {
  * @param {Object} media - Media record from database
  */
 async function sendStickerForMediaRecord(client, chatId, media) {
-  if (!media) return;
+  if (!media) {
+    throw new Error('No media provided to send as sticker');
+  }
 
   const filePath = media.file_path;
+
+  // Verify file exists before attempting to send
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Media file not found: ${filePath}`);
+  }
+
   const mimetype = media.mimetype || mime.lookup(filePath) || '';
 
   // Helpers
@@ -190,8 +198,14 @@ async function sendStickerForMediaRecord(client, chatId, media) {
       const { filePath: safePath, animated } = await ensureSafeWebpSticker(filePath);
       messageId = await sendRawWebp(client, chatId, safePath, { animated });
 
+      if (!messageId) {
+        throw new Error('Failed to send WebP sticker - no messageId returned');
+      }
+
+      console.log(`[Sticker] Successfully sent WebP ${animated ? '(animated)' : '(static)'} for media ${media.id}`);
+
       // Link message to media for reaction tracking
-      if (messageId && media.id) {
+      if (media.id) {
         try {
           await linkMessageToMedia(messageId, media.id, chatId);
         } catch (linkErr) {
@@ -221,8 +235,14 @@ async function sendStickerForMediaRecord(client, chatId, media) {
           const response = await client.sendMp4AsSticker(chatId, mp4Path, { pack: PACK_NAME, author: AUTHOR_NAME });
           messageId = response?.messageId || null;
 
+          if (!messageId) {
+            throw new Error('sendMp4AsSticker returned no messageId');
+          }
+
+          console.log(`[Sticker] Successfully sent MP4/GIF as animated sticker for media ${media.id}`);
+
           // Link message to media for reaction tracking
-          if (messageId && media.id) {
+          if (media.id) {
             try {
               await linkMessageToMedia(messageId, media.id, chatId);
             } catch (linkErr) {
@@ -238,8 +258,14 @@ async function sendStickerForMediaRecord(client, chatId, media) {
         const response = await client.sendImageAsStickerGif(chatId, filePath, { author: AUTHOR_NAME, pack: PACK_NAME });
         messageId = response?.messageId || null;
 
+        if (!messageId) {
+          throw new Error('sendImageAsStickerGif returned no messageId');
+        }
+
+        console.log(`[Sticker] Successfully sent GIF as animated sticker for media ${media.id}`);
+
         // Link message to media for reaction tracking
-        if (messageId && media.id) {
+        if (media.id) {
           try {
             await linkMessageToMedia(messageId, media.id, chatId);
           } catch (linkErr) {
@@ -248,8 +274,9 @@ async function sendStickerForMediaRecord(client, chatId, media) {
         }
         return;
       }
-      // Fallback: envia como arquivo (não linkamos arquivo)
+      // Fallback: envia como arquivo
       await client.sendFile(chatId, filePath, 'media');
+      console.log(`[Sticker] Sent GIF/Video as file (no animated sticker support) for media ${media.id}`);
       return;
     }
 
@@ -268,8 +295,14 @@ async function sendStickerForMediaRecord(client, chatId, media) {
         const response = await client.sendRawWebpAsSticker(chatId, withHeader, { pack: PACK_NAME, author: AUTHOR_NAME });
         messageId = response?.messageId || null;
 
+        if (!messageId) {
+          throw new Error('sendRawWebpAsSticker (static image) returned no messageId');
+        }
+
+        console.log(`[Sticker] Successfully sent static image as sticker for media ${media.id}`);
+
         // Link message to media for reaction tracking
-        if (messageId && media.id) {
+        if (media.id) {
           try {
             await linkMessageToMedia(messageId, media.id, chatId);
           } catch (linkErr) {
@@ -281,8 +314,14 @@ async function sendStickerForMediaRecord(client, chatId, media) {
       const response = await client.sendImageAsSticker(chatId, filePath, { pack: PACK_NAME, author: AUTHOR_NAME });
       messageId = response?.messageId || null;
 
+      if (!messageId) {
+        throw new Error('sendImageAsSticker returned no messageId');
+      }
+
+      console.log(`[Sticker] Successfully sent image as sticker (fallback method) for media ${media.id}`);
+
       // Link message to media for reaction tracking
-      if (messageId && media.id) {
+      if (media.id) {
         try {
           await linkMessageToMedia(messageId, media.id, chatId);
         } catch (linkErr) {
@@ -298,7 +337,12 @@ async function sendStickerForMediaRecord(client, chatId, media) {
     console.error('Falha ao enviar mídia como figurinha. Fallback para arquivo. Motivo:', err?.message || err);
     try {
       await client.sendFile(chatId, filePath, 'media');
-    } catch {}
+      console.log('[Sticker] Sent as file (fallback) instead of sticker');
+    } catch (fileErr) {
+      // Both sticker and file sending failed - throw exception
+      console.error('[Sticker] Failed to send both as sticker and as file:', fileErr?.message || fileErr);
+      throw new Error(`Failed to send media ${media.id}: ${err?.message || err}`);
+    }
   }
 }
 
