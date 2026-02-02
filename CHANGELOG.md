@@ -1,4 +1,13 @@
-# Changelog
+## [0.13.7] - 2026-02-02
+
+### Correções
+- fix: Impede envio de descrição quando sticker falha (por root) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/5e6b9f40580c20a2ad932841aee9bd2adbb32081))
+
+### Build
+- PR #300 – build(deps): bump cors from 2.8.5 to 2.8.6 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/300))
+- PR #299 – build(deps): bump axios from 1.13.2 to 1.13.3 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/299))
+- PR #298 – build(deps): bump express-session from 1.18.2 to 1.19.0 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/298))
+- PR #297 – build(deps): bump lodash from 4.17.21 to 4.17.23 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/297))
 
 ## [0.13.7] - 2026-02-01
 
