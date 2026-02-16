@@ -1,3 +1,13 @@
+# Changelog
+
+## [0.13.7] - 2026-02-16
+
+### Build
+- PR #305 – build(deps): bump qs from 6.14.1 to 6.14.2 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/305))
+- PR #304 – build(deps): bump axios from 1.13.3 to 1.13.5 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/304))
+- PR #302 – build(deps): bump openai from 6.16.0 to 6.17.0 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/302))
+- PR #301 – build(deps): bump nodemailer from 7.0.12 to 7.0.13 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/301))
+
 ## [0.13.7] - 2026-02-02
 
 ### Correções
