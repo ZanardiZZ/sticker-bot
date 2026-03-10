@@ -8,6 +8,48 @@ Sticker Bot 2 is a WhatsApp bot for managing and distributing stickers with an i
 
 ## Commands
 
+### Authentication Methods
+
+**⚠️ PAIRING CODE vs QR CODE**
+
+The bot supports two authentication methods. **Pairing code is more stable** and recommended:
+
+**Method 1: Pairing Code (Recommended)**
+```bash
+# 1. Configure in .env:
+BAILEYS_AUTH_METHOD=pairing
+BAILEYS_PAIRING_PHONE_NUMBER=5511999999999  # Your WhatsApp number
+
+# 2. Start Baileys bridge
+sudo -u dev pm2 restart WS-Socket-Server
+
+# 3. Check logs for the 8-digit code
+sudo -u dev pm2 logs WS-Socket-Server --lines 50
+
+# 4. On your phone's WhatsApp:
+#    - Go to: Menu > Linked Devices
+#    - Tap "Link a Device"
+#    - Tap "Link with phone number instead"
+#    - Enter the 8-digit code
+```
+
+**Method 2: QR Code (Less Stable)**
+```bash
+# 1. Configure in .env:
+BAILEYS_AUTH_METHOD=qr
+# BAILEYS_PAIRING_PHONE_NUMBER can be left empty
+
+# 2. Start and scan QR code
+sudo -u dev pm2 restart WS-Socket-Server
+sudo -u dev pm2 logs WS-Socket-Server
+# Scan the QR code with your phone
+```
+
+**Common Issues:**
+- QR code expires before sync completes → Use pairing code instead
+- "PAIRING_PHONE_NUMBER not set" → Check your .env file
+- Pairing code not working → Ensure phone number format is correct (digits only, with country code)
+
 ### Running the Application
 
 **⚠️ IMPORTANT: Use PM2 to avoid process duplication**

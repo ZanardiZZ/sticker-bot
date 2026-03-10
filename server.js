@@ -40,6 +40,12 @@ try {
 const PORT = Number(process.env.BAILEYS_WS_PORT || 8765);
 const AUTH_DIR = path.resolve(process.env.BAILEYS_AUTH_DIR || 'auth_info_baileys');
 
+// Authentication method: 'qr' or 'pairing' (default: qr)
+const AUTH_METHOD = (process.env.BAILEYS_AUTH_METHOD || 'qr').toLowerCase();
+// Phone number for pairing code (required if AUTH_METHOD=pairing)
+// Format: country code + number without + or spaces (e.g., 5511999999999)
+const PAIRING_PHONE_NUMBER = (process.env.BAILEYS_PAIRING_PHONE_NUMBER || '').replace(/[^\d]/g, '');
+
 // Allowed tokens (optional). If provided, registration must use one of these tokens.
 // Example: BAILEYS_ALLOWED_TOKENS="tokenA,tokenB"
 const ALLOWED_TOKENS = (process.env.BAILEYS_ALLOWED_TOKENS || '')
@@ -511,8 +517,16 @@ function normalizeOpenWAMessage(msg, opts = {}) {
 }
 
 async function start() {
-  // Ensure auth dir exists
-  fs.mkdirSync(AUTH_DIR, { recursive: true });
+  // Ensure auth dir exists (always check, even if it should exist)
+  try {
+    if (!fs.existsSync(AUTH_DIR)) {
+      fs.mkdirSync(AUTH_DIR, { recursive: true });
+      console.log('[Baileys] Created auth directory:', AUTH_DIR);
+    }
+  } catch (err) {
+    console.error('[Baileys] Failed to create auth directory:', err);
+    process.exit(1);
+  }
 
   // HTTP server + WS for clients
   const server = http.createServer((req, res) => {
@@ -631,7 +645,10 @@ async function start() {
   }
 
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
-  const { version } = await fetchLatestBaileysVersion();
+  // FIXED: Use current WhatsApp Web version instead of hardcoded outdated version
+  // Issue: https://github.com/WhiskeySockets/Baileys/issues/2376
+  // const { version } = await fetchLatestBaileysVersion(); // Returns outdated [2, 3000, 1027934701]
+  const version = [2, 3000, 1034762614]; // Latest WA Web alpha (2026-03-09) - https://wppconnect.io/whatsapp-versions/
   const store = createSimpleStore();
 
   const RETRY_SUPPRESSION_MSG = 'will not send message again, as sent too many times';
@@ -775,12 +792,74 @@ async function start() {
     browser: ['StickerBot', 'Chrome', '1.0'],
     logger: baileysLogger,
     msgRetryCounterCache,
+    // Note: printQRInTerminal is deprecated, we handle QR manually
     getMessage: async (key) => {
       if (!key?.id) return null;
       const cached = messageCache.get(key.id);
       return cached?.raw || null;
     }
   });
+
+  // Request pairing code if using pairing method and not registered
+  let pairingCodeRequested = false;
+  const shouldUsePairing = AUTH_METHOD === 'pairing' && !state.creds.registered;
+
+  if (shouldUsePairing) {
+    if (!PAIRING_PHONE_NUMBER) {
+      console.error('[Baileys] PAIRING_PHONE_NUMBER not set! Please set it in .env');
+      console.error('[Baileys] Example: BAILEYS_PAIRING_PHONE_NUMBER=5511999999999');
+      process.exit(1);
+    }
+
+    console.log('[Baileys] Using pairing code authentication method');
+    console.log(`[Baileys] Will request pairing code for: ${PAIRING_PHONE_NUMBER}`);
+
+    // Wait a bit for socket to initialize, then request pairing code
+    setTimeout(async () => {
+      if (!pairingCodeRequested && !state.creds.registered) {
+        pairingCodeRequested = true;
+        waitingForPairingCode = true;
+
+        try {
+          console.log(`[Baileys] Requesting pairing code for ${PAIRING_PHONE_NUMBER}...`);
+          const code = await sock.requestPairingCode(PAIRING_PHONE_NUMBER);
+
+          if (code) {
+            console.log('\n=================================================');
+            console.log('🔐 CÓDIGO DE EMPARELHAMENTO (PAIRING CODE):');
+            console.log(`   ${code}`);
+            console.log('=================================================');
+            console.log('Como usar:');
+            console.log('1. Abra o WhatsApp no seu celular');
+            console.log('2. Vá em: Menu > Dispositivos conectados');
+            console.log('3. Toque em "Conectar dispositivo"');
+            console.log('4. Toque em "Conectar com número de telefone"');
+            console.log('5. Digite o código acima');
+            console.log('=================================================');
+            console.log('⏳ Aguardando você inserir o código no celular...');
+            console.log('   (O código é válido por alguns minutos)');
+            console.log('=================================================\n');
+
+            // Set timeout to clear waiting flag after 5 minutes
+            setTimeout(() => {
+              if (waitingForPairingCode) {
+                console.log('[Baileys] Pairing code expired, allowing restarts again');
+                waitingForPairingCode = false;
+              }
+            }, 5 * 60 * 1000);
+          } else {
+            console.error('[Baileys] ERROR: requestPairingCode() returned null/undefined');
+            waitingForPairingCode = false;
+          }
+        } catch (error) {
+          console.error('[Baileys] Failed to request pairing code:', error.message);
+          waitingForPairingCode = false;
+        }
+      }
+    }, 5000); // Wait 5 seconds for socket to be fully ready
+  } else if (AUTH_METHOD === 'qr') {
+    console.log('[Baileys] Using QR code authentication method');
+  }
 
   // Wrap query to track pending requests and aid timeout diagnostics
   const originalQuery = sock.query;
@@ -868,8 +947,14 @@ async function start() {
   sock.ev.on('creds.update', saveCreds);
 
   let restartScheduled = false;
+  let waitingForPairingCode = false;
   const scheduleRestart = ({ clearAuth = false, delayMs = 3000 } = {}) => {
     if (restartScheduled) return;
+    // Don't restart if we're waiting for pairing code input
+    if (waitingForPairingCode && !clearAuth) {
+      console.log('[Baileys] Skipping restart - waiting for pairing code input');
+      return;
+    }
     restartScheduled = true;
 
     const performRestart = async () => {
@@ -893,7 +978,12 @@ async function start() {
       ]);
 
       if (clearAuth) {
-        try { fs.rmSync(AUTH_DIR, { recursive: true, force: true }); }
+        try {
+          fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+          // Recreate directory immediately to avoid ENOENT errors
+          fs.mkdirSync(AUTH_DIR, { recursive: true });
+          console.log('[Baileys] Auth directory cleared and recreated');
+        }
         catch (err) {
           console.error('[Baileys] Failed to clear auth directory:', err);
         }
@@ -912,14 +1002,45 @@ async function start() {
     });
   };
 
-  sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect, qr } = update;
-    if (qr) {
-      console.log('[Baileys] QR updated. Scan to authenticate.');
+  sock.ev.on('connection.update', async (update) => {
+    const { connection, lastDisconnect, qr, isNewLogin } = update;
+
+    if (qr && AUTH_METHOD === 'qr') {
+      console.log('\n=================================================');
+      console.log('📱 QR CODE PARA AUTENTICAÇÃO');
+      console.log('=================================================');
+      console.log('[Baileys] Escaneie o QR code abaixo com seu WhatsApp:');
+      console.log('=================================================\n');
       qrcode.generate(qr, { small: true });
+      console.log('\n=================================================');
+      console.log('Como escanear:');
+      console.log('1. Abra WhatsApp no celular');
+      console.log('2. Menu > Dispositivos conectados');
+      console.log('3. Conectar dispositivo');
+      console.log('4. Aponte a câmera para o QR acima');
+      console.log('=================================================');
+      console.log('⏳ Aguardando scan do QR code...');
+      console.log('   (Se expirar, um novo será gerado automaticamente)');
+      console.log('=================================================\n');
+
+      // Mark that we're waiting for QR scan - avoid restarts
+      waitingForPairingCode = true;
+
+      // Clear flag after 60 seconds (QR codes usually expire before this)
+      setTimeout(() => {
+        if (waitingForPairingCode && connection !== 'open') {
+          console.log('[Baileys] QR scan timeout, allowing new QR generation');
+          waitingForPairingCode = false;
+        }
+      }, 60000);
     }
+
     if (connection === 'open') {
       console.log('[Baileys] Connection opened');
+      waitingForPairingCode = false; // Clear waiting flag on success
+      if (isNewLogin) {
+        console.log('[Baileys] ✅ Successfully authenticated!');
+      }
     } else if (connection === 'close') {
       const statusCode = lastDisconnect?.error?.output?.statusCode
         ?? lastDisconnect?.error?.statusCode
@@ -932,7 +1053,8 @@ async function start() {
         || statusCode === DisconnectReason.loggedOut;
 
       if (isLoggedOut) {
-        console.warn('[Baileys] Session logged out. Clearing auth state and restarting for a new QR.');
+        console.warn('[Baileys] Session logged out. Clearing auth state and restarting for a new code.');
+        waitingForPairingCode = false; // Clear flag to allow restart
         scheduleRestart({ clearAuth: true, delayMs: 1000 });
       } else {
         scheduleRestart({ clearAuth: false, delayMs: 3000 });
