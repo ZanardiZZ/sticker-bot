@@ -812,8 +812,9 @@ async function start() {
       process.exit(1);
     }
 
+    const maskedPairingPhoneNumber = String(PAIRING_PHONE_NUMBER).replace(/\d(?=\d{2})/g, '*');
     console.log('[Baileys] Using pairing code authentication method');
-    console.log(`[Baileys] Will request pairing code for: ${PAIRING_PHONE_NUMBER}`);
+    console.log(`[Baileys] Will request pairing code for: ${maskedPairingPhoneNumber}`);
 
     // Wait a bit for socket to initialize, then request pairing code
     setTimeout(async () => {
@@ -822,7 +823,7 @@ async function start() {
         waitingForPairingCode = true;
 
         try {
-          console.log(`[Baileys] Requesting pairing code for ${PAIRING_PHONE_NUMBER}...`);
+          console.log(`[Baileys] Requesting pairing code for ${maskedPairingPhoneNumber}...`);
           const code = await sock.requestPairingCode(PAIRING_PHONE_NUMBER);
 
           if (code) {

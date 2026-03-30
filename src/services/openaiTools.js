@@ -468,11 +468,12 @@ async function searchLogsForPattern({ pattern, service = 'bot' }) {
   const logPath = logFiles[service];
 
   try {
-    // Escape special chars for grep, but allow basic regex
-    const safePattern = pattern.replace(/"/g, '\\"');
-    const { stdout } = await execAsync(`grep -i "${safePattern}" "${logPath}" 2>&1 | tail -n 20`);
-
-    const matches = stdout.trim().split('\n').filter(Boolean);
+    const rawLogs = await fs.readFile(logPath, 'utf8');
+    const regex = new RegExp(pattern, 'i');
+    const matches = rawLogs
+      .split('\n')
+      .filter(line => line && regex.test(line))
+      .slice(-20);
 
     return {
       pattern,
@@ -481,8 +482,15 @@ async function searchLogsForPattern({ pattern, service = 'bot' }) {
       matches: matches.join('\n')
     };
   } catch (err) {
-    // grep returns exit code 1 when no matches found
-    if (err.code === 1) {
+    if (err instanceof SyntaxError) {
+      return {
+        pattern,
+        service,
+        error: `Invalid pattern: ${err.message}`
+      };
+    }
+
+    if (err.code === 'ENOENT') {
       return {
         pattern,
         service,
