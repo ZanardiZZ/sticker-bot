@@ -1,0 +1,9 @@
+{
+  "name": "latest-version",
+  "version": "9.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
+}
