@@ -1,4 +1,24 @@
-# Changelog
+## [0.13.8] - 2026-03-30
+
+### Correções
+- fix sqlite bootstrap in ci (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/f1bc6cf0effdc04861371f4445e90323d7df62d5))
+- fix daily changelog db initialization (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/8093ef5bd16571720ecb21f08304cf7876b21a09))
+- fix code scanning alerts (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/0d9d8cdd42acacd28e0c1a84508daeff4e593052))
+
+### Refatorações
+- refactor: reorganize repository layout (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/b2a16a88ee8b40926315d80ac075cb6f179f6230))
+
+### Tarefas
+- chore: align docs and tooling with new layout (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/0e357aa146c8235ec174fa5aaee358bc8d67bb14))
+
+### Outros
+- PR #323 – reduce remaining npm vulnerabilities (por @ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/323))
+- PR #322 – upgrade sqlite3 to 6.0.1 (por @ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/322))
+- sanitize ollama proxy response headers (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/baa694de04ea32a3b29f1f8080596ffbb47333c7))
+- PR #323 – reduce remaining npm vulnerabilities (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/323))
+- PR #322 – upgrade sqlite3 to 6.0.1 (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/322))
+- 	deleted:    auth_info_baileys_bak/creds.json (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/f377715c37c61dc93493a00eb062df5d2d9f7154))
+- 	new file:   .claude/settings.local.json (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/06f6bbf847303eaddb9416995de1145c1f37b1ba))
 
 ## [0.13.8] - 2026-03-30
 
