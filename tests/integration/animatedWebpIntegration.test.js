@@ -1,4 +1,4 @@
-const { processAnimatedWebp } = require('../../services/videoProcessor');
+const { processAnimatedWebp } = require('../../src/services/videoProcessor');
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');

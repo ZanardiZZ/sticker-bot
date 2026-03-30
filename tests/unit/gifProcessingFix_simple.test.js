@@ -1,11 +1,11 @@
 const assert = require('assert');
-const { generateResponseMessage } = require('../../utils/responseMessage');
+const { generateResponseMessage } = require('../../src/utils/responseMessage');
 
 console.log('🧪 Testing GIF Processing Improvements...\n');
 
 // Test 1: Check that the AI service exports the new function
 try {
-  const { getAiAnnotationsForGif, getAiAnnotations } = require('../../services/ai');
+  const { getAiAnnotationsForGif, getAiAnnotations } = require('../../src/services/ai');
   
   if (typeof getAiAnnotationsForGif !== 'function') {
     throw new Error('getAiAnnotationsForGif is not a function');
@@ -67,7 +67,7 @@ try {
 // Test 4: Check that mediaProcessor uses different messages for different media types
 try {
   const fs = require('fs');
-  const mediaProcessorContent = fs.readFileSync('./bot/mediaProcessor.js', 'utf8');
+  const mediaProcessorContent = fs.readFileSync('./src/bot/mediaProcessor.js', 'utf8');
   
   // Check that it uses the shared utility function
   if (mediaProcessorContent.includes('generateResponseMessage')) {

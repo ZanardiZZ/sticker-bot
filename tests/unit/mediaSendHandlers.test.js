@@ -9,8 +9,8 @@ const os = require('os');
 const { runTestSuite, assert, assertEqual } = require('../helpers/testUtils');
 const { MockBaileysClient } = require('../helpers/mockBaileysClient');
 
-const MEDIA_MODULE_PATH = path.resolve(__dirname, '..', '..', 'commands/media.js');
-const STICKER_MODULE_ID = require.resolve('../../utils/stickerFormatter');
+const MEDIA_MODULE_PATH = path.resolve(__dirname, '..', '..', 'src', 'commands', 'media.js');
+const STICKER_MODULE_ID = require.resolve('../../src/utils/stickerFormatter');
 const GIF_DETECTION_PATH = path.resolve(__dirname, '..', '..', 'utils/gifDetection.js');
 
 function withMediaModule(overrides, fn) {

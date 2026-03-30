@@ -49,17 +49,17 @@ function checkDependencies() {
     console.log('\n📦 Verificando dependências...');
     
     try {
-        require('@whiskeysockets/baileys');
-        console.log('  ✅ @whiskeysockets/baileys');
+        require('@rexxhayanasi/elaina-baileys');
+        console.log('  ✅ @rexxhayanasi/elaina-baileys');
     } catch (e) {
-        console.log('  ❌ @whiskeysockets/baileys - Não instalado');
+        console.log('  ❌ @rexxhayanasi/elaina-baileys - Não instalado');
         return false;
     }
     
     try {
         const packageJson = require('../package.json');
-        if (packageJson.dependencies['@whiskeysockets/baileys']) {
-            console.log(`  ✅ Versão Baileys: ${packageJson.dependencies['@whiskeysockets/baileys']}`);
+        if (packageJson.dependencies['@rexxhayanasi/elaina-baileys']) {
+            console.log(`  ✅ Versão Baileys: ${packageJson.dependencies['@rexxhayanasi/elaina-baileys']}`);
         }
     } catch (e) {
         console.log('  ⚠️  Não foi possível verificar versão do Baileys');
@@ -75,7 +75,7 @@ async function checkDatabase() {
     console.log('\n🗄️  Verificando database...');
     
     try {
-        const { db } = require('../database');
+        const { db } = require('../src/database');
         
         // Verificar tabela lid_mapping
         const lidTable = await new Promise((resolve) => {
@@ -129,7 +129,7 @@ async function testBasicFunctionality() {
     
     try {
         // Teste JID Utils
-        const { isPnUser, isLidUser, normalizeJid } = require('../utils/jidUtils');
+        const { isPnUser, isLidUser, normalizeJid } = require('../src/utils/jidUtils');
         
         if (isPnUser('5511999999999@s.whatsapp.net') && 
             isLidUser('123456@lid') && 
@@ -141,7 +141,7 @@ async function testBasicFunctionality() {
         }
         
         // Teste LID Mapping
-        const { storeLidPnMapping, getPnForLid, deleteLidMapping } = require('../database');
+        const { storeLidPnMapping, getPnForLid, deleteLidMapping } = require('../src/database');
         
         const testLid = 'verification123@lid';
         const testPn = '5511000000000@s.whatsapp.net';

@@ -5,7 +5,7 @@
 
 const path = require('path');
 const { createTestDatabase, createTestTables, insertTestMedia, assert, assertEqual, assertLength, runTestSuite } = require('../helpers/testUtils');
-const { countMediaBySenderWithDb } = require('../../database/models/media');
+const { countMediaBySenderWithDb } = require('../../src/database/models/media');
 
 // Mock the database connection for testing
 let testDb;

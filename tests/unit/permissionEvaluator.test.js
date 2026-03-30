@@ -2,7 +2,7 @@
  * Unit tests for permissionEvaluator service
  */
 
-const { createPermissionEvaluator } = require('../../services/permissionEvaluator');
+const { createPermissionEvaluator } = require('../../src/services/permissionEvaluator');
 
 function assert(condition, message) {
   if (!condition) {

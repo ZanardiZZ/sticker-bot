@@ -3,7 +3,7 @@
  * Tests that animated WebP files are properly detected and processed with multi-frame analysis
  */
 
-const { isAnimatedWebpBuffer } = require('../../bot/stickers');
+const { isAnimatedWebpBuffer } = require('../../src/bot/stickers');
 
 async function runAnimatedStickerTests() {
   console.log('\n=== Animated Sticker Analysis Tests ===');

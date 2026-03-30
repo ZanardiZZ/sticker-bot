@@ -5,8 +5,8 @@
 
 const { createTestDatabase, createTestTables, assert, assertEqual, runTestSuite } = require('../helpers/testUtils');
 const { MockBaileysClient } = require('../helpers/mockBaileysClient');
-const { createCommandUsageModel } = require('../../database/models/commandUsage');
-const { createTop5CommandsHandler } = require('../../commands/handlers/top5commands');
+const { createCommandUsageModel } = require('../../src/database/models/commandUsage');
+const { createTop5CommandsHandler } = require('../../src/commands/handlers/top5commands');
 
 const tests = [
   {

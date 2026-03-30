@@ -8,7 +8,7 @@ const { createTestDatabase, assert, assertEqual, runTestSuite } = require('../he
 
 // Mock version model factory
 function createVersionModel(db) {
-  const DatabaseHandler = require('../../services/databaseHandler');
+  const DatabaseHandler = require('../../src/services/databaseHandler');
   const dbHandler = new DatabaseHandler(db);
   
   // Create a new instance of the version model for each test
@@ -531,7 +531,7 @@ const semverTests = [
   {
     name: 'Parse basic SemVer string',
     fn: async () => {
-      const { parseSemVer } = require('../../database/utils');
+      const { parseSemVer } = require('../../src/database/utils');
       const parsed = parseSemVer('1.2.3');
       assertEqual(parsed.major, 1, 'Major should be 1');
       assertEqual(parsed.minor, 2, 'Minor should be 2');
@@ -544,7 +544,7 @@ const semverTests = [
   {
     name: 'Parse SemVer with pre-release',
     fn: async () => {
-      const { parseSemVer } = require('../../database/utils');
+      const { parseSemVer } = require('../../src/database/utils');
       const parsed = parseSemVer('1.2.3-alpha.1');
       assertEqual(parsed.preRelease, 'alpha.1', 'Pre-release should be parsed correctly');
     }
@@ -553,7 +553,7 @@ const semverTests = [
   {
     name: 'Parse SemVer with build metadata',
     fn: async () => {
-      const { parseSemVer } = require('../../database/utils');
+      const { parseSemVer } = require('../../src/database/utils');
       const parsed = parseSemVer('1.2.3+build.123');
       assertEqual(parsed.buildMetadata, 'build.123', 'Build metadata should be parsed correctly');
     }
@@ -562,7 +562,7 @@ const semverTests = [
   {
     name: 'Compare SemVer versions',
     fn: async () => {
-      const { compareSemVer } = require('../../database/utils');
+      const { compareSemVer } = require('../../src/database/utils');
       assertEqual(compareSemVer('1.0.0', '2.0.0'), -1, 'Should compare major versions correctly');
       assertEqual(compareSemVer('2.0.0', '1.0.0'), 1, 'Should compare major versions correctly');
       assertEqual(compareSemVer('1.2.0', '1.3.0'), -1, 'Should compare minor versions correctly');
@@ -575,7 +575,7 @@ const semverTests = [
   {
     name: 'Validate SemVer strings',
     fn: async () => {
-      const { isValidSemVer } = require('../../database/utils');
+      const { isValidSemVer } = require('../../src/database/utils');
       assert(isValidSemVer('1.0.0'), 'Basic version should be valid');
       assert(isValidSemVer('10.20.30'), 'Multi-digit versions should be valid');
       assert(isValidSemVer('1.0.0-alpha'), 'Pre-release should be valid');

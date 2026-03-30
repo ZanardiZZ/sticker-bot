@@ -1,5 +1,5 @@
-const { processAnimatedWebp } = require('../../services/videoProcessor');
-const { isAnimatedWebpBuffer } = require('../../bot/stickers');
+const { processAnimatedWebp } = require('../../src/services/videoProcessor');
+const { isAnimatedWebpBuffer } = require('../../src/bot/stickers');
 const fs = require('fs');
 const path = require('path');
 
@@ -77,7 +77,7 @@ async function testMediaProcessorWebpFlow() {
     console.log('\n--- Test 3: Function Import ---');
     
     try {
-      const { processAnimatedWebp } = require('../../services/videoProcessor');
+      const { processAnimatedWebp } = require('../../src/services/videoProcessor');
       if (typeof processAnimatedWebp !== 'function') {
         throw new Error('processAnimatedWebp not properly exported');
       }

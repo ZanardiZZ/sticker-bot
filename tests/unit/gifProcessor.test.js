@@ -5,7 +5,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { processGif, extractFrames } = require('../../services/videoProcessor');
+const { processGif, extractFrames } = require('../../src/services/videoProcessor');
 const { createTestDatabase, createTestTables, runTest, assert, assertEqual } = require('../helpers/testUtils');
 
 // Mock test data
@@ -81,7 +81,7 @@ const tests = [
     name: 'processGif - FFmpeg not available, returns basic result',
     fn: async () => {
       // Temporarily set FFmpeg to null to test fallback
-      const videoProcessor = require('../../services/videoProcessor');
+      const videoProcessor = require('../../src/services/videoProcessor');
       const originalProcessGif = videoProcessor.processGif;
       
       // Create a version that simulates FFmpeg not available

@@ -100,7 +100,7 @@ const tests = [
       await createTestTables(db);
       await createPackTables(db);
       
-      const packsModel = require('../../database/models/packs');
+      const packsModel = require('../../src/database/models/packs');
       
       // Create a pack
       const packId = await packsModel.createPack('Test Pack', 'A test pack', 'user123');
@@ -125,7 +125,7 @@ const tests = [
       await createTestTables(db);
       await createPackTables(db);
       
-      const packsModel = require('../../database/models/packs');
+      const packsModel = require('../../src/database/models/packs');
       
       // Create a pack and media
       const packId = await packsModel.createPack('Test Pack');
@@ -155,7 +155,7 @@ const tests = [
       await createTestTables(db);
       await createPackTables(db);
       
-      const packsModel = require('../../database/models/packs');
+      const packsModel = require('../../src/database/models/packs');
       
       // Create a pack with max_stickers = 2 for testing
       const packId = await packsModel.createPack('Small Pack');
@@ -195,7 +195,7 @@ const tests = [
       await createTestTables(db);
       await createPackTables(db);
       
-      const packsModel = require('../../database/models/packs');
+      const packsModel = require('../../src/database/models/packs');
       
       // Create packs with numbered names
       await packsModel.createPack('MyPack');
@@ -218,7 +218,7 @@ const tests = [
       await createTestTables(db);
       await createPackTables(db);
       
-      const packsModel = require('../../database/models/packs');
+      const packsModel = require('../../src/database/models/packs');
       
       // Create multiple packs
       await packsModel.createPack('Pack A', 'Description A');
@@ -241,7 +241,7 @@ const tests = [
       await createTestTables(db);
       await createPackTables(db);
       
-      const packsModel = require('../../database/models/packs');
+      const packsModel = require('../../src/database/models/packs');
       
       // Create packs
       await packsModel.createPack('Animals Pack', 'Cute animals');

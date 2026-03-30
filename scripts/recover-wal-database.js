@@ -10,11 +10,11 @@
  */
 
 const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
 const fs = require('fs');
+const { DB_PATH, DB_WAL_PATH } = require('../src/paths');
 
-const dbPath = path.resolve(__dirname, '../media.db');
-const walPath = path.resolve(__dirname, '../media.db-wal');
+const dbPath = DB_PATH;
+const walPath = DB_WAL_PATH;
 
 console.log('=== Database WAL Recovery Utility ===');
 

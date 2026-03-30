@@ -3,7 +3,7 @@
  * Tests the fix for large queue processing errors
  */
 
-const MediaQueue = require('../../services/mediaQueue');
+const MediaQueue = require('../../src/services/mediaQueue');
 
 const tests = [
   {

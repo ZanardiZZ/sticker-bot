@@ -1,0 +1,2069 @@
+// WPPConnect centralized WebSocket server
+// - Maintains a single WhatsApp session (persisted under tokens)
+// - Accepts multiple WS clients that register with a token and allowed chats
+// - Forwards only authorized messages to each client
+// - Accepts send commands from clients and enforces chat authorization
+
+require('dotenv').config();
+
+const fs = require('fs');
+const path = require('path');
+const http = require('http');
+const { execFileSync } = require('child_process');
+const { WebSocketServer } = require('ws');
+const mime = require('mime-types');
+const qrcode = require('qrcode-terminal');
+const wppconnect = require('@wppconnect-team/wppconnect');
+const { normalizeJid } = require('./utils/jidUtils');
+
+// FFmpeg setup for conversions
+let ffmpeg = null;
+let ffmpegPath = null;
+try {
+  ffmpeg = require('fluent-ffmpeg');
+  ffmpegPath = require('ffmpeg-static');
+  if (ffmpegPath) ffmpeg.setFfmpegPath(ffmpegPath);
+} catch (e) {
+  console.warn('[WS] FFmpeg not available for animated conversions:', e.message);
+}
+
+// Basic config
+const PORT = Number(process.env.BAILEYS_WS_PORT || 8765);
+const SESSION_NAME = 'sticker-bot-session';
+const TOKENS_DIR = path.resolve(process.env.BAILEYS_AUTH_DIR || 'tokens');
+const WS_VERBOSE_LOGS = process.env.WS_VERBOSE_LOGS === 'true';
+const WS_MEDIA_DEBUG = process.env.WS_MEDIA_DEBUG === 'true';
+const WS_REACTION_DEBUG = process.env.WS_REACTION_DEBUG === 'true';
+
+// Allowed tokens (optional)
+const ALLOWED_TOKENS = (process.env.BAILEYS_ALLOWED_TOKENS || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
+// In-memory registry of connected clients
+const clientsByToken = new Map();
+
+// WPPConnect client instance
+let wppClient = null;
+let wppReady = false;
+
+// Message cache for retry mechanism (compatibility with Baileys interface)
+const messageCache = new Map();
+const MESSAGE_CACHE_MAX = Number(process.env.WS_MESSAGE_CACHE_MAX || 500);
+const MESSAGE_CACHE_TTL_MS = Number(process.env.WS_MESSAGE_CACHE_TTL_MS || (10 * 60 * 1000));
+const STORE_MAX_ENTRIES = Number(process.env.WS_STORE_MAX_ENTRIES || 2000);
+const MEMORY_LOG_INTERVAL_MS = Number(process.env.WS_MEMORY_LOG_INTERVAL_MS || (10 * 60 * 1000));
+const BROWSER_MONITOR_INTERVAL_MS = Number(process.env.WS_BROWSER_MONITOR_INTERVAL_MS || (5 * 60 * 1000));
+const BROWSER_MAX_RENDERERS = Number(process.env.WS_BROWSER_MAX_RENDERERS || 0);
+const BROWSER_MAX_PSS_MB = Number(process.env.WS_BROWSER_MAX_PSS_MB || 4000);
+const BROWSER_MAX_UPTIME_MS = Number(process.env.WS_BROWSER_MAX_UPTIME_MS || (6 * 60 * 60 * 1000));
+const WPP_MAX_SILENCE_MS = Number(process.env.WS_WPP_MAX_SILENCE_MS || (10 * 60 * 1000));
+const INCOMING_DEDUPE_TTL_MS = Number(process.env.WS_INCOMING_DEDUPE_TTL_MS || 30000);
+const UNREAD_POLL_INTERVAL_MS = Number(process.env.WS_UNREAD_POLL_INTERVAL_MS || 0);
+const FALLBACK_POLL_SILENCE_MS = Number(process.env.WS_FALLBACK_POLL_SILENCE_MS || 15000);
+const FALLBACK_MAX_MESSAGE_AGE_MS = Number(process.env.WS_FALLBACK_MAX_MESSAGE_AGE_MS || 15000);
+const SEND_CONCURRENCY = Math.max(1, Number(process.env.WS_SEND_CONCURRENCY || 2));
+const DOWNLOAD_CONCURRENCY = Math.max(1, Number(process.env.WS_DOWNLOAD_CONCURRENCY || 1));
+const MEDIA_CACHE_DIR = path.resolve(process.env.WS_MEDIA_CACHE_DIR || path.join('temp', 'ws-media-cache'));
+const MEDIA_CACHE_TTL_MS = Number(process.env.WS_MEDIA_CACHE_TTL_MS || (15 * 60 * 1000));
+const MEDIA_CACHE_MAX_FILES = Math.max(0, Number(process.env.WS_MEDIA_CACHE_MAX_FILES || 100));
+
+let messageCacheCleanupInterval = null;
+let memoryStatsInterval = null;
+let browserMonitorInterval = null;
+let unreadPollInterval = null;
+let wppClientStartedAt = 0;
+let shutdownInProgress = false;
+let activeRequestCount = 0;
+let pendingShutdown = null;
+let lastRequestFinishedAt = 0;
+let lastWppEventAt = 0;
+let lastClientRegisteredAt = 0;
+const recentIncomingMessageIds = new Map();
+
+function logVerbose(...args) {
+  if (WS_VERBOSE_LOGS) {
+    console.log(...args);
+  }
+}
+
+function logMediaDebug(...args) {
+  if (WS_MEDIA_DEBUG) {
+    console.log(...args);
+  }
+}
+
+class AsyncLimiter {
+  constructor(limit) {
+    this.limit = limit;
+    this.active = 0;
+    this.queue = [];
+  }
+
+  async run(task) {
+    if (this.active >= this.limit) {
+      await new Promise((resolve) => {
+        this.queue.push(resolve);
+      });
+    }
+
+    this.active += 1;
+    try {
+      return await task();
+    } finally {
+      this.active -= 1;
+      const next = this.queue.shift();
+      if (next) next();
+    }
+  }
+}
+
+const sendLimiter = new AsyncLimiter(SEND_CONCURRENCY);
+const downloadLimiter = new AsyncLimiter(DOWNLOAD_CONCURRENCY);
+
+function beginTrackedRequest() {
+  activeRequestCount += 1;
+}
+
+async function endTrackedRequest() {
+  activeRequestCount = Math.max(0, activeRequestCount - 1);
+  lastRequestFinishedAt = Date.now();
+  await maybeRunDeferredShutdown();
+}
+
+function getTrackedClientCount() {
+  return Array.from(clientsByToken.values()).reduce((acc, set) => acc + set.size, 0);
+}
+
+function hasActiveWork() {
+  return (
+    activeRequestCount > 0 ||
+    sendLimiter.active > 0 ||
+    downloadLimiter.active > 0
+  );
+}
+
+function shouldDeferAutoShutdown() {
+  const withinCooldown = (Date.now() - lastRequestFinishedAt) < 15000;
+  return hasActiveWork() || withinCooldown;
+}
+
+function getSessionProfileDir() {
+  return path.join(TOKENS_DIR, SESSION_NAME);
+}
+
+function ensureDirectoryExists(dirPath) {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+}
+
+function getMediaCacheFilePath(messageId) {
+  const safeId = String(messageId).replace(/[^a-zA-Z0-9._-]/g, '_');
+  return path.join(MEDIA_CACHE_DIR, `${safeId}.json`);
+}
+
+function cleanupMediaCache() {
+  if (MEDIA_CACHE_MAX_FILES <= 0) return;
+
+  try {
+    ensureDirectoryExists(MEDIA_CACHE_DIR);
+    const cutoff = Date.now() - MEDIA_CACHE_TTL_MS;
+    const files = fs.readdirSync(MEDIA_CACHE_DIR)
+      .map((name) => {
+        const filePath = path.join(MEDIA_CACHE_DIR, name);
+        const stats = fs.statSync(filePath);
+        return { name, filePath, mtimeMs: stats.mtimeMs };
+      })
+      .sort((a, b) => a.mtimeMs - b.mtimeMs);
+
+    for (const file of files) {
+      if (file.mtimeMs < cutoff) {
+        fs.rmSync(file.filePath, { force: true });
+      }
+    }
+
+    const remaining = fs.readdirSync(MEDIA_CACHE_DIR)
+      .map((name) => {
+        const filePath = path.join(MEDIA_CACHE_DIR, name);
+        const stats = fs.statSync(filePath);
+        return { filePath, mtimeMs: stats.mtimeMs };
+      })
+      .sort((a, b) => a.mtimeMs - b.mtimeMs);
+
+    while (remaining.length > MEDIA_CACHE_MAX_FILES) {
+      const oldest = remaining.shift();
+      if (!oldest) break;
+      fs.rmSync(oldest.filePath, { force: true });
+    }
+  } catch (error) {
+    console.warn('[WS] Failed to clean media cache:', error.message);
+  }
+}
+
+function readCachedMedia(messageId) {
+  if (MEDIA_CACHE_MAX_FILES <= 0) return null;
+
+  try {
+    const filePath = getMediaCacheFilePath(messageId);
+    if (!fs.existsSync(filePath)) return null;
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    if (!raw?.createdAt || (Date.now() - raw.createdAt) > MEDIA_CACHE_TTL_MS) {
+      fs.rmSync(filePath, { force: true });
+      return null;
+    }
+    return raw;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedMedia(messageId, payload) {
+  if (MEDIA_CACHE_MAX_FILES <= 0) return;
+
+  try {
+    ensureDirectoryExists(MEDIA_CACHE_DIR);
+    const filePath = getMediaCacheFilePath(messageId);
+    fs.writeFileSync(filePath, JSON.stringify({
+      ...payload,
+      createdAt: Date.now()
+    }));
+    cleanupMediaCache();
+  } catch (error) {
+    console.warn('[WS] Failed to write media cache:', error.message);
+  }
+}
+
+function readProcessPssKb(pid) {
+  try {
+    const smaps = fs.readFileSync(`/proc/${pid}/smaps_rollup`, 'utf8');
+    const match = smaps.match(/^Pss:\s+(\d+)\s+kB$/m);
+    return match ? Number(match[1]) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function isAnimatedWebpBuffer(buf) {
+  try {
+    if (!buf || buf.length < 21) return false;
+    const riff = buf.slice(0, 4).toString('ascii') === 'RIFF';
+    const webp = buf.slice(8, 12).toString('ascii') === 'WEBP';
+    const vp8x = buf.slice(12, 16).toString('ascii') === 'VP8X';
+    const animBit = (buf[20] & 0x10) === 0x10;
+    return riff && webp && vp8x && animBit;
+  } catch {
+    return false;
+  }
+}
+
+function createSimpleStore() {
+  return {
+    contacts: new Map(),
+    chats: new Map(),
+    groupMetadata: new Map()
+  };
+}
+
+const store = createSimpleStore();
+
+function pruneOldestMapEntries(map, maxEntries) {
+  while (map.size > maxEntries) {
+    const oldestKey = map.keys().next().value;
+    if (oldestKey === undefined) break;
+    map.delete(oldestKey);
+  }
+}
+
+function setBoundedMapEntry(map, key, value, maxEntries) {
+  if (map.has(key)) {
+    map.delete(key);
+  }
+  map.set(key, value);
+  pruneOldestMapEntries(map, maxEntries);
+}
+
+function cleanupExpiredMessageCache() {
+  const cutoff = Date.now() - MESSAGE_CACHE_TTL_MS;
+  let removed = 0;
+
+  for (const [messageId, entry] of messageCache.entries()) {
+    if (!entry?.timestamp || entry.timestamp < cutoff) {
+      messageCache.delete(messageId);
+      removed++;
+    }
+  }
+
+  pruneOldestMapEntries(messageCache, MESSAGE_CACHE_MAX);
+  return removed;
+}
+
+function cleanupIncomingDedupes() {
+  const cutoff = Date.now() - INCOMING_DEDUPE_TTL_MS;
+  for (const [messageId, timestamp] of recentIncomingMessageIds.entries()) {
+    if (!timestamp || timestamp < cutoff) {
+      recentIncomingMessageIds.delete(messageId);
+    }
+  }
+}
+
+function shouldProcessIncomingMessage(message) {
+  const messageId = message?.id;
+  if (!messageId) return true;
+
+  cleanupIncomingDedupes();
+  if (recentIncomingMessageIds.has(messageId)) {
+    return false;
+  }
+
+  recentIncomingMessageIds.set(messageId, Date.now());
+  return true;
+}
+
+async function pollIncomingMessages() {
+  if (!wppReady || !wppClient) {
+    return;
+  }
+
+  const silenceMs = lastWppEventAt > 0 ? Date.now() - lastWppEventAt : Infinity;
+  if (FALLBACK_POLL_SILENCE_MS > 0 && silenceMs < FALLBACK_POLL_SILENCE_MS) {
+    return;
+  }
+
+  try {
+    const collected = [];
+    const seenIds = new Set();
+    const addMessages = (messages) => {
+      if (!Array.isArray(messages)) return;
+      for (const message of messages) {
+        const messageId = message?.id;
+        const dedupeKey = messageId || `${message?.chatId || message?.from || 'unknown'}:${message?.timestamp || Date.now()}`;
+        if (seenIds.has(dedupeKey)) continue;
+        seenIds.add(dedupeKey);
+        collected.push(message);
+      }
+    };
+
+    if (typeof wppClient.getAllUnreadMessages === 'function') {
+      addMessages(await wppClient.getAllUnreadMessages());
+    }
+
+    if (typeof wppClient.getAllNewMessages === 'function') {
+      addMessages(await wppClient.getAllNewMessages());
+    }
+
+    if (collected.length === 0) {
+      return;
+    }
+
+    let forwarded = 0;
+    for (const message of collected) {
+      const rawTs = Number(message?.timestamp || 0);
+      const messageTsMs = rawTs > 0 ? (rawTs > 1e12 ? rawTs : rawTs * 1000) : 0;
+      const ageMs = messageTsMs > 0 ? Math.max(0, Date.now() - messageTsMs) : 0;
+
+      if (FALLBACK_MAX_MESSAGE_AGE_MS > 0 && ageMs > FALLBACK_MAX_MESSAGE_AGE_MS) {
+        continue;
+      }
+
+      if (!shouldProcessIncomingMessage(message)) {
+        continue;
+      }
+
+      lastWppEventAt = Date.now();
+      forwarded += 1;
+      await handleIncomingMessage(message);
+    }
+
+    if (forwarded > 0) {
+      console.log(`[WS] Polled ${forwarded} WhatsApp message(s) as fallback`);
+    }
+  } catch (error) {
+    console.warn('[WS] Failed to poll fallback messages:', error?.message || error);
+  }
+}
+
+function cacheMessage(messageId, rawMessage, wppOriginal) {
+  cleanupExpiredMessageCache();
+  setBoundedMapEntry(messageCache, messageId, {
+    raw: rawMessage,
+    wppOriginal,
+    timestamp: Date.now()
+  }, MESSAGE_CACHE_MAX);
+}
+
+function formatMb(bytes) {
+  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+}
+
+function getBrowserProcessStats() {
+  try {
+    const output = execFileSync('ps', ['-eo', 'pid=,ppid=,rss=,etimes=,args='], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore']
+    });
+
+    const sessionProfileDir = getSessionProfileDir();
+    const rows = output
+      .split('\n')
+      .map(line => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const match = line.match(/^(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/);
+        if (!match) return null;
+        const [, pid, ppid, rss, etimes, args] = match;
+        return {
+          pid: Number(pid),
+          ppid: Number(ppid),
+          rssKb: Number(rss),
+          etimes: Number(etimes),
+          args
+        };
+      })
+      .filter(Boolean);
+
+    const browserRoot = rows.find((row) => (
+      row.ppid === process.pid &&
+      row.args.includes(sessionProfileDir) &&
+      row.args.includes('chrome')
+    ));
+
+    if (!browserRoot) {
+      return {
+        rootPid: null,
+        rootRssMb: 0,
+        childRssMb: 0,
+        totalPssMb: 0,
+        renderers: 0,
+        utility: 0,
+        gpu: 0,
+        processCount: 0,
+        uptimeSec: 0
+      };
+    }
+
+    const children = rows.filter((row) => row.ppid === browserRoot.pid);
+    const renderers = children.filter(row => row.args.includes('--type=renderer')).length;
+    const utility = children.filter(row => row.args.includes('--type=utility')).length;
+    const gpu = children.filter(row => row.args.includes('--type=gpu-process')).length;
+    const childRssKb = children.reduce((sum, row) => sum + row.rssKb, 0);
+    const totalPssKb = [browserRoot, ...children].reduce((sum, row) => sum + readProcessPssKb(row.pid), 0);
+
+    return {
+      rootPid: browserRoot.pid,
+      rootRssMb: browserRoot.rssKb / 1024,
+      childRssMb: childRssKb / 1024,
+      totalPssMb: totalPssKb / 1024,
+      renderers,
+      utility,
+      gpu,
+      processCount: children.length + 1,
+      uptimeSec: browserRoot.etimes
+    };
+  } catch (error) {
+    console.warn('[WS] Failed to inspect browser process tree:', error.message);
+    return null;
+  }
+}
+
+function logMemoryStats(context = 'periodic') {
+  const memory = process.memoryUsage();
+  const browser = getBrowserProcessStats();
+  const browserSuffix = browser
+    ? ` browserPid=${browser.rootPid ?? 'none'} browserRoot=${browser.rootRssMb.toFixed(1)}MB browserChildren=${browser.childRssMb.toFixed(1)}MB browserPss=${browser.totalPssMb.toFixed(1)}MB renderers=${browser.renderers} browserProcs=${browser.processCount}`
+    : '';
+  console.log(`[WS] Memory ${context}: rss=${formatMb(memory.rss)} heapUsed=${formatMb(memory.heapUsed)} heapTotal=${formatMb(memory.heapTotal)} external=${formatMb(memory.external)} cache=${messageCache.size} contacts=${store.contacts.size} chats=${store.chats.size} clients=${Array.from(clientsByToken.values()).reduce((acc, set) => acc + set.size, 0)}${browserSuffix}`);
+}
+
+async function shutdownWPPClient(reason = 'shutdown') {
+  if (!wppClient) return;
+
+  console.log(`[WPPConnect] Closing client (${reason})...`);
+
+  try {
+    await wppClient.close();
+    console.log('[WPPConnect] Client closed');
+  } catch (error) {
+    console.error('[WPPConnect] Error closing client:', error);
+  } finally {
+    wppClient = null;
+    wppReady = false;
+    wppClientStartedAt = 0;
+  }
+}
+
+async function shutdownAndExit(reason, exitCode = 0) {
+  if (shutdownInProgress) {
+    return;
+  }
+
+  if (exitCode === 0 && shouldDeferAutoShutdown()) {
+    pendingShutdown = { reason, exitCode, requestedAt: Date.now() };
+    console.log(`[WS] Deferring shutdown while work is active: ${reason} activeRequests=${activeRequestCount} sendActive=${sendLimiter.active} downloadActive=${downloadLimiter.active}`);
+    return;
+  }
+
+  shutdownInProgress = true;
+  console.log(`[WS] Shutdown requested: ${reason}`);
+
+  stopMaintenanceTimers();
+  cleanupExpiredMessageCache();
+  clearAllTypingSessions();
+
+  try {
+    await shutdownWPPClient(reason);
+  } finally {
+    process.exit(exitCode);
+  }
+}
+
+async function maybeRunDeferredShutdown() {
+  if (!pendingShutdown || shutdownInProgress) {
+    return;
+  }
+
+  if (shouldDeferAutoShutdown()) {
+    return;
+  }
+
+  const deferred = pendingShutdown;
+  pendingShutdown = null;
+  console.log(`[WS] Running deferred shutdown: ${deferred.reason}`);
+  await shutdownAndExit(deferred.reason, deferred.exitCode);
+}
+
+function evaluateBrowserHealth() {
+  const browser = getBrowserProcessStats();
+  if (!browser || !browser.rootPid) {
+    return;
+  }
+
+  const browserUptimeMs = wppClientStartedAt > 0
+    ? Date.now() - wppClientStartedAt
+    : browser.uptimeSec * 1000;
+
+  const overRendererLimit = BROWSER_MAX_RENDERERS > 0 && browser.renderers > BROWSER_MAX_RENDERERS;
+  const overPssLimit = browser.totalPssMb > BROWSER_MAX_PSS_MB;
+  const overUptimeLimit = BROWSER_MAX_UPTIME_MS > 0 && browserUptimeMs > BROWSER_MAX_UPTIME_MS;
+  const hasActiveClients = getTrackedClientCount() > 0;
+  const silenceMs = lastWppEventAt > 0 ? Date.now() - lastWppEventAt : browserUptimeMs;
+  const overSilenceLimit = (
+    WPP_MAX_SILENCE_MS > 0 &&
+    hasActiveClients &&
+    browserUptimeMs > Math.min(WPP_MAX_SILENCE_MS, 2 * 60 * 1000) &&
+    silenceMs > WPP_MAX_SILENCE_MS
+  );
+
+  console.log(
+    `[WS] Browser health: pid=${browser.rootPid} renderers=${browser.renderers} utility=${browser.utility} gpu=${browser.gpu} root=${browser.rootRssMb.toFixed(1)}MB children=${browser.childRssMb.toFixed(1)}MB pss=${browser.totalPssMb.toFixed(1)}MB uptime=${Math.round(browserUptimeMs / 60000)}m silence=${Math.round(silenceMs / 1000)}s clients=${getTrackedClientCount()}`
+  );
+
+  if (overRendererLimit || overPssLimit || overUptimeLimit || overSilenceLimit) {
+    const reasons = [];
+    if (overRendererLimit) reasons.push(`renderers>${BROWSER_MAX_RENDERERS}`);
+    if (overPssLimit) reasons.push(`pss>${BROWSER_MAX_PSS_MB}MB`);
+    if (overUptimeLimit) reasons.push(`uptime>${Math.round(BROWSER_MAX_UPTIME_MS / 3600000)}h`);
+    if (overSilenceLimit) reasons.push(`silent>${Math.round(WPP_MAX_SILENCE_MS / 60000)}m`);
+    shutdownAndExit(`browser rotation (${reasons.join(', ')})`, 0);
+  }
+}
+
+function startMaintenanceTimers() {
+  if (!messageCacheCleanupInterval) {
+    messageCacheCleanupInterval = setInterval(() => {
+      const removed = cleanupExpiredMessageCache();
+      cleanupMediaCache();
+      if (removed > 0) {
+        console.log(`[WS] Pruned ${removed} expired messages from cache`);
+      }
+    }, Math.min(MESSAGE_CACHE_TTL_MS, 5 * 60 * 1000));
+  }
+
+  if (!memoryStatsInterval) {
+    memoryStatsInterval = setInterval(() => {
+      cleanupExpiredMessageCache();
+      cleanupMediaCache();
+      logMemoryStats();
+    }, MEMORY_LOG_INTERVAL_MS);
+  }
+
+  if (!browserMonitorInterval) {
+    browserMonitorInterval = setInterval(() => {
+      evaluateBrowserHealth();
+    }, BROWSER_MONITOR_INTERVAL_MS);
+  }
+
+  if (!unreadPollInterval && UNREAD_POLL_INTERVAL_MS > 0) {
+    unreadPollInterval = setInterval(() => {
+      pollIncomingMessages();
+    }, UNREAD_POLL_INTERVAL_MS);
+  }
+}
+
+function stopMaintenanceTimers() {
+  if (messageCacheCleanupInterval) {
+    clearInterval(messageCacheCleanupInterval);
+    messageCacheCleanupInterval = null;
+  }
+
+  if (memoryStatsInterval) {
+    clearInterval(memoryStatsInterval);
+    memoryStatsInterval = null;
+  }
+
+  if (browserMonitorInterval) {
+    clearInterval(browserMonitorInterval);
+    browserMonitorInterval = null;
+  }
+
+  if (unreadPollInterval) {
+    clearInterval(unreadPollInterval);
+    unreadPollInterval = null;
+  }
+}
+
+function clearAllTypingSessions() {
+  for (const session of activeTypingSessions.values()) {
+    clearInterval(session.interval);
+  }
+  activeTypingSessions.clear();
+}
+
+// ==========================
+// WPPConnect Client Setup
+// ==========================
+
+async function initWPPConnect() {
+  console.log('[WPPConnect] Initializing WPPConnect client...');
+
+  // Ensure tokens directory exists
+  if (!fs.existsSync(TOKENS_DIR)) {
+    fs.mkdirSync(TOKENS_DIR, { recursive: true });
+    console.log(`[WPPConnect] Created tokens directory: ${TOKENS_DIR}`);
+  }
+
+  try {
+    wppClient = await wppconnect.create({
+      session: SESSION_NAME,
+      catchQR: (base64Qrimg, asciiQR, attempts, urlCode) => {
+        console.log('\n=================================================');
+        console.log('📱 QR CODE PARA AUTENTICAÇÃO');
+        console.log('=================================================');
+        console.log('[WPPConnect] Escaneie o QR code abaixo com seu WhatsApp:');
+        console.log('=================================================\n');
+
+        // Display QR in terminal
+        qrcode.generate(urlCode, { small: true });
+
+        console.log('\n=================================================');
+        console.log('Como escanear:');
+        console.log('1. Abra WhatsApp no celular');
+        console.log('2. Menu > Dispositivos conectados');
+        console.log('3. Conectar dispositivo');
+        console.log('4. Aponte a câmera para o QR acima');
+        console.log('=================================================');
+        console.log(`⏳ Tentativa ${attempts}/10`);
+        console.log('=================================================\n');
+      },
+      statusFind: (statusSession, session) => {
+        logVerbose('[WPPConnect] Status:', statusSession);
+
+        if (statusSession === 'qrReadSuccess') {
+          console.log('✅ QR Code escaneado com sucesso!');
+        } else if (statusSession === 'isLogged') {
+          console.log('✅ Sessão autenticada!');
+        } else if (statusSession === 'notLogged') {
+          console.log('⏳ Aguardando autenticação...');
+        }
+      },
+      folderNameToken: TOKENS_DIR,
+      headless: true,
+      devtools: false,
+      useChrome: true,
+      debug: false,
+      logQR: false,
+      browserArgs: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--disable-extensions',
+        '--disable-component-extensions-with-background-pages',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-gpu',
+        '--memory-pressure-off'
+      ],
+      autoClose: 0, // Keep browser open
+      disableWelcome: true,
+      updatesLog: false
+    });
+
+    console.log('✅ [WPPConnect] Client initialized successfully!');
+    wppReady = true;
+    wppClientStartedAt = Date.now();
+    lastWppEventAt = Date.now();
+
+    // Setup event listeners
+    setupWPPConnectEvents();
+
+    // Some boots do not emit a later CONNECTED state change after clients have
+    // already registered. Broadcast readiness explicitly so adapters unblock.
+    broadcastToAllClients({
+      type: 'connection.update',
+      data: { connection: 'open', legacy: false }
+    });
+
+  } catch (error) {
+    console.error('[WPPConnect] Failed to initialize:', error);
+    wppReady = false;
+
+    // Only retry if client was not created (initial connection failed)
+    if (!wppClient) {
+      setTimeout(() => {
+        logVerbose('[WPPConnect] Retrying initialization...');
+        initWPPConnect();
+      }, 30000);
+    }
+  }
+}
+
+function setupWPPConnectEvents() {
+  if (!wppClient) return;
+
+  const forwardIncomingMessage = (message, source) => {
+    lastWppEventAt = Date.now();
+
+    if (!shouldProcessIncomingMessage(message)) {
+      logVerbose(`[WS] Skipping duplicate incoming message from ${source}:`, message?.id);
+      return;
+    }
+
+    handleIncomingMessage(message);
+  };
+
+  // Some WPPConnect versions are inconsistent between onAnyMessage/onMessage.
+  // Register both and dedupe by message id so we don't miss text/media events.
+  if (typeof wppClient.onAnyMessage === 'function') {
+    wppClient.onAnyMessage((message) => {
+      forwardIncomingMessage(message, 'onAnyMessage');
+    });
+  }
+
+  if (typeof wppClient.onMessage === 'function') {
+    wppClient.onMessage((message) => {
+      forwardIncomingMessage(message, 'onMessage');
+    });
+  }
+
+  // Listen for reactions
+  wppClient.onReactionMessage((reaction) => {
+    try {
+      lastWppEventAt = Date.now();
+      if (WS_REACTION_DEBUG) {
+        console.log('[WS] Raw reaction event:', summarizeReaction(reaction));
+      }
+
+      // WPPConnect provides: { id, msgId, reactionText, read, orphan, timestamp }
+      // id and msgId may be MessageId objects { fromMe, remote, id, _serialized } or strings
+
+      const extractId = (v) => {
+        if (!v) return undefined;
+        if (typeof v === 'string') return v;
+        return v._serialized || v.id || undefined;
+      };
+
+      const msgId = extractId(reaction.msgId);
+
+      // Look up chatId from the message cache using the reacted-to message
+      let chatId;
+      if (msgId) {
+        const cached = messageCache.get(msgId);
+        chatId = cached?.raw?.from || cached?.wppOriginal?.chatId || cached?.wppOriginal?.from;
+      }
+
+      // Extract reactorJid from the reaction's own id (MessageId object)
+      // In groups: id.fromMe=false, id.remote=groupJid, id.participant=senderJid
+      // In DMs: id.fromMe=false, id.remote=senderJid
+      let reactorJid;
+      const reactionId = reaction.id;
+      if (reactionId && typeof reactionId === 'object') {
+        reactorJid = reactionId.participant || reactionId.remote;
+        if (!chatId) chatId = reactionId.remote;
+      } else if (typeof reactionId === 'string') {
+        // Serialized format: "false_CHATID_MSGID_PARTICIPANTID" for groups
+        // or "false_CHATID_MSGID" for DMs
+        const parts = reactionId.split('_');
+        if (parts.length >= 4) {
+          // Group reaction: last part with @c.us is the participant
+          const lastPart = parts[parts.length - 1];
+          if (lastPart.includes('@')) reactorJid = lastPart;
+          if (!chatId && parts[1]?.includes('@')) chatId = parts[1];
+        } else if (parts.length === 3) {
+          if (!chatId && parts[1]?.includes('@')) chatId = parts[1];
+        }
+      }
+
+      const reactionData = {
+        messageId: msgId,
+        chatId: chatId,
+        reactorJid: reactorJid,
+        emoji: reaction.reactionText || '',
+        timestamp: reaction.timestamp || Math.floor(Date.now() / 1000)
+      };
+
+      if (WS_REACTION_DEBUG) {
+        console.log('[WS] Mapped reaction:', reactionData);
+      }
+      broadcastToAllClients({ type: 'reaction', data: reactionData });
+    } catch (e) {
+      console.error('[WPPConnect] Error handling reaction:', e);
+    }
+  });
+
+  // Listen for connection state changes
+  wppClient.onStateChange((state) => {
+    lastWppEventAt = Date.now();
+    logVerbose('[WPPConnect] State changed:', state);
+
+    if (state === 'CONNECTED') {
+      wppReady = true;
+      console.log('✅ [WPPConnect] Connected to WhatsApp!');
+
+      // Broadcast connection status to all clients
+      broadcastToAllClients({
+        type: 'connection.update',
+        data: { connection: 'open', legacy: false }
+      });
+    } else if (state === 'CONFLICT' || state === 'UNPAIRED') {
+      wppReady = false;
+      console.log('⚠️ [WPPConnect] Connection lost:', state);
+
+      broadcastToAllClients({
+        type: 'connection.update',
+        data: { connection: 'close', reason: state }
+      });
+    }
+  });
+
+  logVerbose('[WPPConnect] Event listeners configured');
+}
+
+async function handleIncomingMessage(message) {
+  try {
+    lastWppEventAt = Date.now();
+    // Convert WPPConnect message format to Baileys-compatible format
+    const baileysFormat = convertWPPMessageToBaileys(message);
+
+    if (!baileysFormat) {
+      return;
+    }
+
+    // Debug log to verify isMedia flag
+    logMediaDebug('[WS] Message converted:', summarizeIncomingMessage(baileysFormat));
+
+    // Cache message for retry mechanism
+    // Store BOTH the original WPP message and Baileys format
+    // Original WPP message is needed for media download
+    if (baileysFormat.key?.id) {
+      cacheMessage(baileysFormat.key.id, baileysFormat, message);
+    }
+
+    // Update store with contact/chat info
+    updateStoreFromMessage(baileysFormat);
+
+    // Get chat ID for routing (use already-converted baileysFormat.from which is already serialized)
+    const chatId = baileysFormat.from;
+
+    // Broadcast to authorized clients
+    let deliveredToClients = 0;
+    for (const [token, clients] of clientsByToken.entries()) {
+      for (const clientInfo of clients) {
+        const { ws, allowedChats } = clientInfo;
+
+        // Check if client is authorized for this chat
+        if (allowedChats.has('*') || allowedChats.has(chatId)) {
+          if (ws.readyState === 1) { // WebSocket.OPEN
+            // Send message directly (not wrapped in { messages: [...] })
+            // waAdapter expects msg.data to be the message object, not an array
+            ws.send(JSON.stringify({
+              type: 'message',
+              data: baileysFormat
+            }));
+            deliveredToClients += 1;
+          }
+        }
+      }
+    }
+
+    console.log(`[WS] Forwarded incoming ${baileysFormat.type || 'message'} ${baileysFormat.key?.id || 'no-id'} from ${chatId} to ${deliveredToClients} client(s)`);
+  } catch (error) {
+    console.error('[WPPConnect] Error handling message:', error);
+  }
+}
+
+function convertWPPMessageToBaileys(wppMessage) {
+  try {
+    logMediaDebug('[WS] Converting WPP message:', {
+      type: wppMessage.type,
+      hasContent: !!wppMessage.content,
+      hasBody: !!wppMessage.body,
+      hasUrl: !!wppMessage.url,
+      mimetype: wppMessage.mimetype
+    });
+
+    // Normalize Wid objects to serialized strings
+    const serializeWid = (wid) => {
+      if (!wid) return wid;
+      if (typeof wid === 'string') return wid;
+      return wid._serialized || wid.id || String(wid);
+    };
+
+    // Extract sender info from WPPConnect message
+    const senderId = serializeWid(wppMessage.sender?.id || wppMessage.author || wppMessage.from);
+    const senderName = wppMessage.sender?.pushname || wppMessage.sender?.name || wppMessage.notifyName || 'Unknown';
+    const chatIdStr = serializeWid(wppMessage.chatId || wppMessage.from);
+
+    // Detect if message is from the bot itself
+    // 1. Check explicit fromMe flag
+    // 2. Check if message ID starts with "true_" (WhatsApp convention for own messages)
+    // 3. Check if it's a status broadcast message (ignore those)
+    const messageId = wppMessage.id || '';
+    const isStatusBroadcast = chatIdStr.includes('status@broadcast');
+    const fromMe = wppMessage.fromMe === true || messageId.startsWith('true_');
+
+    // WPPConnect message structure -> Baileys structure
+    const baileysMsg = {
+      key: {
+        remoteJid: chatIdStr,
+        fromMe: fromMe,
+        id: wppMessage.id,
+        participant: senderId
+      },
+      messageTimestamp: wppMessage.timestamp || Math.floor(Date.now() / 1000),
+      pushName: senderName,
+      from: chatIdStr,
+      fromMe: fromMe,  // Add fromMe at root level for bot to check
+      // Add sender object for logging compatibility
+      sender: wppMessage.sender || {
+        id: senderId,
+        pushname: senderName,
+        name: senderName
+      },
+      // Add author for group messages
+      author: senderId,
+      // Add body/caption fields for direct access (used by logging and commands)
+      body: wppMessage.content || wppMessage.body || '',
+      caption: wppMessage.caption || '',
+      type: wppMessage.type || 'chat',
+      isGroupMsg: wppMessage.isGroupMsg || false,
+      // Quoted message support
+      hasQuotedMsg: !!(wppMessage.quotedMsgObj || wppMessage.quotedMsg),
+      quotedMsgId: wppMessage.quotedMsgObj?.id || wppMessage.quotedMsg?.id || null,
+      quotedMsg: wppMessage.quotedMsgObj || wppMessage.quotedMsg || null,
+      message: {}
+    };
+
+    // Handle different message types
+    // IMPORTANT: Check specific media types FIRST, before checking for chat/content
+    // because media messages can also have content field (base64 data)
+    if (wppMessage.type === 'image') {
+      logMediaDebug('[WS] Processing as IMAGE message');
+      baileysMsg.isMedia = true;
+      baileysMsg.message.imageMessage = {
+        caption: wppMessage.caption || '',
+        mimetype: wppMessage.mimetype || 'image/jpeg',
+        url: wppMessage.url || wppMessage.body
+      };
+    } else if (wppMessage.type === 'video') {
+      logMediaDebug('[WS] Processing as VIDEO message');
+      baileysMsg.isMedia = true;
+      baileysMsg.message.videoMessage = {
+        caption: wppMessage.caption || '',
+        mimetype: wppMessage.mimetype || 'video/mp4',
+        url: wppMessage.url || wppMessage.body
+      };
+
+      // IMPORTANT: Preserve WhatsApp's isGif flag for proper GIF handling
+      // WhatsApp stores GIFs as MP4 video but marks them with isGif=true
+      // The bot will use this flag to force GIF-like processing (animated sticker)
+      if (wppMessage.isGif === true) {
+        logMediaDebug('[WS] Detected WhatsApp GIF (isGif=true), marking for GIF-like processing');
+        baileysMsg.isWhatsAppGif = true;
+      }
+    } else if (wppMessage.type === 'audio' || wppMessage.type === 'ptt') {
+      baileysMsg.isMedia = true;
+      baileysMsg.mimetype = wppMessage.mimetype || 'audio/ogg; codecs=opus';
+      baileysMsg.message.audioMessage = {
+        mimetype: wppMessage.mimetype || 'audio/ogg; codecs=opus',
+        url: wppMessage.url || wppMessage.body,
+        ptt: wppMessage.type === 'ptt'
+      };
+    } else if (wppMessage.type === 'sticker') {
+      baileysMsg.isMedia = true;
+      baileysMsg.message.stickerMessage = {
+        mimetype: 'image/webp',
+        url: wppMessage.url || wppMessage.body
+      };
+    } else if (wppMessage.type === 'document') {
+      baileysMsg.isMedia = true;
+      baileysMsg.message.documentMessage = {
+        mimetype: wppMessage.mimetype || 'application/octet-stream',
+        fileName: wppMessage.filename || 'document',
+        url: wppMessage.url || wppMessage.body
+      };
+    } else if (wppMessage.type === 'chat' || wppMessage.content) {
+      logMediaDebug('[WS] Processing as CHAT message');
+      baileysMsg.message.conversation = wppMessage.content || wppMessage.body || '';
+    }
+
+    return baileysMsg;
+  } catch (error) {
+    console.error('[WPPConnect] Error converting message:', error);
+    return null;
+  }
+}
+
+function updateStoreFromMessage(message) {
+  try {
+    const chatId = message.key?.remoteJid;
+    if (!chatId) return;
+
+    // Update contact info if available
+    if (message.pushName) {
+      setBoundedMapEntry(store.contacts, chatId, {
+        id: chatId,
+        name: message.pushName
+      }, STORE_MAX_ENTRIES);
+    }
+
+    // Update chat info
+    setBoundedMapEntry(store.chats, chatId, {
+      id: chatId,
+      conversationTimestamp: message.messageTimestamp,
+      name: message.pushName || chatId
+    }, STORE_MAX_ENTRIES);
+  } catch (error) {
+    console.error('[WPPConnect] Error updating store:', error);
+  }
+}
+
+function summarizeReaction(reaction) {
+  return {
+    id: reaction?.id?._serialized || reaction?.id || null,
+    msgId: reaction?.msgId?._serialized || reaction?.msgId || null,
+    reactionText: reaction?.reactionText || '',
+    orphan: reaction?.orphan === true,
+    timestamp: reaction?.timestamp || null
+  };
+}
+
+function summarizeIncomingMessage(message) {
+  return {
+    id: message?.key?.id,
+    type: message?.type,
+    from: message?.from,
+    isMedia: message?.isMedia === true,
+    bodyPreview: message?.body?.substring(0, 80) || ''
+  };
+}
+
+function broadcastToAllClients(payload) {
+  for (const [token, clients] of clientsByToken.entries()) {
+    for (const clientInfo of clients) {
+      const { ws } = clientInfo;
+      if (ws.readyState === 1) {
+        ws.send(JSON.stringify(payload));
+      } else if (ws.readyState >= 2) {
+        clients.delete(clientInfo);
+      }
+    }
+    if (clients.size === 0) clientsByToken.delete(token);
+  }
+}
+
+// ==========================
+// WebSocket Server
+// ==========================
+
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('WPPConnect WebSocket Server\n');
+});
+
+const wss = new WebSocketServer({ server });
+
+function releaseTypingForClient(clientInfo) {
+  if (!clientInfo?.typingChats || clientInfo.typingChats.size === 0) {
+    return;
+  }
+
+  for (const chatId of clientInfo.typingChats) {
+    const session = activeTypingSessions.get(chatId);
+    if (!session) continue;
+
+    session.owners.delete(clientInfo);
+    if (session.owners.size === 0) {
+      clearInterval(session.interval);
+      activeTypingSessions.delete(chatId);
+      if (wppReady && wppClient) {
+        wppClient.stopTyping(chatId).catch((e) => {
+          console.warn('[WS] simulateTyping stop on disconnect failed:', e?.message);
+        });
+      }
+    }
+  }
+
+  clientInfo.typingChats.clear();
+}
+
+wss.on('connection', (ws) => {
+  logVerbose('[WS] New WebSocket connection attempt');
+
+  let registered = false;
+  let clientToken = null;
+  let allowedChats = new Set();
+  let clientInfo = null;
+
+  ws.on('message', async (data) => {
+    beginTrackedRequest();
+    try {
+      const msg = JSON.parse(data.toString());
+
+      // Registration
+      if (msg.type === 'register') {
+        const { token, chats } = msg;
+
+        if (!token) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Token required' }));
+          ws.close();
+          return;
+        }
+
+        if (ALLOWED_TOKENS.length > 0 && !ALLOWED_TOKENS.includes(token)) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Invalid token' }));
+          ws.close();
+          return;
+        }
+
+        clientToken = token;
+        allowedChats = new Set(chats || ['*']);
+        clientInfo = { ws, allowedChats, typingChats: new Set() };
+        lastClientRegisteredAt = Date.now();
+
+        if (!clientsByToken.has(token)) {
+          clientsByToken.set(token, new Set());
+        }
+        clientsByToken.get(token).add(clientInfo);
+
+        registered = true;
+        console.log(`[WS] Client registered with token "${token}" for ${allowedChats.size} chat rule(s). Active clients=${getTrackedClientCount()}`);
+
+        ws.send(JSON.stringify({
+          type: 'registered',
+          ok: true,  // waAdapter expects 'ok: true', not 'ready'
+          ready: wppReady,
+          session: SESSION_NAME
+        }));
+
+        // Send current connection status
+        ws.send(JSON.stringify({
+          type: 'connection.update',
+          data: { connection: wppReady ? 'open' : 'connecting' }
+        }));
+
+        return;
+      }
+
+      if (!registered) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Not registered' }));
+        return;
+      }
+
+      // Handle send commands
+      logVerbose('[WS] Received message type:', msg.type);
+      if (msg.type === 'sendMessage' || msg.type === 'sendText') {
+        logVerbose('[WS] Routing to handleSendMessage');
+        // Convert sendText format to sendMessage format
+        if (msg.type === 'sendText') {
+          msg.to = msg.chatId;
+          msg.text = msg.text;
+        }
+        await handleSendMessage(ws, msg, allowedChats);
+      } else if (msg.type === 'sendMedia') {
+        await handleSendMedia(ws, msg, allowedChats);
+      } else if (msg.type === 'sendRawWebpAsSticker') {
+        await handleSendRawWebpAsSticker(ws, msg, allowedChats);
+      } else if (msg.type === 'sendImageAsSticker') {
+        await handleSendImageAsSticker(ws, msg, allowedChats);
+      } else if (msg.type === 'sendImageAsStickerGif') {
+        await handleSendImageAsStickerGif(ws, msg, allowedChats);
+      } else if (msg.type === 'sendMp4AsSticker') {
+        await handleSendMp4AsSticker(ws, msg, allowedChats);
+      } else if (msg.type === 'sendFile') {
+        await handleSendFile(ws, msg, allowedChats);
+      } else if (msg.type === 'getContacts') {
+        await handleGetContacts(ws, msg);
+      } else if (msg.type === 'getChats') {
+        await handleGetChats(ws, msg);
+      } else if (msg.type === 'listChats') {
+        await handleGetChats(ws, msg);
+      } else if (msg.type === 'getAllGroupsMetadata') {
+        await handleGetAllGroupsMetadata(ws, msg);
+      } else if (msg.type === 'downloadMedia') {
+        await handleDownloadMedia(ws, msg);
+      } else if (msg.type === 'simulateTyping') {
+        await handleSimulateTyping(ws, msg, clientInfo);
+      } else if (msg.type === 'getQuotedMessage') {
+        await handleGetQuotedMessage(ws, msg);
+      } else if (msg.type === 'getContact') {
+        await handleGetContact(ws, msg);
+      } else if (msg.type === 'groupParticipantsUpdate') {
+        await handleGroupParticipantsUpdate(ws, msg);
+      } else if (msg.type === 'sendReactionToMessage') {
+        await handleSendReactionToMessage(ws, msg);
+      }
+
+    } catch (err) {
+      console.error('[WS] Error processing message:', err);
+      ws.send(JSON.stringify({ type: 'error', message: err.message }));
+    } finally {
+      await endTrackedRequest();
+    }
+  });
+
+  ws.on('close', () => {
+    if (registered && clientToken) {
+      const clients = clientsByToken.get(clientToken);
+      if (clients) {
+        if (clientInfo) {
+          releaseTypingForClient(clientInfo);
+          clients.delete(clientInfo);
+        }
+        if (clients.size === 0) {
+          clientsByToken.delete(clientToken);
+        }
+      }
+      logVerbose(`[WS] Client disconnected (token: ${clientToken})`);
+    }
+  });
+
+  ws.on('error', (err) => {
+    console.error('[WS] WebSocket error:', err);
+  });
+});
+
+async function handleSendMessage(ws, msg, allowedChats) {
+  const { to, text, options } = msg;
+  logVerbose('[WS] handleSendMessage called:', { to, textLength: text?.length, wppReady, hasClient: !!wppClient });
+
+  if (!wppReady || !wppClient) {
+    console.log('[WS] Rejecting send - WhatsApp not ready');
+    ws.send(JSON.stringify({ type: 'error', message: 'WhatsApp not ready' }));
+    return;
+  }
+
+  // Check authorization
+  if (!allowedChats.has('*') && !allowedChats.has(to)) {
+    ws.send(JSON.stringify({ type: 'error', message: 'Not authorized for this chat' }));
+    return;
+  }
+
+  try {
+    const result = await sendLimiter.run(() => wppClient.sendText(to, text));
+
+    ws.send(JSON.stringify({
+      type: 'messageSent',
+      requestId: msg.requestId,
+      messageId: result.id,
+      to: to
+    }));
+  } catch (error) {
+    console.error('[WS] Error sending message:', error);
+    ws.send(JSON.stringify({
+      type: 'error',
+      requestId: msg.requestId,
+      message: error.message
+    }));
+  }
+}
+
+async function handleSendMedia(ws, msg, allowedChats) {
+  const { to, media, options } = msg;
+
+  if (!wppReady || !wppClient) {
+    ws.send(JSON.stringify({ type: 'error', message: 'WhatsApp not ready' }));
+    return;
+  }
+
+  if (!allowedChats.has('*') && !allowedChats.has(to)) {
+    ws.send(JSON.stringify({ type: 'error', message: 'Not authorized for this chat' }));
+    return;
+  }
+
+  try {
+    const result = await sendLimiter.run(async () => {
+      if (options?.isSticker) {
+        return wppClient.sendImageAsSticker(to, media);
+      }
+      if (options?.mimetype?.startsWith('image/')) {
+        return wppClient.sendImage(to, media, options?.caption || '');
+      }
+      if (options?.mimetype?.startsWith('video/')) {
+        return wppClient.sendVideoAsGif(to, media, options?.caption || '');
+      }
+      if (options?.mimetype?.startsWith('audio/')) {
+        return wppClient.sendVoice(to, media);
+      }
+      return wppClient.sendFile(to, media, options?.fileName || 'file', options?.caption || '');
+    });
+
+    ws.send(JSON.stringify({
+      type: 'mediaSent',
+      requestId: msg.requestId,
+      messageId: result.id,
+      to: to
+    }));
+  } catch (error) {
+    console.error('[WS] Error sending media:', error);
+    ws.send(JSON.stringify({
+      type: 'error',
+      requestId: msg.requestId,
+      message: error.message
+    }));
+  }
+}
+
+async function handleSendRawWebpAsSticker(ws, msg, allowedChats) {
+  const { chatId, dataUrl, options = {} } = msg;
+
+  if (!wppReady || !wppClient) {
+    ws.send(JSON.stringify({ type: 'error', message: 'WhatsApp not ready' }));
+    return;
+  }
+
+  if (!allowedChats.has('*') && !allowedChats.has(chatId)) {
+    ws.send(JSON.stringify({ type: 'error', message: 'Not authorized for this chat' }));
+    return;
+  }
+
+  try {
+    logVerbose('[WS] Sending raw webp as sticker to:', chatId, 'requestId:', msg.requestId, 'animated:', options.animated);
+    // WPPConnect expects base64 data without the data:image/webp;base64, prefix
+    let base64Data = dataUrl;
+    if (dataUrl.startsWith('data:')) {
+      base64Data = dataUrl.split(',')[1];
+    }
+
+    // WPPConnect usa funções diferentes para stickers estáticos e animados
+    const result = await sendLimiter.run(async () => {
+      if (options.animated) {
+        logVerbose('[WS] Using sendImageAsStickerGif for animated sticker');
+        return wppClient.sendImageAsStickerGif(chatId, `data:image/webp;base64,${base64Data}`, options);
+      }
+      logVerbose('[WS] Using sendImageAsSticker for static sticker');
+      return wppClient.sendImageAsSticker(chatId, `data:image/webp;base64,${base64Data}`, options);
+    });
+
+    logVerbose('[WS] Sticker sent successfully, messageId:', result.id, 'responding with requestId:', msg.requestId);
+    ws.send(JSON.stringify({
+      type: 'messageSent',
+      requestId: msg.requestId,
+      messageId: result.id || result,
+      to: chatId
+    }));
+  } catch (error) {
+    console.error('[WS] Error sending raw webp sticker:', error);
+    ws.send(JSON.stringify({
+      type: 'error',
+      requestId: msg.requestId,
+      message: error.message
+    }));
+  }
+}
+
+async function handleSendImageAsSticker(ws, msg, allowedChats) {
+  const { chatId, filePath, options = {} } = msg;
+
+  if (!wppReady || !wppClient) {
+    ws.send(JSON.stringify({ type: 'error', message: 'WhatsApp not ready' }));
+    return;
+  }
+
+  if (!allowedChats.has('*') && !allowedChats.has(chatId)) {
+    ws.send(JSON.stringify({ type: 'error', message: 'Not authorized for this chat' }));
+    return;
+  }
+
+  try {
+    logVerbose('[WS] Sending image as sticker:', filePath, 'animated:', options.animated);
+
+    const result = await sendLimiter.run(async () => {
+      if (options.animated) {
+        logVerbose('[WS] Using sendImageAsStickerGif for animated sticker');
+        return wppClient.sendImageAsStickerGif(chatId, filePath, options);
+      }
+      logVerbose('[WS] Using sendImageAsSticker for static sticker');
+      return wppClient.sendImageAsSticker(chatId, filePath, options);
+    });
+
+    logVerbose('[WS] Image sticker sent successfully, messageId:', result.id);
+    ws.send(JSON.stringify({
+      type: 'messageSent',
+      requestId: msg.requestId,
+      messageId: result.id || result,
+      to: chatId
+    }));
+  } catch (error) {
+    console.error('[WS] Error sending image as sticker:', error);
+    ws.send(JSON.stringify({
+      type: 'error',
+      requestId: msg.requestId,
+      message: error.message
+    }));
+  }
+}
+
+async function handleSendImageAsStickerGif(ws, msg, allowedChats) {
+  const { chatId, filePath, options = {} } = msg;
+
+  if (!wppReady || !wppClient) {
+    ws.send(JSON.stringify({ type: 'error', message: 'WhatsApp not ready' }));
+    return;
+  }
+
+  if (!allowedChats.has('*') && !allowedChats.has(chatId)) {
+    ws.send(JSON.stringify({ type: 'error', message: 'Not authorized for this chat' }));
+    return;
+  }
+
+  try {
+    logVerbose('[WS] Sending GIF as sticker:', filePath);
+    const result = await sendLimiter.run(() => wppClient.sendImageAsStickerGif(chatId, filePath, options));
+
+    logVerbose('[WS] GIF sticker sent successfully, messageId:', result.id);
+    ws.send(JSON.stringify({
+      type: 'messageSent',
+      requestId: msg.requestId,
+      messageId: result.id || result,
+      to: chatId
+    }));
+  } catch (error) {
+    console.error('[WS] Error sending GIF as sticker:', error);
+    ws.send(JSON.stringify({
+      type: 'error',
+      requestId: msg.requestId,
+      message: error.message
+    }));
+  }
+}
+
+async function handleSendMp4AsSticker(ws, msg, allowedChats) {
+  const { chatId, filePath, options = {} } = msg;
+
+  if (!wppReady || !wppClient) {
+    ws.send(JSON.stringify({ type: 'error', message: 'WhatsApp not ready' }));
+    return;
+  }
+
+  if (!allowedChats.has('*') && !allowedChats.has(chatId)) {
+    ws.send(JSON.stringify({ type: 'error', message: 'Not authorized for this chat' }));
+    return;
+  }
+
+  try {
+    logVerbose('[WS] Sending MP4 as sticker:', filePath);
+    const result = await sendLimiter.run(() => wppClient.sendVideoAsGif(chatId, filePath, options));
+
+    logVerbose('[WS] MP4 sticker sent successfully, messageId:', result.id);
+    ws.send(JSON.stringify({
+      type: 'messageSent',
+      requestId: msg.requestId,
+      messageId: result.id || result,
+      to: chatId
+    }));
+  } catch (error) {
+    console.error('[WS] Error sending MP4 as sticker:', error);
+    ws.send(JSON.stringify({
+      type: 'error',
+      requestId: msg.requestId,
+      message: error.message
+    }));
+  }
+}
+
+async function handleSendFile(ws, msg, allowedChats) {
+  const { chatId, filePath, filename, fileName, caption, quotedMessageId, ptt, asDocument, mimetype, options = {} } = msg;
+  const effectiveFilename = filename || fileName;
+  const effectiveCaption = caption || options?.caption || '';
+  const effectiveMimetype = mimetype || options?.mimetype;
+  const isPtt = ptt === true || options?.ptt === true;
+  const isDocument = asDocument === true || options?.asDocument === true;
+
+  if (!wppReady || !wppClient) {
+    ws.send(JSON.stringify({ type: 'error', message: 'WhatsApp not ready' }));
+    return;
+  }
+
+  if (!allowedChats.has('*') && !allowedChats.has(chatId)) {
+    ws.send(JSON.stringify({ type: 'error', message: 'Not authorized for this chat' }));
+    return;
+  }
+
+  try {
+    let result;
+
+    if (isPtt) {
+      // Use sendPttFromBase64 — Node reads the file so the browser doesn't need to,
+      // avoiding Puppeteer "Promise was collected" GC errors on large audio files.
+      const audioBase64 = fs.readFileSync(filePath).toString('base64');
+      result = await sendLimiter.run(() =>
+        wppClient.sendPttFromBase64(chatId, audioBase64, effectiveFilename || 'audio.ogg', effectiveCaption || '', quotedMessageId || undefined)
+      );
+    } else {
+      logVerbose('[WS] Sending file:', filePath, { isDocument, mimetype: effectiveMimetype });
+      result = await sendLimiter.run(() => wppClient.sendFile(
+        chatId,
+        filePath,
+        effectiveFilename || 'file',
+        effectiveCaption,
+        quotedMessageId || undefined,
+        false,
+        { ...(effectiveMimetype ? { mimetype: effectiveMimetype } : {}), ...(isDocument ? { type: 'document' } : {}) }
+      ));
+    }
+
+    logVerbose('[WS] File sent successfully, messageId:', result?.id);
+    ws.send(JSON.stringify({
+      type: 'messageSent',
+      requestId: msg.requestId,
+      messageId: result?.id || result,
+      to: chatId
+    }));
+  } catch (error) {
+    console.error('[WS] Error sending file:', error);
+    ws.send(JSON.stringify({
+      type: 'error',
+      requestId: msg.requestId,
+      message: error.message
+    }));
+  }
+}
+
+async function handleGetContacts(ws, msg) {
+  try {
+    if (!wppReady || !wppClient) {
+      ws.send(JSON.stringify({
+        type: 'error',
+        requestId: msg?.requestId,
+        message: 'WhatsApp not ready'
+      }));
+      return;
+    }
+
+    const contacts = await wppClient.getAllContacts();
+
+    ws.send(JSON.stringify({
+      type: 'contacts',
+      requestId: msg?.requestId,
+      data: contacts
+    }));
+  } catch (error) {
+    console.error('[WS] Error getting contacts:', error);
+    ws.send(JSON.stringify({
+      type: 'error',
+      requestId: msg?.requestId,
+      message: error.message
+    }));
+  }
+}
+
+async function handleGetChats(ws, msg) {
+  try {
+    if (!wppReady || !wppClient) {
+      ws.send(JSON.stringify({
+        type: 'error',
+        requestId: msg?.requestId,
+        message: 'WhatsApp not ready'
+      }));
+      return;
+    }
+
+    const rawChats = await wppClient.getAllChats();
+
+    const serializeWid = (wid) => {
+      if (!wid) return wid;
+      if (typeof wid === 'string') return wid;
+      return wid._serialized || wid.id || String(wid);
+    };
+    const chats = (rawChats || []).map((c) => ({
+      ...c,
+      id: serializeWid(c.id),
+      name: c.name || c.subject || ''
+    }));
+
+    ws.send(JSON.stringify({
+      type: 'chats',
+      requestId: msg?.requestId,
+      chats: chats
+    }));
+  } catch (error) {
+    console.error('[WS] Error getting chats:', error);
+    ws.send(JSON.stringify({
+      type: 'error',
+      requestId: msg?.requestId,
+      message: error.message
+    }));
+  }
+}
+
+async function handleGetAllGroupsMetadata(ws, msg) {
+  try {
+    if (!wppReady || !wppClient) {
+      ws.send(JSON.stringify({
+        type: 'error',
+        requestId: msg?.requestId,
+        message: 'WhatsApp not ready'
+      }));
+      return;
+    }
+
+    const rawGroups = await wppClient.getAllGroups();
+
+    // Normalize Wid objects to serialized strings so clients don't have to handle Wid
+    const serializeWid = (wid) => {
+      if (!wid) return wid;
+      if (typeof wid === 'string') return wid;
+      return wid._serialized || wid.id || String(wid);
+    };
+    const groups = (rawGroups || []).map((g) => ({
+      ...g,
+      id: serializeWid(g.id),
+      participants: Array.isArray(g.groupMetadata?.participants)
+        ? g.groupMetadata.participants.map((p) => ({ ...p, id: serializeWid(p.id) }))
+        : (Array.isArray(g.participants) ? g.participants.map((p) => ({ ...p, id: serializeWid(p.id) })) : []),
+      subject: g.groupMetadata?.subject || g.subject || g.name || ''
+    }));
+
+    ws.send(JSON.stringify({
+      type: 'groupMetadata',
+      requestId: msg?.requestId,
+      groups: groups
+    }));
+  } catch (error) {
+    console.error('[WS] Error getting group metadata:', error);
+    ws.send(JSON.stringify({
+      type: 'error',
+      requestId: msg?.requestId,
+      message: error.message
+    }));
+  }
+}
+
+async function handleDownloadMedia(ws, msg) {
+  try {
+    const { messageId } = msg;
+
+    logMediaDebug('[WS] handleDownloadMedia called for message:', messageId);
+
+    if (!wppReady || !wppClient) {
+      ws.send(JSON.stringify({
+        type: 'error',
+        requestId: msg?.requestId,
+        action: 'downloadMedia',
+        messageId: messageId,
+        error: 'WhatsApp not ready'
+      }));
+      return;
+    }
+
+    if (!messageId) {
+      ws.send(JSON.stringify({
+        type: 'error',
+        requestId: msg?.requestId,
+        action: 'downloadMedia',
+        error: 'messageId required'
+      }));
+      return;
+    }
+
+    const cachedMedia = readCachedMedia(messageId);
+    if (cachedMedia?.mimetype && cachedMedia?.dataUrl) {
+      logMediaDebug('[WS] Serving media from disk cache for message:', messageId);
+      ws.send(JSON.stringify({
+        type: 'media',
+        requestId: msg?.requestId,
+        messageId: messageId,
+        mimetype: cachedMedia.mimetype,
+        dataUrl: cachedMedia.dataUrl
+      }));
+      return;
+    }
+
+    // WPPConnect: Download and decrypt media from message
+    // First, we need to find the message in cache or fetch it
+    const cachedMsg = messageCache.get(messageId);
+
+    if (!cachedMsg) {
+      console.error('[WS] Message not found in cache:', messageId);
+      ws.send(JSON.stringify({
+        type: 'error',
+        requestId: msg?.requestId,
+        action: 'downloadMedia',
+        messageId: messageId,
+        error: 'Message not found in cache'
+      }));
+      return;
+    }
+
+    logMediaDebug('[WS] Found message in cache, downloading media...');
+
+    // Get the original WPPConnect message (not Baileys format)
+    const wppMessage = cachedMsg.wppOriginal;
+
+    if (!wppMessage) {
+      console.error('[WS] Original WPP message not found in cache');
+      ws.send(JSON.stringify({
+        type: 'error',
+        requestId: msg?.requestId,
+        action: 'downloadMedia',
+        messageId: messageId,
+        error: 'Original message not found'
+      }));
+      return;
+    }
+
+    logMediaDebug('[WS] Original WPP message details:', {
+      type: wppMessage.type,
+      mimetype: wppMessage.mimetype,
+      hasBody: !!wppMessage.body,
+      hasMediaKey: !!wppMessage.mediaKey,
+      isGif: wppMessage.isGif,
+      // Additional fields for debugging
+      hasUrl: !!wppMessage.url,
+      hasClientUrl: !!wppMessage.clientUrl,
+      hasDirectPath: !!wppMessage.directPath,
+      hasThumbnail: !!wppMessage.thumbnail,
+      bodyLength: wppMessage.body?.length || 0
+    });
+
+    // WPPConnect: Use custom downloader for GIFs and stickers to get full media instead of thumbnail
+    let mediaData;
+
+    const needsEncryptedDownload = (wppMessage.isGif || wppMessage.type === 'sticker')
+      && wppMessage.directPath && wppMessage.mediaKey;
+
+    mediaData = await downloadLimiter.run(async () => {
+      if (needsEncryptedDownload) {
+      const mediaLabel = wppMessage.isGif ? 'GIF' : 'sticker';
+        logMediaDebug(`[WS] ${mediaLabel} detected - using custom encrypted media downloader...`);
+        try {
+          const { downloadEncryptedMedia } = require('./utils/wppGifDownloader');
+          const decryptedBuffer = await Promise.race([
+            downloadEncryptedMedia(wppMessage),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('Download timeout after 40s')), 40000)
+            )
+          ]);
+
+          const downloadedData = decryptedBuffer.toString('base64');
+          logMediaDebug(`[WS] Custom download successful: ${downloadedData.length} chars`);
+          return downloadedData;
+        } catch (customErr) {
+          console.warn(`[WS] Custom ${wppMessage.isGif ? 'GIF' : 'sticker'} download failed:`, customErr.message);
+          console.warn('[WS] Falling back to standard downloadMedia...');
+          return wppClient.downloadMedia(wppMessage);
+        }
+      }
+
+      logMediaDebug('[WS] Downloading media using standard downloadMedia...');
+      return Promise.race([
+        wppClient.downloadMedia(wppMessage),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Download timeout after 40s')), 40000)
+        )
+      ]);
+    });
+
+    logMediaDebug('[WS] Media downloaded:', {
+      size: mediaData?.length || 0,
+      type: typeof mediaData,
+      mimetype: mediaData?.mimetype,
+      hasData: !!mediaData?.data
+    });
+
+    // Detect if we got JPEG thumbnail instead of MP4 video for GIFs
+    if (wppMessage.isGif && typeof mediaData === 'string' && mediaData.length > 0) {
+      const header = mediaData.substring(0, 20);
+      const isJPEG = header.startsWith('/9j/') || header.startsWith('iVBOR');
+      if (isJPEG) {
+        console.warn('[WS] downloadMedia returned thumbnail for GIF instead of MP4');
+        logMediaDebug('[WS] GIF thumbnail header:', header);
+      }
+    }
+
+    // WPPConnect downloadMedia may return a base64 string, a data URL, or an object.
+    // Normalize to raw base64 to avoid double-wrapping when we build dataUrl below.
+    let base64Data;
+    let mimetypeFromData = null;
+    if (typeof mediaData === 'string') {
+      if (mediaData.startsWith('data:')) {
+        // Already a data URL — extract mimetype and base64 payload
+        const commaIdx = mediaData.indexOf(',');
+        base64Data = commaIdx !== -1 ? mediaData.slice(commaIdx + 1) : mediaData;
+        const header = mediaData.slice(5, commaIdx !== -1 ? commaIdx : undefined);
+        mimetypeFromData = header ? header.split(';')[0].trim() : null;
+      } else {
+        base64Data = mediaData;
+      }
+    } else {
+      base64Data = mediaData?.data || '';
+      mimetypeFromData = mediaData?.mimetype || null;
+    }
+
+    // Extract mimetype from multiple sources
+    let mimetype = mimetypeFromData || wppMessage?.mimetype;
+
+    // Fallback: get mimetype from Baileys message structure
+    if (!mimetype && cachedMsg.raw?.message) {
+      const msg = cachedMsg.raw.message;
+      mimetype = msg.videoMessage?.mimetype
+        || msg.imageMessage?.mimetype
+        || msg.audioMessage?.mimetype
+        || msg.documentMessage?.mimetype;
+    }
+
+    // Final fallback
+    mimetype = mimetype || 'application/octet-stream';
+
+    // IMPORTANT: WhatsApp stores GIFs as MP4 video internally
+    // We keep the video/mp4 mimetype but set isWhatsAppGif flag in the message
+    // This allows the bot to use ffmpeg (not Sharp) to process the MP4 as an animated sticker
+    if (wppMessage.isGif === true) {
+      logMediaDebug('[WS] WhatsApp GIF detected (isGif=true) - keeping mimetype as video/mp4 for proper processing');
+    }
+
+    logMediaDebug('[WS] Sending media response with mimetype:', mimetype);
+
+    const dataUrl = `data:${mimetype};base64,${base64Data}`;
+
+    writeCachedMedia(messageId, {
+      mimetype,
+      dataUrl
+    });
+
+    ws.send(JSON.stringify({
+      type: 'media',
+      requestId: msg?.requestId,
+      messageId: messageId,
+      mimetype: mimetype,
+      dataUrl: dataUrl
+    }));
+
+  } catch (error) {
+    console.error('[WS] Error downloading media:', error);
+    ws.send(JSON.stringify({
+      type: 'error',
+      requestId: msg?.requestId,
+      action: 'downloadMedia',
+      messageId: msg?.messageId,
+      error: error.message
+    }));
+  }
+}
+
+async function handleSendReactionToMessage(ws, msg) {
+  const { messageId, chatId, emoji } = msg;
+  if (!messageId || !emoji) {
+    ws.send(JSON.stringify({ type: 'error', requestId: msg.requestId, error: 'messageId and emoji required' }));
+    return;
+  }
+  if (!wppReady || !wppClient) {
+    ws.send(JSON.stringify({ type: 'error', requestId: msg.requestId, error: 'WhatsApp not ready' }));
+    return;
+  }
+  try {
+    await wppClient.sendReactionToMessage(messageId, emoji);
+    ws.send(JSON.stringify({ type: 'ack', requestId: msg.requestId }));
+  } catch (error) {
+    console.error('[WS] Error sending reaction:', error);
+    ws.send(JSON.stringify({ type: 'error', requestId: msg.requestId, error: error.message }));
+  }
+}
+
+async function handleGetQuotedMessage(ws, msg) {
+  const { messageId } = msg;
+  if (!messageId) {
+    ws.send(JSON.stringify({ type: 'error', action: 'getQuotedMessage', messageId, error: 'messageId required' }));
+    return;
+  }
+
+  try {
+    // Check cache first
+    const cached = messageCache.get(messageId);
+    if (cached?.raw) {
+      const quotedId = cached.raw.quotedMsgId;
+      if (quotedId) {
+        const quotedCached = messageCache.get(quotedId);
+        if (quotedCached?.raw) {
+          ws.send(JSON.stringify({ type: 'quotedMessage', messageId, data: quotedCached.raw }));
+          return;
+        }
+      }
+    }
+
+    // Fallback: fetch via WPPConnect
+    if (!wppReady || !wppClient) throw new Error('WhatsApp not ready');
+    const quotedMsg = await wppClient.getMessageById(messageId);
+    if (!quotedMsg) throw new Error('quoted_not_found');
+    const converted = convertWPPMessageToBaileys(quotedMsg);
+    ws.send(JSON.stringify({ type: 'quotedMessage', messageId, data: converted }));
+  } catch (error) {
+    ws.send(JSON.stringify({ type: 'error', action: 'getQuotedMessage', messageId, error: error.message }));
+  }
+}
+
+async function handleGetContact(ws, msg) {
+  const { jid } = msg;
+  if (!jid) {
+    ws.send(JSON.stringify({ type: 'error', action: 'getContact', jid, error: 'jid required' }));
+    return;
+  }
+
+  try {
+    if (!wppReady || !wppClient) throw new Error('WhatsApp not ready');
+    const contact = await wppClient.getContact(jid);
+    ws.send(JSON.stringify({ type: 'contact', jid, data: contact }));
+  } catch (error) {
+    ws.send(JSON.stringify({ type: 'error', action: 'getContact', jid, error: error.message }));
+  }
+}
+
+async function handleGroupParticipantsUpdate(ws, msg) {
+  const { groupId, participants, action } = msg;
+  if (!groupId || !participants || !action) {
+    ws.send(JSON.stringify({ type: 'error', requestId: msg.requestId, error: 'groupId, participants, and action required' }));
+    return;
+  }
+
+  if (!wppReady || !wppClient) {
+    ws.send(JSON.stringify({ type: 'error', requestId: msg.requestId, error: 'WhatsApp not ready' }));
+    return;
+  }
+
+  try {
+    let result;
+    if (action === 'add') {
+      result = await wppClient.addParticipant(groupId, participants);
+    } else if (action === 'remove') {
+      result = await wppClient.removeParticipant(groupId, participants);
+    } else if (action === 'promote') {
+      result = await wppClient.promoteParticipant(groupId, participants);
+    } else if (action === 'demote') {
+      result = await wppClient.demoteParticipant(groupId, participants);
+    } else {
+      throw new Error(`Unknown action: ${action}`);
+    }
+
+    ws.send(JSON.stringify({ type: 'ack', requestId: msg.requestId, result }));
+  } catch (error) {
+    console.error('[WS] Error updating group participants:', error);
+    ws.send(JSON.stringify({ type: 'error', requestId: msg.requestId, error: error.message }));
+  }
+}
+
+// Active typing sessions: chatId -> { interval, owners }
+const activeTypingSessions = new Map();
+
+async function handleSimulateTyping(ws, msg, clientInfo) {
+  const { chatId, on } = msg;
+  if (!chatId) return;
+
+  if (!wppReady || !wppClient) return;
+
+  if (on) {
+    let session = activeTypingSessions.get(chatId);
+    if (!session) {
+      try {
+        await wppClient.startTyping(chatId);
+      } catch (e) {
+        console.warn('[WS] simulateTyping start failed:', e?.message);
+      }
+      const interval = setInterval(async () => {
+        const currentSession = activeTypingSessions.get(chatId);
+        if (!currentSession || currentSession.owners.size === 0) return;
+        try {
+          await wppClient.startTyping(chatId);
+        } catch (e) {
+          console.warn('[WS] simulateTyping renew failed:', e?.message);
+        }
+      }, 20000);
+      session = { interval, owners: new Set() };
+      activeTypingSessions.set(chatId, session);
+    }
+    if (clientInfo) {
+      session.owners.add(clientInfo);
+      clientInfo.typingChats.add(chatId);
+    }
+  } else {
+    const session = activeTypingSessions.get(chatId);
+    if (session && clientInfo) {
+      session.owners.delete(clientInfo);
+      clientInfo.typingChats.delete(chatId);
+    }
+
+    if (session && (!clientInfo || session.owners.size === 0)) {
+      clearInterval(session.interval);
+      activeTypingSessions.delete(chatId);
+    }
+
+    if (!session || !clientInfo || session.owners.size === 0) {
+      try {
+        await wppClient.stopTyping(chatId);
+      } catch (e) {
+        console.warn('[WS] simulateTyping stop failed:', e?.message);
+      }
+    }
+  }
+}
+
+// ==========================
+// Startup
+// ==========================
+
+async function start() {
+  console.log('╔═══════════════════════════════════════════════════════╗');
+  console.log('║       WPPConnect WebSocket Server for Sticker Bot    ║');
+  console.log('╚═══════════════════════════════════════════════════════╝');
+  console.log('');
+
+  startMaintenanceTimers();
+  cleanupMediaCache();
+  logMemoryStats('startup');
+
+  // Start WebSocket server
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`[WS] WPPConnect WebSocket Server listening on ws://0.0.0.0:${PORT}`);
+  });
+
+  // Initialize WPPConnect
+  await initWPPConnect();
+}
+
+// Handle process termination
+process.on('SIGINT', async () => {
+  console.log('\n[WS] Received SIGINT, shutting down gracefully...');
+  await shutdownAndExit('SIGINT', 0);
+});
+
+process.on('SIGTERM', async () => {
+  console.log('\n[WS] Received SIGTERM, shutting down gracefully...');
+  await shutdownAndExit('SIGTERM', 0);
+});
+
+// Start server
+start().catch(error => {
+  console.error('[WS] Fatal error:', error);
+  process.exit(1);
+});

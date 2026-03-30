@@ -3,7 +3,7 @@
  * Tests the complete flow from mediaProcessor.js
  */
 
-const { processIncomingMedia } = require('../../../bot/mediaProcessor');
+const { processIncomingMedia } = require('../../../src/bot/mediaProcessor');
 const fs = require('fs');
 const path = require('path');
 const { createTestDatabase, createTestTables, runTest, assert, assertEqual } = require('../helpers/testUtils');
@@ -104,7 +104,7 @@ const tests = [
   {
     name: 'Verify fallback error messages are user-friendly',
     fn: async () => {
-      const { processGif } = require('../../services/videoProcessor');
+      const { processGif } = require('../../src/services/videoProcessor');
       
       // Test with non-existent file
       const result1 = await processGif('/tmp/nonexistent.gif');
@@ -192,7 +192,7 @@ const tests = [
       console.error = (...args) => { logMessages.push(`ERROR: ${args.join(' ')}`); };
       
       try {
-        const { processGif } = require('../../services/videoProcessor');
+        const { processGif } = require('../../src/services/videoProcessor');
         cleanupTestFiles();
         const testGifPath = createTestGifFile();
         

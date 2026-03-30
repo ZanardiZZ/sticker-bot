@@ -1,6 +1,6 @@
 const assert = require('assert');
-const { getAiAnnotationsForGif, getAiAnnotations } = require('../../services/ai');
-const { generateResponseMessage } = require('../../utils/responseMessage');
+const { getAiAnnotationsForGif, getAiAnnotations } = require('../../src/services/ai');
+const { generateResponseMessage } = require('../../src/utils/responseMessage');
 
 console.log('🧪 Testing GIF detection and response message fix...\n');
 

@@ -23,8 +23,8 @@ module.exports = {
       env: {
         NODE_ENV: 'production'
       },
-      error_file: 'logs/baileys-error.log',
-      out_file: 'logs/baileys-out.log',
+      error_file: 'storage/logs/baileys-error.log',
+      out_file: 'storage/logs/baileys-out.log',
       time: true
     },
 
@@ -40,8 +40,8 @@ module.exports = {
       env: {
         NODE_ENV: 'production'
       },
-      error_file: 'logs/bot-error.log',
-      out_file: 'logs/bot-out.log',
+      error_file: 'storage/logs/bot-error.log',
+      out_file: 'storage/logs/bot-out.log',
       time: true,
       // Wait for baileys-bridge to start
       wait_ready: true,
@@ -51,7 +51,7 @@ module.exports = {
     // Web Interface
     {
       name: 'web-interface',
-      script: 'web/server.js',
+      script: 'src/web/server.js',
       instances: 1,
       exec_mode: 'fork',
       autorestart: true,
@@ -61,8 +61,8 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: process.env.PORT || 3000
       },
-      error_file: 'logs/web-error.log',
-      out_file: 'logs/web-out.log',
+      error_file: 'storage/logs/web-error.log',
+      out_file: 'storage/logs/web-out.log',
       time: true
     }
   ]

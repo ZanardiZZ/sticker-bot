@@ -39,7 +39,7 @@ class VideoTestClient {
 }
 
 // Import the fixed function
-const { sendMediaAsOriginal } = require('../../commands/media.js');
+const { sendMediaAsOriginal } = require('../../src/commands/media.js');
 
 async function testVideoSendingFix() {
   console.log('\n=== Testing Video Sending Fix ===');

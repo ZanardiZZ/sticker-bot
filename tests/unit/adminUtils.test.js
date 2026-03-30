@@ -6,7 +6,7 @@
 const { assert, assertEqual } = require('../helpers/testUtils');
 
 // Load the adminUtils module
-const { getEnvAdminSet } = require('../../utils/adminUtils');
+const { getEnvAdminSet } = require('../../src/utils/adminUtils');
 
 const tests = [
   {

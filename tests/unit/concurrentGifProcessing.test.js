@@ -5,7 +5,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { processGif } = require('../../services/videoProcessor');
+const { processGif } = require('../../src/services/videoProcessor');
 const { createTestDatabase, createTestTables, runTest, assert, assertEqual } = require('../helpers/testUtils');
 
 // Mock test data

@@ -3,7 +3,7 @@
  * and fallback to simulated reply format works correctly
  */
 
-const { safeReply } = require('../../utils/safeMessaging');
+const { safeReply } = require('../../src/utils/safeMessaging');
 
 // Mock client for testing different scenarios
 class MockWhatsAppClient {

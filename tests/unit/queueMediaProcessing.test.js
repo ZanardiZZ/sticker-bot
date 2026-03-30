@@ -3,7 +3,7 @@
  * Tests the fix for issue #116 - Queue system fails multiframe analysis
  */
 
-const MediaQueue = require('../../services/mediaQueue');
+const MediaQueue = require('../../src/services/mediaQueue');
 
 // Mock functions to simulate different error scenarios
 const mockJobs = {

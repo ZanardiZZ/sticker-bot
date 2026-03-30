@@ -17,13 +17,13 @@
 
 require('dotenv').config();
 const fs = require('fs');
-const { dbHandler } = require('../database/connection');
+const { dbHandler } = require('../src/database/connection');
 const {
   validateHashIntegrity,
   recalculateHashForMedia,
   isValidHash,
   isDegenerateHash
-} = require('../database/utils');
+} = require('../src/database/utils');
 
 async function main() {
   const args = process.argv.slice(2);

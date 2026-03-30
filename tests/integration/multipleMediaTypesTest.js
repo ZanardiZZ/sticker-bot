@@ -44,7 +44,7 @@ async function testMultipleMediaTypes() {
     };
     
     try {
-      const { sendMediaAsOriginal } = require('../../commands/media.js');
+      const { sendMediaAsOriginal } = require('../../src/commands/media.js');
       await sendMediaAsOriginal(mockClient, 'user@c.us', mockMedia);
     } catch (error) {
       console.error(`❌ Error: ${error.message}`);

@@ -162,7 +162,7 @@ async function benchmarkImageProcessing(imagePaths) {
 
 // Main execution
 (async () => {
-  const { db } = require('../database');
+  const { db } = require('../src/database');
 
   // Get 10 sample images
   const rows = await new Promise((resolve, reject) => {

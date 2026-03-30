@@ -7,7 +7,7 @@ const path = require('path');
 const fs = require('fs');
 
 // Mock the videoProcessor module to simulate the NaN duration scenario
-const originalProcessGif = require('../../services/videoProcessor').processGif;
+const originalProcessGif = require('../../src/services/videoProcessor').processGif;
 
 // Create a test that simulates what happens when duration comes back as undefined/NaN
 async function simulateNanDurationScenario() {

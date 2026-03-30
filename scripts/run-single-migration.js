@@ -1,8 +1,8 @@
 // Script para rodar uma única migração específica
 const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
+const { DB_PATH } = require('../src/paths');
 
-const DB_PATH = path.join(__dirname, '../media.db');
 const migrationName = process.argv[2];
 
 if (!migrationName) {
@@ -52,7 +52,7 @@ const dbAsync = {
 
 async function runMigration() {
   try {
-    const migrationPath = path.join(__dirname, '../database/migrations', migrationName);
+    const migrationPath = path.join(__dirname, '../src/database/migrations', migrationName);
     const migration = require(migrationPath);
 
     if (typeof migration.up === 'function') {

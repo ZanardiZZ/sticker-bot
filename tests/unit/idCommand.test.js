@@ -54,7 +54,7 @@ const handlerPath = path.resolve(__dirname, '..', '..', 'commands/handlers/id.js
 
 function loadHandleIdCommand() {
   delete require.cache[handlerPath];
-  return require('../../commands/handlers/id');
+  return require('../../src/commands/handlers/id');
 }
 
 // Helper to insert test media
@@ -113,12 +113,12 @@ const tests = [
       const client = new MockWhatsAppClient();
       
       // Mock the database functions that the ID handler uses
-      const originalFindById = require('../../database/index.js').findById;
-      const originalIncrementRandomCount = require('../../database/index.js').incrementRandomCount;
-      const originalGetTagsForMedia = require('../../database/index.js').getTagsForMedia;
+      const originalFindById = require('../../src/database/index.js').findById;
+      const originalIncrementRandomCount = require('../../src/database/index.js').incrementRandomCount;
+      const originalGetTagsForMedia = require('../../src/database/index.js').getTagsForMedia;
       
       // Replace with test versions
-      const database = require('../../database/index.js');
+      const database = require('../../src/database/index.js');
       database.findById = (id) => {
         return new Promise((resolve) => {
           db.get(`SELECT * FROM media WHERE id = ? LIMIT 1`, [id], (err, row) => {
@@ -187,7 +187,7 @@ const tests = [
       const client = new MockWhatsAppClient();
       
       // Mock the database functions
-      const database = require('../../database/index.js');
+      const database = require('../../src/database/index.js');
       const originalFindById = database.findById;
       database.findById = () => Promise.resolve(null);
       
@@ -233,7 +233,7 @@ const tests = [
       const client = new MockWhatsAppClient();
       
       // Mock the database functions
-      const database = require('../../database/index.js');
+      const database = require('../../src/database/index.js');
       const originalFindById = database.findById;
       const originalIncrementRandomCount = database.incrementRandomCount;
       const originalGetTagsForMedia = database.getTagsForMedia;

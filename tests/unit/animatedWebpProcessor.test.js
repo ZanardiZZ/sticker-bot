@@ -1,5 +1,5 @@
-const { processAnimatedWebp } = require('../../services/videoProcessor');
-const { isAnimatedWebpBuffer } = require('../../bot/stickers');
+const { processAnimatedWebp } = require('../../src/services/videoProcessor');
+const { isAnimatedWebpBuffer } = require('../../src/bot/stickers');
 const fs = require('fs');
 const path = require('path');
 
@@ -83,11 +83,11 @@ async function testAnimatedWebpProcessor() {
     // Test 5: Temp directory creation logic
     console.log('\n--- Test 5: Temp Directory Logic ---');
     
-    const tempPath = path.resolve(__dirname, '../../temp');
+    const tempPath = path.resolve(__dirname, '../../storage/temp');
     const processId = process.pid;
     
     // Check that temp directory structure would be valid
-    const expectedTempDir = path.resolve(__dirname, '../../temp', `webp_frames_${processId}_test123`);
+    const expectedTempDir = path.resolve(__dirname, '../../storage/temp', `webp_frames_${processId}_test123`);
     
     if (!expectedTempDir.includes('webp_frames_')) {
       throw new Error('Temp directory naming logic is incorrect');

@@ -3,7 +3,7 @@
  * Tests basic functionality without making actual downloads
  */
 
-const { isVideoUrl, MAX_VIDEO_DURATION, MAX_AUDIO_DURATION, MAX_AUDIO_FILESIZE_MB } = require('../../services/videoDownloader');
+const { isVideoUrl, MAX_VIDEO_DURATION, MAX_AUDIO_DURATION, MAX_AUDIO_FILESIZE_MB } = require('../../src/services/videoDownloader');
 
 console.log('🧪 Testing Video Downloader Module...\n');
 
@@ -56,7 +56,7 @@ console.log(`  ✅ MAX_AUDIO_FILESIZE_MB: ${MAX_AUDIO_FILESIZE_MB}MB\n`);
 
 // Test 3: Module exports
 console.log('Test 3: Module exports');
-const videoDownloader = require('../../services/videoDownloader');
+const videoDownloader = require('../../src/services/videoDownloader');
 const requiredExports = [
   'downloadVideo',
   'downloadAudio',

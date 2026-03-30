@@ -9,7 +9,7 @@ const fs = require('fs');
 // Create a simple test to validate our fix
 async function testActualProcessGifFix() {
   // Import the updated processGif function
-  const { processGif } = require('../../services/videoProcessor');
+  const { processGif } = require('../../src/services/videoProcessor');
   
   console.log('Testing actual processGif function with our fix...');
   

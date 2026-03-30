@@ -6,7 +6,7 @@ console.log('🧪 Testing GIF detection and response message fix...\n');
 // Test the GIF detection logic
 async function testGifDetection() {
   try {
-    const { isGifLikeVideo } = require('../../utils/gifDetection');
+    const { isGifLikeVideo } = require('../../src/utils/gifDetection');
     
     console.log('✅ Test 1 PASSED: GIF detection module loads correctly');
     

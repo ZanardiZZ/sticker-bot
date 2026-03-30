@@ -165,13 +165,13 @@ async function testPackCommands() {
   };
   
   // Override require cache to use our test database
-  const packsModelPath = require.resolve('../../database/models/packs');
+  const packsModelPath = require.resolve('../../src/database/models/packs');
   delete require.cache[packsModelPath];
-  require.cache[require.resolve('../../database/connection')] = {
+  require.cache[require.resolve('../../src/database/connection')] = {
     exports: mockDbModule
   };
   
-  const packsModel = require('../../database/models/packs');
+  const packsModel = require('../../src/database/models/packs');
   
   try {
     // Test 1: Create a pack directly

@@ -13,8 +13,8 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
-const { dbHandler } = require('../database/connection');
-const { getMD5, getHashVisual, isValidHash, isDegenerateHash } = require('../database/utils');
+const { dbHandler } = require('../src/database/connection');
+const { getMD5, getHashVisual, isValidHash, isDegenerateHash } = require('../src/database/utils');
 
 // Configuração para WebP otimizado para WhatsApp
 const WEBP_CONFIG = {

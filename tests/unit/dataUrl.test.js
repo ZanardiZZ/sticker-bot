@@ -4,7 +4,7 @@
  */
 
 const { assert, assertEqual, runTestSuite } = require('../helpers/testUtils');
-const { parseBase64DataUrl } = require('../../utils/dataUrl');
+const { parseBase64DataUrl } = require('../../src/utils/dataUrl');
 
 const tests = [
   {

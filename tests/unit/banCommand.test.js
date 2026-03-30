@@ -48,12 +48,12 @@ function loadBanHandler() {
     }
   };
 
-  const handlerPath = resolve('../../commands/handlers/ban');
+  const handlerPath = resolve('../../src/commands/handlers/ban');
   if (handlerPath) {
     delete require.cache[handlerPath];
   }
 
-  const databaseModules = ['../../database', '../../database/index.js'];
+  const databaseModules = ['../../src/database', '../../src/database/index.js'];
   const modulePaths = Array.from(
     new Set(databaseModules.map(resolve).filter(Boolean))
   );
@@ -65,7 +65,7 @@ function loadBanHandler() {
   });
 
   try {
-    return require('../../commands/handlers/ban');
+    return require('../../src/commands/handlers/ban');
   } finally {
     modulePaths.forEach((path, index) => {
       const original = originals[index].module;

@@ -122,7 +122,7 @@ function testResponseMessageGeneration() {
   console.log('\n=== Testing Response Message Generation ===');
   
   // Import the actual function we modified
-  const { generateResponseMessage } = require('../../utils/responseMessage');
+  const { generateResponseMessage } = require('../../src/utils/responseMessage');
   
   const testCases = [
     {

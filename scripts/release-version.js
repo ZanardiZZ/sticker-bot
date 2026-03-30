@@ -17,11 +17,11 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
+const { DB_PATH } = require('../src/paths');
 
-const dbPath = path.join(__dirname, '..', 'media.db');
 const packagePath = path.join(__dirname, '..', 'package.json');
 
-const db = new sqlite3.Database(dbPath);
+const db = new sqlite3.Database(DB_PATH);
 
 function getCurrentVersion() {
   return new Promise((resolve, reject) => {

@@ -5,9 +5,9 @@
 
 const { createTestDatabase, createTestTables, insertTestMedia, assert, assertEqual, runTestSuite } = require('../helpers/testUtils');
 const { MockBaileysClient } = require('../helpers/mockBaileysClient');
-const { createCommandUsageModel } = require('../../database/models/commandUsage');
-const { countMediaBySenderWithDb } = require('../../database/models/media');
-const { createPerfilHandler } = require('../../commands/handlers/perfil');
+const { createCommandUsageModel } = require('../../src/database/models/commandUsage');
+const { countMediaBySenderWithDb } = require('../../src/database/models/media');
+const { createPerfilHandler } = require('../../src/commands/handlers/perfil');
 
 const tests = [
   {
