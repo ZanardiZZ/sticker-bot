@@ -1,0 +1,7 @@
+archive/
+coverage/
+media/
+node_modules/
+storage/
+tests/temp/
+whisper.cpp/

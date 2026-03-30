@@ -843,8 +843,8 @@ async function runHealthCheck({ checkType = 'full' }) {
     // WhatsApp connection
     if (checkType === 'full' || checkType === 'whatsapp') {
       try {
-        // Check if waAdapter is initialized
-        const waAdapterPath = path.join(process.cwd(), 'waAdapter.js');
+        // Check if the adapter module exists in the current source layout
+        const waAdapterPath = path.join(process.cwd(), 'src', 'waAdapter.js');
         const waAdapterExists = await fs.access(waAdapterPath).then(() => true).catch(() => false);
 
         if (waAdapterExists) {
@@ -855,7 +855,7 @@ async function runHealthCheck({ checkType = 'full' }) {
         } else {
           results.whatsapp = {
             adapterExists: false,
-            error: 'waAdapter.js not found'
+            error: 'src/waAdapter.js not found'
           };
         }
       } catch (err) {

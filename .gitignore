@@ -2,6 +2,7 @@
 node_modules/
 # Logs
 *.log
+media/
 storage/
 npm-debug.log*
 yarn-debug.log*
