@@ -31,6 +31,14 @@ class OllamaProxyHandler(BaseHTTPRequestHandler):
   def log_message(self, fmt, *args):
     sys.stderr.write('[ollama-proxy] ' + (fmt % args) + '\n')
 
+  @staticmethod
+  def _is_safe_header_part(value):
+    if value is None:
+      return False
+
+    text = str(value)
+    return '\r' not in text and '\n' not in text
+
   def _proxy(self):
     parsed = self.server.upstream
     connection_cls = http.client.HTTPSConnection if parsed.scheme == 'https' else http.client.HTTPConnection
@@ -64,6 +72,8 @@ class OllamaProxyHandler(BaseHTTPRequestHandler):
       for key, value in response.getheaders():
         lower_key = key.lower()
         if lower_key in ('transfer-encoding', 'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailers', 'upgrade'):
+          continue
+        if not self._is_safe_header_part(key) or not self._is_safe_header_part(value):
           continue
         self.send_header(key, value)
 

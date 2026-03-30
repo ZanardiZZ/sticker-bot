@@ -21,6 +21,7 @@ try {
 const session = require('express-session');
 const cookieParser = require('cookie-parser');
 const bcrypt = require('bcryptjs');
+const csurf = require('csurf');
 const rateLimit = require('express-rate-limit');
 
 // Import modularized middlewares and routes
@@ -31,7 +32,7 @@ const {
   createRegistrationRateLimiter,
   createRequestLogger,
   createIPRulesMiddleware,
-  createCSRFMiddleware,
+  shouldSkipCSRF,
   getCSRFToken
 } = require('./middlewares');
 const { registerRoutes } = require('./routes');
@@ -86,9 +87,17 @@ app.use(session({
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: false }));
 
-// CSRF Protection using internal middleware (still recognized by CodeQL)
-const csrfProtection = createCSRFMiddleware();
-app.use(csrfProtection);
+// CSRF protection is wired directly through `csurf` so CodeQL recognizes token validation.
+const csrfProtection = csurf({
+  cookie: false,
+  ignoreMethods: ['GET', 'HEAD', 'OPTIONS']
+});
+app.use((req, res, next) => {
+  if (shouldSkipCSRF(req)) {
+    return next();
+  }
+  return csrfProtection(req, res, next);
+});
 
 // Global rate limiter to protect expensive authorization logic against abuse
 // Adjust values depending on expected traffic patterns
