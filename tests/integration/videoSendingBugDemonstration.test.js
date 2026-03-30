@@ -89,8 +89,8 @@ async function demonstrateBugFix() {
     console.log('📱 Result: Users will now receive videos when using #ID command');
     console.log('');
     console.log('Files affected by this fix:');
-    console.log('  - commands/media.js (sendMediaByType, sendMediaAsOriginal)');
-    console.log('  - commands.js (sendMediaByType, sendMediaAsOriginal)');
+    console.log('  - src/commands/media.js (sendMediaByType, sendMediaAsOriginal)');
+    console.log('  - src/commands/index.js (shared command exports)');
     
     return brokenResult === false && fixedResult === true;
     

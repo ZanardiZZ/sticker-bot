@@ -1,14 +1,14 @@
 {
-  "version": "1.0.0",
+  "version": "2.0.0",
   "agents": [
     {
       "id": "sticker-bot-expert",
       "name": "Sticker Bot Expert",
-      "description": "Comprehensive expert agent for all Sticker Bot development tasks",
+      "description": "Repository index and expert profile for the Sticker Bot project",
       "file": "sticker-bot-expert.md",
       "expertise": [
         "whatsapp-bot",
-        "baileys",
+        "whatsapp-bridge",
         "media-processing",
         "nodejs",
         "express",
@@ -32,33 +32,64 @@
       "enabled": true
     }
   ],
+  "modules": [
+    {
+      "id": "bot",
+      "file": "BOT.md",
+      "scope": ["index.js", "server.js", "src/bot/", "src/commands/", "src/server/", "src/waAdapter.js"]
+    },
+    {
+      "id": "web",
+      "file": "WEB.md",
+      "scope": ["src/web/server.js", "src/web/auth.js", "src/web/dataAccess.js", "src/web/routes/", "src/web/public/"]
+    },
+    {
+      "id": "operations",
+      "file": "OPERATIONS.md",
+      "scope": ["scripts/agent/", "docs/agent-workflow.md"]
+    },
+    {
+      "id": "testing",
+      "file": "TESTING.md",
+      "scope": ["tests/", "package.json"]
+    }
+  ],
   "guidelines": {
     "minimal_changes": true,
     "test_before_commit": true,
     "document_changes": true,
     "follow_patterns": true,
-    "handle_errors": true
+    "handle_errors": true,
+    "prefer_module_docs": true
   },
-  "network_restrictions": {
-    "blocked_domains": [
-      "storage.googleapis.com"
-    ],
-    "install_command": "npm install --ignore-scripts && npm rebuild sqlite3 sharp",
-    "workarounds_required": false,
-    "notes": "Bot uses Baileys (WebSocket), not puppeteer. No browser dependencies required."
+  "environment": {
+    "node_version_file": ".nvmrc",
+    "package_manager": "npm",
+    "install_command": "npm ci",
+    "native_module_rebuild": "npm rebuild sqlite3 sharp",
+    "remote_ollama": "http://192.168.20.24:11434"
   },
   "testing": {
-    "no_unit_tests": true,
+    "default_gate": "npm run check",
+    "integration_gate": "npm run test:integration",
+    "smoke_gate": "npm run smoke",
     "validation_commands": [
-      "npm run web",
-      "npm run bot",
-      "node scripts/test-migration.js"
+      "npm run check",
+      "npm run smoke",
+      "npm run test:integration",
+      "npm run agent:tooling"
     ]
   },
+  "models": {
+    "sidecar_default": "deepseek-coder:6.7b",
+    "codex_ollama_default": "qwen3:8b",
+    "codex_ollama_requires_proxy": true,
+    "deepseek_tool_support_for_codex_oss": false
+  },
   "documentation": {
-    "main_readme": "../../README.md",
     "copilot_instructions": "../copilot-instructions.md",
-    "web_guidelines": "../../web/public/AGENTS.md",
-    "feature_docs": "../../docs/"
+    "workflow": "../../docs/agent-workflow.md",
+    "usage_guide": "USAGE_GUIDE.md",
+    "module_docs": ["BOT.md", "WEB.md", "OPERATIONS.md", "TESTING.md"]
   }
 }

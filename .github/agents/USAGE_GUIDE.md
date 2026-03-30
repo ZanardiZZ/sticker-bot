@@ -1,442 +1,125 @@
-# How to Use Sticker Bot Custom Agents
+# Agent Usage Guide
 
-This guide shows how to leverage custom agents for efficient development in the Sticker Bot repository.
+This guide shows how to work efficiently in this repository with the current local tooling and remote model setup.
+
+For domain details, pair it with one of:
+
+- [BOT.md](/home/dev/work/sticker-bot2/.github/agents/BOT.md)
+- [WEB.md](/home/dev/work/sticker-bot2/.github/agents/WEB.md)
+- [OPERATIONS.md](/home/dev/work/sticker-bot2/.github/agents/OPERATIONS.md)
+- [TESTING.md](/home/dev/work/sticker-bot2/.github/agents/TESTING.md)
 
 ## Quick Start
 
-### For GitHub Copilot Users
+### Standard local loop
 
-The custom agent definitions automatically enhance GitHub Copilot's understanding of the repository:
-
-1. **Open any file** in the repository
-2. **Start coding** - Copilot will reference agent knowledge
-3. **Use comments** to guide Copilot:
-   ```javascript
-   // Create a new bot command that sends top 5 stickers by user
-   ```
-4. **Copilot will suggest** code following repository patterns
-
-### For AI-Assisted Development
-
-When using AI assistants (ChatGPT, Claude, etc.):
-
-1. **Share agent context**:
-   ```
-   I'm working on the Sticker Bot repository. 
-   Please reference .github/agents/sticker-bot-expert.md for context.
-   ```
-
-2. **Describe your task**:
-   ```
-   I need to add a new command #mystickers that shows all stickers 
-   uploaded by the current user.
-   ```
-
-3. **AI will provide** implementation following repository standards
-
-### For Code Reviews
-
-When reviewing code:
-
-1. **Check alignment** with agent guidelines
-2. **Verify patterns** match examples in agent definitions
-3. **Ensure testing** follows validation procedures
-4. **Confirm documentation** updates are included
-
-## Common Scenarios
-
-### Scenario 1: Adding a New Bot Command
-
-**Task**: Create `#mystickers` command
-
-**Using the Agent**:
-
-1. **Reference the agent section** on "Adding New Bot Commands"
-2. **Follow the pattern**:
-   ```javascript
-   // commands/myStickers.js
-   const { getMediaByUser } = require('../database/models/media');
-   const { recordCommandUsage } = require('../database/models/commandUsage');
-   
-   async function handleMyStickers(sock, msg) {
-     const userJid = msg.key.participant || msg.key.remoteJid;
-     
-     try {
-       const media = await getMediaByUser(userJid, 10);
-       
-       if (media.length === 0) {
-         await sock.sendMessage(msg.key.remoteJid, {
-           text: '📭 Você ainda não enviou nenhuma figurinha.'
-         });
-         return;
-       }
-       
-       const response = `🎨 Suas últimas ${media.length} figurinhas:\n\n` +
-         media.map(m => `• #${m.id} - ${m.description || 'Sem descrição'}`).join('\n');
-       
-       await sock.sendMessage(msg.key.remoteJid, { text: response });
-       
-       // Record usage for analytics
-       await recordCommandUsage('mystickers', msg.key.remoteJid, userJid);
-       
-     } catch (error) {
-       console.error('[MYSTICKERS] Error:', error.message);
-       await sock.sendMessage(msg.key.remoteJid, {
-         text: '❌ Erro ao buscar suas figurinhas.'
-       });
-     }
-   }
-   
-   module.exports = { handleMyStickers };
-   ```
-
-3. **Register in command dispatcher**
-4. **Test the command**:
-   ```bash
-   npm run bot
-   # Send #mystickers to the bot
-   ```
-
-5. **Update documentation** in README
-
-### Scenario 2: Adding a Web API Endpoint
-
-**Task**: Create `/api/user/stickers` endpoint
-
-**Using the Agent**:
-
-1. **Reference "Adding Web Interface Features"**
-2. **Implement following the pattern**:
-   ```javascript
-   // In server.js
-   app.get('/api/user/stickers', auth.requireAuth, async (req, res) => {
-     try {
-       const userId = req.session.userId;
-       const page = parseInt(req.query.page) || 1;
-       const limit = parseInt(req.query.limit) || 20;
-       const offset = (page - 1) * limit;
-       
-       const stickers = await dataAccess.getUserStickers(userId, limit, offset);
-       const total = await dataAccess.getUserStickersCount(userId);
-       
-       res.json({
-         success: true,
-         data: stickers,
-         pagination: {
-           page,
-           limit,
-           total,
-           pages: Math.ceil(total / limit)
-         }
-       });
-     } catch (error) {
-       console.error('[API] Error fetching user stickers:', error);
-       res.status(500).json({
-         success: false,
-         error: 'Failed to fetch stickers'
-       });
-     }
-   });
-   ```
-
-3. **Add data access method**:
-   ```javascript
-   // In web/dataAccess.js
-   async function getUserStickers(userId, limit, offset) {
-     const sql = `
-       SELECT m.* FROM media m
-       JOIN contacts c ON m.sender_id = c.id
-       JOIN users u ON c.whatsapp_id = u.whatsapp_id
-       WHERE u.id = ?
-       ORDER BY m.timestamp DESC
-       LIMIT ? OFFSET ?
-     `;
-     return await dbAll(sql, [userId, limit, offset]);
-   }
-   ```
-
-4. **Test the endpoint**:
-   ```bash
-   npm run web
-   # Visit http://localhost:3000/api/user/stickers (authenticated)
-   ```
-
-### Scenario 3: Database Migration
-
-**Task**: Add rating system for stickers
-
-**Using the Agent**:
-
-1. **Reference "Database Changes"** section
-2. **Create migration script**:
-   ```javascript
-   // scripts/add-ratings-table.js
-   const db = require('../database/db');
-   
-   async function migrate() {
-     console.log('[MIGRATION] Adding ratings table...');
-     
-     try {
-       await db.run(`
-         CREATE TABLE IF NOT EXISTS media_ratings (
-           id INTEGER PRIMARY KEY AUTOINCREMENT,
-           media_id INTEGER NOT NULL,
-           user_id INTEGER NOT NULL,
-           rating INTEGER CHECK(rating >= 1 AND rating <= 5),
-           timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-           FOREIGN KEY (media_id) REFERENCES media(id) ON DELETE CASCADE,
-           FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-           UNIQUE(media_id, user_id)
-         )
-       `);
-       
-       await db.run(`
-         CREATE INDEX IF NOT EXISTS idx_media_ratings_media_id 
-         ON media_ratings(media_id)
-       `);
-       
-       await db.run(`
-         CREATE INDEX IF NOT EXISTS idx_media_ratings_user_id 
-         ON media_ratings(user_id)
-       `);
-       
-       console.log('[MIGRATION] ✅ Ratings table created successfully');
-     } catch (error) {
-       console.error('[MIGRATION] ❌ Failed:', error.message);
-       throw error;
-     }
-   }
-   
-   if (require.main === module) {
-     migrate()
-       .then(() => process.exit(0))
-       .catch(() => process.exit(1));
-   }
-   
-   module.exports = { migrate };
-   ```
-
-3. **Test migration**:
-   ```bash
-   node scripts/add-ratings-table.js
-   ```
-
-4. **Create data access methods**:
-   ```javascript
-   // database/models/ratings.js
-   async function addRating(mediaId, userId, rating) {
-     await db.run(
-       `INSERT OR REPLACE INTO media_ratings (media_id, user_id, rating) 
-        VALUES (?, ?, ?)`,
-       [mediaId, userId, rating]
-     );
-   }
-   
-   async function getAverageRating(mediaId) {
-     const result = await db.get(
-       'SELECT AVG(rating) as avg FROM media_ratings WHERE media_id = ?',
-       [mediaId]
-     );
-     return result?.avg || 0;
-   }
-   ```
-
-### Scenario 4: AI Feature Integration
-
-**Task**: Add automatic content warnings
-
-**Using the Agent**:
-
-1. **Reference "AI Feature Integration"**
-2. **Check OpenAI availability**:
-   ```javascript
-   const { getOpenAI, isAIAvailable } = require('./services/ai');
-   
-   async function analyzeContent(imageBuffer) {
-     if (!isAIAvailable()) {
-       console.log('[AI] OpenAI not available, skipping analysis');
-       return { warning: null, safe: true };
-     }
-     
-     try {
-       const openai = getOpenAI();
-       const base64Image = imageBuffer.toString('base64');
-       
-       const response = await openai.chat.completions.create({
-         model: 'gpt-4o-mini',
-         messages: [{
-           role: 'user',
-           content: [
-             {
-               type: 'text',
-               text: 'Analyze this image and determine if it contains any sensitive content. Respond with JSON: {"warning": "description if sensitive, null otherwise", "safe": boolean}'
-             },
-             {
-               type: 'image_url',
-               image_url: {
-                 url: `data:image/jpeg;base64,${base64Image}`
-               }
-             }
-           ]
-         }],
-         max_tokens: 300
-       });
-       
-       return JSON.parse(response.choices[0].message.content);
-     } catch (error) {
-       console.error('[AI] Content analysis failed:', error.message);
-       return { warning: null, safe: true }; // Fail open
-     }
-   }
-   ```
-
-3. **Integrate into media processing pipeline**
-4. **Test with/without API key**
-
-## Best Practices from the Agent
-
-### 1. Always Use Environment Checks
-
-```javascript
-// Good - graceful degradation
-if (isAIAvailable()) {
-  await enhanceWithAI(data);
-} else {
-  useBasicProcessing(data);
-}
-
-// Bad - hard requirement
-const openai = getOpenAI(); // Throws if not configured
+```bash
+npm run agent:context
+npm run check
 ```
 
-### 2. Consistent Error Handling
+Use `npm run test:integration` when the change affects database behavior, web routes, multi-process coordination, or command flows that span subsystems.
 
-```javascript
-// Good - user-friendly error messages
-try {
-  await processMedia(msg);
-} catch (error) {
-  console.error('[MEDIA] Processing failed:', error.message);
-  await sock.sendMessage(jid, {
-    text: '❌ Não foi possível processar a mídia. Tente novamente.'
-  });
-}
+### DeepSeek sidecar
 
-// Bad - generic or no error handling
-await processMedia(msg); // May crash bot
+Use the sidecar when you want cheap analysis or a first draft from the remote machine:
+
+```bash
+DEEPSEEK_BASE_URL=http://192.168.20.24:11434 \
+DEEPSEEK_MODEL=deepseek-coder:6.7b \
+npm run agent:deepseek -- --prompt "summarize src/bot/messageHandler.js"
 ```
 
-### 3. Logging Standards
+### Codex through remote Ollama
 
-```javascript
-// Good - consistent prefixes and context
-console.log('[BOT] Command received:', command);
-console.log('[DB] Saved sticker:', stickerId);
-console.error('[ERROR] Failed to download:', url, error.message);
+Use the local proxy and a tool-capable model:
 
-// Bad - inconsistent or missing context
-console.log('Received command'); // Which module?
-console.log(error); // Not descriptive
+```bash
+DEEPSEEK_MODEL=qwen3:8b npm run agent:codex:deepseek
 ```
 
-### 4. Database Operations
+For one-shot execution:
 
-```javascript
-// Good - parameterized queries
-await db.run('SELECT * FROM media WHERE id = ?', [userId]);
-
-// Bad - SQL injection risk
-await db.run(`SELECT * FROM media WHERE id = ${userId}`);
+```bash
+DEEPSEEK_MODEL=qwen3:8b \
+npm run agent:codex:deepseek:exec -- --skip-git-repo-check "Reply with exactly: pong"
 ```
 
-## Validation Checklist
+Do not try to run the Codex OSS workflow on `deepseek-coder:6.7b`; it is reachable but rejected for lack of tool support.
 
-Before committing, verify using agent guidelines:
+## Shell Shortcuts On This Machine
 
-- [ ] **Installation**: Tested with `npm install --ignore-scripts && npm rebuild sqlite3 sharp`
-- [ ] **Web interface**: Tested with `npm run web` (1-2 seconds startup)
-- [ ] **Bot startup**: Tested with `npm run bot` (3-5 seconds)
-- [ ] **Database**: Migration tested if applicable
-- [ ] **Error handling**: All errors caught and logged
-- [ ] **Logging**: Consistent prefixes used
-- [ ] **Documentation**: README updated if needed
-- [ ] **Security**: Input validated, parameterized queries used
-- [ ] **Patterns**: Matches existing repository code style
+If the local zsh config has been loaded, these wrappers may be available:
 
-## Advanced Usage
-
-### Creating Task-Specific Prompts
-
-When working on complex features, create focused prompts:
-
-```
-Task: Implement duplicate media detection with perceptual hashing
-
-Context: Use the Sticker Bot Expert agent guidelines
-
-Requirements:
-- Use existing database models
-- Follow queue system patterns
-- Handle errors gracefully
-- Log with [DUPLICATE] prefix
-- Support batch processing
-
-Reference sections:
-- Database Operations
-- Media Processing
-- Common Patterns
+```bash
+oproxy
+oproxystop
+cdeep
+cdeepexec "task"
+dside "task"
 ```
 
-### Combining Multiple Agents
+Run `source ~/.zshrc` if a current shell session does not see them yet.
 
-For cross-cutting concerns:
+## Task Recipes
 
-```
-I'm adding a new web page that displays user statistics.
+### 1. Fix a command bug
 
-Please reference:
-- .github/agents/sticker-bot-expert.md for backend patterns
-- web/public/AGENTS.md for frontend guidelines
+1. Read the command module and the nearest tests.
+2. Ask the sidecar to summarize the local risk if the file is large.
+3. Patch the command.
+4. Run the narrowest related test.
+5. Run `npm run check`.
 
-Ensure the page is:
-- Mobile responsive (frontend agent)
-- Uses proper authentication (expert agent)
-- Follows database access patterns (expert agent)
-- Optimizes images (frontend agent)
-```
+### 2. Change media processing
 
-## Troubleshooting Agent Usage
+1. Inspect [src/bot/mediaProcessor.js](/home/dev/work/sticker-bot2/src/bot/mediaProcessor.js) and [src/bot/stickers.js](/home/dev/work/sticker-bot2/src/bot/stickers.js).
+2. Preserve fallback behavior for optional helpers and animated WebP detection.
+3. Run `npm run check`.
+4. If the flow touches persistence or integration boundaries, run `npm run test:integration`.
 
-### Agent Suggestions Not Helpful
+### 3. Change websocket or bridge behavior
 
-**Problem**: Agent suggests outdated patterns
-**Solution**: Check if agent needs updating, reference specific sections
+1. Inspect [src/server/bridge.js](/home/dev/work/sticker-bot2/src/server/bridge.js).
+2. Audit cleanup for maps, sets, intervals, listeners, and raw message retention.
+3. Run `npm run smoke`.
+4. Run `npm run check`.
+5. Run `npm run test:integration` if message routing or persistence changed.
 
-### Missing Context
+### 4. Update agent tooling
 
-**Problem**: Agent doesn't understand repository specifics
-**Solution**: Explicitly reference the agent file and relevant sections
+1. Change the scripts under [scripts/agent/](/home/dev/work/sticker-bot2/scripts/agent).
+2. Run `npm run agent:tooling`.
+3. Run the exact wrapper you changed.
+4. Update the markdown docs in the same patch.
 
-### Conflicting Guidelines
+## Prompt Patterns That Work Well
 
-**Problem**: Different agents suggest different approaches
-**Solution**: Follow the hierarchy:
-1. Sticker Bot Expert (most specific)
-2. Web/Frontend Agents (domain-specific)
-3. General Copilot Instructions (fallback)
+### Good
 
-## Feedback and Improvements
+- `Map the cleanup lifecycle in src/server/bridge.js and identify leak risks`
+- `Summarize the dependencies of src/bot/messageHandler.js in 10 bullets`
+- `Draft a minimal patch plan for adding a new command to src/commands/`
+- `List which tests should be run if src/web/server.js changes`
 
-Help improve the custom agents:
+### Bad
 
-1. **Report issues** when agent guidelines are unclear
-2. **Suggest additions** for common tasks not covered
-3. **Submit examples** of successful agent-assisted development
-4. **Update agents** when repository patterns change
+- `Fix the whole project`
+- `Refactor everything`
+- `Run whatever tests you think`
+- `Use deepseek-coder:6.7b as the Codex engine`
 
-See [`.github/agents/README.md`](README.md) for contribution guidelines.
+## Validation Matrix
 
----
+- Docs only: no code validation required
+- Agent docs or wrappers: `npm run agent:tooling`
+- JS code in one subsystem: `npm run check`
+- Startup wiring: `npm run smoke`
+- Cross-subsystem or DB behavior: `npm run check && npm run test:integration`
 
-**Last Updated**: November 2024  
-**Next Review**: When major patterns change or new features are added
+## Working Agreement
+
+- Final edits happen locally in this repository.
+- Sidecars can explore, summarize, and draft.
+- Validation is always local.
+- If documentation changes the workflow, update the docs with the code.

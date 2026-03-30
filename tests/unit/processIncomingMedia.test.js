@@ -114,7 +114,7 @@ function withProcessIncomingMedia(overrides, testFn) {
       processGif: async () => ({ description: 'gif-desc', tags: ['gif-tag'] }),
       processAnimatedWebp: async () => ({ description: 'webp-desc', tags: ['webp-tag'] })
     },
-    'commands.js': { forceMap: {}, MAX_TAGS_LENGTH: 500, clearDescriptionCmds: [] },
+    'src/commands/index.js': { forceMap: {}, MAX_TAGS_LENGTH: 500, clearDescriptionCmds: [] },
     'src/utils/messageUtils.js': {
       cleanDescriptionTags: (description, tags) => ({
         description: description || '',

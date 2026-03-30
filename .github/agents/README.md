@@ -1,201 +1,74 @@
-# Sticker Bot Custom Agents Configuration
+# Sticker Bot Agent Docs
 
-This directory contains custom agent definitions for improving agent-based coding efficiency in the Sticker Bot repository.
+This directory contains the canonical agent-facing documentation for this repository.
 
-## Available Agents
+## Read Order
 
-### 1. Sticker Bot Expert (`sticker-bot-expert.md`)
+Agents should use these files in this order:
 
-**Purpose**: Comprehensive expert agent for all Sticker Bot development tasks
+1. [`.github/copilot-instructions.md`](/home/dev/work/sticker-bot2/.github/copilot-instructions.md)
+2. [`docs/agent-workflow.md`](/home/dev/work/sticker-bot2/docs/agent-workflow.md)
+3. [`sticker-bot-expert.md`](/home/dev/work/sticker-bot2/.github/agents/sticker-bot-expert.md)
+4. One domain guide:
+   - [`BOT.md`](/home/dev/work/sticker-bot2/.github/agents/BOT.md)
+   - [`WEB.md`](/home/dev/work/sticker-bot2/.github/agents/WEB.md)
+   - [`OPERATIONS.md`](/home/dev/work/sticker-bot2/.github/agents/OPERATIONS.md)
+   - [`TESTING.md`](/home/dev/work/sticker-bot2/.github/agents/TESTING.md)
+5. [`USAGE_GUIDE.md`](/home/dev/work/sticker-bot2/.github/agents/USAGE_GUIDE.md)
 
-**Expertise Areas**:
-- WhatsApp bot development (Baileys, WebSocket bridges)
-- Media processing (images, videos, GIFs, WebP conversion)
-- Node.js backend development (Express, SQLite, async operations)
-- AI integration (OpenAI, content filtering, transcription)
-- Web administration (authentication, analytics, user management)
-- Database management (SQLite WAL mode, migrations, queues)
+The goal is to keep one short operating contract, one workflow guide, one repository expert profile, a few small domain guides, and one practical usage guide.
 
-**When to Use**:
-- Implementing new bot commands
-- Adding web interface features
-- Database migrations and schema changes
-- Media processing improvements
-- AI feature integration
-- Bug fixes and optimizations
-- Security enhancements
-- Performance tuning
+## What These Docs Cover
 
-**Key Capabilities**:
-- ✅ Understands repository architecture and patterns
-- ✅ Knows network/firewall restrictions and workarounds
-- ✅ Follows established coding standards and conventions
-- ✅ Implements proper error handling and logging
-- ✅ Respects minimal change philosophy
-- ✅ Includes testing and validation procedures
-- ✅ Documents changes appropriately
+- current validation commands
+- actual repository entrypoints
+- current repository layout: `src/` for code and runtime data kept out of git in paths like `storage/` and `media/`
+- remote Ollama and DeepSeek workflow
+- limits of `deepseek-coder:6.7b` with Codex OSS tooling
+- shell aliases available on this machine
+- sensitive areas that have caused regressions before
+- subsystem-specific guidance without forcing every agent to load a giant generic file
 
-## Using Custom Agents
+## Rules for Updating Agent Docs
 
-### For GitHub Copilot
+- Prefer accuracy over completeness
+- Reflect the current scripts in `package.json`
+- Remove stale references instead of adding exceptions around them
+- Keep examples runnable against the current tree
+- When workflow changes, update this directory and `docs/agent-workflow.md` in the same patch
 
-The agent definitions in this directory serve as context for GitHub Copilot and other AI assistants working on this repository. They provide:
+## Current Recommended Agent Loop
 
-1. **Domain Knowledge**: Detailed understanding of repository structure and patterns
-2. **Best Practices**: Coding standards, testing procedures, and security guidelines
-3. **Common Tasks**: Step-by-step guides for frequent development scenarios
-4. **Troubleshooting**: Solutions to common issues and error messages
+1. Run `npm run agent:context`
+2. Read only the files needed for the task
+3. Make a small patch
+4. Run the narrowest useful test
+5. Run `npm run check`
+6. Run `npm run test:integration` for cross-service behavior
 
-### For Agent-Based Tools
+## Current Model Guidance
 
-When using agent-based coding tools:
+- Use the primary coding agent for final edits and validation.
+- Use `deepseek-coder:6.7b` through the sidecar wrapper for exploration or drafting.
+- Use `qwen3:8b` if you want the `codex` CLI itself to operate through the local Ollama proxy with tool support.
 
-1. **Reference the appropriate agent** based on your task
-2. **Provide context** from the agent's expertise areas
-3. **Follow the guidelines** in the agent definition
-4. **Validate changes** using the testing procedures outlined
+## Source of Truth
 
-### Agent Selection Guide
+If these docs conflict with ad hoc comments in older markdown files, trust:
 
-| Task Type | Recommended Agent | Why |
-|-----------|------------------|-----|
-| Bot command development | Sticker Bot Expert | Complete WhatsApp/Baileys expertise |
-| Web interface changes | Sticker Bot Expert | Knows Express/auth patterns |
-| Database operations | Sticker Bot Expert | SQLite/migration expertise |
-| Media processing | Sticker Bot Expert | Sharp/FFmpeg/AI integration |
-| AI features | Sticker Bot Expert | OpenAI integration patterns |
-| General development | Sticker Bot Expert | Comprehensive repository knowledge |
+1. `package.json`
+2. `.github/copilot-instructions.md`
+3. `docs/agent-workflow.md`
 
-## Agent Development Guidelines
+## Files
 
-When creating new agents for this repository:
+- [`sticker-bot-expert.md`](/home/dev/work/sticker-bot2/.github/agents/sticker-bot-expert.md): repository-specific guidance
+- [`BOT.md`](/home/dev/work/sticker-bot2/.github/agents/BOT.md): bot and media changes
+- [`WEB.md`](/home/dev/work/sticker-bot2/.github/agents/WEB.md): web and auth changes
+- [`OPERATIONS.md`](/home/dev/work/sticker-bot2/.github/agents/OPERATIONS.md): agent tooling and Ollama workflow
+- [`TESTING.md`](/home/dev/work/sticker-bot2/.github/agents/TESTING.md): validation guide
+- [`USAGE_GUIDE.md`](/home/dev/work/sticker-bot2/.github/agents/USAGE_GUIDE.md): practical prompts and workflows
+- [`agents.json`](/home/dev/work/sticker-bot2/.github/agents/agents.json): machine-readable metadata
+- [`IMPLEMENTATION_SUMMARY.md`](/home/dev/work/sticker-bot2/.github/agents/IMPLEMENTATION_SUMMARY.md): what this doc set currently assumes
 
-### 1. Structure
-```markdown
-# Agent Name
-
-[Brief description of agent's purpose and expertise]
-
-## Your Expertise
-[List specific areas of expertise]
-
-## Repository Context
-[Relevant repository information]
-
-## Common Tasks
-[Step-by-step guides for common scenarios]
-
-## Best Practices
-[Coding standards and guidelines]
-
-## Quick Reference
-[Helpful commands, file locations, patterns]
-```
-
-### 2. Content Requirements
-
-Include:
-- ✅ Clear expertise definition
-- ✅ Repository architecture overview
-- ✅ Development workflow guidelines
-- ✅ Testing and validation procedures
-- ✅ Common patterns and examples
-- ✅ Troubleshooting guide
-- ✅ Quick reference section
-
-Avoid:
-- ❌ Overly generic advice
-- ❌ Outdated information
-- ❌ Conflicting guidelines
-- ❌ Unnecessary complexity
-
-### 3. Maintenance
-
-Keep agents updated:
-- Review when major changes occur
-- Update examples with actual code
-- Add new patterns as they emerge
-- Remove deprecated information
-- Sync with README changes
-
-## Integration with Existing Docs
-
-These custom agents complement existing documentation:
-
-### `.github/copilot-instructions.md`
-- Main Copilot configuration
-- Repository-wide guidelines
-- Referenced by all agents
-
-### `.codex/` Directory
-- Task-specific agent definitions
-- Feature implementation guides
-- Example: `agent-meme-generator.md`
-
-### `web/public/AGENTS.md`
-- Frontend-specific guidelines
-- UI/UX best practices
-- Web development standards
-
-### `docs/` Directory
-- Feature documentation
-- Migration guides
-- Operational procedures
-
-## Testing Agent Effectiveness
-
-To validate custom agents are helpful:
-
-1. **Before Using Agent**: Note the complexity and time estimate for task
-2. **After Using Agent**: Compare actual implementation to estimate
-3. **Quality Check**: Verify code follows repository patterns
-4. **Performance**: Measure if agent improved development speed
-
-### Success Metrics
-
-Good custom agents should:
-- ✅ Reduce time to implement common tasks
-- ✅ Decrease errors from unfamiliarity with patterns
-- ✅ Improve code consistency across changes
-- ✅ Lower cognitive load for new contributors
-- ✅ Provide faster onboarding for new developers
-
-## Contributing
-
-To improve or add agents:
-
-1. **Create agent file** in `.github/agents/`
-2. **Follow structure guidelines** above
-3. **Test with real tasks** to validate usefulness
-4. **Update this README** with new agent info
-5. **Submit PR** with examples of improved efficiency
-
-## Future Enhancements
-
-Potential new agents:
-
-- **Database Migration Expert**: Specialized in SQLite migrations and schema evolution
-- **WhatsApp Protocol Expert**: Deep Baileys library and protocol knowledge
-- **Media Pipeline Expert**: Advanced FFmpeg, Sharp, and media processing
-- **Web Security Expert**: Authentication, rate limiting, input validation
-- **Performance Optimizer**: Database query optimization, caching, profiling
-
-## Resources
-
-### Related Documentation
-- [Main README](../../README.md) - General repository overview
-- [Copilot Instructions](../copilot-instructions.md) - GitHub Copilot config
-- [Web Agents Guide](../../web/public/AGENTS.md) - Frontend guidelines
-- [Command Analytics](../../docs/COMMAND_USAGE_ANALYTICS.md) - Analytics integration
-
-### External Resources
-- [Baileys Documentation](https://github.com/WhiskeySockets/Baileys) - WhatsApp library
-- [Sharp Documentation](https://sharp.pixelplumbing.com/) - Image processing
-- [SQLite Documentation](https://www.sqlite.org/docs.html) - Database reference
-- [Express.js Guide](https://expressjs.com/) - Web framework
-
----
-
-**Last Updated**: November 2024  
-**Maintainer**: Repository contributors  
-**Version**: 1.0.0
+Root wrappers such as [`index.js`](/home/dev/work/sticker-bot2/index.js) and [`server.js`](/home/dev/work/sticker-bot2/server.js) exist mainly to preserve stable entrypoints; most implementation lives under `src/`.

@@ -113,7 +113,7 @@ Access at `http://localhost:3000`
 
 ### Adapter Methods
 
-The `waAdapter.js` exposes these methods to the bot:
+The `src/waAdapter.js` module exposes these methods to the bot:
 
 ```javascript
 // Send text message

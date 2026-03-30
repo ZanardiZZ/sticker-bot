@@ -284,7 +284,7 @@ SQLite with WAL mode. 20+ tables. Automatic migrations on startup.
 - `maintenance.js` - Database migrations and maintenance tasks
 - `config.js` - Runtime configuration storage
 
-### WebSocket Adapter (waAdapter.js)
+### WebSocket Adapter (src/waAdapter.js)
 
 Client library that wraps WebSocket communication with the Baileys bridge. Used by both bot and web server to send WhatsApp messages without direct Baileys dependency.
 
