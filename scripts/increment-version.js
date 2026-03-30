@@ -21,6 +21,9 @@ const path = require('path');
 const { execSync } = require('child_process');
 const { DB_PATH } = require('../src/paths');
 
+// CI starts from a clean checkout, so the SQLite directory may not exist yet.
+fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+
 // Database setup (uses the live media database)
 const sqlite3 = require('sqlite3').verbose();
 const db = new sqlite3.Database(DB_PATH);
