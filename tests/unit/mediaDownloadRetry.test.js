@@ -9,14 +9,17 @@ const path = require('path');
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 
 function resolveFromRoot(relativePath) {
-  return require.resolve(path.join(PROJECT_ROOT, relativePath));
+  const normalized = /^(bot|commands|services|utils|client|database|web|plugins)\//.test(relativePath)
+    ? path.join('src', relativePath)
+    : relativePath;
+  return require.resolve(path.join(PROJECT_ROOT, normalized));
 }
 
 const tests = [
   {
     name: 'downloadMediaForMessage falls back to getMediaBuffer on RPC failure',
     fn: async () => {
-      const mediaDownloadPath = resolveFromRoot('utils/mediaDownload.js');
+      const mediaDownloadPath = resolveFromRoot('src/utils/mediaDownload.js');
       delete require.cache[mediaDownloadPath];
       const mediaDownload = require(mediaDownloadPath);
       
@@ -56,7 +59,7 @@ const tests = [
   {
     name: 'downloadMediaForMessage throws when both RPC and fallback fail',
     fn: async () => {
-      const mediaDownloadPath = resolveFromRoot('utils/mediaDownload.js');
+      const mediaDownloadPath = resolveFromRoot('src/utils/mediaDownload.js');
       delete require.cache[mediaDownloadPath];
       const mediaDownload = require(mediaDownloadPath);
       
@@ -88,7 +91,7 @@ const tests = [
   {
     name: 'downloadMediaForMessage succeeds immediately on RPC success',
     fn: async () => {
-      const mediaDownloadPath = resolveFromRoot('utils/mediaDownload.js');
+      const mediaDownloadPath = resolveFromRoot('src/utils/mediaDownload.js');
       delete require.cache[mediaDownloadPath];
       const mediaDownload = require(mediaDownloadPath);
       
@@ -121,7 +124,7 @@ const tests = [
   {
     name: 'downloadMediaForMessage handles missing message ID gracefully',
     fn: async () => {
-      const mediaDownloadPath = resolveFromRoot('utils/mediaDownload.js');
+      const mediaDownloadPath = resolveFromRoot('src/utils/mediaDownload.js');
       delete require.cache[mediaDownloadPath];
       const mediaDownload = require(mediaDownloadPath);
       
@@ -148,4 +151,3 @@ const tests = [
 ];
 
 module.exports = { tests };
-

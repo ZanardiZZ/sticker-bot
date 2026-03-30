@@ -8,7 +8,7 @@ const { createTestDatabase, createTestTables, assert, assertEqual, runTestSuite 
 
 // Mock the ID reuse functions
 function createIdReuseModel(db) {
-  const DatabaseHandler = require('../../services/databaseHandler');
+  const DatabaseHandler = require('../../src/services/databaseHandler');
   const dbHandler = new DatabaseHandler(db);
 
   const idReuseModel = {

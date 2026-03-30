@@ -7,7 +7,10 @@ const { MockBaileysClient } = require('../helpers/mockBaileysClient');
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 
 function resolveFromRoot(relativePath) {
-  return require.resolve(path.join(PROJECT_ROOT, relativePath));
+  const normalized = /^(bot|commands|services|utils|client|database|web|plugins)\//.test(relativePath)
+    ? path.join('src', relativePath)
+    : relativePath;
+  return require.resolve(path.join(PROJECT_ROOT, normalized));
 }
 
 async function withMockedMessageHandler(mocks, testFn) {
@@ -26,7 +29,7 @@ async function withMockedMessageHandler(mocks, testFn) {
     };
   }
 
-  const handlerPath = resolveFromRoot('bot/messageHandler.js');
+  const handlerPath = resolveFromRoot('src/bot/messageHandler.js');
   const originalHandlerModule = require.cache[handlerPath];
   delete require.cache[handlerPath];
 
@@ -55,7 +58,7 @@ const tests = [
     fn: async () => {
       const client = new MockBaileysClient();
       const handled = [];
-      const handlerPath = resolveFromRoot('bot/messageHandler.js');
+      const handlerPath = resolveFromRoot('src/bot/messageHandler.js');
       delete require.cache[handlerPath];
       const { setupMessageHandler } = require(handlerPath);
 
@@ -169,25 +172,25 @@ const tests = [
       const participantJid = 'participant@c.us';
 
       await withMockedMessageHandler({
-        'commands.js': mockCommands,
-        'utils/safeMessaging.js': mockSafeMessaging,
-        'utils/typingIndicator.js': mockTyping,
-        'bot/logging.js': mockLogging,
-        'bot/contacts.js': mockContacts,
-        'bot/mediaProcessor.js': mockMediaProcessor,
-        'services/mediaQueue.js': ImmediateMediaQueue,
-        'web/dataAccess.js': {
+        'src/commands/index.js': mockCommands,
+        'src/utils/safeMessaging.js': mockSafeMessaging,
+        'src/utils/typingIndicator.js': mockTyping,
+        'src/bot/logging.js': mockLogging,
+        'src/bot/contacts.js': mockContacts,
+        'src/bot/mediaProcessor.js': mockMediaProcessor,
+        'src/services/mediaQueue.js': ImmediateMediaQueue,
+        'src/web/dataAccess.js': {
           async getDmUser() {
             return { user_id: participantJid, allowed: 1, blocked: 0 };
           },
           async upsertDmUser() { /* noop */ }
         },
-        'database/index.js': {
+        'src/database/index.js': {
           async resolveSenderId(_client, sender) {
             return sender || participantJid;
           }
         },
-        'services/permissionEvaluator.js': {
+        'src/services/permissionEvaluator.js': {
           async evaluateGroupCommandPermission() {
             return { allowed: true, meta: { groupId: groupJid, userId: participantJid } };
           }
@@ -231,6 +234,106 @@ const tests = [
         assertEqual(safeReplies.length, 1, 'safeReply should be triggered after media failure');
         assertEqual(typingSessions.length, 1, 'withTyping wrapper should be used during error reply');
         assertEqual(messagesHandled.length, 3, 'all emitted messages should pass through the handler');
+      });
+    }
+  },
+  {
+    name: 'handleMessage syncs memory context before group conversation replies',
+    fn: async () => {
+      const memoryCalls = [];
+      const conversationCalls = [];
+      const groupJid = '987654@g.us';
+      const participantJid = 'participant@c.us';
+
+      class ImmediateMediaQueue {
+        on() {}
+        getStats() {
+          return { waiting: 0, processing: 0 };
+        }
+        async add(job) {
+          return job();
+        }
+      }
+
+      await withMockedMessageHandler({
+        'src/commands/index.js': {
+          taggingMap: new Map(),
+          async handleCommand() { return false; },
+          async handleTaggingMode() { return false; }
+        },
+        'src/utils/safeMessaging.js': {
+          async safeReply() {}
+        },
+        'src/utils/typingIndicator.js': {
+          async withTyping(_client, _chatId, fn) { return fn(); }
+        },
+        'src/bot/logging.js': {
+          async logReceivedMessage() {}
+        },
+        'src/bot/contacts.js': {
+          upsertContactFromMessage() {},
+          upsertGroupFromMessage() {},
+          upsertGroupUser() {}
+        },
+        'src/bot/mediaProcessor.js': {
+          async processIncomingMedia() {}
+        },
+        'src/services/mediaQueue.js': ImmediateMediaQueue,
+        'src/web/dataAccess.js': {
+          async getDmUser() {
+            return { user_id: participantJid, allowed: 1, blocked: 0 };
+          },
+          async upsertDmUser() {}
+        },
+        'src/database/index.js': {
+          async resolveSenderId() {
+            return participantJid;
+          }
+        },
+        'src/services/conversationAgent.js': {
+          async handleGroupChatMessage(_client, _message, context) {
+            conversationCalls.push(context);
+            return true;
+          }
+        },
+        'src/client/memory-client.js': {
+          isReady() { return true; },
+          async ensureUser(userId, payload) {
+            memoryCalls.push(['ensureUser', userId, payload]);
+            return { ok: true };
+          },
+          async ensureGroup(groupId, payload) {
+            memoryCalls.push(['ensureGroup', groupId, payload]);
+            return { ok: true };
+          },
+          async learnFromMessage(userId, text, groupId) {
+            memoryCalls.push(['learnFromMessage', userId, text, groupId]);
+            return [{ fact: 'gosta de café', category: 'interest' }];
+          }
+        }
+      }, async ({ handleMessage }) => {
+        const message = {
+          from: groupJid,
+          id: 'msg-memory-1',
+          body: 'eu gosto de café',
+          type: 'chat',
+          isMedia: false,
+          isGroupMsg: true,
+          pushName: 'Joana',
+          chat: { name: 'Grupo Teste' },
+          sender: { id: participantJid },
+          key: { remoteJid: groupJid, participant: participantJid }
+        };
+
+        await handleMessage(new MockBaileysClient(), message);
+
+        assertEqual(memoryCalls.length, 3, 'memory sync should ensure user/group and learn from the message');
+        assertEqual(conversationCalls.length, 1, 'conversation agent should still run after memory sync');
+        assertEqual(memoryCalls[0][0], 'ensureUser', 'should create or update the user first');
+        assertEqual(memoryCalls[1][0], 'ensureGroup', 'should create or update the group second');
+        assertEqual(memoryCalls[2][0], 'learnFromMessage', 'should learn from the incoming text');
+        assertEqual(conversationCalls[0].senderName, 'Joana', 'sender metadata should be forwarded to the conversation agent');
+        assertEqual(conversationCalls[0].groupName, 'Grupo Teste', 'group metadata should be forwarded to the conversation agent');
       });
     }
   }

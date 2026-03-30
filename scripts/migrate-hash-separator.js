@@ -15,7 +15,7 @@
  */
 
 const path = require('path');
-const { db } = require('../database/connection');
+const { db } = require('../src/database/connection');
 
 async function migrateHashSeparators() {
   console.log('[MigrateHashSeparator] Iniciando migração de separadores de hash...\n');

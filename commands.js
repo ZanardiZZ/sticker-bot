@@ -1,1 +1,1 @@
-module.exports = require('./commands/index.js');
+module.exports = require('./src/commands/index.js');

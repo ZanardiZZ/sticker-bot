@@ -36,8 +36,8 @@ const ffmpeg = (() => {
 
 const crypto = require('crypto');
 
-const { db } = require('../database');
-const { getHashVisual } = require('../database/utils');
+const { db } = require('../src/database');
+const { getHashVisual } = require('../src/database/utils');
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const RECALCULATE_ALL = process.argv.includes('--recalculate-all');

@@ -19,11 +19,11 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const { DB_PATH } = require('../src/paths');
 
 // Database setup (uses the live media database)
 const sqlite3 = require('sqlite3').verbose();
-const dbPath = path.join(__dirname, '..', 'media.db');
-const db = new sqlite3.Database(dbPath);
+const db = new sqlite3.Database(DB_PATH);
 
 // Commit types that trigger version bumps
 const PATCH_TYPES = ['fix', 'perf', 'refactor', 'style'];

@@ -6,8 +6,8 @@
  */
 
 require('dotenv').config();
-const { db, initializeLidMappingTable, storeLidPnMapping } = require('../database');
-const { normalizeJid, isPnUser, isLidUser } = require('../utils/jidUtils');
+const { db, initializeLidMappingTable, storeLidPnMapping, getPnForLid, deleteLidMapping } = require('../src/database');
+const { normalizeJid, isPnUser, isLidUser } = require('../src/utils/jidUtils');
 
 console.log('=== Migração para Sistema LID ===');
 

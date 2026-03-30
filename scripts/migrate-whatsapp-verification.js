@@ -4,10 +4,10 @@
 
 const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
+const { DB_PATH } = require('../src/paths');
 
 // Use the same database path as the application
-const dbPath = path.join(__dirname, '..', 'media.db');
-const db = new sqlite3.Database(dbPath);
+const db = new sqlite3.Database(DB_PATH);
 
 async function migrate() {
   return new Promise((resolve, reject) => {

@@ -46,7 +46,7 @@ class VideoParameterTestClient {
 }
 
 // Import the function to test
-const { sendMediaAsOriginal } = require('../../commands/media.js');
+const { sendMediaAsOriginal } = require('../../src/commands/media.js');
 
 async function testVideoParameterFix() {
   console.log('\n=== Testing Video Parameter Fix ===');

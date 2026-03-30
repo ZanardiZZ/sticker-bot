@@ -2,7 +2,7 @@
 node_modules/
 # Logs
 *.log
-logs/
+storage/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -28,12 +28,7 @@ _IGNORE_StickerBotSession/
 # Ignore coverage reports if any
 coverage/
 # If you have any other local config files add here
-media/
-media.db
-media.db-shm
-media.db-wal
 StickerBotSession.data.json
-/temp
 *.bak
 *.old
 /Backup_*
@@ -62,13 +57,7 @@ tests/**/*.db
 tests/**/*.db-*
 open-wa-session.postman_collection.json
 open-wa-session.sw_col.json
-auth_info_baileys/
-bot/temp
-data/
-data/memes.sqlite*
-
 # Wastickers generated files
-wastickers/
 *.wastickers
 *.wastickers.zip
 stickers.db

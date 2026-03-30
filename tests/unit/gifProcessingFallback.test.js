@@ -12,7 +12,7 @@ describe('GIF Processing Fallback', () => {
     // instead of returning an error result, so that mediaProcessor.js can
     // catch it and trigger the Sharp-based single-frame fallback mechanism
     
-    const { processGif } = require('../../services/videoProcessor');
+    const { processGif } = require('../../src/services/videoProcessor');
     
     // The fix changes this behavior:
     // BEFORE: return { description: 'GIF detectado mas extração de frames não foi possível', ... }

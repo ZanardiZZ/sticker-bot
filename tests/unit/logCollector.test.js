@@ -2,7 +2,7 @@
  * LogCollector Tests - Testing encapsulation fix
  */
 
-const { LogCollector } = require('../../utils/logCollector');
+const { LogCollector } = require('../../src/utils/logCollector');
 
 function assertEqual(actual, expected, message) {
   if (actual !== expected) {

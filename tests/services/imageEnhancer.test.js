@@ -54,7 +54,7 @@ const tests = [
     name: 'Throws when buffer is not provided',
     fn: async () => {
       delete require.cache[servicePath];
-      const service = require('../../services/imageEnhancer');
+      const service = require('../../src/services/imageEnhancer');
 
       let errorCaught = null;
       try {
@@ -70,7 +70,7 @@ const tests = [
     name: 'Uses AI runner by default when available',
     fn: async () => {
       delete require.cache[servicePath];
-      const { createImageEnhancer } = require('../../services/imageEnhancer');
+      const { createImageEnhancer } = require('../../src/services/imageEnhancer');
 
       const expectedBuffer = Buffer.from('ai-output');
       const enhanceOptions = [];
@@ -107,7 +107,7 @@ const tests = [
       });
 
       delete require.cache[servicePath];
-      const { createImageEnhancer } = require('../../services/imageEnhancer');
+      const { createImageEnhancer } = require('../../src/services/imageEnhancer');
       const enhancer = createImageEnhancer({ sharp: sharpMock, aiRunner: null });
 
       const result = await enhancer.enhanceImage(Buffer.from('original'));
@@ -129,7 +129,7 @@ const tests = [
       });
 
       delete require.cache[servicePath];
-      const { createImageEnhancer } = require('../../services/imageEnhancer');
+      const { createImageEnhancer } = require('../../src/services/imageEnhancer');
 
       let aiAttempts = 0;
       const enhancer = createImageEnhancer({
@@ -151,7 +151,7 @@ const tests = [
     name: 'Throws when AI fails and fallback is disabled',
     fn: async () => {
       delete require.cache[servicePath];
-      const { createImageEnhancer } = require('../../services/imageEnhancer');
+      const { createImageEnhancer } = require('../../src/services/imageEnhancer');
 
       const enhancer = createImageEnhancer({
         sharp: () => {
@@ -183,7 +183,7 @@ const tests = [
       });
 
       delete require.cache[servicePath];
-      const { createImageEnhancer } = require('../../services/imageEnhancer');
+      const { createImageEnhancer } = require('../../src/services/imageEnhancer');
 
       const enhancer = createImageEnhancer({ sharp: sharpMock, aiRunner: null });
 
@@ -202,7 +202,7 @@ const tests = [
     name: 'AI runner factory returns null when executable is missing',
     fn: async () => {
       delete require.cache[servicePath];
-      const { createRealEsrganRunner } = require('../../services/imageEnhancer');
+      const { createRealEsrganRunner } = require('../../src/services/imageEnhancer');
 
       const runner = createRealEsrganRunner({ sharp: (input) => input, executablePath: null });
       assertEqual(runner, null, 'Runner should be null when executable is not provided');

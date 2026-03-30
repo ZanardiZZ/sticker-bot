@@ -2,7 +2,7 @@
  * LogCollector Race Condition Tests - Testing console interception synchronization
  */
 
-const { LogCollector, getLogCollector } = require('../../utils/logCollector');
+const { LogCollector, getLogCollector } = require('../../src/utils/logCollector');
 
 function assertEqual(actual, expected, message) {
   if (actual !== expected) {
@@ -100,7 +100,7 @@ const tests = [
     name: 'Singleton pattern should prevent multiple active instances',
     fn: () => {
       // Clear any existing singleton instance for clean test
-      const utils = require('../../utils/logCollector');
+      const utils = require('../../src/utils/logCollector');
       
       const singleton1 = getLogCollector(100);
       const singleton2 = getLogCollector(100);

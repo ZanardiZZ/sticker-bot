@@ -10,7 +10,7 @@ const { runTestSuite, assert, assertEqual } = require('../helpers/testUtils');
 const { MockBaileysClient } = require('../helpers/mockBaileysClient');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
-const PROCESSOR_PATH = path.join(PROJECT_ROOT, 'bot', 'mediaProcessor.js');
+const PROCESSOR_PATH = path.join(PROJECT_ROOT, 'src', 'bot', 'mediaProcessor.js');
 const MAX_STICKER_BYTES = 1024 * 1024;
 
 function resolveModule(relativePath) {
@@ -99,23 +99,23 @@ function withProcessIncomingMedia(overrides, testFn) {
   };
 
   const defaultModules = {
-    'utils/typingIndicator.js': { withTyping: async (client, chatId, fn) => fn() },
-    'services/nsfwFilter.js': { isNSFW: async () => false },
-    'services/nsfwVideoFilter.js': { isVideoNSFW: async () => false },
-    'services/ai.js': {
+    'src/utils/typingIndicator.js': { withTyping: async (client, chatId, fn) => fn() },
+    'src/services/nsfwFilter.js': { isNSFW: async () => false },
+    'src/services/nsfwVideoFilter.js': { isVideoNSFW: async () => false },
+    'src/services/ai.js': {
       getAiAnnotations: async () => ({ description: 'ai-desc', tags: ['tag-ai'] }),
       getAiAnnotationsFromPrompt: async () => ({ tags: [] }),
       getAiAnnotationsForGif: async () => ({ description: 'gif-desc', tags: ['gif-tag'] }),
       getTagsFromTextPrompt: async () => ({ tags: [] }),
       transcribeAudioBuffer: async () => ''
     },
-    'services/videoProcessor.js': {
+    'src/services/videoProcessor.js': {
       processVideo: async () => ({ description: 'video-desc', tags: ['video-tag'] }),
       processGif: async () => ({ description: 'gif-desc', tags: ['gif-tag'] }),
       processAnimatedWebp: async () => ({ description: 'webp-desc', tags: ['webp-tag'] })
     },
     'commands.js': { forceMap: {}, MAX_TAGS_LENGTH: 500, clearDescriptionCmds: [] },
-    'utils/messageUtils.js': {
+    'src/utils/messageUtils.js': {
       cleanDescriptionTags: (description, tags) => ({
         description: description || '',
         tags: Array.isArray(tags)
@@ -125,12 +125,12 @@ function withProcessIncomingMedia(overrides, testFn) {
             : []
       })
     },
-    'utils/responseMessage.js': { generateResponseMessage: () => 'BASE\n' },
-    'bot/stickers.js': {
+    'src/utils/responseMessage.js': { generateResponseMessage: () => 'BASE\n' },
+    'src/bot/stickers.js': {
       isAnimatedWebpBuffer: () => false,
       sendStickerForMediaRecord: async () => {}
     },
-    'utils/gifDetection.js': { isGifLikeVideo: async () => false },
+    'src/utils/gifDetection.js': { isGifLikeVideo: async () => false },
     'sharp': createSharpStub()
   };
 
@@ -166,7 +166,7 @@ function withProcessIncomingMedia(overrides, testFn) {
 }
 
 function cleanTempArtifacts() {
-  const tempDir = path.join(PROJECT_ROOT, 'temp');
+  const tempDir = path.join(PROJECT_ROOT, 'storage', 'temp', 'bot');
   if (fs.existsSync(tempDir)) {
     for (const name of fs.readdirSync(tempDir)) {
       if (name.startsWith('media-tmp-')) {
@@ -188,7 +188,7 @@ const tests = [
 
       await withProcessIncomingMedia({
         modules: {
-          'database/index.js': {
+          'src/database/index.js': {
             getMD5: () => 'md5-dup',
             getHashVisual: async () => 'hash-dup',
             findByHashVisual: async () => ({ id: 999 }),
@@ -198,13 +198,13 @@ const tests = [
             updateMediaDescription: async () => {},
             updateMediaTags: async () => {}
           },
-          'utils/mediaDownload.js': {
+          'src/utils/mediaDownload.js': {
             downloadMediaForMessage: async (client, message) => {
               downloadCalls.push({ client, message });
               return { buffer: Buffer.from('duplicate-image'), mimetype: 'image/png' };
             }
           },
-          'utils/safeMessaging.js': {
+          'src/utils/safeMessaging.js': {
             safeReply: async (client, chatId, text, messageId) => {
               safeReplies.push({ chatId, text, messageId });
             }
@@ -238,18 +238,18 @@ const tests = [
       const downloadCalls = [];
       const findByIdCalls = [];
 
-      const mediaDir = path.join(PROJECT_ROOT, 'media');
+      const mediaDir = path.join(PROJECT_ROOT, 'storage', 'media', 'bot');
       const existingFiles = new Set(fs.existsSync(mediaDir) ? fs.readdirSync(mediaDir) : []);
 
       await withProcessIncomingMedia({
         modules: {
-          'database/index.js': {
+          'src/database/index.js': {
             getMD5: () => 'md5-new',
             getHashVisual: async () => 'hash-new',
             findByHashVisual: async () => null,
             findById: async (id) => {
               findByIdCalls.push(id);
-              return { id, description: 'saved-desc', file_path: path.join(PROJECT_ROOT, 'media', `media-saved-${id}.webp`), mimetype: 'image/webp' };
+              return { id, description: 'saved-desc', file_path: path.join(PROJECT_ROOT, 'storage', 'media', 'bot', `media-saved-${id}.webp`), mimetype: 'image/webp' };
             },
             saveMedia: async (payload) => {
               saveMediaCalls.push(payload);
@@ -259,13 +259,13 @@ const tests = [
             updateMediaDescription: async () => {},
             updateMediaTags: async () => {}
           },
-          'utils/mediaDownload.js': {
+          'src/utils/mediaDownload.js': {
             downloadMediaForMessage: async (client, message) => {
               downloadCalls.push({ client, message });
               return { buffer: Buffer.from('new-image-data'), mimetype: 'image/png' };
             }
           },
-          'utils/safeMessaging.js': {
+          'src/utils/safeMessaging.js': {
             safeReply: async (client, chatId, text, messageId) => {
               safeReplies.push({ chatId, text, messageId });
             }
@@ -325,38 +325,38 @@ const tests = [
 
       await withProcessIncomingMedia({
         modules: {
-          'database/index.js': {
+          'src/database/index.js': {
             getMD5: () => 'md5-nsfw',
             getHashVisual: async () => 'hash-nsfw',
             findByHashVisual: async () => null,
-            findById: async (id) => ({ id, description: '', file_path: path.join(PROJECT_ROOT, 'media', `media-nsfw-${id}.webp`), mimetype: 'image/webp' }),
+            findById: async (id) => ({ id, description: '', file_path: path.join(PROJECT_ROOT, 'storage', 'media', 'bot', `media-nsfw-${id}.webp`), mimetype: 'image/webp' }),
             saveMedia: async (payload) => { saveMediaCalls.push(payload); return 77; },
             getTagsForMedia: async () => [],
             updateMediaDescription: async () => {},
             updateMediaTags: async () => {}
           },
-          'utils/mediaDownload.js': {
+          'src/utils/mediaDownload.js': {
             downloadMediaForMessage: async () => {
               downloadCalls.push(true);
               return { buffer: Buffer.from('nsfw-image-data'), mimetype: 'image/png' };
             }
           },
-          'services/nsfwFilter.js': {
+          'src/services/nsfwFilter.js': {
             isNSFW: async () => true
           },
-          'services/ai.js': {
+          'src/services/ai.js': {
             getAiAnnotations: async () => { aiCalled = true; return { description: 'should-not-run', tags: [] }; },
             getAiAnnotationsFromPrompt: async () => ({}),
             getAiAnnotationsForGif: async () => ({}),
             getTagsFromTextPrompt: async () => ({ tags: [] }),
             transcribeAudioBuffer: async () => ''
           },
-          'utils/safeMessaging.js': {
+          'src/utils/safeMessaging.js': {
             safeReply: async (client, chatId, text, messageId) => {
               safeReplies.push({ chatId, text, messageId });
             }
           },
-          'bot/stickers.js': {
+          'src/bot/stickers.js': {
             isAnimatedWebpBuffer: () => false,
             sendStickerForMediaRecord: async () => {}
           }
@@ -398,18 +398,18 @@ const tests = [
       let processGifCalled = 0;
       let videoNsfwChecks = 0;
 
-      const mediaDir = path.join(PROJECT_ROOT, 'media');
+      const mediaDir = path.join(PROJECT_ROOT, 'storage', 'media', 'bot');
       const existingFiles = new Set(fs.existsSync(mediaDir) ? fs.readdirSync(mediaDir) : []);
 
       await withProcessIncomingMedia({
         modules: {
-          'database/index.js': {
+          'src/database/index.js': {
             getMD5: () => 'md5-video',
             getHashVisual: async () => 'hash-video',
             findByHashVisual: async () => null,
             findById: async (id) => {
               findByIdCalls.push(id);
-              return { id, description: 'video-saved', file_path: path.join(PROJECT_ROOT, 'media', `media-video-${id}.webp`), mimetype: 'image/webp' };
+              return { id, description: 'video-saved', file_path: path.join(PROJECT_ROOT, 'storage', 'media', 'bot', `media-video-${id}.webp`), mimetype: 'image/webp' };
             },
             saveMedia: async (payload) => {
               saveMediaCalls.push(payload);
@@ -419,14 +419,14 @@ const tests = [
             updateMediaDescription: async () => {},
             updateMediaTags: async () => {}
           },
-          'utils/mediaDownload.js': {
+          'src/utils/mediaDownload.js': {
             downloadMediaForMessage: async () => {
               downloadCalls.push(true);
               const videoPath = path.join(PROJECT_ROOT, 'tests/fixtures/test-video.mp4');
               return { buffer: fs.readFileSync(videoPath), mimetype: 'video/mp4' };
             }
           },
-          'services/videoProcessor.js': {
+          'src/services/videoProcessor.js': {
             processVideo: async () => {
               processVideoCalled++;
               return { description: 'video-desc', text: 'captions', tags: ['video-tag'] };
@@ -437,32 +437,32 @@ const tests = [
             },
             processAnimatedWebp: async () => ({ description: 'webp-desc', tags: ['webp-tag'] })
           },
-          'services/nsfwVideoFilter.js': {
+          'src/services/nsfwVideoFilter.js': {
             isVideoNSFW: async () => {
               videoNsfwChecks++;
               return false;
             }
           },
-          'services/nsfwFilter.js': {
+          'src/services/nsfwFilter.js': {
             isNSFW: async () => false
           },
-          'services/ai.js': {
+          'src/services/ai.js': {
             getAiAnnotations: async () => ({ description: 'ai-desc', tags: ['tag-ai'] }),
             getAiAnnotationsFromPrompt: async () => ({}),
             getAiAnnotationsForGif: async () => ({ description: 'gif-desc', tags: ['gif-tag'] }),
             getTagsFromTextPrompt: async () => ({ tags: [] }),
             transcribeAudioBuffer: async () => ''
           },
-          'bot/stickers.js': {
+          'src/bot/stickers.js': {
             isAnimatedWebpBuffer: () => false,
             sendStickerForMediaRecord: async (client, chatId, media) => {
               stickerCalls.push({ chatId, mediaId: media.id });
             }
           },
-          'utils/gifDetection.js': {
+          'src/utils/gifDetection.js': {
             isGifLikeVideo: async () => true
           },
-          'utils/safeMessaging.js': {
+          'src/utils/safeMessaging.js': {
             safeReply: async (client, chatId, text, messageId) => {
               safeReplies.push({ chatId, text, messageId });
             }
@@ -541,7 +541,7 @@ const tests = [
 
       await withProcessIncomingMedia({
         modules: {
-          'database/index.js': {
+          'src/database/index.js': {
             getMD5: () => 'md5-audio',
             getHashVisual: async () => 'hash-audio',
             findByHashVisual: async () => null,
@@ -550,7 +550,7 @@ const tests = [
               return {
                 id,
                 description: 'Audio transcription',
-                file_path: path.join(PROJECT_ROOT, 'media', `media-audio-${id}.ogg`),
+                file_path: path.join(PROJECT_ROOT, 'storage', 'media', 'bot', `media-audio-${id}.ogg`),
                 mimetype: 'audio/ogg'
               };
             },
@@ -562,25 +562,25 @@ const tests = [
             updateMediaDescription: async () => {},
             updateMediaTags: async () => {}
           },
-          'utils/mediaDownload.js': {
+          'src/utils/mediaDownload.js': {
             downloadMediaForMessage: async () => {
               downloadCalls.push(true);
               return { buffer: Buffer.from('audio-bytes'), mimetype: 'audio/ogg' };
             }
           },
-          'services/ai.js': {
+          'src/services/ai.js': {
             getAiAnnotations: async () => ({ description: 'ai-desc', tags: ['tag-ai'] }),
             getAiAnnotationsFromPrompt: async () => ({ tags: ['spoken', 'note'] }),
             getTagsFromTextPrompt: async () => ({ tags: ['spoken', 'note'] }),
             getAiAnnotationsForGif: async () => ({ description: 'gif-desc', tags: ['gif-tag'] }),
             transcribeAudioBuffer: async () => 'Audio transcription'
           },
-          'utils/safeMessaging.js': {
+          'src/utils/safeMessaging.js': {
             safeReply: async (client, chatId, text, messageId) => {
               safeReplies.push({ chatId, text, messageId });
             }
           },
-          'bot/stickers.js': {
+          'src/bot/stickers.js': {
             isAnimatedWebpBuffer: () => false,
             sendStickerForMediaRecord: async () => {}
           }
@@ -621,35 +621,35 @@ const tests = [
 
       await withProcessIncomingMedia({
         modules: {
-          'database/index.js': {
+          'src/database/index.js': {
             getMD5: () => 'md5-audio-fail',
             getHashVisual: async () => 'hash-audio-fail',
             findByHashVisual: async () => null,
-            findById: async (id) => ({ id, description: '', file_path: path.join(PROJECT_ROOT, 'media', `media-audio-fail-${id}.ogg`), mimetype: 'audio/ogg' }),
+            findById: async (id) => ({ id, description: '', file_path: path.join(PROJECT_ROOT, 'storage', 'media', 'bot', `media-audio-fail-${id}.ogg`), mimetype: 'audio/ogg' }),
             saveMedia: async (payload) => { saveMediaCalls.push(payload); return 111; },
             getTagsForMedia: async () => [],
             updateMediaDescription: async () => {},
             updateMediaTags: async () => {}
           },
-          'utils/mediaDownload.js': {
+          'src/utils/mediaDownload.js': {
             downloadMediaForMessage: async () => {
               downloadCalls.push(true);
               return { buffer: Buffer.from('audio-bytes-error'), mimetype: 'audio/ogg' };
             }
           },
-          'services/ai.js': {
+          'src/services/ai.js': {
             getAiAnnotations: async () => ({ description: 'ai-desc', tags: ['tag-ai'] }),
             getAiAnnotationsFromPrompt: async () => ({ tags: [] }),
             getAiAnnotationsForGif: async () => ({ description: 'gif-desc', tags: ['gif-tag'] }),
             getTagsFromTextPrompt: async () => ({ tags: [] }),
             transcribeAudioBuffer: async () => { throw new Error('transcription failed'); }
           },
-          'utils/safeMessaging.js': {
+          'src/utils/safeMessaging.js': {
             safeReply: async (client, chatId, text, messageId) => {
               safeReplies.push({ chatId, text, messageId });
             }
           },
-          'bot/stickers.js': {
+          'src/bot/stickers.js': {
             isAnimatedWebpBuffer: () => false,
             sendStickerForMediaRecord: async () => {}
           }

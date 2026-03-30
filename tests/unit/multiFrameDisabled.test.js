@@ -1,4 +1,4 @@
-const { isAnimatedWebpBuffer } = require('../../bot/stickers');
+const { isAnimatedWebpBuffer } = require('../../src/bot/stickers');
 
 /**
  * Tests for DISABLE_MULTIFRAME_WEBP_ANALYSIS environment variable

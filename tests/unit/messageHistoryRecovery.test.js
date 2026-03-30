@@ -11,14 +11,14 @@ const tests = [
     name: 'filterUnprocessedMessages should filter out processed messages',
     async fn() {
       // Mock getProcessedMessageIds
-      const originalGetProcessedMessageIds = require('../../database').getProcessedMessageIds;
-      const mockDb = require('../../database');
+      const originalGetProcessedMessageIds = require('../../src/database').getProcessedMessageIds;
+      const mockDb = require('../../src/database');
       
       mockDb.getProcessedMessageIds = async (messageIds) => {
         return new Set(['msg-1', 'msg-3']); // msg-1 and msg-3 are processed
       };
 
-      const { filterUnprocessedMessages } = require('../../services/messageHistoryRecovery');
+      const { filterUnprocessedMessages } = require('../../src/services/messageHistoryRecovery');
 
       const messages = [
         { id: 'msg-1', from: 'chat-A' },
@@ -41,16 +41,16 @@ const tests = [
   {
     name: 'filterUnprocessedMessages should handle messages with key.id',
     async fn() {
-      const originalGetProcessedMessageIds = require('../../database').getProcessedMessageIds;
-      const mockDb = require('../../database');
+      const originalGetProcessedMessageIds = require('../../src/database').getProcessedMessageIds;
+      const mockDb = require('../../src/database');
       
       mockDb.getProcessedMessageIds = async (messageIds) => {
         return new Set(['msg-key-1']);
       };
 
       // Need to reload the module to get the updated mock
-      delete require.cache[require.resolve('../../services/messageHistoryRecovery')];
-      const { filterUnprocessedMessages } = require('../../services/messageHistoryRecovery');
+      delete require.cache[require.resolve('../../src/services/messageHistoryRecovery')];
+      const { filterUnprocessedMessages } = require('../../src/services/messageHistoryRecovery');
 
       const messages = [
         { key: { id: 'msg-key-1' }, from: 'chat-A' },
@@ -64,14 +64,14 @@ const tests = [
 
       mockDb.getProcessedMessageIds = originalGetProcessedMessageIds;
       // Reload module to restore original
-      delete require.cache[require.resolve('../../services/messageHistoryRecovery')];
+      delete require.cache[require.resolve('../../src/services/messageHistoryRecovery')];
     }
   },
 
   {
     name: 'filterUnprocessedMessages should return empty array for empty input',
     async fn() {
-      const { filterUnprocessedMessages } = require('../../services/messageHistoryRecovery');
+      const { filterUnprocessedMessages } = require('../../src/services/messageHistoryRecovery');
 
       const unprocessed1 = await filterUnprocessedMessages([]);
       const unprocessed2 = await filterUnprocessedMessages(null);
@@ -84,7 +84,7 @@ const tests = [
   {
     name: 'processBatch should process messages in batches',
     async fn() {
-      const { processBatch } = require('../../services/messageHistoryRecovery');
+      const { processBatch } = require('../../src/services/messageHistoryRecovery');
 
       const processedMessages = [];
       const mockProcessor = async (message) => {
@@ -112,7 +112,7 @@ const tests = [
   {
     name: 'processBatch should handle processing errors gracefully',
     async fn() {
-      const { processBatch } = require('../../services/messageHistoryRecovery');
+      const { processBatch } = require('../../src/services/messageHistoryRecovery');
 
       const mockProcessor = async (message) => {
         if (message.id === 'msg-error') {
@@ -136,7 +136,7 @@ const tests = [
   {
     name: 'HISTORY_RECOVERY_CONFIG should have default values',
     fn() {
-      const { HISTORY_RECOVERY_CONFIG } = require('../../services/messageHistoryRecovery');
+      const { HISTORY_RECOVERY_CONFIG } = require('../../src/services/messageHistoryRecovery');
 
       assert(HISTORY_RECOVERY_CONFIG.batchSize > 0, 'Batch size should be positive');
       assert(HISTORY_RECOVERY_CONFIG.maxMessagesPerChat > 0, 'Max messages should be positive');

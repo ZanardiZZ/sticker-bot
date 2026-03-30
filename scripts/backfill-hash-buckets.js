@@ -9,7 +9,7 @@
  * Este script preenche os registros faltantes
  */
 
-const { db } = require('../database/connection');
+const { db } = require('../src/database/connection');
 
 async function backfillHashBuckets() {
   console.log('[BackfillHashBuckets] Iniciando backfill...\n');

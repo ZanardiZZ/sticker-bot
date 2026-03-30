@@ -5,7 +5,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { isAnimatedWebpBuffer } = require('../../bot/stickers');
+const { isAnimatedWebpBuffer } = require('../../src/bot/stickers');
 
 async function testAnimatedStickerProcessingFlow() {
   console.log('\n=== Animated Sticker Processing Flow Test ===');

@@ -10,7 +10,7 @@
  */
 
 const { createTestDatabase, createTestTables, insertTestMedia, insertTestContacts, assert, assertEqual, runTestSuite } = require('../helpers/testUtils');
-const { countMediaBySenderWithDb } = require('../../database/models/media');
+const { countMediaBySenderWithDb } = require('../../src/database/models/media');
 
 /**
  * Helper to insert LID mapping

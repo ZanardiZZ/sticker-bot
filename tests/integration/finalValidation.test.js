@@ -54,7 +54,7 @@ async function simulateIdCommand() {
     console.log(`File path: ${mockMedia.file_path}\n`);
     
     // Import and use the fixed function
-    const { sendMediaAsOriginal } = require('../../commands/media.js');
+    const { sendMediaAsOriginal } = require('../../src/commands/media.js');
     
     console.log('Calling sendMediaAsOriginal with fixed implementation...\n');
     await sendMediaAsOriginal(mockClient, 'user@c.us', mockMedia);

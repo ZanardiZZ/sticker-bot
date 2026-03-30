@@ -4,7 +4,7 @@
  */
 
 const { createTestDatabase, createTestTables, assert, assertEqual, runTestSuite } = require('../helpers/testUtils');
-const { createCommandUsageModel } = require('../../database/models/commandUsage');
+const { createCommandUsageModel } = require('../../src/database/models/commandUsage');
 
 const tests = [
   {

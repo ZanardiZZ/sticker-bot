@@ -8,8 +8,8 @@
 
 const { createTestDatabase, createTestTables, insertTestMedia, insertTestContacts, assert, assertEqual, runTestSuite } = require('../helpers/testUtils');
 const { MockBaileysClient } = require('../helpers/mockBaileysClient');
-const { countMediaBySenderWithDb } = require('../../database/models/media');
-const { createPerfilHandler } = require('../../commands/handlers/perfil');
+const { countMediaBySenderWithDb } = require('../../src/database/models/media');
+const { createPerfilHandler } = require('../../src/commands/handlers/perfil');
 
 /**
  * Helper to insert LID mapping

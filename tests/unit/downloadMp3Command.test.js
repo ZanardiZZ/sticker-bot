@@ -7,7 +7,7 @@ const path = require('path');
 const { runTestSuite, assert, assertEqual } = require('../helpers/testUtils');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
-const MEDIA_DIR = path.join(PROJECT_ROOT, 'bot', 'media');
+const MEDIA_DIR = path.join(PROJECT_ROOT, 'storage', 'media', 'bot');
 
 class MockClient {
   constructor() {
@@ -33,9 +33,9 @@ class MockClient {
 }
 
 function withMockedDownloadAudio(mockImplementation, converterMock, testFn) {
-  const servicePath = require.resolve('../../services/videoDownloader');
-  const converterPath = require.resolve('../../services/audioConverter');
-  const handlerPath = require.resolve('../../commands/handlers/downloadMp3');
+  const servicePath = require.resolve('../../src/services/videoDownloader');
+  const converterPath = require.resolve('../../src/services/audioConverter');
+  const handlerPath = require.resolve('../../src/commands/handlers/downloadMp3');
 
   const videoDownloader = require(servicePath);
   const audioConverter = require(converterPath);

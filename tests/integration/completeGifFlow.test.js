@@ -101,7 +101,7 @@ async function testCompleteGifFlow() {
     
     try {
       // Simulate the core logic from mediaProcessor.js
-      const { generateResponseMessage } = require('../../utils/responseMessage');
+      const { generateResponseMessage } = require('../../src/utils/responseMessage');
       
       // Mock the GIF detection logic
       let isGifLike = false;

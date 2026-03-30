@@ -16,7 +16,7 @@ try {
 
 const fs = require('fs');
 const readline = require('readline');
-const { db } = require('../database');
+const { db } = require('../src/database');
 
 const argv = process.argv.slice(2);
 const DRY_RUN = argv.includes('--dry-run');

@@ -1,8 +1,7 @@
 // scripts/check-db-schema.js
 const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
+const { DB_PATH } = require('../src/paths');
 
-const dbPath = path.resolve(__dirname, '../media.db');
 const requiredTables = [
   'bot_config',
   'media',
@@ -11,7 +10,7 @@ const requiredTables = [
   // Adicione outras tabelas essenciais aqui se necessário
 ];
 
-const db = new sqlite3.Database(dbPath, (err) => {
+const db = new sqlite3.Database(DB_PATH, (err) => {
   if (err) {
     console.error('Erro ao abrir o banco:', err.message);
     process.exit(1);

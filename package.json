@@ -4,10 +4,23 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "agent:context": "node scripts/agent/context.js",
+    "agent:codex:deepseek": "bash scripts/agent/codex-deepseek.sh",
+    "agent:codex:deepseek:exec": "bash scripts/agent/codex-deepseek-exec.sh",
+    "agent:deepseek": "bash scripts/agent/deepseek-sidecar.sh",
+    "agent:ollama:proxy": "bash scripts/agent/ensure-local-ollama-proxy.sh",
+    "agent:ollama:proxy:stop": "bash scripts/agent/stop-local-ollama-proxy.sh",
+    "agent:tooling": "bash scripts/agent/check-tooling.sh",
+    "check": "npm run lint && npm run format:check && npm run test:unit",
+    "format": "prettier --write package.json package-lock.json .prettierrc.json eslint.config.cjs .github/workflows/ci.yml docs/agent-workflow.md",
+    "format:check": "prettier --check package.json package-lock.json .prettierrc.json eslint.config.cjs .github/workflows/ci.yml docs/agent-workflow.md",
+    "lint": "eslint . --max-warnings=0",
+    "lint:fix": "eslint . --fix",
+    "smoke": "node scripts/agent/smoke-check.js",
     "test": "npm run test:unit && npm run test:integration",
     "test:integration": "node tests/integration/runIntegrationTests.js",
     "test:unit": "node tests/runTests.js",
-    "web": "node web/server.js",
+    "web": "node src/web/server.js",
     "bot": "node index.js",
     "bot-direct": "node index.js",
     "baileys:server": "node server.js"
@@ -17,7 +30,7 @@
   "license": "ISC",
   "dependencies": {
     "@tensorflow/tfjs-node": "^4.22.0",
-    "@whiskeysockets/baileys": "^7.0.0-rc.9",
+    "@wppconnect-team/wppconnect": "^1.41.0",
     "adm-zip": "^0.5.10",
     "axios": "^1.13.5",
     "bcryptjs": "^3.0.3",
@@ -47,5 +60,11 @@
     "uuid": "^13.0.0",
     "ws": "^8.18.0",
     "yt-dlp-wrap": "^2.3.12"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.0.3",
+    "globals": "^17.4.0",
+    "prettier": "^3.8.1"
   }
 }

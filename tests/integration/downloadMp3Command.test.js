@@ -7,7 +7,10 @@ const { MockBaileysClient } = require('../helpers/mockBaileysClient');
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 
 function resolveFromRoot(relativePath) {
-  return require.resolve(path.join(PROJECT_ROOT, relativePath));
+  const normalized = /^(bot|commands|services|utils|client|database|web|plugins)\//.test(relativePath)
+    ? path.join('src', relativePath)
+    : relativePath;
+  return require.resolve(path.join(PROJECT_ROOT, normalized));
 }
 
 const tests = [

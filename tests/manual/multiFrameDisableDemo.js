@@ -5,7 +5,7 @@
  */
 
 require('dotenv').config();
-const { isAnimatedWebpBuffer } = require('../../bot/stickers');
+const { isAnimatedWebpBuffer } = require('../../src/bot/stickers');
 
 function simulateMediaProcessing(bufferWebp, mimetypeToSave) {
   console.log(`\n🔍 Processing media type: ${mimetypeToSave}`);
