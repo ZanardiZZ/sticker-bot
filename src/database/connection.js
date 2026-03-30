@@ -9,6 +9,7 @@ const DatabaseHandler = require('../services/databaseHandler');
 const { DB_PATH, DB_WAL_PATH } = require('../paths');
 
 const dbPath = DB_PATH;
+fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 const db = new sqlite3.Database(dbPath);
 
 // Initialize enhanced database handler

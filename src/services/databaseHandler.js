@@ -30,9 +30,13 @@ class DatabaseHandler {
       } catch (error) {
         lastError = error;
         
-        const isBusyError = error.code === 'SQLITE_BUSY' || 
-                           error.message.includes('SQLITE_BUSY') ||
-                           error.message.includes('database is locked');
+        const errorMessage = error?.message || '';
+        const isBusyError = error.code === 'SQLITE_BUSY' ||
+                           error.code === 'SQLITE_LOCKED' ||
+                           errorMessage.includes('SQLITE_BUSY') ||
+                           errorMessage.includes('SQLITE_LOCKED') ||
+                           errorMessage.includes('database is locked') ||
+                           errorMessage.includes('database table is locked');
         
         if (isBusyError && attempt < this.maxRetries) {
           const delay = this.retryDelay * Math.pow(2, attempt - 1); // Exponential backoff
