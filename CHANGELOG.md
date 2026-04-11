@@ -1,4 +1,7 @@
-# Changelog
+## [0.13.8] - 2026-04-11
+
+### Tarefas
+- chore(git,ops): add verified auto-commit workflow with remote version-sync (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/8a3fd69cb6df9eecdb02f476c94f7b5bbadd88dc))
 
 ## [0.13.8] - 2026-03-31
 
