@@ -1,3 +1,13 @@
+# Changelog
+
+## [0.14.0] - 2026-04-11
+
+### Novidades
+- feat(bot,memory,commands): consolidate multi-front reliability and memory-intent refactor (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/541923e9213283861010239949986e3c25832653))
+
+### Tarefas
+- chore(git,ops): add verified auto-commit workflow with remote version-sync (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/8a3fd69cb6df9eecdb02f476c94f7b5bbadd88dc))
+
 ## [0.13.8] - 2026-04-11
 
 ### Tarefas
