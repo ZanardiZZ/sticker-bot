@@ -5,9 +5,55 @@
 const { Sticker, StickerTypes } = require('../utils/stickerFormatter');
 const fs = require('fs');
 const fsp = require('fs/promises');
+const path = require('path');
 const { ensureSafeWebpSticker } = require('../bot/stickers');
+const { ROOT_DIR, MEDIA_DIR, BOT_MEDIA_DIR, OLD_STICKERS_DIR } = require('../paths');
 
 const { PACK_NAME, AUTHOR_NAME } = require('../../config/stickers');
+
+function resolveExistingMediaPath(filePath) {
+  if (!filePath || typeof filePath !== 'string') {
+    return null;
+  }
+
+  const normalized = filePath.replace(/\\/g, '/');
+  const baseName = path.basename(normalized);
+  const candidates = new Set([
+    filePath,
+    normalized
+  ]);
+
+  if (path.isAbsolute(filePath)) {
+    candidates.add(path.join(ROOT_DIR, normalized.replace(/^\/+/, '')));
+  } else {
+    candidates.add(path.join(ROOT_DIR, filePath));
+  }
+
+  candidates.add(path.join(MEDIA_DIR, baseName));
+  candidates.add(path.join(BOT_MEDIA_DIR, baseName));
+  candidates.add(path.join(OLD_STICKERS_DIR, baseName));
+  candidates.add(path.join(ROOT_DIR, 'media', baseName));
+  candidates.add(path.join(ROOT_DIR, 'media', 'old-stickers', baseName));
+  candidates.add(path.join(ROOT_DIR, 'storage', 'media', baseName));
+  candidates.add(path.join(ROOT_DIR, 'storage', 'media', 'old-stickers', baseName));
+
+  if (normalized.includes('/bot/media/')) {
+    candidates.add(path.join(BOT_MEDIA_DIR, baseName));
+  }
+
+  if (normalized.includes('/old-stickers/')) {
+    candidates.add(path.join(OLD_STICKERS_DIR, baseName));
+    candidates.add(path.join(MEDIA_DIR, 'old-stickers', baseName));
+  }
+
+  for (const candidate of candidates) {
+    if (candidate && fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
 
 /**
  * Sends media as appropriate type (sticker for images, file for others)
@@ -18,10 +64,10 @@ const { PACK_NAME, AUTHOR_NAME } = require('../../config/stickers');
 async function sendMediaByType(client, chatId, media) {
   if (!media) return;
 
-  const path = require('path');
   const mime = require('mime-types');
 
-  const filePath = media.file_path;
+  const resolvedFilePath = resolveExistingMediaPath(media.file_path);
+  const filePath = resolvedFilePath || media.file_path;
   const rawMime = media.mimetype || '';
   const normalizedMime = (rawMime || mime.lookup(filePath) || '').toLowerCase();
   const effectiveMime = normalizedMime || 'application/octet-stream';
@@ -155,10 +201,10 @@ async function sendMediaAsOriginal(client, chatId, media) {
     throw new Error('Media object is required');
   }
 
-  const path = require('path');
   const mime = require('mime-types');
 
-  const filePath = media.file_path;
+  const resolvedFilePath = resolveExistingMediaPath(media.file_path);
+  const filePath = resolvedFilePath || media.file_path;
   const mimetype = media.mimetype || '';
   const normalizedMime = (mimetype || mime.lookup(filePath) || '').toLowerCase();
   const effectiveMime = normalizedMime || 'application/octet-stream';

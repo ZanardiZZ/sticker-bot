@@ -15,6 +15,7 @@ const VALID_COMMANDS = [
   '#top5users',
   '#top5comandos',
   '#id',
+  '#forcar',
   '#forçar',
   '#count',
   '#tema',
@@ -23,13 +24,22 @@ const VALID_COMMANDS = [
   '#verify',
   '#perfil',
   '#ping',
+  '#pong',
   '#criar',
   '#exportarmemes',
+  '#download',
+  '#baixar',
   '#downloadmp3',
   '#baixarmp3',
   '#baixaraudio',
   '#fotohd',
-  '#pinga'
+  '#pinga',
+  '#ban',
+  '#issue',
+  '#pack',
+  '#addpack',
+  '#reacts',
+  '#comandos'
 ];
 
 const HELP_ENTRIES = [
@@ -42,6 +52,11 @@ const HELP_ENTRIES = [
     command: '#tema <palavras-chave> <quantidade opcional>',
     description: 'Busca stickers existentes pelo tema informado.',
     example: '#tema carros futuristas 3'
+  },
+  {
+    command: '#theme <palavras-chave> <quantidade opcional>',
+    description: 'Alias de #tema.',
+    example: '#theme carros futuristas 3'
   },
   {
     command: '#random',
@@ -79,9 +94,9 @@ const HELP_ENTRIES = [
     example: '#editar'
   },
   {
-    command: '#forçar',
+    command: '#forçar / #forcar',
     description: 'Força salvar duplicatas e converte o próximo vídeo em figurinha animada ignorando o áudio.',
-    example: '#forçar'
+    example: '#forcar'
   },
   {
     command: '#count',
@@ -99,9 +114,54 @@ const HELP_ENTRIES = [
     example: '#exportarmemes'
   },
   {
+    command: '#download <URL>',
+    description: 'Baixa mídia da URL (quando suportado pelo bot).',
+    example: '#download https://youtube.com/watch?v=xxxxx'
+  },
+  {
+    command: '#baixar <URL>',
+    description: 'Alias de #download.',
+    example: '#baixar https://youtube.com/watch?v=xxxxx'
+  },
+  {
     command: '#downloadmp3 <URL>',
     description: 'Extrai o áudio em MP3 de um vídeo curto das plataformas suportadas. Use #baixarmp3 ou #baixaraudio como atalho.',
     example: '#downloadmp3 https://youtube.com/watch?v=xxxxx'
+  },
+  {
+    command: '#baixarmp3 <URL>',
+    description: 'Alias de #downloadmp3.',
+    example: '#baixarmp3 https://youtube.com/watch?v=xxxxx'
+  },
+  {
+    command: '#baixaraudio <URL>',
+    description: 'Alias de #downloadmp3.',
+    example: '#baixaraudio https://youtube.com/watch?v=xxxxx'
+  },
+  {
+    command: '#ban @usuário',
+    description: 'Remove usuário mencionado do grupo (somente admins).',
+    example: '#ban @5511999999999'
+  },
+  {
+    command: '#issue <texto>',
+    description: 'Registra uma issue/relato para acompanhamento.',
+    example: '#issue sticker sem metadata no #random'
+  },
+  {
+    command: '#pack <nome>',
+    description: 'Envia figurinhas de um pack salvo.',
+    example: '#pack memes'
+  },
+  {
+    command: '#addpack <nome>',
+    description: 'Adiciona figurinha respondida a um pack.',
+    example: '#addpack memes'
+  },
+  {
+    command: '#reacts <texto>',
+    description: 'Configura/aciona reações conforme implementação atual do bot.',
+    example: '#reacts 👍😂🔥'
   },
   {
     command: '#ping',
@@ -114,22 +174,32 @@ const HELP_ENTRIES = [
     example: '#pinga'
   },
   {
+    command: '#pong',
+    description: 'Resposta rápida de saúde do bot com latência, status WS e fila.',
+    example: '#pong'
+  },
+  {
+    command: '#verificar / #verify',
+    description: 'Verifica status da mídia/entrada de acordo com as regras do bot.',
+    example: '#verificar'
+  },
+  {
     command: '#fotohd (respondendo a uma figurinha) 4x',
     description: 'Amplia a imagem respondida com IA local (configure REAL_ESRGAN_BIN) e usa Lanczos3 como fallback. Opcionalmente informe o fator de ampliação (ex: 4x). Padrão 2x, use 4x para ampliar quatro vezes.',
     example: '#fotohd 4x'
+  },
+  {
+    command: '#comandos',
+    description: 'Exibe esta lista de comandos.',
+    example: '#comandos'
   }
 ];
 
-/**
- * Checks if a message is a valid command
- * @param {string} messageBody - Message text
- * @returns {boolean} True if valid command
- */
 function isValidCommand(messageBody) {
-  if (!messageBody.startsWith('#')) return true; // não é comando
+  if (!messageBody.startsWith('#')) return true;
 
   const normalizedMessage = normalizeText(messageBody);
-  
+
   const isValid = VALID_COMMANDS.some(cmd => {
     const normalizedCmd = normalizeText(cmd);
     if (normalizedCmd.endsWith('id')) {
@@ -141,27 +211,20 @@ function isValidCommand(messageBody) {
   return isValid;
 }
 
-/**
- * Sends invalid command message
- * @param {object} client - WhatsApp client
- * @param {string} chatId - Chat ID
- */
 async function handleInvalidCommand(client, chatId) {
   const header = '╭══════════════════════╗\n' +
                  '┃  🤖 Comandos do Sticker Bot\n' +
                  '╰══════════════════════╯';
   const body = HELP_ENTRIES.map(({ command, description, example }) =>
-    [`╭ ${command}`, `├ ${description}`, example ? `╰ Exemplo: ${example}` : '╰ '].join('\n')
+    [
+      '╭ ' + command,
+      '├ ' + description,
+      example ? ('╰ Exemplo: ' + example) : '╰ '
+    ].join('\n')
   ).join('\n\n');
-  await client.sendText(chatId, `${header}\n${body}`);
+  await client.sendText(chatId, header + '\n' + body);
 }
 
-/**
- * Cleans description and tags from AI-generated bad phrases
- * @param {string} description - Description text
- * @param {string} tags - Tags text
- * @returns {object} Cleaned description and tags
- */
 function cleanDescriptionTags(description, tags) {
   const badPhrases = [
     'desculpe',
@@ -170,21 +233,21 @@ function cleanDescriptionTags(description, tags) {
     'sem descrição',
     'audio salvo sem descrição ai'
   ];
-  
+
   let cleanDesc = description ? description.toLowerCase() : '';
   if (badPhrases.some(phrase => cleanDesc.includes(phrase))) {
     cleanDesc = '';
   } else {
     cleanDesc = description || '';
   }
-  
+
   let cleanTags = tags ? tags.toLowerCase() : '';
   if (badPhrases.some(phrase => cleanTags.includes(phrase))) {
     cleanTags = '';
   } else {
     cleanTags = tags || '';
   }
-  
+
   return { description: cleanDesc, tags: cleanTags };
 }
 

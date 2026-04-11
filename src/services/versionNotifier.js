@@ -6,7 +6,7 @@
 const fs = require('fs').promises;
 const path = require('path');
 const { db } = require('../database/connection');
-const packageJson = require('../package.json');
+const packageJson = require('../../package.json');
 
 const NOTIFICATION_GROUP_ID = process.env.AUTO_SEND_GROUP_ID || process.env.VERSION_NOTIFICATION_GROUP;
 
@@ -73,7 +73,7 @@ function getRecentVersions(limit = 5) {
  */
 async function parseChangelogForVersion(version) {
   try {
-    const changelogPath = path.join(__dirname, '..', 'CHANGELOG.md');
+    const changelogPath = path.join(__dirname, '..', '..', 'CHANGELOG.md');
     const content = await fs.readFile(changelogPath, 'utf-8');
 
     // Find the section for this version

@@ -8,6 +8,7 @@ const {
   isDegenerateHash,
   isValidHash,
   findByHashVisual,
+  findByHashMd5,
   findSimilarByHashVisual,
   findById,
   saveMedia,
@@ -58,6 +59,14 @@ async function findSimilarMediaSafe(hashVisual) {
   }
   if (typeof findByHashVisual === 'function') {
     return findByHashVisual(hashVisual);
+  }
+  return null;
+}
+
+async function findMediaByMd5Safe(hashMd5) {
+  if (!hashMd5) return null;
+  if (typeof findByHashMd5 === 'function') {
+    return findByHashMd5(hashMd5);
   }
   return null;
 }
@@ -223,28 +232,43 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
       }
     } else if (mimetypeToSave.startsWith('image/')) {
       try {
-        const sharpSource = sharp(tmpFilePath);
-        pngBuffer = await sharpSource.png().toBuffer();
-        const calculatedHash = await getHashVisual(pngBuffer);
+        const fileBuffer = await fs.promises.readFile(tmpFilePath);
+        hashMd5 = getMD5(fileBuffer);
 
-        // Validate hash before using
-        // NOTE: Accept degenerate hashes (e.g. transparent images with many zeros)
-        // Degenerate filtering happens only during duplicate comparison
-        if (calculatedHash && isValidHashSafe(calculatedHash, false)) {
-          hashVisual = calculatedHash;
-          const isDegenerate = isDegenerateHashSafe(calculatedHash);
-          if (isDegenerate) {
-            console.log(`[MediaProcessor] Accepting degenerate hash for static image (likely transparent/low entropy): ${calculatedHash.substring(0, 40)}...`);
+        // Prefer multi-frame hash for animated image formats (e.g., animated WEBP stickers).
+        try {
+          const animatedMeta = await sharp(fileBuffer, { animated: true }).metadata();
+          const totalFrames = Number(animatedMeta?.pages || 1);
+          if (totalFrames > 1) {
+            await ensureVisualHashFromBuffer(fileBuffer, 'image-animated');
           }
-        } else {
-          console.warn(`[MediaProcessor] Calculated hash rejected for static image:
+        } catch (metaErr) {
+          console.warn('[MediaProcessor] Falha ao detectar animação na imagem:', metaErr.message);
+        }
+
+        // Fallback to static hash when multi-frame hash is unavailable.
+        if (!hashVisual) {
+          const sharpSource = sharp(tmpFilePath);
+          pngBuffer = await sharpSource.png().toBuffer();
+          const calculatedHash = await getHashVisual(pngBuffer);
+
+          // Validate hash before using
+          // NOTE: Accept degenerate hashes (e.g. transparent images with many zeros)
+          // Degenerate filtering happens only during duplicate comparison
+          if (calculatedHash && isValidHashSafe(calculatedHash, false)) {
+            hashVisual = calculatedHash;
+            const isDegenerate = isDegenerateHashSafe(calculatedHash);
+            if (isDegenerate) {
+              console.log(`[MediaProcessor] Accepting degenerate hash for static image (likely transparent/low entropy): ${calculatedHash.substring(0, 40)}...`);
+            }
+          } else {
+            console.warn(`[MediaProcessor] Calculated hash rejected for static image:
   Hash: ${calculatedHash ? calculatedHash.substring(0, 40) + '...' : 'NULL'}
   isValid: ${calculatedHash ? isValidHashSafe(calculatedHash, false) : false}
   Reason: ${!calculatedHash ? 'null hash' : 'invalid hash format'}`);
-          hashVisual = null;
+            hashVisual = null;
+          }
         }
-
-        hashMd5 = getMD5(await fs.promises.readFile(tmpFilePath));
       } catch (err) {
         console.warn('Erro ao processar mídia com sharp (formato não suportado):', err.message);
         pngBuffer = null;
@@ -282,11 +306,12 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
               if (!pngBuffer) pngBuffer = frameBuffer;
 
               const frameHash = await getHashVisual(frameBuffer);
-              // Only include valid, non-degenerate hashes to prevent false positives
-              if (frameHash && isValidHashSafe(frameHash, false) && !isDegenerateHashSafe(frameHash)) {
+              // For animated media, keep valid hashes even if low-entropy.
+              // Degenerate-frame handling is decided in hammingDistance with fallback rules.
+              if (frameHash && isValidHashSafe(frameHash, false)) {
                 sampleHashes.push(frameHash);
               } else if (frameHash) {
-                console.warn(`[MediaProcessor] Frame ${frameIndex} hash is invalid or degenerate (${contextLabel}), skipping`);
+                console.warn(`[MediaProcessor] Frame ${frameIndex} hash is invalid (${contextLabel}), skipping`);
               }
             } catch (frameErr) {
               console.warn(`[MediaProcessor] Falha ao extrair frame ${frameIndex} para hash (${contextLabel || 'sem contexto'}):`, frameErr.message);
@@ -767,6 +792,22 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
     console.log(`[DuplicateCheck] forceInsert: ${forceInsert}, hashVisual: ${hashVisual ? hashVisual.substring(0, 40) + '...' : 'NULL'}`);
 
     if (!forceInsert && hashVisual) {
+      // First check exact binary duplicate by MD5 (safe and deterministic).
+      if (hashMd5) {
+        const exact = await findMediaByMd5Safe(hashMd5);
+        if (exact) {
+          console.log(`[DuplicateCheck] BLOCKING save - exact MD5 duplicate found (ID ${exact.id})`);
+          await safeReply(
+            client,
+            chatId,
+            `Mídia idêntica já existe no banco (hash exato). ID: ${exact.id}. Use #forçar respondendo à mídia para salvar duplicado ou use #ID ${exact.id} para solicitar esta mídia.`,
+            message.id
+          );
+          return;
+        }
+      }
+
+      // Then check perceptual similarity.
       // Use Hamming distance matching with threshold of 102 bits (out of 1024)
       // This represents ~90% similarity (10% difference allowed)
       console.log('[DuplicateCheck] Calling duplicate lookup');

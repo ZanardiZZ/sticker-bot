@@ -19,8 +19,12 @@ const WASTICKERS_DIR = path.join(STORAGE_DIR, 'wastickers');
 const BOT_MEDIA_DIR = path.join(MEDIA_DIR, 'bot');
 const BOT_TEMP_DIR = path.join(TEMP_DIR, 'bot');
 const OLD_STICKERS_DIR = resolveRepoPath(
-  process.env.OLD_STICKERS_DIR || process.env.OLD_STICKERS_PATH,
+  process.env.OLD_STICKERS_DIR,
   path.join(MEDIA_DIR, 'old-stickers')
+);
+const OLD_STICKERS_SOURCE_DIR = resolveRepoPath(
+  process.env.OLD_STICKERS_PATH || process.env.OLD_STICKERS_SOURCE_DIR,
+  OLD_STICKERS_DIR
 );
 const CONVERSATIONS_DIR = path.join(DATA_DIR, 'conversations');
 const DB_PATH = path.join(DATABASE_DIR, 'media.db');
@@ -44,6 +48,7 @@ module.exports = {
   BOT_MEDIA_DIR,
   BOT_TEMP_DIR,
   OLD_STICKERS_DIR,
+  OLD_STICKERS_SOURCE_DIR,
   CONVERSATIONS_DIR,
   DB_PATH,
   DB_WAL_PATH,

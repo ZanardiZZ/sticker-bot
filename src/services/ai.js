@@ -4,13 +4,44 @@ const fs = require('fs');
 const path = require('path');
 const { TEMP_DIR } = require('../paths');
 
-let openai = null;
-if (process.env.OPENAI_API_KEY) {
-  openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-  });
-} else {
-  console.warn('[AI] OpenAI API key not configured. AI features will be disabled.');
+function createOpenAIClient({ apiKey, baseURL }) {
+  if (!apiKey) return null;
+  const options = { apiKey };
+  if (baseURL) options.baseURL = baseURL;
+  return new OpenAI(options);
+}
+
+const multimodalApiKey = process.env.OPENAI_API_KEY;
+const multimodalBaseURL = process.env.OPENAI_MULTIMODAL_BASE_URL || '';
+let openai = createOpenAIClient({
+  apiKey: multimodalApiKey,
+  baseURL: multimodalBaseURL
+});
+
+if (!openai) {
+  console.warn('[AI] OPENAI_API_KEY not configured. Multimodal AI features will be disabled.');
+}
+
+const conversationApiKey = process.env.CONVERSATION_API_KEY || process.env.OPENAI_API_KEY;
+const conversationBaseURL = process.env.CONVERSATION_BASE_URL || process.env.OPENAI_BASE_URL || '';
+let conversationAi = createOpenAIClient({
+  apiKey: conversationApiKey,
+  baseURL: conversationBaseURL
+});
+
+if (!conversationAi) {
+  console.warn('[AI] Conversational client not configured (CONVERSATION_API_KEY/OPENAI_API_KEY missing).');
+}
+
+const conversationFallbackApiKey = process.env.CONVERSATION_FALLBACK_API_KEY || process.env.OPENAI_API_KEY;
+const conversationFallbackBaseURL = process.env.CONVERSATION_FALLBACK_BASE_URL || process.env.OPENAI_FALLBACK_BASE_URL || process.env.OPENAI_MULTIMODAL_BASE_URL || '';
+let conversationFallbackAi = createOpenAIClient({
+  apiKey: conversationFallbackApiKey,
+  baseURL: conversationFallbackBaseURL
+});
+
+if (!conversationFallbackAi) {
+  console.warn('[AI] Conversation fallback client not configured (CONVERSATION_FALLBACK_API_KEY/OPENAI_API_KEY missing).');
 }
 
 const {
@@ -430,6 +461,68 @@ function isAiAvailable() {
   return !!openai;
 }
 
+function getDefaultConversationSystemPrompt() {
+  return [
+    'Você é Lia, participante de grupo no WhatsApp.',
+    'Responda em português brasileiro, natural e direto.',
+    'Sem metadados, sem rótulos (System/Assistant), sem pensar em voz alta.'
+  ].join(' ');
+}
+
+function normalizeConversationMessages(messages, { forceNoThink = false } = {}) {
+  const safe = Array.isArray(messages) ? messages : [];
+  const body = [];
+  let systemContent = '';
+
+  for (const entry of safe) {
+    const role = String(entry?.role || '').toLowerCase();
+    const content = String(entry?.content || '').trim();
+    if (!content) continue;
+
+    if (role === 'system') {
+      // Consolidate all system messages into a single first system message.
+      // llama.cpp chat templates can fail with HTTP 500 if system appears later.
+      systemContent = systemContent ? `${systemContent}
+${content}` : content;
+      continue;
+    }
+
+    if (role === 'assistant' || role === 'user') {
+      body.push({ role, content });
+      continue;
+    }
+
+    // Unknown role fallback: treat as user content to keep context usable.
+    body.push({ role: 'user', content });
+  }
+
+  if (forceNoThink) {
+    for (let i = body.length - 1; i >= 0; i -= 1) {
+      if (body[i].role !== 'user') continue;
+      const content = String(body[i].content || '').trim();
+      if (!content || content.startsWith('/no_think')) continue;
+      body[i] = { ...body[i], content: `/no_think ${content}` };
+      break;
+    }
+  }
+
+  return [
+    { role: 'system', content: systemContent || getDefaultConversationSystemPrompt() },
+    ...body
+  ];
+}
+
+function inferReasonCodeFromError(error) {
+  const status = Number(error?.status || error?.response?.status || 0);
+  const message = String(error?.message || '').toLowerCase();
+  if (status >= 500) return 'provider_500';
+  if (status === 429) return 'rate_limit';
+  if (status >= 400) return 'provider_4xx';
+  if (message.includes('system message must be at the beginning')) return 'provider_template_order';
+  if (message.includes('timeout') || message.includes('timed out')) return 'timeout';
+  return 'provider_error';
+}
+
 /**
  * Generates a conversational reply using the configured OpenAI chat model.
  * @param {Object} options
@@ -445,30 +538,114 @@ async function generateConversationalReply({
   temperature,
   maxTokens
 } = {}) {
+  const envTemp = Number(process.env.CONVERSATION_TEMPERATURE);
+  const envMaxTokens = Number(process.env.CONVERSATION_MAX_TOKENS);
+  const forceNoThink = !['0', 'false', 'no', 'off'].includes(String(process.env.CONVERSATION_FORCE_NO_THINK || '1').toLowerCase());
+  const safeTemperature = Number.isFinite(temperature)
+    ? temperature
+    : (Number.isFinite(envTemp) ? envTemp : 0.6);
+  const safeMaxTokens = Number.isFinite(maxTokens) && maxTokens > 0
+    ? Math.floor(maxTokens)
+    : (Number.isFinite(envMaxTokens) && envMaxTokens > 0 ? Math.floor(envMaxTokens) : 320);
+  const fallbackModel = process.env.CONVERSATION_MODEL_FALLBACK || process.env.OPENAI_CHAT_MODEL_FALLBACK || 'gpt-4o-mini';
+
+  if (!Array.isArray(messages) || messages.length === 0) {
+    console.warn('[AI] Conversational reply chamado sem mensagens.');
+    return null;
+  }
+
+  const preparedMessages = normalizeConversationMessages(messages, { forceNoThink });
+
+  const lastUserMessage = (() => {
+    for (let i = preparedMessages.length - 1; i >= 0; i -= 1) {
+      const role = String(preparedMessages[i]?.role || '').toLowerCase();
+      if (role !== 'user') continue;
+      return String(preparedMessages[i]?.content || '')
+        .replace(/^\s*\/no_think\s+/i, '')
+        .trim();
+    }
+    return '';
+  })();
+
+  const safeCompletionPrompt = [
+    'Você é Lia, participante de grupo no WhatsApp.',
+    'Responda em português brasileiro, natural e direto.',
+    'Sem metadados, sem rótulos (ex: System/Assistant), sem pensar em voz alta.',
+    'Se fizer lista, um item por linha.',
+    `Pergunta: ${lastUserMessage || 'Sem pergunta explícita.'}`,
+    'Resposta:'
+  ].join('\n');
+
+  const runSafeCompletionsFallback = async (client, targetModel, label = 'safe_completions') => {
+    try {
+      console.warn(`[AI][conversation] route=${label} reason_code=chat_empty_or_invalid`);
+      const completionFallback = await executeWithAiRetry(
+        () => client.completions.create({
+          model: targetModel,
+          prompt: safeCompletionPrompt,
+          temperature: safeTemperature,
+          max_tokens: safeMaxTokens,
+          stop: ['\nUsuário:', '\nUser:', '\nSistema:', '\nSystem:']
+        }),
+        { actionLabel: `resposta conversacional (${label})` }
+      );
+
+      let text = String(completionFallback?.choices?.[0]?.text || '').trim();
+      if (!text) return null;
+
+      text = text
+        .replace(/^\s*(?:assistant|assistente|system|sistema)\s*:\s*/i, '')
+        .replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, ' ')
+        .replace(/<\/?think\b[^>]*>/gi, ' ')
+        .trim();
+
+      return text || null;
+    } catch (fallbackError) {
+      console.warn(`[AI] ${label} failed:`, fallbackError?.message || fallbackError);
+      return null;
+    }
+  };
+
+  const runCloudFallback = async (reasonCode = 'primary_failed') => {
+    if (!conversationFallbackAi) {
+      return null;
+    }
+
+    try {
+      console.warn(`[AI][conversation] route=chat_fallback_openai reason_code=${reasonCode}`);
+      const response = await executeWithAiRetry(
+        () => conversationFallbackAi.chat.completions.create({
+          model: fallbackModel,
+          messages: preparedMessages,
+          temperature: safeTemperature,
+          max_tokens: safeMaxTokens
+        }),
+        { actionLabel: 'resposta conversacional (fallback OpenAI)' }
+      );
+
+      const choice = String(response?.choices?.[0]?.message?.content || '').trim();
+      if (choice) {
+        return choice;
+      }
+
+      return await runSafeCompletionsFallback(conversationFallbackAi, fallbackModel, 'safe_completions_openai_fallback');
+    } catch (fallbackError) {
+      console.error('[AI] Fallback OpenAI conversacional falhou:', fallbackError);
+      return null;
+    }
+  };
+
   try {
-    if (!openai) {
-      console.warn('[AI] Conversational AI requested sem configuração de OpenAI.');
-      return null;
+    if (!conversationAi) {
+      console.warn('[AI] Conversational AI requested sem client configurado.');
+      return await runCloudFallback('primary_client_unconfigured');
     }
 
-    if (!Array.isArray(messages) || messages.length === 0) {
-      console.warn('[AI] Conversational reply chamado sem mensagens.');
-      return null;
-    }
-
-    const envTemp = Number(process.env.CONVERSATION_TEMPERATURE);
-    const envMaxTokens = Number(process.env.CONVERSATION_MAX_TOKENS);
-    const safeTemperature = Number.isFinite(temperature)
-      ? temperature
-      : (Number.isFinite(envTemp) ? envTemp : 0.6);
-    const safeMaxTokens = Number.isFinite(maxTokens) && maxTokens > 0
-      ? Math.floor(maxTokens)
-      : (Number.isFinite(envMaxTokens) && envMaxTokens > 0 ? Math.floor(envMaxTokens) : 320);
-
+    console.log('[AI][conversation] route=chat_completions reason_code=request');
     const response = await executeWithAiRetry(
-      () => openai.chat.completions.create({
+      () => conversationAi.chat.completions.create({
         model,
-        messages,
+        messages: preparedMessages,
         temperature: safeTemperature,
         max_tokens: safeMaxTokens
       }),
@@ -476,10 +653,43 @@ async function generateConversationalReply({
     );
 
     const choice = response?.choices?.[0]?.message?.content;
-    return choice ? choice.trim() : null;
+    if (choice && String(choice).trim()) {
+      return String(choice).trim();
+    }
+
+    console.warn('[AI][conversation] route=safe_completions reason_code=empty_chat_choice');
+    const primarySafeFallback = await runSafeCompletionsFallback(conversationAi, model, 'safe_completions');
+    if (primarySafeFallback) {
+      return primarySafeFallback;
+    }
+
+    return await runCloudFallback('primary_empty_after_safe_fallback');
   } catch (error) {
-    console.error('[AI] Erro ao gerar resposta conversacional:', error);
-    return null;
+    const reasonCode = inferReasonCodeFromError(error);
+    console.error(`[AI][conversation] route=chat_completions reason_code=${reasonCode}`, error);
+
+    // Secondary path for providers that intermittently fail chat.completions (HTTP 500).
+    try {
+      const completionFallback = await executeWithAiRetry(
+        () => conversationAi.completions.create({
+          model,
+          prompt: safeCompletionPrompt,
+          temperature: safeTemperature,
+          max_tokens: Number.isFinite(maxTokens) && maxTokens > 0 ? Math.floor(maxTokens) : 220,
+          stop: ['\nUsuário:', '\nUser:', '\nSistema:', '\nSystem:']
+        }),
+        { actionLabel: 'resposta conversacional (fallback de exceção completions)' }
+      );
+
+      const text = String(completionFallback?.choices?.[0]?.text || '').trim();
+      if (text) {
+        return text;
+      }
+    } catch (fallbackError) {
+      console.error('[AI] Fallback de exceção conversacional falhou:', fallbackError);
+    }
+
+    return await runCloudFallback(reasonCode || 'primary_exception');
   }
 }
 
@@ -668,5 +878,6 @@ module.exports = {
   isAiAvailable,
   generateConversationalReply,
   extractMemoryFactsFromText,
-  extractRunningJokeFromText
+  extractRunningJokeFromText,
+  normalizeConversationMessages
 };

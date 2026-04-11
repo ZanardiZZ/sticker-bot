@@ -560,17 +560,23 @@ async function getServiceStatus({ service }) {
  */
 async function restartService({ service }) {
   try {
-    // CRITICAL SAFETY: Never restart the bot process itself during diagnosis
-    // This would kill AdminWatcher before it can send the final response
-    const selfServiceNames = ['Bot-Client', 'sticker-bot'];
-    if (selfServiceNames.includes(service)) {
-      console.warn(`[AdminWatcher] ⚠️ Blocked self-restart attempt: ${service}`);
+    // CRITICAL SAFETY: Never restart the live bot/bridge processes during diagnosis.
+    // These are the processes that keep the WhatsApp session and the bot connection alive.
+    const protectedServiceNames = new Set([
+      'Bot-Client',
+      'WS-Socket-Server',
+      'sticker-bot',
+      'baileys-bridge'
+    ]);
+
+    if (protectedServiceNames.has(service)) {
+      console.warn(`[AdminWatcher] ⚠️ Blocked protected-service restart attempt: ${service}`);
       return {
         success: false,
         blocked: true,
         error: `Cannot restart ${service} during diagnosis - would kill AdminWatcher`,
-        hint: 'The bot process cannot restart itself. If needed, ask admin to restart manually: sudo -u dev pm2 restart Bot-Client',
-        suggestion: 'Instead of restarting, try other fixes first (create tables, modify configs, etc.)'
+        hint: 'Use a manual restart only after confirming the diagnosis, so the WhatsApp session is not dropped unexpectedly.',
+        suggestion: 'Instead of restarting, try other fixes first (logs, config, SQL, queue cleanup).'
       };
     }
 

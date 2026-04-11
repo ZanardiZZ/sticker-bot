@@ -62,6 +62,8 @@ const originalEnv = {
   MEMORY_RETRY_COUNT: process.env.MEMORY_RETRY_COUNT
 };
 
+const TEST_MEMORY_API_URL = 'http://memory.test:9999';
+
 function restoreEnv() {
   for (const [key, value] of Object.entries(originalEnv)) {
     if (value === undefined) {
@@ -77,7 +79,7 @@ const tests = [
     name: 'memory client uses configured URL and timeout when enabled',
     fn: async () => {
       process.env.MEMORY_ENABLED = '1';
-      process.env.MEMORY_API_URL = 'http://memory.test:9999';
+      process.env.MEMORY_API_URL = TEST_MEMORY_API_URL;
       process.env.MEMORY_TIMEOUT_MS = '4321';
       process.env.MEMORY_RETRY_COUNT = '1';
 
@@ -123,6 +125,7 @@ const tests = [
     name: 'memory client returns null after request failures',
     fn: async () => {
       process.env.MEMORY_ENABLED = '1';
+      process.env.MEMORY_API_URL = TEST_MEMORY_API_URL;
       process.env.MEMORY_RETRY_COUNT = '1';
       let attempts = 0;
 
@@ -145,7 +148,7 @@ const tests = [
     name: 'learnFromMessage extracts multiple heuristic facts from natural sentences',
     fn: async () => {
       process.env.MEMORY_ENABLED = '1';
-      delete process.env.MEMORY_API_URL;
+      process.env.MEMORY_API_URL = TEST_MEMORY_API_URL;
 
       const calls = [];
       await withMockedModules({
@@ -180,6 +183,7 @@ const tests = [
     name: 'learnFromMessage merges AI facts with heuristics without duplicates',
     fn: async () => {
       process.env.MEMORY_ENABLED = '1';
+      process.env.MEMORY_API_URL = TEST_MEMORY_API_URL;
 
       const calls = [];
       await withMockedModules({
@@ -215,6 +219,7 @@ const tests = [
     name: 'learnFromMessage only saves running jokes when there is recurrence in recent group messages',
     fn: async () => {
       process.env.MEMORY_ENABLED = '1';
+      process.env.MEMORY_API_URL = TEST_MEMORY_API_URL;
 
       const calls = [];
       await withMockedModules({
@@ -258,6 +263,7 @@ const tests = [
     name: 'learnFromMessage does not save isolated running joke suggestions',
     fn: async () => {
       process.env.MEMORY_ENABLED = '1';
+      process.env.MEMORY_API_URL = TEST_MEMORY_API_URL;
 
       const calls = [];
       await withMockedModules({
@@ -293,6 +299,7 @@ const tests = [
     name: 'buildContext returns layered user memory and derived group context',
     fn: async () => {
       process.env.MEMORY_ENABLED = '1';
+      process.env.MEMORY_API_URL = TEST_MEMORY_API_URL;
 
       await withMockedModules({
         axios: async (config) => {

@@ -304,18 +304,45 @@ function hammingDistance(hash1, hash2) {
     return 1024; // Max distance if invalid
   }
 
-  // Split multi-frame hashes and filter out degenerate frames
-  // Support both 16-char (64-bit) and 256-char (1024-bit) hashes
-  const frames1 = hash1.split(':').filter(h => {
+  // Split multi-frame hashes (raw) and non-degenerate subsets.
+  // Support both 16-char (64-bit) and 256-char (1024-bit) hashes.
+  const rawFrames1 = hash1.split(':').filter(h => {
     const len = h ? h.length : 0;
-    return h && (len === 16 || len === 256) && !isDegenerateHash(h);
+    return h && (len === 16 || len === 256);
   });
-  const frames2 = hash2.split(':').filter(h => {
+  const rawFrames2 = hash2.split(':').filter(h => {
     const len = h ? h.length : 0;
-    return h && (len === 16 || len === 256) && !isDegenerateHash(h);
+    return h && (len === 16 || len === 256);
   });
 
-  // If no valid frames, return max distance
+  const nonDegFrames1 = rawFrames1.filter(h => !isDegenerateHash(h));
+  const nonDegFrames2 = rawFrames2.filter(h => !isDegenerateHash(h));
+
+  // Normal path: compare only non-degenerate frames.
+  // Fallback path (animated stickers with many transparent frames):
+  // if both sides are multi-frame and non-degenerate coverage is too low,
+  // compare raw frames to avoid false negatives.
+  const isSingleVsMultiRaw =
+    (rawFrames1.length === 1 && rawFrames2.length > 1) ||
+    (rawFrames2.length === 1 && rawFrames1.length > 1);
+
+  const lowCoverageAnimatedMode =
+    rawFrames1.length > 1 &&
+    rawFrames2.length > 1 &&
+    (nonDegFrames1.length < 2 || nonDegFrames2.length < 2);
+
+  const useRawAnimatedFallback =
+    lowCoverageAnimatedMode ||
+    (isSingleVsMultiRaw && (nonDegFrames1.length < 2 || nonDegFrames2.length < 2));
+
+  const frames1 = useRawAnimatedFallback ? rawFrames1 : nonDegFrames1;
+  const frames2 = useRawAnimatedFallback ? rawFrames2 : nonDegFrames2;
+
+  if (useRawAnimatedFallback && process.env.HASH_DEBUG === 'true') {
+    console.log(`[HammingDistance] Using raw-frame fallback: raw=${rawFrames1.length}/${rawFrames2.length}, nonDeg=${nonDegFrames1.length}/${nonDegFrames2.length}`);
+  }
+
+  // If no usable frames, return max distance
   if (frames1.length === 0 || frames2.length === 0) {
     // Determine max distance from hash length
     const maxBits = (hash1.length > 20 || hash2.length > 20) ? 1024 : 64;
@@ -336,6 +363,10 @@ function hammingDistance(hash1, hash2) {
     const singleFrame = frames1.length === 1 ? frames1[0] : frames2[0];
     const multiFrames = frames1.length === 1 ? frames2 : frames1;
 
+    const perFrameThreshold = lowCoverageAnimatedMode
+      ? Math.min(24, threshold)
+      : threshold;
+
     // Count how many frames are similar to the single frame
     let similarFrameCount = 0;
     let bestDistance = maxBits;
@@ -347,19 +378,21 @@ function hammingDistance(hash1, hash2) {
       if (dist < bestDistance) {
         bestDistance = dist;
       }
-      if (dist <= threshold) {
+      if (dist <= perFrameThreshold) {
         similarFrameCount++;
       }
       // Early exit on exact match
       if (dist === 0) return 0;
     }
 
-    // Require majority of frames to be similar (>50%) to avoid false positives
-    // e.g., if GIF has 5 frames, need at least 3 to be similar to static image
-    const requiredSimilarFrames = Math.ceil(multiFrames.length / 2);
+    // In low-coverage animated mode, use stricter requirements to avoid false positives.
+    // In normal mode, keep the existing majority-based behavior.
+    const requiredSimilarFrames = lowCoverageAnimatedMode
+      ? Math.min(3, multiFrames.length)
+      : (useRawAnimatedFallback ? Math.min(2, multiFrames.length) : Math.ceil(multiFrames.length / 2));
 
     // DEBUG LOG
-    if (similarFrameCount > 0) {
+    if (process.env.HASH_DEBUG === 'true' && similarFrameCount > 0) {
       console.log(`[HammingDistance] Static vs Animated comparison:
   Total frames: ${multiFrames.length}
   Similar frames (≤${threshold}): ${similarFrameCount}
@@ -370,7 +403,7 @@ function hammingDistance(hash1, hash2) {
   Result: ${similarFrameCount >= requiredSimilarFrames ? 'DUPLICATE' : 'DIFFERENT'}`);
     }
 
-    if (similarFrameCount >= requiredSimilarFrames) {
+    if (similarFrameCount >= requiredSimilarFrames && bestDistance <= perFrameThreshold) {
       return bestDistance;
     } else {
       // Not enough similar frames - likely different content
@@ -380,6 +413,11 @@ function hammingDistance(hash1, hash2) {
 
   // Case 2: Multi-frame vs Multi-frame (e.g., GIF vs GIF)
   // Count matching frame pairs
+  const perPairThreshold = lowCoverageAnimatedMode
+    ? Math.min(24, threshold)
+    : threshold;
+  const requiredMatchingPairs = lowCoverageAnimatedMode ? 5 : 2;
+
   let matchingPairs = 0;
   let bestDistance = maxBits;
 
@@ -389,7 +427,7 @@ function hammingDistance(hash1, hash2) {
       if (dist < bestDistance) {
         bestDistance = dist;
       }
-      if (dist <= threshold) {
+      if (dist <= perPairThreshold) {
         matchingPairs++;
       }
       // Early exit on exact match
@@ -397,13 +435,10 @@ function hammingDistance(hash1, hash2) {
     }
   }
 
-  // Require at least 2 matching frame pairs to consider it a duplicate
-  // This prevents single-frame coincidences in complex animations
-  if (matchingPairs >= 2) {
+  if (matchingPairs >= requiredMatchingPairs && bestDistance <= perPairThreshold) {
     return bestDistance;
-  } else {
-    return maxBits;
   }
+  return maxBits;
 }
 
 /**

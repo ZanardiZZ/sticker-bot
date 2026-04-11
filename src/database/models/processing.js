@@ -12,7 +12,7 @@ const { getAiAnnotations } = require('../../services/ai');
 const { getMD5, isFileProcessed, upsertProcessedFile, getDHash, getAnimatedDHashes } = require('../utils');
 const { findByHashVisual, findByHashMd5, saveMedia } = require('./media');
 const { updateMediaTags } = require('./tags');
-const { OLD_STICKERS_DIR, ROOT_DIR } = require('../../paths');
+const { OLD_STICKERS_DIR, OLD_STICKERS_SOURCE_DIR, ROOT_DIR } = require('../../paths');
 
 const repoRoot = ROOT_DIR;
 const SANITIZED_OLD_STICKERS_DIR = OLD_STICKERS_DIR;
@@ -206,8 +206,8 @@ try {
   console.warn('[Processing] Funcionalidades de reparo de WebP serão desabilitadas');
 }
 
-// Variable for old stickers path will be read from .env
-const OLD_STICKERS_PATH = process.env.OLD_STICKERS_PATH || null;
+// Source path for old stickers is read from the NAS or legacy env value.
+const OLD_STICKERS_PATH = OLD_STICKERS_SOURCE_DIR || process.env.OLD_STICKERS_PATH || null;
 // Limit of stickers to process at once
 const PROCESS_BATCH_SIZE = 1;
 

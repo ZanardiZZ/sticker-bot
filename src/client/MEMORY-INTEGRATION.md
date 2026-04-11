@@ -20,13 +20,13 @@ Esta documentação explica como o Sticker Bot integra-se com o sistema de memó
 ### Variável de Ambiente
 
 ```bash
-MEMORY_API_URL=http://192.168.20.140:8766
+MEMORY_API_URL=http://seu-backend-de-memoria:8766
 MEMORY_ENABLED=1
 MEMORY_TIMEOUT_MS=3000
 MEMORY_RETRY_COUNT=1
 ```
 
-Se não definida, usa `http://192.168.20.140:8766`.
+Se `MEMORY_API_URL` não estiver definida, a integração fica desabilitada.
 
 ### Inicialização
 

@@ -144,6 +144,14 @@ async function findSimilarByHashVisual(hashVisual, threshold = 102) {
     return null;
   }
 
+  // Animated hashes with less than 2 non-degenerate frames are too unstable and
+  // tend to generate false positives across unrelated GIFs/stickers.
+  // In this mode, skip perceptual duplicate lookup (MD5 exact duplicate check should handle exact matches).
+  if (frames.length > 1 && validFrames.length < 2) {
+    console.log('[DuplicateDetection] Skipping search - low-coverage animated hash (<2 non-degenerate frames)');
+    return null;
+  }
+
   return new Promise((resolve) => {
     // First try exact match for performance
     db.get(
@@ -173,7 +181,7 @@ async function findSimilarByHashVisual(hashVisual, threshold = 102) {
             // Fallback to full scan if bucket is empty or doesn't exist
             if (!candidates || candidates.length === 0) {
               db.all(
-                'SELECT id, hash_visual FROM media WHERE hash_visual IS NOT NULL LIMIT 1000',
+                'SELECT id, hash_visual FROM media WHERE hash_visual IS NOT NULL',
                 [],
                 (err, fallbackRows) => {
                   processCandidates(fallbackRows || []);
@@ -202,7 +210,11 @@ async function findSimilarByHashVisual(hashVisual, threshold = 102) {
             const frames = row.hash_visual.split(':');
             const validFrames = frames.filter(f => f && !isDegenerateHash(f));
 
-            // Keep only if at least one valid frame exists
+            // For animated hashes, require at least 2 non-degenerate frames.
+            // For static hashes, require at least 1 non-degenerate frame.
+            if (frames.length > 1) {
+              return validFrames.length >= 2;
+            }
             return validFrames.length > 0;
           });
 

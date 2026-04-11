@@ -183,25 +183,18 @@ class AdminWatcher {
       // Run diagnosis with timeout
       console.log('[AdminWatcher] Starting diagnosis...');
 
-      // Start typing indicator manually
-      if (typeof this.client.simulateTyping === 'function') {
-        await this.client.simulateTyping(chatId, true).catch(() => {});
-      }
+      const result = await withTyping(this.client, chatId, async () => {
+        const diagnosisPromise = this.diagnoseAndFix(problemText, chatId);
 
-      const diagnosisPromise = this.diagnoseAndFix(problemText, chatId);
+        // Add 60 second timeout
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Diagnosis timeout (60s)')), 60000);
+        });
 
-      // Add 60 second timeout
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Diagnosis timeout (60s)')), 60000);
+        return Promise.race([diagnosisPromise, timeoutPromise]);
       });
 
-      const result = await Promise.race([diagnosisPromise, timeoutPromise]);
       console.log('[AdminWatcher] Diagnosis completed');
-
-      // Stop typing indicator
-      if (typeof this.client.simulateTyping === 'function') {
-        await this.client.simulateTyping(chatId, false).catch(() => {});
-      }
 
       // Send result
       await safeReply(this.client, chatId, result, message);

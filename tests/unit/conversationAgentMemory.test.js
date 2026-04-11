@@ -61,7 +61,8 @@ async function withMockedConversationAgent(mocks, testFn) {
 
 const originalEnv = {
   CONVERSATION_AGENT_ENABLED: process.env.CONVERSATION_AGENT_ENABLED,
-  CONVERSATION_PERSONA_NAME: process.env.CONVERSATION_PERSONA_NAME
+  CONVERSATION_PERSONA_NAME: process.env.CONVERSATION_PERSONA_NAME,
+  CONVERSATION_ENABLE_MEMORY_CONTEXT: process.env.CONVERSATION_ENABLE_MEMORY_CONTEXT
 };
 
 function restoreEnv() {
@@ -80,6 +81,7 @@ const tests = [
     fn: async () => {
       process.env.CONVERSATION_AGENT_ENABLED = '1';
       process.env.CONVERSATION_PERSONA_NAME = 'Lia';
+      process.env.CONVERSATION_ENABLE_MEMORY_CONTEXT = '1';
 
       const chatId = 'memory-test@g.us';
       const persistedState = stateFilePath(chatId);

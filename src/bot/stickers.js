@@ -8,10 +8,11 @@ const path = require('path');
 const mime = require('mime-types');
 const crypto = require('crypto');
 const { PACK_NAME, AUTHOR_NAME } = require('../../config/stickers');
+const { Image } = require('node-webpmux');
 const { linkMessageToMedia } = require('../database/models/reactions');
-const { BOT_MEDIA_DIR, BOT_TEMP_DIR } = require('../paths');
+const { BOT_MEDIA_DIR: STORAGE_BOT_MEDIA_DIR, BOT_TEMP_DIR } = require('../paths');
 
-const MEDIA_DIR = BOT_MEDIA_DIR;
+const MEDIA_DIR = STORAGE_BOT_MEDIA_DIR;
 const FIXED_WEBP_DIR = path.join(BOT_TEMP_DIR, 'fixed-webp');
 
 // Conditional loading for FFmpeg
@@ -24,6 +25,56 @@ try {
 }
 
 const { Sticker, StickerTypes } = require('../utils/stickerFormatter');
+const {
+  ROOT_DIR: REPO_ROOT_DIR,
+  MEDIA_DIR: STORAGE_MEDIA_DIR,
+  BOT_MEDIA_DIR: _BOT_MEDIA_DIR,
+  OLD_STICKERS_DIR
+} = require('../paths');
+
+function resolveExistingMediaPath(filePath) {
+  if (!filePath || typeof filePath !== 'string') {
+    return null;
+  }
+
+  const normalized = filePath.replace(/\\/g, '/');
+  const baseName = path.basename(normalized);
+  const candidates = new Set([
+    filePath,
+    normalized
+  ]);
+
+  if (path.isAbsolute(filePath)) {
+    candidates.add(path.join(REPO_ROOT_DIR, normalized.replace(/^\/+/, '')));
+  } else {
+    candidates.add(path.join(REPO_ROOT_DIR, filePath));
+  }
+
+  candidates.add(path.join(STORAGE_MEDIA_DIR, baseName));
+  candidates.add(path.join(STORAGE_BOT_MEDIA_DIR, baseName));
+  candidates.add(path.join(OLD_STICKERS_DIR, baseName));
+  candidates.add(path.join(REPO_ROOT_DIR, 'media', baseName));
+  candidates.add(path.join(REPO_ROOT_DIR, 'media', 'old-stickers', baseName));
+  candidates.add(path.join(REPO_ROOT_DIR, 'storage', 'media', baseName));
+  candidates.add(path.join(REPO_ROOT_DIR, 'storage', 'media', 'old-stickers', baseName));
+
+  if (normalized.includes('/bot/media/')) {
+    candidates.add(path.join(STORAGE_BOT_MEDIA_DIR, baseName));
+  }
+
+  if (normalized.includes('/old-stickers/')) {
+    candidates.add(path.join(OLD_STICKERS_DIR, baseName));
+    candidates.add(path.join(STORAGE_MEDIA_DIR, 'old-stickers', baseName));
+  }
+
+  for (const candidate of candidates) {
+    if (candidate && fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
 
 /**
  * Ensures directory exists, creating it if necessary
@@ -38,6 +89,38 @@ function ensureDirSync(dir) {
  * @param {Buffer} buf - WebP buffer
  * @returns {boolean} True if animated
  */
+
+function buildStickerExif(packName, authorName) {
+  const payload = {
+    'sticker-pack-id': crypto.randomUUID(),
+    'sticker-pack-name': packName || '',
+    'sticker-pack-publisher': authorName || '',
+    emojis: []
+  };
+
+  const json = Buffer.from(JSON.stringify(payload), 'utf8');
+  const header = Buffer.from([
+    0x49, 0x49, 0x2a, 0x00,
+    0x08, 0x00, 0x00, 0x00,
+    0x01, 0x00,
+    0x41, 0x57,
+    0x07, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+    0x16, 0x00, 0x00, 0x00
+  ]);
+
+  const exif = Buffer.concat([header, json]);
+  exif.writeUInt32LE(json.length, 14);
+  return exif;
+}
+
+async function injectStickerMetadata(buffer, metadata = {}) {
+  const img = new Image();
+  await img.load(buffer);
+  img.exif = buildStickerExif(metadata.pack, metadata.author);
+  return img.save(null);
+}
+
 function isAnimatedWebpBuffer(buf) {
   try {
     if (!buf || buf.length < 21) return false;
@@ -104,24 +187,25 @@ async function ensureSafeWebpSticker(filePath) {
   const originalBuffer = await fsp.readFile(filePath);
   const animated = isAnimatedWebpBuffer(originalBuffer);
 
-  if (animated) {
-    return { buffer: originalBuffer, animated: true, filePath };
-  }
+  let canCacheFixedWebp = true;
 
   try {
     ensureDirSync(FIXED_WEBP_DIR);
+    await fsp.access(FIXED_WEBP_DIR, fs.constants.W_OK);
   } catch (dirErr) {
-    console.warn('[Sticker] Falha ao preparar cache de WebP:', dirErr.message);
+    canCacheFixedWebp = false;
+    console.warn('[Sticker] Cache de WebP indisponível, usando somente memória:', dirErr.message);
   }
 
-  const hash = crypto.createHash('md5').update(originalBuffer).digest('hex');
+  const metadataSignature = `${PACK_NAME}::${AUTHOR_NAME}`;
+  const hash = crypto.createHash('md5').update(originalBuffer).update(metadataSignature).digest('hex');
   const cachedPath = path.join(FIXED_WEBP_DIR, `${hash}.webp`);
 
-  if (fs.existsSync(cachedPath)) {
+  if (canCacheFixedWebp && fs.existsSync(cachedPath)) {
     try {
       const cachedBuffer = await fsp.readFile(cachedPath);
       if (cachedBuffer.length > 0) {
-        return { buffer: cachedBuffer, animated: false, filePath: cachedPath };
+        return { buffer: cachedBuffer, animated: isAnimatedWebpBuffer(cachedBuffer), filePath: cachedPath };
       }
     } catch (readErr) {
       console.warn('[Sticker] Falha ao ler WebP do cache:', readErr.message);
@@ -129,18 +213,36 @@ async function ensureSafeWebpSticker(filePath) {
   }
 
   try {
-    const sticker = new Sticker(originalBuffer, {
+    let rebuiltBuffer = originalBuffer;
+
+    if (!animated) {
+      const sticker = new Sticker(originalBuffer, {
+        pack: PACK_NAME,
+        author: AUTHOR_NAME,
+        type: StickerTypes.FULL,
+        quality: 80,
+      });
+      rebuiltBuffer = await sticker.build();
+    }
+
+    const withMetadata = await injectStickerMetadata(rebuiltBuffer, {
       pack: PACK_NAME,
-      author: AUTHOR_NAME,
-      type: StickerTypes.FULL,
-      quality: 80,
+      author: AUTHOR_NAME
     });
-    const rebuiltBuffer = await sticker.build();
-    await fsp.writeFile(cachedPath, rebuiltBuffer);
-    return { buffer: rebuiltBuffer, animated: false, filePath: cachedPath };
+
+    if (canCacheFixedWebp) {
+      try {
+        await fsp.writeFile(cachedPath, withMetadata);
+        return { buffer: withMetadata, animated, filePath: cachedPath };
+      } catch (cacheErr) {
+        console.warn('[Sticker] Falha ao salvar cache de WebP:', cacheErr.message);
+      }
+    }
+
+    return { buffer: withMetadata, animated, filePath };
   } catch (rebuildErr) {
-    console.warn('[Sticker] Falha ao reconstruir WebP, enviando original:', rebuildErr.message);
-    return { buffer: originalBuffer, animated: false, filePath };
+    console.warn('[Sticker] Falha ao normalizar metadata WebP, enviando original:', rebuildErr.message);
+    return { buffer: originalBuffer, animated, filePath };
   }
 }
 
@@ -178,7 +280,8 @@ async function sendStickerForMediaRecord(client, chatId, media) {
     throw new Error('No media provided to send as sticker');
   }
 
-  const filePath = media.file_path;
+  const resolvedFilePath = resolveExistingMediaPath(media.file_path);
+  const filePath = resolvedFilePath || media.file_path;
 
   // Verify file exists before attempting to send
   if (!fs.existsSync(filePath)) {
