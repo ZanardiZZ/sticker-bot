@@ -23,7 +23,8 @@
     "web": "node src/web/server.js",
     "bot": "node index.js",
     "bot-direct": "node index.js",
-    "baileys:server": "node server.js"
+    "baileys:server": "node server.js",
+    "git:auto": "bash scripts/ops/autocommit-verified.sh"
   },
   "keywords": [],
   "author": "",
