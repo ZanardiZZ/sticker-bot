@@ -263,8 +263,9 @@ class BaileysWsAdapter {
 
   // Messaging primitives
   async sendText(chatId, text) {
-  // fire-and-forget text
-  this._send({ type: 'sendText', chatId, text });
+    if (!chatId) throw new Error('chatId_required');
+    await this._ensureReady(5000);
+    return this._sendAndWaitForAck({ type: 'sendText', chatId, text }, 20000);
   }
 
   async sendReactionToMessage(messageId, chatId, emoji) {
@@ -278,7 +279,9 @@ class BaileysWsAdapter {
   }
 
   async simulateTyping(chatId, on) {
-    this._send({ type: 'simulateTyping', chatId, on: !!on });
+    if (!chatId) throw new Error('chatId_required');
+    await this._ensureReady(5000);
+    return this._sendAndWaitForAck({ type: 'simulateTyping', chatId, on: !!on }, 8000);
   }
 
   async sendFile(

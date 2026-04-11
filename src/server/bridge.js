@@ -56,10 +56,29 @@ const MESSAGE_CACHE_TTL_MS = Number(process.env.WS_MESSAGE_CACHE_TTL_MS || (10 *
 const STORE_MAX_ENTRIES = Number(process.env.WS_STORE_MAX_ENTRIES || 2000);
 const MEMORY_LOG_INTERVAL_MS = Number(process.env.WS_MEMORY_LOG_INTERVAL_MS || (10 * 60 * 1000));
 const BROWSER_MONITOR_INTERVAL_MS = Number(process.env.WS_BROWSER_MONITOR_INTERVAL_MS || (5 * 60 * 1000));
+// Browser rotation is opt-in. Default to "off" so the bridge does not kill a
+// healthy WhatsApp session just because Chrome got busy.
 const BROWSER_MAX_RENDERERS = Number(process.env.WS_BROWSER_MAX_RENDERERS || 0);
-const BROWSER_MAX_PSS_MB = Number(process.env.WS_BROWSER_MAX_PSS_MB || 4000);
-const BROWSER_MAX_UPTIME_MS = Number(process.env.WS_BROWSER_MAX_UPTIME_MS || (6 * 60 * 60 * 1000));
-const WPP_MAX_SILENCE_MS = Number(process.env.WS_WPP_MAX_SILENCE_MS || (10 * 60 * 1000));
+const BROWSER_MAX_PSS_MB = Number(process.env.WS_BROWSER_MAX_PSS_MB || 0);
+const BROWSER_MAX_UPTIME_MS = Number(process.env.WS_BROWSER_MAX_UPTIME_MS || 0);
+const WPP_AUTO_CLOSE_MS_RAW = Number(process.env.WS_WPP_AUTO_CLOSE_MS || 0);
+const WPP_DEVICE_SYNC_TIMEOUT_MS_RAW = Number(process.env.WS_WPP_DEVICE_SYNC_TIMEOUT_MS || 0);
+// Some WPPConnect builds may still fall back to internal defaults when these
+// values are 0. Use explicit long timeouts to avoid silent 60s/180s rotations.
+const WPP_FALLBACK_TIMEOUT_MS = 6 * 60 * 60 * 1000; // 6h
+const WPP_AUTO_CLOSE_MS = WPP_AUTO_CLOSE_MS_RAW > 0 ? WPP_AUTO_CLOSE_MS_RAW : WPP_FALLBACK_TIMEOUT_MS;
+const WPP_DEVICE_SYNC_TIMEOUT_MS = WPP_DEVICE_SYNC_TIMEOUT_MS_RAW > 0 ? WPP_DEVICE_SYNC_TIMEOUT_MS_RAW : WPP_FALLBACK_TIMEOUT_MS;
+const WPP_PHONE_NUMBER = (process.env.WS_WPP_PHONE_NUMBER || '').trim();
+const WPP_WHATSAPP_VERSION = (process.env.WS_WPP_WHATSAPP_VERSION || '').trim();
+// Silence-based rotation is opt-in. The bridge should not drop a healthy
+// WhatsApp session just because there were no messages for a few minutes.
+const WPP_MAX_SILENCE_MS = Number(process.env.WS_WPP_MAX_SILENCE_MS || 0);
+const BROWSER_ROTATION_GUARD_ENABLED = (
+  BROWSER_MAX_RENDERERS > 0 ||
+  BROWSER_MAX_PSS_MB > 0 ||
+  BROWSER_MAX_UPTIME_MS > 0 ||
+  WPP_MAX_SILENCE_MS > 0
+);
 const INCOMING_DEDUPE_TTL_MS = Number(process.env.WS_INCOMING_DEDUPE_TTL_MS || 30000);
 const UNREAD_POLL_INTERVAL_MS = Number(process.env.WS_UNREAD_POLL_INTERVAL_MS || 0);
 const FALLBACK_POLL_SILENCE_MS = Number(process.env.WS_FALLBACK_POLL_SILENCE_MS || 15000);
@@ -78,6 +97,10 @@ let wppClientStartedAt = 0;
 let shutdownInProgress = false;
 let activeRequestCount = 0;
 let pendingShutdown = null;
+let wppReconnectTimer = null;
+let wppInitRetryTimer = null;
+let wppInitPromise = null;
+let lastUseHereAttemptAt = 0;
 let lastRequestFinishedAt = 0;
 let lastWppEventAt = 0;
 let lastClientRegisteredAt = 0;
@@ -488,10 +511,46 @@ async function shutdownWPPClient(reason = 'shutdown') {
   } catch (error) {
     console.error('[WPPConnect] Error closing client:', error);
   } finally {
+    if (wppReconnectTimer) {
+      clearTimeout(wppReconnectTimer);
+      wppReconnectTimer = null;
+    }
+    if (wppInitRetryTimer) {
+      clearTimeout(wppInitRetryTimer);
+      wppInitRetryTimer = null;
+    }
     wppClient = null;
     wppReady = false;
     wppClientStartedAt = 0;
   }
+}
+
+function scheduleWPPReconnect(reason, delayMs = 5000) {
+  if (shutdownInProgress || wppReconnectTimer) {
+    return;
+  }
+
+  console.log(`[WPPConnect] Scheduling reconnect in ${Math.round(delayMs / 1000)}s (${reason})`);
+  wppReconnectTimer = setTimeout(async () => {
+    wppReconnectTimer = null;
+
+    if (shutdownInProgress) {
+      return;
+    }
+
+    try {
+      await shutdownWPPClient(`reconnect:${reason}`);
+    } catch (error) {
+      console.warn('[WPPConnect] Error during reconnect shutdown:', error.message);
+    }
+
+    try {
+      await initWPPConnect();
+    } catch (error) {
+      console.error('[WPPConnect] Reconnect failed:', error);
+      scheduleWPPReconnect(`${reason}:retry`, 15000);
+    }
+  }, delayMs);
 }
 
 async function shutdownAndExit(reason, exitCode = 0) {
@@ -499,7 +558,8 @@ async function shutdownAndExit(reason, exitCode = 0) {
     return;
   }
 
-  if (exitCode === 0 && shouldDeferAutoShutdown()) {
+  const canDeferShutdown = reason.startsWith('browser rotation');
+  if (canDeferShutdown && exitCode === 0 && shouldDeferAutoShutdown()) {
     pendingShutdown = { reason, exitCode, requestedAt: Date.now() };
     console.log(`[WS] Deferring shutdown while work is active: ${reason} activeRequests=${activeRequestCount} sendActive=${sendLimiter.active} downloadActive=${downloadLimiter.active}`);
     return;
@@ -535,6 +595,10 @@ async function maybeRunDeferredShutdown() {
 }
 
 function evaluateBrowserHealth() {
+  if (!BROWSER_ROTATION_GUARD_ENABLED) {
+    return;
+  }
+
   const browser = getBrowserProcessStats();
   if (!browser || !browser.rootPid) {
     return;
@@ -545,7 +609,7 @@ function evaluateBrowserHealth() {
     : browser.uptimeSec * 1000;
 
   const overRendererLimit = BROWSER_MAX_RENDERERS > 0 && browser.renderers > BROWSER_MAX_RENDERERS;
-  const overPssLimit = browser.totalPssMb > BROWSER_MAX_PSS_MB;
+  const overPssLimit = BROWSER_MAX_PSS_MB > 0 && browser.totalPssMb > BROWSER_MAX_PSS_MB;
   const overUptimeLimit = BROWSER_MAX_UPTIME_MS > 0 && browserUptimeMs > BROWSER_MAX_UPTIME_MS;
   const hasActiveClients = getTrackedClientCount() > 0;
   const silenceMs = lastWppEventAt > 0 ? Date.now() - lastWppEventAt : browserUptimeMs;
@@ -589,7 +653,7 @@ function startMaintenanceTimers() {
     }, MEMORY_LOG_INTERVAL_MS);
   }
 
-  if (!browserMonitorInterval) {
+  if (!browserMonitorInterval && BROWSER_ROTATION_GUARD_ENABLED) {
     browserMonitorInterval = setInterval(() => {
       evaluateBrowserHealth();
     }, BROWSER_MONITOR_INTERVAL_MS);
@@ -636,17 +700,40 @@ function clearAllTypingSessions() {
 // ==========================
 
 async function initWPPConnect() {
-  console.log('[WPPConnect] Initializing WPPConnect client...');
-
-  // Ensure tokens directory exists
-  if (!fs.existsSync(TOKENS_DIR)) {
-    fs.mkdirSync(TOKENS_DIR, { recursive: true });
-    console.log(`[WPPConnect] Created tokens directory: ${TOKENS_DIR}`);
+  if (wppInitPromise) {
+    logVerbose('[WPPConnect] Initialization already in progress, reusing promise');
+    return wppInitPromise;
   }
 
-  try {
-    wppClient = await wppconnect.create({
+  if (wppClient) {
+    logVerbose('[WPPConnect] Client already initialized, skipping duplicate init');
+    return wppClient;
+  }
+
+  wppInitPromise = (async () => {
+    console.log('[WPPConnect] Initializing WPPConnect client...');
+    console.log(
+      `[WPPConnect] Timeout config: rawAutoClose=${WPP_AUTO_CLOSE_MS_RAW} rawDeviceSync=${WPP_DEVICE_SYNC_TIMEOUT_MS_RAW} effectiveAutoClose=${WPP_AUTO_CLOSE_MS} effectiveDeviceSync=${WPP_DEVICE_SYNC_TIMEOUT_MS}`
+    );
+    console.log(`[WPPConnect] WhatsApp version override: ${WPP_WHATSAPP_VERSION || 'none'}`);
+
+    // Ensure tokens directory exists
+    if (!fs.existsSync(TOKENS_DIR)) {
+      fs.mkdirSync(TOKENS_DIR, { recursive: true });
+      console.log(`[WPPConnect] Created tokens directory: ${TOKENS_DIR}`);
+    }
+
+    try {
+      wppClient = await wppconnect.create({
       session: SESSION_NAME,
+      catchLinkCode: (code) => {
+        console.log('\n=================================================');
+        console.log('🔗 CÓDIGO PARA AUTENTICAÇÃO');
+        console.log('=================================================');
+        console.log('[WPPConnect] Use este código no WhatsApp para vincular o dispositivo:');
+        console.log(code);
+        console.log('=================================================\n');
+      },
       catchQR: (base64Qrimg, asciiQR, attempts, urlCode) => {
         console.log('\n=================================================');
         console.log('📱 QR CODE PARA AUTENTICAÇÃO');
@@ -656,6 +743,8 @@ async function initWPPConnect() {
 
         // Display QR in terminal
         qrcode.generate(urlCode, { small: true });
+        // Print raw QR payload to allow out-of-band rendering when terminal QR is inaccessible
+        console.log(`[WPPConnect] QR urlCode: ${urlCode}`);
 
         console.log('\n=================================================');
         console.log('Como escanear:');
@@ -676,12 +765,27 @@ async function initWPPConnect() {
           console.log('✅ Sessão autenticada!');
         } else if (statusSession === 'notLogged') {
           console.log('⏳ Aguardando autenticação...');
+        } else if (statusSession === 'disconnectedMobile') {
+          console.warn('[WPPConnect] Status disconnectedMobile detected');
+          const now = Date.now();
+          if (now - lastUseHereAttemptAt > 30000 && wppClient && typeof wppClient.useHere === 'function') {
+            lastUseHereAttemptAt = now;
+            wppClient.useHere()
+              .then(() => {
+                console.log('[WPPConnect] useHere executed after disconnectedMobile');
+              })
+              .catch((error) => {
+                console.warn('[WPPConnect] useHere failed:', error?.message || error);
+              });
+          }
         }
       },
       folderNameToken: TOKENS_DIR,
+      phoneNumber: WPP_PHONE_NUMBER || undefined,
       headless: true,
       devtools: false,
       useChrome: true,
+      cacheEnabled: false,
       debug: false,
       logQR: false,
       browserArgs: [
@@ -694,39 +798,63 @@ async function initWPPConnect() {
         '--no-first-run',
         '--no-zygote',
         '--disable-gpu',
-        '--memory-pressure-off'
+        '--renderer-process-limit=4'
       ],
-      autoClose: 0, // Keep browser open
+      // Keep explicit values to avoid library-default fallbacks (60s/180s).
+      autoClose: WPP_AUTO_CLOSE_MS,
+      deviceSyncTimeout: WPP_DEVICE_SYNC_TIMEOUT_MS,
+      whatsappVersion: WPP_WHATSAPP_VERSION || null,
       disableWelcome: true,
       updatesLog: false
     });
 
-    console.log('✅ [WPPConnect] Client initialized successfully!');
-    wppReady = true;
-    wppClientStartedAt = Date.now();
-    lastWppEventAt = Date.now();
+      if (wppInitRetryTimer) {
+        clearTimeout(wppInitRetryTimer);
+        wppInitRetryTimer = null;
+      }
 
-    // Setup event listeners
-    setupWPPConnectEvents();
+      console.log('✅ [WPPConnect] Client initialized successfully!');
+      const effectiveAutoClose = wppClient?.options?.autoClose;
+      const effectiveDeviceSyncTimeout = wppClient?.options?.deviceSyncTimeout;
+      console.log(
+        `[WPPConnect] Effective client timeouts: autoClose=${effectiveAutoClose} deviceSyncTimeout=${effectiveDeviceSyncTimeout}`
+      );
+      wppReady = true;
+      wppClientStartedAt = Date.now();
+      lastWppEventAt = Date.now();
 
-    // Some boots do not emit a later CONNECTED state change after clients have
-    // already registered. Broadcast readiness explicitly so adapters unblock.
-    broadcastToAllClients({
-      type: 'connection.update',
-      data: { connection: 'open', legacy: false }
-    });
+      // Setup event listeners
+      setupWPPConnectEvents();
 
-  } catch (error) {
-    console.error('[WPPConnect] Failed to initialize:', error);
-    wppReady = false;
+      // Some boots do not emit a later CONNECTED state change after clients have
+      // already registered. Broadcast readiness explicitly so adapters unblock.
+      broadcastToAllClients({
+        type: 'connection.update',
+        data: { connection: 'open', legacy: false }
+      });
 
-    // Only retry if client was not created (initial connection failed)
-    if (!wppClient) {
-      setTimeout(() => {
-        logVerbose('[WPPConnect] Retrying initialization...');
-        initWPPConnect();
-      }, 30000);
+      return wppClient;
+    } catch (error) {
+      console.error('[WPPConnect] Failed to initialize:', error);
+      wppReady = false;
+
+      // Only retry if client was not created (initial connection failed)
+      if (!wppClient && !wppInitRetryTimer) {
+        wppInitRetryTimer = setTimeout(() => {
+          wppInitRetryTimer = null;
+          logVerbose('[WPPConnect] Retrying initialization...');
+          initWPPConnect();
+        }, 30000);
+      }
+
+      return null;
     }
+  })();
+
+  try {
+    return await wppInitPromise;
+  } finally {
+    wppInitPromise = null;
   }
 }
 
@@ -829,6 +957,14 @@ function setupWPPConnectEvents() {
     logVerbose('[WPPConnect] State changed:', state);
 
     if (state === 'CONNECTED') {
+      if (wppReconnectTimer) {
+        clearTimeout(wppReconnectTimer);
+        wppReconnectTimer = null;
+      }
+      if (wppInitRetryTimer) {
+        clearTimeout(wppInitRetryTimer);
+        wppInitRetryTimer = null;
+      }
       wppReady = true;
       console.log('✅ [WPPConnect] Connected to WhatsApp!');
 
@@ -837,7 +973,7 @@ function setupWPPConnectEvents() {
         type: 'connection.update',
         data: { connection: 'open', legacy: false }
       });
-    } else if (state === 'CONFLICT' || state === 'UNPAIRED') {
+    } else if (state === 'CONFLICT' || state === 'UNPAIRED' || state === 'UNPAIRED_IDLE' || state === 'DISCONNECTED' || state === 'TIMEOUT') {
       wppReady = false;
       console.log('⚠️ [WPPConnect] Connection lost:', state);
 
@@ -845,6 +981,10 @@ function setupWPPConnectEvents() {
         type: 'connection.update',
         data: { connection: 'close', reason: state }
       });
+
+      if (state === 'DISCONNECTED' || state === 'TIMEOUT') {
+        scheduleWPPReconnect(state);
+      }
     }
   });
 
@@ -935,6 +1075,9 @@ function convertWPPMessageToBaileys(wppMessage) {
     const fromMe = wppMessage.fromMe === true || messageId.startsWith('true_');
 
     // WPPConnect message structure -> Baileys structure
+    const isMediaMessage = ['image', 'video', 'audio', 'ptt', 'sticker', 'document'].includes(wppMessage.type);
+    const textBody = wppMessage.content || wppMessage.body || '';
+
     const baileysMsg = {
       key: {
         remoteJid: chatIdStr,
@@ -954,8 +1097,9 @@ function convertWPPMessageToBaileys(wppMessage) {
       },
       // Add author for group messages
       author: senderId,
-      // Add body/caption fields for direct access (used by logging and commands)
-      body: wppMessage.content || wppMessage.body || '',
+      // For media, keep the text surface limited to the caption so the bot does
+      // not treat the binary/base64 payload as a command or log it verbatim.
+      body: isMediaMessage ? (wppMessage.caption || '') : textBody,
       caption: wppMessage.caption || '',
       type: wppMessage.type || 'chat',
       isGroupMsg: wppMessage.isGroupMsg || false,
@@ -1261,13 +1405,13 @@ async function handleSendMessage(ws, msg, allowedChats) {
 
   if (!wppReady || !wppClient) {
     console.log('[WS] Rejecting send - WhatsApp not ready');
-    ws.send(JSON.stringify({ type: 'error', message: 'WhatsApp not ready' }));
+    ws.send(JSON.stringify({ type: 'error', requestId: msg.requestId, error: 'whatsapp_not_ready' }));
     return;
   }
 
   // Check authorization
   if (!allowedChats.has('*') && !allowedChats.has(to)) {
-    ws.send(JSON.stringify({ type: 'error', message: 'Not authorized for this chat' }));
+    ws.send(JSON.stringify({ type: 'error', requestId: msg.requestId, error: 'not_authorized_for_chat' }));
     return;
   }
 
@@ -1630,7 +1774,7 @@ async function handleGetAllGroupsMetadata(ws, msg) {
       return;
     }
 
-    const rawGroups = await wppClient.getAllGroups();
+    const rawChats = await wppClient.getAllChats();
 
     // Normalize Wid objects to serialized strings so clients don't have to handle Wid
     const serializeWid = (wid) => {
@@ -1638,14 +1782,19 @@ async function handleGetAllGroupsMetadata(ws, msg) {
       if (typeof wid === 'string') return wid;
       return wid._serialized || wid.id || String(wid);
     };
-    const groups = (rawGroups || []).map((g) => ({
-      ...g,
-      id: serializeWid(g.id),
-      participants: Array.isArray(g.groupMetadata?.participants)
-        ? g.groupMetadata.participants.map((p) => ({ ...p, id: serializeWid(p.id) }))
-        : (Array.isArray(g.participants) ? g.participants.map((p) => ({ ...p, id: serializeWid(p.id) })) : []),
-      subject: g.groupMetadata?.subject || g.subject || g.name || ''
-    }));
+    const groups = (rawChats || [])
+      .filter((chat) => {
+        const serializedId = serializeWid(chat?.id);
+        return chat?.isGroup || (typeof serializedId === 'string' && serializedId.endsWith('@g.us'));
+      })
+      .map((group) => ({
+        ...group,
+        id: serializeWid(group.id),
+        participants: Array.isArray(group.groupMetadata?.participants)
+          ? group.groupMetadata.participants.map((participant) => ({ ...participant, id: serializeWid(participant.id) }))
+          : (Array.isArray(group.participants) ? group.participants.map((participant) => ({ ...participant, id: serializeWid(participant.id) })) : []),
+        subject: group.groupMetadata?.subject || group.subject || group.name || ''
+      }));
 
     ws.send(JSON.stringify({
       type: 'groupMetadata',
@@ -1979,52 +2128,74 @@ const activeTypingSessions = new Map();
 
 async function handleSimulateTyping(ws, msg, clientInfo) {
   const { chatId, on } = msg;
-  if (!chatId) return;
 
-  if (!wppReady || !wppClient) return;
+  if (!chatId) {
+    if (msg.requestId) {
+      ws.send(JSON.stringify({ type: 'error', requestId: msg.requestId, error: 'chatId_required' }));
+    }
+    return;
+  }
 
-  if (on) {
-    let session = activeTypingSessions.get(chatId);
-    if (!session) {
-      try {
-        await wppClient.startTyping(chatId);
-      } catch (e) {
-        console.warn('[WS] simulateTyping start failed:', e?.message);
-      }
-      const interval = setInterval(async () => {
-        const currentSession = activeTypingSessions.get(chatId);
-        if (!currentSession || currentSession.owners.size === 0) return;
+  if (!wppReady || !wppClient) {
+    if (msg.requestId) {
+      ws.send(JSON.stringify({ type: 'error', requestId: msg.requestId, error: 'whatsapp_not_ready' }));
+    }
+    return;
+  }
+
+  try {
+    if (on) {
+      let session = activeTypingSessions.get(chatId);
+      if (!session) {
         try {
           await wppClient.startTyping(chatId);
         } catch (e) {
-          console.warn('[WS] simulateTyping renew failed:', e?.message);
+          console.warn('[WS] simulateTyping start failed:', e?.message);
         }
-      }, 20000);
-      session = { interval, owners: new Set() };
-      activeTypingSessions.set(chatId, session);
-    }
-    if (clientInfo) {
-      session.owners.add(clientInfo);
-      clientInfo.typingChats.add(chatId);
-    }
-  } else {
-    const session = activeTypingSessions.get(chatId);
-    if (session && clientInfo) {
-      session.owners.delete(clientInfo);
-      clientInfo.typingChats.delete(chatId);
-    }
-
-    if (session && (!clientInfo || session.owners.size === 0)) {
-      clearInterval(session.interval);
-      activeTypingSessions.delete(chatId);
-    }
-
-    if (!session || !clientInfo || session.owners.size === 0) {
-      try {
-        await wppClient.stopTyping(chatId);
-      } catch (e) {
-        console.warn('[WS] simulateTyping stop failed:', e?.message);
+        const interval = setInterval(async () => {
+          const currentSession = activeTypingSessions.get(chatId);
+          if (!currentSession || currentSession.owners.size === 0) return;
+          try {
+            await wppClient.startTyping(chatId);
+          } catch (e) {
+            console.warn('[WS] simulateTyping renew failed:', e?.message);
+          }
+        }, 20000);
+        session = { interval, owners: new Set() };
+        activeTypingSessions.set(chatId, session);
       }
+      if (clientInfo) {
+        session.owners.add(clientInfo);
+        clientInfo.typingChats.add(chatId);
+      }
+    } else {
+      const session = activeTypingSessions.get(chatId);
+      if (session && clientInfo) {
+        session.owners.delete(clientInfo);
+        clientInfo.typingChats.delete(chatId);
+      }
+
+      if (session && (!clientInfo || session.owners.size === 0)) {
+        clearInterval(session.interval);
+        activeTypingSessions.delete(chatId);
+      }
+
+      if (!session || !clientInfo || session.owners.size === 0) {
+        try {
+          await wppClient.stopTyping(chatId);
+        } catch (e) {
+          console.warn('[WS] simulateTyping stop failed:', e?.message);
+        }
+      }
+    }
+
+    if (msg.requestId) {
+      ws.send(JSON.stringify({ type: 'ack', requestId: msg.requestId, action: 'simulateTyping', chatId, on: !!on }));
+    }
+  } catch (error) {
+    console.error('[WS] handleSimulateTyping error:', error?.message || error);
+    if (msg.requestId) {
+      ws.send(JSON.stringify({ type: 'error', requestId: msg.requestId, error: error?.message || 'simulate_typing_failed' }));
     }
   }
 }
@@ -2042,6 +2213,15 @@ async function start() {
   startMaintenanceTimers();
   cleanupMediaCache();
   logMemoryStats('startup');
+  if (BROWSER_ROTATION_GUARD_ENABLED) {
+    console.log('[WS] Browser rotation watchdog enabled');
+  } else {
+    console.log('[WS] Browser rotation watchdog disabled (all limits are 0)');
+  }
+  console.log(
+    `[WS] WPP timeout settings: autoClose=${WPP_AUTO_CLOSE_MS} deviceSyncTimeout=${WPP_DEVICE_SYNC_TIMEOUT_MS} (raw: ${WPP_AUTO_CLOSE_MS_RAW}/${WPP_DEVICE_SYNC_TIMEOUT_MS_RAW})`
+  );
+  console.log(`[WS] WPP WhatsApp version override: ${WPP_WHATSAPP_VERSION || 'none (library default disabled)'}`);
 
   // Start WebSocket server
   server.listen(PORT, '0.0.0.0', () => {

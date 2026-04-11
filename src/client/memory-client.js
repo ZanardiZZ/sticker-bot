@@ -8,13 +8,34 @@
 
 const axios = require('axios');
 
-const DEFAULT_MEMORY_API_URL = 'http://192.168.20.140:8766';
+const DEFAULT_MEMORY_API_URL = '';
 const CATEGORY_PREFIXES = {
   confirmed: 'confirmed:',
   softSignal: 'soft:',
   provisional: 'provisional:'
 };
 const GROUP_DYNAMIC_EVENT_TYPE = 'group_dynamic';
+const USER_INTENT_EVENT_TYPE = 'user_intent_signal';
+const INTENT_FACT_SOURCE = 'intent_profiler';
+
+const INTENT_RULES = [
+  {
+    intent: 'adversarial_testing',
+    weight: 3,
+    pattern: /(ignore\s+as\s+instru[cç][aã]o(?:es)?\s+anteriores|jailbreak|prompt\s*injection|bypass|contornar\s+(?:regra|filtro|bloqueio)|quebra\s+o\s+bot|exploit|for[çc]ar\s+falha|vulnerabilidade|inje[cç][aã]o|do\s+anything\s+now|dan\b)/iu
+  },
+  {
+    intent: 'playful_trolling',
+    weight: 1.4,
+    pattern: /(te peguei|pegadinha|trol(a|ar|ando)|zoeira|bait|kkkkk+\s+bot|haha+\s+bot)/iu
+  },
+  {
+    intent: 'builder_collab',
+    weight: 1.8,
+    pattern: /(vamos\s+melhorar|ajudar\s+o\s+bot|teste\s+controlado|cen[aá]rio\s+de\s+teste|issue|bug\s+report|pull\s+request|refactor|observabilidade|telemetria)/iu
+  }
+];
+
 let cachedAiHelpers = null;
 
 function parsePositiveNumber(value, fallback) {
@@ -400,6 +421,112 @@ function collectGroupDynamics(eventsPayload) {
     .filter((entry) => entry.description);
 }
 
+function scoreIntentSignals(messageText = '') {
+  const text = normalizeFactText(messageText);
+  const scores = {
+    adversarial_testing: 0,
+    playful_trolling: 0,
+    builder_collab: 0,
+    normal_use: 0.25
+  };
+
+  if (!text) return scores;
+
+  for (const rule of INTENT_RULES) {
+    if (rule.pattern.test(text)) {
+      scores[rule.intent] = (scores[rule.intent] || 0) + rule.weight;
+    }
+  }
+
+  if (text.length > 2 && !Object.values(scores).some((value, idx) => idx < 3 && value > 0)) {
+    scores.normal_use += 0.8;
+  }
+
+  return scores;
+}
+
+function pickTopIntent(scores = {}) {
+  const entries = Object.entries(scores || {});
+  if (!entries.length) {
+    return { topIntent: 'normal_use', confidence: 0.5, scores: { normal_use: 1 } };
+  }
+
+  entries.sort((a, b) => b[1] - a[1]);
+  const [topIntent, topScore] = entries[0];
+  const total = entries.reduce((acc, [, value]) => acc + Math.max(Number(value) || 0, 0), 0);
+  const confidence = total > 0 ? Math.min(Math.max(topScore / total, 0), 1) : 0.5;
+
+  return {
+    topIntent,
+    confidence,
+    scores: Object.fromEntries(entries)
+  };
+}
+
+function buildUserIntentProfile(eventsPayload, userIds = []) {
+  const events = Array.isArray(eventsPayload?.events)
+    ? eventsPayload.events
+    : Array.isArray(eventsPayload)
+      ? eventsPayload
+      : [];
+
+  const targetUsers = Array.isArray(userIds) ? userIds.filter(Boolean) : [];
+  const profiles = {};
+
+  for (const userId of targetUsers) {
+    const baseScores = {
+      adversarial_testing: 0,
+      playful_trolling: 0,
+      builder_collab: 0,
+      normal_use: 0.4
+    };
+
+    const relevantEvents = events.filter((event) => String(event?.userId || '') === String(userId));
+
+    for (const event of relevantEvents) {
+      if (event?.type === USER_INTENT_EVENT_TYPE && typeof event?.topic === 'string' && baseScores[event.topic] !== undefined) {
+        const eventConfidence = Number(event?.confidence);
+        const weight = Number.isFinite(eventConfidence) ? Math.max(eventConfidence, 0.3) : 0.7;
+        baseScores[event.topic] += weight;
+      }
+
+      const content = normalizeFactText(event?.content || event?.description || event?.message || '');
+      const scored = scoreIntentSignals(content);
+      for (const [intent, value] of Object.entries(scored)) {
+        baseScores[intent] = (baseScores[intent] || 0) + value;
+      }
+    }
+
+    const picked = pickTopIntent(baseScores);
+    profiles[userId] = {
+      ...picked,
+      evidenceCount: relevantEvents.length,
+      toneHint: picked.topIntent === 'adversarial_testing'
+        ? 'defensive_strict'
+        : picked.topIntent === 'playful_trolling'
+          ? 'playful_controlled'
+          : picked.topIntent === 'builder_collab'
+            ? 'collaborative_technical'
+            : 'neutral_friendly'
+    };
+  }
+
+  return profiles;
+}
+
+function normalizeIntentLabel(intent = 'normal_use') {
+  switch (intent) {
+    case 'adversarial_testing':
+      return 'teste adversarial';
+    case 'playful_trolling':
+      return 'zoeira leve';
+    case 'builder_collab':
+      return 'colaboração técnica';
+    default:
+      return 'uso normal';
+  }
+}
+
 function normalizeJokeText(value) {
   return normalizeFactText(value)
     .replace(/^["'“”‘’]+|["'“”‘’]+$/gu, '')
@@ -490,19 +617,107 @@ function getAiHelpers() {
   return cachedAiHelpers;
 }
 
+function buildMemoryPromptFromContext(memoryContext = {}, senderId = null) {
+  const context = memoryContext && typeof memoryContext === 'object' ? memoryContext : {};
+  const sections = [];
+  const user = senderId && context.users ? context.users[senderId] : null;
+  const recentFacts = Array.isArray(user?.recentFacts) ? user.recentFacts : [];
+  const confirmedFacts = Array.isArray(user?.confirmedFacts) ? user.confirmedFacts : [];
+  const softSignals = Array.isArray(user?.softSignals) ? user.softSignals : [];
+  const provisionalMemories = Array.isArray(user?.provisionalMemories) ? user.provisionalMemories : [];
+  const runningJokes = Array.isArray(context.runningJokes) ? context.runningJokes : [];
+  const activeTopics = Array.isArray(context.activeTopics) ? context.activeTopics : [];
+  const groupDynamics = Array.isArray(context.groupDynamics) ? context.groupDynamics : [];
+  const intentProfile = senderId && context.userIntentProfiles ? context.userIntentProfiles[senderId] : null;
+
+  const preferredConfirmedFacts = confirmedFacts.length ? confirmedFacts : recentFacts;
+
+  if (preferredConfirmedFacts.length) {
+    const facts = preferredConfirmedFacts
+      .map((item) => item?.fact || item?.content || item?.text)
+      .filter(Boolean)
+      .slice(0, 5);
+    if (facts.length) {
+      sections.push(`Memórias confirmadas do usuário atual: ${facts.join('; ')}.`);
+    }
+  }
+
+  if (softSignals.length) {
+    const signals = softSignals
+      .map((item) => item?.fact || item?.content || item?.text)
+      .filter(Boolean)
+      .slice(0, 4);
+    if (signals.length) {
+      sections.push(`Sinais recorrentes do usuário atual, use como contexto e não como certeza absoluta: ${signals.join('; ')}.`);
+    }
+  }
+
+  if (provisionalMemories.length) {
+    const signals = provisionalMemories
+      .map((item) => item?.fact || item?.content || item?.text)
+      .filter(Boolean)
+      .slice(0, 3);
+    if (signals.length) {
+      sections.push(`Pistas fracas do usuário atual, só use se combinar com a conversa: ${signals.join('; ')}.`);
+    }
+  }
+
+  if (runningJokes.length) {
+    const jokes = runningJokes
+      .map((item) => item?.name || item?.title || item?.context)
+      .filter(Boolean)
+      .slice(0, 5);
+    if (jokes.length) {
+      sections.push(`Piadas internas do grupo: ${jokes.join('; ')}.`);
+    }
+  }
+
+  if (activeTopics.length) {
+    const topics = activeTopics
+      .map((item) => (typeof item === 'string' ? item : item?.topic || item?.name))
+      .filter(Boolean)
+      .slice(0, 5);
+    if (topics.length) {
+      sections.push(`Tópicos ativos recentes: ${topics.join('; ')}.`);
+    }
+  }
+
+  if (groupDynamics.length) {
+    const dynamics = groupDynamics
+      .map((item) => item?.description || item?.topic)
+      .filter(Boolean)
+      .slice(0, 4);
+    if (dynamics.length) {
+      sections.push(`Dinâmica social recente do grupo: ${dynamics.join('; ')}.`);
+    }
+  }
+
+  if (intentProfile?.topIntent) {
+    const confidencePct = Math.round(Math.min(Math.max(Number(intentProfile.confidence) || 0, 0), 1) * 100);
+    sections.push(`Perfil de intenção do usuário atual: ${normalizeIntentLabel(intentProfile.topIntent)} (${confidencePct}%).`);
+  }
+
+  return sections.join(' ');
+}
+
 class MemoryClient {
   constructor() {
-    this.baseUrl = process.env.MEMORY_API_URL || DEFAULT_MEMORY_API_URL;
+    this.baseUrl = this.resolveBaseUrl();
     this.initialized = false;
     this.lastHealthcheck = null;
     this.timeoutMs = parsePositiveNumber(process.env.MEMORY_TIMEOUT_MS, 3000);
     this.retryCount = Math.max(parsePositiveNumber(process.env.MEMORY_RETRY_COUNT, 1) - 1, 0);
   }
 
+  resolveBaseUrl() {
+    return String(process.env.MEMORY_API_URL || DEFAULT_MEMORY_API_URL).trim();
+  }
+
   isEnabled() {
     const raw = process.env.MEMORY_ENABLED;
-    if (raw === undefined) return true;
-    return !['0', 'false', 'off', 'no'].includes(String(raw).trim().toLowerCase());
+    const hasBaseUrl = !!this.resolveBaseUrl();
+    if (raw === undefined) return hasBaseUrl;
+    return hasBaseUrl && !['0', 'false', 'off', 'no'].includes(String(raw).trim().toLowerCase());
   }
 
   isReady() {
@@ -510,10 +725,14 @@ class MemoryClient {
   }
 
   init() {
-    this.baseUrl = process.env.MEMORY_API_URL || DEFAULT_MEMORY_API_URL;
+    this.baseUrl = this.resolveBaseUrl();
     this.timeoutMs = parsePositiveNumber(process.env.MEMORY_TIMEOUT_MS, 3000);
     this.retryCount = Math.max(parsePositiveNumber(process.env.MEMORY_RETRY_COUNT, 1) - 1, 0);
     this.initialized = true;
+    if (!this.baseUrl) {
+      console.log('[MemoryClient] Integração desabilitada sem MEMORY_API_URL configurada');
+      return this;
+    }
     if (!this.isEnabled()) {
       console.log('[MemoryClient] Integração desabilitada via MEMORY_ENABLED');
       return this;
@@ -705,6 +924,28 @@ class MemoryClient {
       );
     }
 
+    const intentSignal = pickTopIntent(scoreIntentSignals(cleanedText));
+    if (intentSignal.topIntent && intentSignal.topIntent !== 'normal_use' && intentSignal.confidence >= 0.45) {
+      await this.addFact(
+        userId,
+        `perfil de intenção observado: ${normalizeIntentLabel(intentSignal.topIntent)}`,
+        encodeFactCategory('softSignal', `intent/${intentSignal.topIntent}`),
+        intentSignal.confidence,
+        INTENT_FACT_SOURCE
+      );
+
+      if (groupId) {
+        await this.logEvent({
+          type: USER_INTENT_EVENT_TYPE,
+          groupId,
+          userId,
+          topic: intentSignal.topIntent,
+          confidence: intentSignal.confidence,
+          content: cleanedText.slice(0, 180)
+        });
+      }
+    }
+
     if (groupId) {
       const heuristicJoke = extractHeuristicRunningJoke(cleanedText);
       const heuristicMentions = countJokeMentions(heuristicJoke, recentMessages);
@@ -759,7 +1000,9 @@ class MemoryClient {
       content: messageText.substring(0, 200), // limitar
       factsExtracted: memoryItems.length,
       runningJokeDetected: !!runningJoke,
-      groupDynamicsDetected: groupDynamics.length
+      groupDynamicsDetected: groupDynamics.length,
+      inferredIntent: intentSignal.topIntent,
+      inferredIntentConfidence: intentSignal.confidence
     });
 
     return memoryItems.map((entry) => ({
@@ -772,7 +1015,7 @@ class MemoryClient {
   /**
    * Monta contexto para resposta do bot
    */
-  async buildContext(groupId, userIds = []) {
+  async buildContext(groupId, userIds = [], options = {}) {
     const insights = await this.getInsights(groupId, userIds);
     const events = groupId ? await this.getEvents(groupId, { limit: 40 }) : null;
 
@@ -782,7 +1025,10 @@ class MemoryClient {
         group: null,
         runningJokes: [],
         activeTopics: [],
-        groupDynamics: []
+        groupDynamics: [],
+        userIntentProfiles: {},
+        memoryPrompt: '',
+        memoryPromptsByUser: {}
       };
     }
 
@@ -803,13 +1049,31 @@ class MemoryClient {
     const derivedTopics = deriveActiveTopics(recentMessageTexts);
     const existingTopics = Array.isArray(insights.group?.activeTopics) ? insights.group.activeTopics : [];
 
-    return {
+    const selectedUserIds = Array.isArray(userIds) ? userIds.filter(Boolean) : [];
+    const userIntentProfiles = buildUserIntentProfile(events, selectedUserIds);
+
+    const contextPayload = {
       users: layeredUsers,
       group: insights.group,
       runningJokes: insights.group?.runningJokes || [],
       activeTopics: existingTopics.length ? existingTopics : derivedTopics,
-      groupDynamics: collectGroupDynamics(events)
+      groupDynamics: collectGroupDynamics(events),
+      userIntentProfiles
     };
+
+    const preferredSenderId = String(options?.senderId || '').trim() || selectedUserIds[0] || null;
+
+    const memoryPromptsByUser = {};
+    for (const uid of selectedUserIds) {
+      memoryPromptsByUser[uid] = buildMemoryPromptFromContext(contextPayload, uid);
+    }
+
+    contextPayload.memoryPromptsByUser = memoryPromptsByUser;
+    contextPayload.memoryPrompt = preferredSenderId
+      ? (memoryPromptsByUser[preferredSenderId] || buildMemoryPromptFromContext(contextPayload, preferredSenderId))
+      : buildMemoryPromptFromContext(contextPayload, null);
+
+    return contextPayload;
   }
 
   /**

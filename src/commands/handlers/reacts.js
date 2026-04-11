@@ -57,7 +57,6 @@ async function handleReactsCommand(client, message, args) {
         .join(' ');
 
       response += `${medal} *ID #${item.media_id}*\n`;
-      response += `   💬 ${item.reaction_count} reações\n`;
       response += `   ${emojiStr}\n\n`;
     }
 

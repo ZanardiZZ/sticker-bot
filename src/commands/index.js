@@ -35,6 +35,7 @@ const { db, updateMediaDescription, updateMediaTags, incrementCommandUsage } = r
 const { safeReply } = require('../utils/safeMessaging');
 const { parseCommand } = require('../utils/commandNormalizer');
 const { getAverageProcessingTime, getTotalMediaSize } = require('../database/models/mediaMetrics');
+const { resolveNaturalCommand } = require('../utils/naturalCommandRouter');
 const packageJson = require('../../package.json');
 const os = require('os');
 
@@ -101,12 +102,34 @@ async function isGroupCommandAllowed(groupId, command, senderId) {
  * @returns {boolean} True if command was handled
  */
 async function handleCommand(client, message, chatId, context = {}) {
-  const rawCommand = message.body || message.caption || '';
-  if (!rawCommand || !rawCommand.startsWith('#')) {
+  const rawInput = message.type === 'chat'
+    ? (message.body || '')
+    : (message.caption || '');
+
+  if (!rawInput || !String(rawInput).trim()) {
     return false;
   }
 
-  const { command, params } = parseCommand(rawCommand);
+  let effectiveCommandText = String(rawInput).trim();
+
+  if (!effectiveCommandText.startsWith('#')) {
+    const naturalMapped = resolveNaturalCommand({
+      text: effectiveCommandText,
+      context: {
+        ...context,
+        chatId
+      }
+    });
+
+    if (!naturalMapped) {
+      return false;
+    }
+
+    effectiveCommandText = naturalMapped;
+    console.log(`[NaturalCommand] "${String(rawInput).slice(0, 120)}" -> ${effectiveCommandText}`);
+  }
+
+  const { command, params } = parseCommand(effectiveCommandText);
 
   let handled = false;
   let shouldTrackUsage = false;
@@ -356,9 +379,68 @@ async function handleCommand(client, message, chatId, context = {}) {
           break;
         }
 
+      case '#pong': {
+          const uptimeSeconds = Math.floor(process.uptime());
+          const h = String(Math.floor(uptimeSeconds / 3600)).padStart(2, '0');
+          const m = String(Math.floor((uptimeSeconds % 3600) / 60)).padStart(2, '0');
+          const s = String(uptimeSeconds % 60).padStart(2, '0');
+          const uptime = `${h}:${m}:${s}`;
+
+          const nowMs = Date.now();
+          const rawTs = Number(message.timestamp || message.messageTimestamp || message.messageTimestampLow || 0);
+          const msgTsMs = rawTs > 0 ? (rawTs > 1e12 ? rawTs : rawTs * 1000) : null;
+          const receiveLatency = msgTsMs ? Math.max(0, nowMs - msgTsMs) : null;
+
+          let latencyLabel = 'indisponível';
+          if (receiveLatency !== null && !Number.isNaN(receiveLatency)) {
+            latencyLabel = receiveLatency < 1 ? '<1ms' : `${Math.round(receiveLatency)}ms`;
+          }
+
+          const wsOnline = client && client.connected !== false ? 'online' : 'offline';
+
+          let queueDepth = 'n/a';
+          try {
+            const queueStats =
+              (typeof client?.getMediaQueueStats === 'function' && client.getMediaQueueStats()) ||
+              (typeof client?.getQueueStats === 'function' && client.getQueueStats()) ||
+              null;
+            if (queueStats && typeof queueStats === 'object') {
+              const waiting = Number(queueStats.waiting || 0);
+              const processing = Number(queueStats.processing || 0);
+              if (Number.isFinite(waiting) && Number.isFinite(processing)) {
+                queueDepth = String(Math.max(0, waiting) + Math.max(0, processing));
+              }
+            }
+          } catch (queueErr) {
+            console.warn('[Pong] Falha ao obter stats de fila:', queueErr?.message || queueErr);
+          }
+
+          let response =
+            'PONG! 🏓\n' +
+            `latência: ${latencyLabel}\n` +
+            `ws: ${wsOnline}\n` +
+            `fila_mídia: ${queueDepth}\n` +
+            `uptime: ${uptime}`;
+
+          if (Math.random() < 0.05) {
+            response += '\nPONG, Mr. Freeman.';
+          }
+
+          await safeReply(client, chatId, response, message);
+          handled = true;
+          shouldTrackUsage = true;
+          break;
+        }
+
+      case '#comandos':
+        await validation.handleInvalidCommand(client, chatId);
+        handled = true;
+        shouldTrackUsage = true;
+        break;
+
       default:
         // Check if it's an invalid command
-        if (validation.isValidCommand(rawCommand) === false) {
+        if (validation.isValidCommand(effectiveCommandText) === false) {
           await validation.handleInvalidCommand(client, chatId);
           handled = true;
         }

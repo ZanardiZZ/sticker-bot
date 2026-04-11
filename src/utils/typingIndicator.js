@@ -10,12 +10,32 @@
  * @returns {Function} Function to stop typing indicator
  */
 function startTyping(client, chatId) {
-  // Fire-and-forget: don't await the typing indicator
+  if (!client || typeof client.simulateTyping !== 'function' || !chatId) {
+    return () => {};
+  }
+
+  const safetyTimeoutMs = Number(process.env.TYPING_MAX_DURATION_MS || 45000);
+  let stopped = false;
+
+  // Fire-and-forget: don't block command flow
   client.simulateTyping(chatId, true).catch((error) => {
     console.error('[TYPING] Erro ao iniciar indicador de digitação:', error.message);
   });
 
+  const timer = setTimeout(() => {
+    if (stopped) return;
+    stopped = true;
+    client.simulateTyping(chatId, false).catch((error) => {
+      console.error('[TYPING] Erro no safety-stop do indicador de digitação:', error.message);
+    });
+  }, Math.max(5000, safetyTimeoutMs));
+
+  if (typeof timer.unref === 'function') timer.unref();
+
   return () => {
+    if (stopped) return;
+    stopped = true;
+    clearTimeout(timer);
     client.simulateTyping(chatId, false).catch((error) => {
       console.error('[TYPING] Erro ao parar indicador de digitação:', error.message);
     });

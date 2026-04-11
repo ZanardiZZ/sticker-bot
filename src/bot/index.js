@@ -3,20 +3,20 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '..', '..', '.env') });
 
 // Initialize log collector to capture bot logs
-const { getLogCollector } = require('./utils/logCollector');
+const { getLogCollector } = require('../utils/logCollector');
 const logCollector = getLogCollector(2000);
 
 // ---- Modular bot components
-const { initializeBot } = require('./bot/client');
-const { scheduleAutoSend } = require('./bot/scheduler');
-const { setupMessageHandler, handleMessage } = require('./bot/messageHandler');
-const { sendStickerForMediaRecord } = require('./bot/stickers');
-const { initContactsTable, upsertGroup, upsertGroupMembers } = require('./bot/contacts');
-const { initializeHistoryRecovery, setupPeriodicHistorySync } = require('./bot/historyRecovery');
-const { getMediaIdFromMessage, upsertReaction } = require('./database');
-const { checkAndNotifyVersionUpdate, initialize: initVersionNotifier } = require('./services/versionNotifier');
-const { AdminWatcher } = require('./services/adminWatcher');
-const memory = require('./client/memory-client');
+const { initializeBot } = require('./client');
+const { scheduleAutoSend } = require('./scheduler');
+const { setupMessageHandler, handleMessage } = require('./messageHandler');
+const { sendStickerForMediaRecord } = require('./stickers');
+const { initContactsTable, upsertGroup, upsertGroupMembers } = require('./contacts');
+const { initializeHistoryRecovery, setupPeriodicHistorySync } = require('./historyRecovery');
+const { getMediaIdFromMessage, upsertReaction } = require('../database');
+const { checkAndNotifyVersionUpdate, initialize: initVersionNotifier } = require('../services/versionNotifier');
+const { AdminWatcher } = require('../services/adminWatcher');
+const memory = require('../client/memory-client');
 
 /**
  * Handles incoming reaction events

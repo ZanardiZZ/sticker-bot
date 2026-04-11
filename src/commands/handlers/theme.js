@@ -49,6 +49,12 @@ function isRateLimitError(error) {
   return message.includes('rate-overlimit') || code === '429';
 }
 
+function isMissingMediaError(error) {
+  if (!error) return false;
+  const message = String(error.message || '');
+  return error.code === 'ENOENT' || message.includes('Arquivo de mídia não encontrado');
+}
+
 async function handleThemeCommand(client, message, chatId, params = []) {
   try {
     const { keywords, limit } = parseThemeParams(params);
@@ -63,7 +69,8 @@ async function handleThemeCommand(client, message, chatId, params = []) {
       return;
     }
 
-    const mediaList = await findMediaByTheme(keywords, limit);
+    const searchLimit = Math.max(limit, Math.min(50, limit * 5));
+    const mediaList = await findMediaByTheme(keywords, searchLimit);
 
     if (!mediaList.length) {
       await safeReply(
@@ -76,27 +83,34 @@ async function handleThemeCommand(client, message, chatId, params = []) {
     }
 
     const requestedCount = limit;
-    const deliveredCount = mediaList.length;
-
-    const mediaWithDetails = [];
-    for (const media of mediaList) {
-      const [, tags] = await Promise.all([
-        incrementRandomCount(media.id),
-        getTagsForMedia(media.id)
-      ]);
-      mediaWithDetails.push({ media, tags });
-    }
-
+    let deliveredCount = 0;
+    let skippedMissing = 0;
     let rateLimited = false;
 
-    for (const { media, tags } of mediaWithDetails) {
+    for (const media of mediaList) {
+      if (deliveredCount >= requestedCount) {
+        break;
+      }
+
+      let tags = [];
       try {
         await withTyping(client, chatId, () => sendMediaByType(client, chatId, media));
+
+        await incrementRandomCount(media.id);
+        tags = await getTagsForMedia(media.id);
+        deliveredCount += 1;
       } catch (error) {
         if (isRateLimitError(error)) {
           rateLimited = true;
           break;
         }
+
+        if (isMissingMediaError(error)) {
+          skippedMissing += 1;
+          console.warn(`[#theme] Skipping missing media id=${media.id} path=${media.file_path}`);
+          continue;
+        }
+
         throw error;
       }
 
@@ -129,11 +143,17 @@ async function handleThemeCommand(client, message, chatId, params = []) {
       return;
     }
 
+    if (skippedMissing > 0) {
+      console.warn(`[#theme] Skipped ${skippedMissing} media item(s) with missing files.`);
+    }
+
     if (deliveredCount < requestedCount) {
       await safeReply(
         client,
         chatId,
-        `Achei apenas ${deliveredCount} stickers para o tema solicitado.`,
+        deliveredCount > 0
+          ? `Achei apenas ${deliveredCount} stickers para o tema solicitado.`
+          : `Nenhum sticker disponível para o tema "${keywords.join(' ')}".`,
         message.id
       );
     }

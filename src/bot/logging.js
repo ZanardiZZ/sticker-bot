@@ -25,7 +25,7 @@ module.exports = {
         : null;
 
       const type = message?.type || 'desconhecido';
-      const bodyPreview = (message?.body || '')
+      const bodyPreview = ((message?.type === 'chat' ? message?.body : message?.caption) || '')
         .replace(/\s+/g, ' ')
         .slice(0, 120);
 

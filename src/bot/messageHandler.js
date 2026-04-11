@@ -103,13 +103,11 @@ async function handleMessage(client, message) {
   // Não bloquear o fluxo de resposta esperando log (evita latência se o cliente estiver lento)
   logReceivedMessage(client, message).catch(err => console.warn('[MessageHandler] Log failed:', err));
 
-  const rawBody = (message.body || message.caption || '').trim();
-  const isCommandFromBody = typeof rawBody === 'string' && rawBody.startsWith('#');
-
-  // Ignore bot-authored traffic by default, but allow explicit commands sent from
-  // the same WhatsApp account/session. This keeps operator commands like #ping
-  // working without re-processing the bot's own replies and media.
-  if (message.fromMe && !isCommandFromBody) return;
+  const rawBody = ((message.type === 'chat' ? message.body : message.caption) || '').trim();
+  // Hard safety: never process bot-authored messages as new inputs.
+  // This prevents prompt-injection loops where the model emits command-like text
+  // (e.g. starting with #criar) and the bot re-consumes its own output.
+  if (message.fromMe) return;
 
   // Extract message ID for duplicate detection
   const messageId = message.id || message.key?.id;
