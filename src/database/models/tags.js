@@ -229,7 +229,7 @@ async function findSimilarTags(tagCandidates) {
   const results = [];
   
   for (const originalTag of tagCandidates) {
-    // Expand individual tag with its synonyms
+    // Expand individual tag (currently normalized only; no external synonym service)
     const expandedTags = await expandTagsWithSynonyms([originalTag]);
     
     // Find related matches for the original tag and its synonyms
@@ -254,7 +254,7 @@ async function findSimilarTags(tagCandidates) {
 /**
  * Finds related tag matches for expanded tags and compound variations
  * @param {string} originalTag - The original tag being searched for  
- * @param {string[]} expandedTags - Array of expanded tag names (synonyms)
+ * @param {string[]} expandedTags - Array of expanded tag names
  * @returns {Promise<object[]>} Array of matching tags
  */
 async function findRelatedTagMatches(originalTag, expandedTags) {
@@ -310,7 +310,7 @@ async function selectBestTagByContext(originalTag, candidateTags, allContextTags
     // Extract compound part of candidate tag (part that's not the original)
     const compoundPart = candidateLower.replace(originalLower, '');
     
-    // Cross-match with AI-provided context tags using WordNet synonyms
+    // Cross-match with AI-provided context tags
     for (const contextTag of allContextTags) {
       if (contextTag === originalTag) continue; // Skip self-reference
       
@@ -326,7 +326,7 @@ async function selectBestTagByContext(originalTag, candidateTags, allContextTags
         score += 15;
       }
       
-      // Intelligent semantic matching using WordNet synonyms
+      // Semantic matching placeholder (external synonym service removed)
       if (compoundPart.length > 2) {
         // Get synonyms for the compound part
         const compoundSynonyms = await expandTagsWithSynonyms([compoundPart]);

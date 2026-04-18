@@ -283,14 +283,14 @@ nohup node index.js & # Wrong - creates orphan process
 
 ```bash
 ps aux | grep -E '(index.js|server.js)' | grep -v grep | wc -l
-# Should output: 3 or 4
+# Should output: 4
 ```
 
 **Breakdown:**
 1. `node .../index.js` - Bot-Client (main bot)
 2. `node .../server.js` - WS-Socket-Server (Baileys bridge)
-3. `node .../web/server.js` - WebServer (web interface)
-4. `python3 .../app.py` - Wordnet (optional NLP service)
+3. `node .../src/web/server.js` - WebServer (web interface)
+4. `node .../src/memory-bridge/server.js` - Memory-Bridge API
 
 ### Cleanup Procedure (If Duplicates Found)
 
@@ -317,7 +317,7 @@ sudo -u dev pm2 start ecosystem.config.js
 # 5. Verify correct state
 sudo -u dev pm2 list
 ps aux | grep -E '(index.js|server.js)' | grep -v grep | wc -l
-# Should see exactly 3-4 processes
+# Should see exactly 4 processes
 ```
 
 ### PM2 Ecosystem Configuration

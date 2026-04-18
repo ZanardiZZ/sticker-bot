@@ -4,7 +4,6 @@
 
 const crypto = require('crypto');
 const sharp = require('sharp');
-const axios = require('axios');
 
 /**
  * Generates MD5 hash of a buffer
@@ -16,38 +15,18 @@ function getMD5(buffer) {
 }
 
 /**
- * Fetches synonyms for a word from WordNet service
- * @param {string} word - Word to find synonyms for
- * @returns {Promise<string[]>} Array of synonym strings
- */
-async function getSynonyms(word) {
-  try {
-    const res = await axios.post('http://localhost:5000/synonyms', { word });
-    return res.data.synonyms || [];
-  } catch (err) {
-    return [];
-  }
-}
-
-/**
- * Expands tags with synonyms via WordNet+OMW microservice
+ * Synonym expansion is currently disabled (external synonym service removed).
+ * Keeps compatibility with callers by returning normalized input tags.
  * @param {string[]} tags - Array of tag strings
- * @returns {Promise<string[]>} Expanded array with synonyms
+ * @returns {Promise<string[]>} Normalized array (lowercase, unique)
  */
 async function expandTagsWithSynonyms(tags) {
   const expandedSet = new Set();
 
   for (const tag of tags) {
-    const trimmedTag = tag.trim();
+    const trimmedTag = String(tag || '').trim();
     if (!trimmedTag) continue;
     expandedSet.add(trimmedTag.toLowerCase());
-
-    try {
-      const syns = await getSynonyms(trimmedTag);
-      syns.forEach(s => expandedSet.add(s.toLowerCase()));
-    } catch (e) {
-      console.warn(`Falha ao obter sinônimos para tag "${trimmedTag}":`, e);
-    }
   }
 
   return Array.from(expandedSet);
@@ -659,7 +638,6 @@ async function recalculateHashForMedia(mediaId, filePath, dryRun = false) {
 
 module.exports = {
   getMD5,
-  getSynonyms,
   expandTagsWithSynonyms,
   getHashVisual,
   getDHash,
