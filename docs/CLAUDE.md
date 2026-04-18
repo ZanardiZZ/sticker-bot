@@ -111,8 +111,8 @@ ps aux | grep -E '(index.js|server.js)' | grep -v grep | wc -l
 **PM2 Process Names:**
 - `Bot-Client` - Main bot (index.js) with AdminWatcher
 - `WS-Socket-Server` - Baileys WebSocket bridge (server.js)
-- `WebServer` - Web interface (web/server.js)
-- `Wordnet` - NLP service (app.py)
+- `WebServer` - Web interface (src/web/server.js)
+- `Memory-Bridge` - Memory bridge API (src/memory-bridge/server.js)
 
 ### Testing
 
