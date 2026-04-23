@@ -11,6 +11,10 @@
 ### Novidades
 - feat(bot,memory,commands): consolidate multi-front reliability and memory-intent refactor (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/541923e9213283861010239949986e3c25832653))
 
+### Correções
+- fix(sticker): upscale controlado para imagens pequenas (<420px) antes de encaixar em 512x512, reduzindo bordas excessivas nas figurinhas (por ZanardiZZ)
+
+
 ### Tarefas
 - chore(git,ops): add verified auto-commit workflow with remote version-sync (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/8a3fd69cb6df9eecdb02f476c94f7b5bbadd88dc))
 
