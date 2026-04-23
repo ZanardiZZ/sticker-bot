@@ -393,6 +393,7 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
         await ensureVisualHashFromBuffer(bufferWebp, incomingAnimatedWebp ? 'animated-webp' : 'sticker');
       } else {
         const TARGET_STICKER_SIZE = 512;
+        const MIN_CONTENT_EDGE = 420;
         const maintainAlphaBackground = { r: 0, g: 0, b: 0, alpha: 0 };
         const webpOptions = {
           quality: 90,
@@ -404,9 +405,27 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
         const sharpOptions = message.mimetype === 'image/webp' ? { animated: true } : undefined;
         const makeSharp = () => (sharpOptions ? sharp(tmpFilePath, sharpOptions) : sharp(tmpFilePath));
 
-        // Replica a estratégia usada nos GIFs animados: mantêm aspecto original,
-        // centraliza em canvas 512x512 e evita cortes ou distorções.
-        bufferWebp = await makeSharp()
+        // Mantém aspecto original e centraliza em canvas 512x512.
+        // Para imagens pequenas (thumbnail), aplica upscale controlado para no mínimo 420px
+        // na maior aresta antes do encaixe final no canvas.
+        const sourceMetadata = await makeSharp().metadata();
+        const sourceWidth = sourceMetadata?.width || 0;
+        const sourceHeight = sourceMetadata?.height || 0;
+        const maxSourceEdge = Math.max(sourceWidth, sourceHeight);
+
+        const basePipeline = makeSharp();
+
+        if (maxSourceEdge > 0 && maxSourceEdge < MIN_CONTENT_EDGE) {
+          console.log(`[MediaProcessor] Small image detected (${sourceWidth}x${sourceHeight}) - applying controlled upscale to min edge ${MIN_CONTENT_EDGE}px`);
+          basePipeline.resize(MIN_CONTENT_EDGE, MIN_CONTENT_EDGE, {
+            fit: 'contain',
+            position: 'centre',
+            background: maintainAlphaBackground,
+            withoutEnlargement: false
+          });
+        }
+
+        bufferWebp = await basePipeline
           .resize(TARGET_STICKER_SIZE, TARGET_STICKER_SIZE, {
             fit: 'contain',
             position: 'centre',
