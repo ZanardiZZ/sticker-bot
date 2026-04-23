@@ -55,6 +55,16 @@ const tests = [
     }
   },
   {
+    name: 'does not map conversational "ajudá-lo" sentence to #comandos',
+    fn: async () => {
+      const out = resolveNaturalCommand({
+        text: 'Bot, o Blurk está viciado em te usar, como podemos ajudá-lo a se livrar do vício?',
+        context: { isGroup: true }
+      });
+      assertEqual(out, null);
+    }
+  },
+  {
     name: 'extractThemeTerm strips polite suffix',
     fn: async () => {
       const out = extractThemeTerm('quero figurinha de half life por favor');

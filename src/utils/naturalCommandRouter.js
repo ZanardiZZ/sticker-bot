@@ -96,7 +96,10 @@ function resolveNaturalCommand({ text, context = {} } = {}) {
     if (!explicitStickerAsk) return null;
   }
 
-  if (allowlist.has('#comandos') && /(\bajuda\b|\bcomandos\b|\bmenu\b|o\s+que\s+voce\s+faz|o\s+que\s+você\s+faz)/i.test(normalized)) {
+  if (
+    allowlist.has('#comandos')
+    && /(?:\bcomandos?\b|\bmenu\b|\blista\s+de\s+comandos\b|\bme\s+ajuda\b|\bme\s+ajude\b|\bpreciso\s+de\s+ajuda\b|o\s+que\s+voce\s+faz|o\s+que\s+você\s+faz|quais?\s+comandos?\s+voce\s+tem|quais?\s+comandos?\s+você\s+tem)/i.test(normalized)
+  ) {
     return '#comandos';
   }
 
