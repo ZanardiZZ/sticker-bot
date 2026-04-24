@@ -1,3 +1,14 @@
+# Changelog
+
+## [0.14.2] - 2026-04-24
+
+### Correções
+- fix(router): evitar falso positivo de ajuda em frase conversacional (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/2b5d3d9afa34189e754977098a9a93d3f2c55c2b))
+- fix(sticker): upscale small images before sticker canvas (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/2b19a1650d5e812c9a12280b46220fc79fc2cd67))
+
+### Tarefas
+- chore: remove legacy wordnet service and align pm2 ecosystem (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/ec6c4d769e91f57d4dd5527b26ddbf12aca573b3))
+
 ## [0.14.2] - 2026-04-23
 
 ### Correções
