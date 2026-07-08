@@ -28,15 +28,18 @@ async function handleIdCommand(client, message, chatId) {
 
     await incrementRandomCount(media.id);
     
+    let sentOk = false;
+
     // Try to send the media first
     try {
       await withTyping(client, chatId, () => sendMediaAsOriginal(client, chatId, media));
       console.log(`[handleIdCommand] Mídia ${mediaId} enviada com sucesso`);
+      sentOk = true;
     } catch (mediaError) {
       console.error(`[handleIdCommand] Erro ao enviar mídia ${mediaId}:`, mediaError.message);
       // Inform user about media sending failure
       await safeReply(client, chatId, `⚠️ Erro ao enviar a mídia (ID: ${mediaId}): ${mediaError.message}`, message.id);
-      // Don't return here - still send the info message
+      return;
     }
 
     // Small delay to help with socket mode timing (avoid race conditions)
@@ -54,8 +57,10 @@ async function handleIdCommand(client, message, chatId) {
     });
 
     // Send description message using safeReply (removes the complex fallback logic)
-    await safeReply(client, chatId, responseMessage, message.id);
-    console.log(`[handleIdCommand] Mensagem de descrição enviada para mídia ${media.id}`);
+    if (sentOk) {
+      await safeReply(client, chatId, responseMessage, message.id);
+      console.log(`[handleIdCommand] Mensagem de descrição enviada para mídia ${media.id}`);
+    }
     
   } catch (err) {
     console.error('Erro geral no comando #ID:', err);

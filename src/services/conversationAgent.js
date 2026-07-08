@@ -1,7 +1,7 @@
 const path = require('path');
 const fs = require('fs').promises;
 const { isAiAvailable, generateConversationalReply } = require('./ai');
-const { withTyping } = require('../utils/typingIndicator');
+const { withTyping, startTyping } = require('../utils/typingIndicator');
 const { safeReply } = require('../utils/safeMessaging');
 const { getLogCollector } = require('../utils/logCollector');
 const memory = require('../client/memory-client');
@@ -13,6 +13,9 @@ const HISTORY_LIMIT = Math.max(Number(process.env.CONVERSATION_HISTORY_LIMIT) ||
 const COOLDOWN_MS = Number.isFinite(Number(process.env.CONVERSATION_COOLDOWN_MS))
   ? Number(process.env.CONVERSATION_COOLDOWN_MS)
   : 120000;
+const ACTIVE_REPLY_WINDOW_MS = Number.isFinite(Number(process.env.CONVERSATION_ACTIVE_REPLY_WINDOW_MS))
+  ? Number(process.env.CONVERSATION_ACTIVE_REPLY_WINDOW_MS)
+  : 180000;
 const MIN_MESSAGES_BEFORE_RESPONSE = Math.max(Number(process.env.CONVERSATION_MIN_MESSAGES) || 3, 1);
 const MAX_REPLY_CHARS = Math.max(Number(process.env.CONVERSATION_MAX_RESPONSE_CHARS) || 360, 120);
 const REPLY_SPLIT_DELAY_MS = Math.max(Number(process.env.CONVERSATION_REPLY_SPLIT_DELAY_MS) || 350, 0);
@@ -226,9 +229,14 @@ function parseLoggedMessage(logMessage = '') {
 }
 
 function prefillHistoryFromLogs(chatId, state, currentMessage) {
-  // Hard disabled: log prefill proved too noisy and caused transcript leakage.
-  state._logsPrefilled = true;
-  return;
+  const LOG_PREFILL_ENABLED = (process.env.CONVERSATION_LOG_PREFILL_ENABLED || '0').toLowerCase() === '1'
+    || (process.env.CONVERSATION_LOG_PREFILL_ENABLED || '0').toLowerCase() === 'true';
+
+  // Default remains disabled due prior transcript-leak noise; enable only explicitly.
+  if (!LOG_PREFILL_ENABLED) {
+    state._logsPrefilled = true;
+    return;
+  }
 
   if (!chatId || state._logsPrefilled) return;
 
@@ -414,7 +422,7 @@ function toPreferenceMemory(text = '') {
 
 function hasInternalLeakSignals(text = '') {
   const value = String(text || '');
-  return /(thinking\s*process|analyze\s+the(?:\s+request)?|system\s*role|core\s*directives|active\s*participants?|do\s+not\s+reveal\s+ai|memory\s*context|conversation\s*history|reasoning\s*content|<think\b|\/no_think|\*\*\s*system\s*:?|\*\*\s*language\s*:?|\*\*\s*length\s*:?|\*\*\s*format\s*:?|active\s+participant\s+in\s+the\s+group|brazilian\s+portuguese\s*\(natural)/i.test(value);
+  return /(thinking\s*process|analyze\s+the(?:\s+request)?|system\s*role|core\s*directives|active\s*participants?|do\s+not\s+reveal\s+ai|memory\s*context|conversation\s*history|reasoning\s*content|<think\b|\/no_think|\*\*\s*system\s*:?|\*\*\s*language\s*:?|\*\*\s*length\s*:?|\*\*\s*format\s*:?|\*\*\s*role\s*:?|\*\*\s*input\s*:?|\*\*\s*output\s*:?|active\s+participant\s+in\s+the\s+group|lia,\s*a\s+participant\s+in\s+a\s+whatsapp\s+group|brazilian\s+portuguese\s*\(natural)/i.test(value);
 }
 
 function collapseRepeatedPhrases(text = '') {
@@ -863,6 +871,15 @@ function isDegenerateListOnlyReply(text = '') {
   // Valid short factual answers are allowed (e.g., "15", "3,14").
   if (/^[-+]?\d+(?:[.,]\d+)?(?:\s*[.!?])?$/.test(value)) return false;
 
+  // Legitimate counting replies (e.g., "1 2 3 ...", "1,2,3", "1.\n2.\n3.") should be kept.
+  const numberTokens = (value.match(/\b\d+\b/g) || []).map((n) => Number(n));
+  if (numberTokens.length >= 3 && numberTokens.length <= 20) {
+    const unique = [...new Set(numberTokens)];
+    const isStrictSequence = unique.length === numberTokens.length
+      && unique.every((n, idx) => idx === 0 || n === unique[idx - 1] + 1);
+    if (isStrictSequence) return false;
+  }
+
   // If it has no actual words, but has multiple numeric/list markers, treat as broken output.
   const wordMatches = value.match(/\p{L}{2,}/gu) || [];
   const numberMarkers = value.match(/\b\d+[.):-]?\b/g) || [];
@@ -935,7 +952,8 @@ function sanitizeReplyText(reply, participantNames = []) {
   // Remove leaked rubric/policy bullet lines often emitted by some models.
   cleaned = cleaned
     .split(/\r?\n/)
-    .filter(line => !/^\s*(?:\*|-)?\s*\*\*\s*(?:system|language|length|format)\s*:?/i.test(line))
+    .filter(line => !/^\s*(?:\*|-)?\s*\*\*\s*(?:system|language|length|format|role|input|output)\s*:?/i.test(line))
+    .filter(line => !/^\s*\*\s*\*\*\s*(?:role|input|output)\s*:?/i.test(line))
     .filter(line => !/^\s*\d+\.\s*\*\*\s*analyze\s+the/i.test(line))
     .join('\n')
     .trim();
@@ -1004,9 +1022,8 @@ function sanitizeReplyText(reply, participantNames = []) {
   const shortValidReply = /^[-+]?\d+(?:[.,]\d+)?(?:\s*[.!?])?$/.test(cleaned)
     || /^(?:sim|não|nao|ok|certo|verdade|falso)\.?$/i.test(cleaned);
 
-  // Final guard: if leak signals remain, output is too weak, or list collapsed into numeric noise,
-  // drop reply to avoid exposing internals or sending nonsense.
-  if (hasInternalLeakSignals(cleaned) || (cleaned.length < 8 && !shortValidReply) || isDegenerateListOnlyReply(cleaned)) {
+  // Final guard: keep it generic. Only block clear leak signals or truly empty output.
+  if (hasInternalLeakSignals(cleaned) || (cleaned.length < 1 && !shortValidReply)) {
     return '';
   }
 
@@ -1048,17 +1065,18 @@ async function sendEmojiReaction(client, message, text) {
 }
 
 function computeShouldRespond(state, text, { mentionDetected }) {
-  // Production hardening: answer only when explicitly addressed.
-  if (STRICT_MENTION_ONLY) {
-    return !!mentionDetected;
-  }
-
-  if (mentionDetected) {
-    return true;
-  }
-
   const now = Date.now();
   const sinceLastReply = now - (state.lastReplyAt || 0);
+  const isActiveConversationWindow = !!state.lastReplyAt && sinceLastReply <= ACTIVE_REPLY_WINDOW_MS;
+
+  // Production hardening: explicit mention OR active follow-up turn.
+  if (STRICT_MENTION_ONLY) {
+    return !!mentionDetected || isActiveConversationWindow;
+  }
+
+  if (mentionDetected || isActiveConversationWindow) {
+    return true;
+  }
 
   if (state.messagesSinceLastReply < MIN_MESSAGES_BEFORE_RESPONSE) {
     return false;
@@ -1157,6 +1175,14 @@ function getDeterministicConversationAnswer(text = '') {
   const isSensitiveTopic = sensitiveTopicRegex.test(normalized);
   const isOperationalAsk = operationalIntentRegex.test(normalized);
 
+  if (isSensitiveTopic && isOperationalAsk) {
+    return 'Não posso ajudar com instruções operacionais para causar dano ou invadir sistemas. Se quiser, posso explicar riscos, prevenção e segurança de forma responsável.';
+  }
+
+  if (/assunto\s+que\s+voce\s+nao\s+pode\s+falar|algum\s+assunto\s+que\s+voce\s+nao\s+pode|tem\s+algo\s+que\s+voce\s+nao\s+pode\s+falar/.test(normalized)) {
+    return 'Posso falar de quase tudo em nível informativo. O que eu não faço é passar instruções para causar dano, invadir, fraudar ou burlar segurança.';
+  }
+
   // Para temas sensíveis NÃO-operacionais, deixa seguir para o LLM
   // (com a regra do system prompt: informativo e sem operacional).
   return null;
@@ -1172,9 +1198,22 @@ async function handleGroupChatMessage(client, message, context = {}) {
     if (!chatId || !String(chatId).includes('@g.us')) return false;
 
     const text = cleanText(message.body || message.message || '');
-    const senderId = context.senderId || message.author || message.sender?.id;
-    const senderName = context.senderName || deriveSenderName(message, senderId || '');
-    const groupName = context.groupName || deriveGroupName(message) || null;
+    if (!text) return false;
+
+    const deterministicReply = getDeterministicConversationAnswer(text);
+    if (deterministicReply) {
+      await withTyping(client, chatId, async () => {
+        if (typeof client.sendText === 'function') {
+          await client.sendText(chatId, deterministicReply);
+        } else if (typeof client.sendMessage === 'function') {
+          await client.sendMessage(chatId, deterministicReply);
+        } else {
+          await safeReply(client, chatId, deterministicReply, message?.id);
+        }
+      });
+      return true;
+    }
+
     const contextSelfIdentifiers = new Set();
     if (Array.isArray(context.selfJids)) {
       context.selfJids.forEach(value => addIdentifierVariants(contextSelfIdentifiers, value));
@@ -1185,8 +1224,6 @@ async function handleGroupChatMessage(client, message, context = {}) {
     const mentionedJids = extractMentionedJids(message);
     const explicitMention = mentionedJids.some(jid => matchesSelfIdentifier(jid, contextSelfIdentifiers));
 
-    // Fallback for environments where self identifiers are incomplete/missing.
-    // Accept @number both at start and in the middle/end of sentence.
     const startsWithDirectAtNumber = /^\s*@\d{6,}/.test(text);
     const hasDirectAtNumberAnywhere = /(^|\s)@\d{6,}(?=\D|$)/.test(text);
     const hasAnyMentionMetadata = mentionedJids.length > 0;
@@ -1202,213 +1239,66 @@ async function handleGroupChatMessage(client, message, context = {}) {
       hasDirectAtNumberAnywhere ||
       (hasAnyMentionMetadata && /(^|\s)@\S+/.test(text));
 
-    if (shouldIgnoreText(text, mentionDetected)) return false;
+    const senderId = context.senderId || message?.sender?.id || message?.author || message?.participant || 'desconhecido';
+    const senderName = deriveSenderName(message, context.senderName);
+    const groupName = context.groupName || deriveGroupName(message) || 'grupo';
 
     const state = await getState(chatId);
-    prefillHistoryFromLogs(chatId, state, { text, senderId, senderName });
-
-    const messageTimestamp = message.timestamp ? message.timestamp * 1000 : Date.now();
-    const normalizedSenderId = senderId || 'desconhecido';
-    const lastEntry = state.history[state.history.length - 1];
-
-    if (!lastEntry || lastEntry.senderId !== normalizedSenderId || lastEntry.text !== text) {
-      state.history.push({
-        role: 'user',
-        senderId: normalizedSenderId,
-        senderName,
-        text,
-        timestamp: messageTimestamp
-      });
-    }
-    state.messagesSinceLastReply = (state.messagesSinceLastReply || 0) + 1;
+    prefillHistoryFromLogs(chatId, state, { senderId, senderName, text });
+    state.history.push({ role: 'user', senderId, senderName, text, timestamp: Date.now() });
     state.lastActivityAt = Date.now();
+    state.messagesSinceLastReply = (state.messagesSinceLastReply || 0) + 1;
     pruneHistory(state);
+
+    if (shouldIgnoreText(text, mentionDetected)) {
+      await persistState(chatId, state);
+      return false;
+    }
 
     const shouldRespond = computeShouldRespond(state, text, { mentionDetected });
-
     if (!shouldRespond) {
-      console.log('[ConversationAgent] Skip response:', {
-        chatId,
-        mentionDetected,
-        mentionedJidsCount: mentionedJids.length,
-        messagesSinceLastReply: state.messagesSinceLastReply,
-        lastReplyAt: state.lastReplyAt || 0,
-        textPreview: text.slice(0, 80)
-      });
-    }
-
-    // Reaction-only: even when not responding with text, react to interesting messages
-    if (!shouldRespond) {
-      if (Math.random() < 0.15) {
-        await sendEmojiReaction(client, message, text).catch(() => {});
-      }
       await persistState(chatId, state);
       return false;
     }
 
-    // Always react when actually responding
-    await sendEmojiReaction(client, message, text).catch(() => {});
+    let memoryContext = null;
+    if (ENABLE_MEMORY_CONTEXT && typeof memory?.isReady === 'function' && memory.isReady() && typeof memory?.buildContext === 'function') {
+      try {
+        memoryContext = await memory.buildContext(chatId, [senderId], { senderId });
+      } catch (err) {
+        console.warn('[ConversationAgent] Falha ao montar contexto de memória:', err?.message || err);
+      }
+    }
 
-    const deterministicReply = getDeterministicConversationAnswer(text);
-    if (deterministicReply) {
-      console.log('[ConversationAgent] route=deterministic reason_code=matched_intent', { chatId });
-      await withTyping(client, chatId, async () => {
-        if (typeof client.sendText === 'function') {
-          await client.sendText(chatId, deterministicReply);
-        } else if (typeof client.sendMessage === 'function') {
-          await client.sendMessage(chatId, deterministicReply);
-        } else {
-          await safeReply(client, chatId, deterministicReply, message?.id);
-        }
+    const stopTyping = typeof startTyping === 'function' ? startTyping(client, chatId) : () => {};
+    try {
+      const aiMessages = buildAiMessages(state, { groupName, memoryContext, senderId });
+      const reply = await generateConversationalReply({
+        messages: aiMessages,
+        maxTokens: Number(process.env.CONVERSATION_MAX_TOKENS) || 700
       });
 
-      const now = Date.now();
-      state.history.push({
-        role: 'assistant',
-        senderId: 'bot',
-        senderName: PERSONA_NAME,
-        text: deterministicReply,
-        timestamp: now
-      });
-      state.lastReplyAt = now;
+      const sanitized = sanitizeReplyText(reply || '');
+      if (!sanitized) return false;
+
+      if (typeof client.sendText === 'function') {
+        await client.sendText(chatId, sanitized);
+      } else if (typeof client.sendMessage === 'function') {
+        await client.sendMessage(chatId, sanitized);
+      } else {
+        await safeReply(client, chatId, sanitized, message?.id);
+      }
+
+      state.history.push({ role: 'assistant', senderId: 'bot', senderName: PERSONA_NAME, text: sanitized, timestamp: Date.now() });
+      state.lastReplyAt = Date.now();
       state.messagesSinceLastReply = 0;
-      state.lastActivityAt = now;
       pruneHistory(state);
       await persistState(chatId, state);
+
       return true;
+    } finally {
+      stopTyping();
     }
-
-    let memoryContext = context.memoryContext || null;
-    if (ENABLE_MEMORY_CONTEXT && !memoryContext && memory.isReady()) {
-      memoryContext = await memory.buildContext(chatId, senderId ? [senderId] : [], { senderId });
-    } else if (!ENABLE_MEMORY_CONTEXT) {
-      memoryContext = null;
-    }
-
-    const messages = buildAiMessages(state, { groupName, memoryContext, senderId });
-    const specificLongRequest = isSpecificLongRequest(text);
-    const defaultMaxTokens = Math.min(Number(process.env.CONVERSATION_MAX_TOKENS_DEFAULT) || 220, Number(process.env.CONVERSATION_MAX_TOKENS) || 220);
-    const dynamicMaxTokens = specificLongRequest
-      ? Math.max(Number(process.env.CONVERSATION_MAX_TOKENS_SPECIFIC) || 420, defaultMaxTokens)
-      : defaultMaxTokens;
-
-    // Collect participant names for sanitization
-    const participantNames = [...new Set(
-      state.history
-        .filter(e => e.role !== 'assistant' && e.senderName)
-        .map(e => e.senderName)
-    )];
-
-    let sanitized = '';
-    let lastReply = '';
-    let lastFailureReason = 'unknown';
-    const maxAttempts = Math.max(1, Number(process.env.CONVERSATION_SANITIZE_MAX_ATTEMPTS) || 1);
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      const retryInstruction = attempt > 1
-        ? [{
-            role: 'user',
-            // IMPORTANTE: manter retry como USER para não quebrar providers/template
-            // que exigem o único system message no início da conversa.
-            content: 'Tente novamente com uma resposta curta, limpa e objetiva, sem metadados e sem repetir a pergunta.'
-          }]
-        : [];
-
-      const reply = await generateConversationalReply({
-        messages: [...messages, ...retryInstruction],
-        maxTokens: dynamicMaxTokens
-      });
-
-      if (!reply) {
-        lastFailureReason = 'llm_empty';
-        console.warn(`[ConversationAgent] route=llm reason_code=llm_empty (attempt ${attempt}/${maxAttempts})`);
-        continue;
-      }
-
-      lastReply = reply;
-      const cleaned = sanitizeReplyText(reply, participantNames);
-      if (cleaned && !isEchoLikeReply(cleaned, text)) {
-        sanitized = cleaned;
-        console.log('[ConversationAgent] route=llm reason_code=ok', { chatId, attempt });
-        break;
-      }
-
-      if (cleaned && isEchoLikeReply(cleaned, text)) {
-        lastFailureReason = 'echo_blocked';
-        console.warn(`[ConversationAgent] route=llm reason_code=echo_blocked (attempt ${attempt}/${maxAttempts})`);
-      } else {
-        lastFailureReason = 'sanitize_empty';
-        console.warn(`[ConversationAgent] route=llm reason_code=sanitize_empty (attempt ${attempt}/${maxAttempts})`);
-      }
-    }
-
-    if (!sanitized) {
-      const safeFallback = 'Tive instabilidade ao responder agora. Pode repetir em uma frase curta?';
-      await withTyping(client, chatId, async () => {
-        if (typeof client.sendText === 'function') {
-          await client.sendText(chatId, safeFallback);
-        } else if (typeof client.sendMessage === 'function') {
-          await client.sendMessage(chatId, safeFallback);
-        } else {
-          await safeReply(client, chatId, safeFallback, message?.id);
-        }
-      });
-      console.warn('[ConversationAgent] route=fallback reason_code=final_fallback', { chatId, hadReply: Boolean(lastReply), lastFailureReason });
-      await persistState(chatId, state);
-      return true;
-    }
-
-    if (violatesUserAttackGuardrails(sanitized)) {
-      console.warn('[ConversationAgent] route=llm reason_code=guardrail_user_attack_block', { chatId });
-      sanitized = 'Limite atingido. Mantendo resposta técnica: tentativa bloqueada.';
-    }
-
-    const effectiveMaxChars = specificLongRequest
-      ? MAX_REPLY_CHARS
-      : Math.min(MAX_REPLY_CHARS, DEFAULT_SHORT_MAX_CHARS);
-    const effectiveMaxChunks = specificLongRequest ? SPECIFIC_MAX_CHUNKS : DEFAULT_MAX_CHUNKS;
-
-    const replyChunks = splitReplyIntoChunks(sanitized, {
-      maxChars: effectiveMaxChars,
-      maxChunks: effectiveMaxChunks
-    });
-    if (!replyChunks.length) {
-      await persistState(chatId, state);
-      return false;
-    }
-
-    await withTyping(client, chatId, async () => {
-      for (let i = 0; i < replyChunks.length; i += 1) {
-        const chunk = replyChunks[i];
-        if (typeof client.sendText === 'function') {
-          await client.sendText(chatId, chunk);
-        } else if (typeof client.sendMessage === 'function') {
-          await client.sendMessage(chatId, chunk);
-        } else {
-          await safeReply(client, chatId, chunk, message?.id);
-        }
-
-        if (i < replyChunks.length - 1 && REPLY_SPLIT_DELAY_MS > 0) {
-          await new Promise(resolve => setTimeout(resolve, REPLY_SPLIT_DELAY_MS));
-        }
-      }
-    });
-
-    const now = Date.now();
-    state.history.push({
-      role: 'assistant',
-      senderId: 'bot',
-      senderName: PERSONA_NAME,
-      text: replyChunks.join('\n'),
-      timestamp: now
-    });
-    state.lastReplyAt = now;
-    state.messagesSinceLastReply = 0;
-    state.lastActivityAt = now;
-    pruneHistory(state);
-
-    await persistState(chatId, state);
-    return true;
   } catch (err) {
     console.error('[ConversationAgent] Erro ao processar mensagem de grupo:', err);
     return false;

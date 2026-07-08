@@ -7,6 +7,7 @@ const fsp = require('fs/promises');
 const path = require('path');
 const mime = require('mime-types');
 const crypto = require('crypto');
+const sharp = require('sharp');
 const { PACK_NAME, AUTHOR_NAME } = require('../../config/stickers');
 const { Image } = require('node-webpmux');
 const { linkMessageToMedia } = require('../database/models/reactions');
@@ -184,8 +185,13 @@ async function convertToMp4ForSticker(inputPath) {
  * Animated WebPs are returned untouched.
  */
 async function ensureSafeWebpSticker(filePath) {
+  return ensureSafeWebpStickerWithOptions(filePath, {});
+}
+
+async function ensureSafeWebpStickerWithOptions(filePath, options = {}) {
   const originalBuffer = await fsp.readFile(filePath);
   const animated = isAnimatedWebpBuffer(originalBuffer);
+  const forceAnimatedReencode = Boolean(options.forceAnimatedReencode);
 
   let canCacheFixedWebp = true;
 
@@ -197,7 +203,7 @@ async function ensureSafeWebpSticker(filePath) {
     console.warn('[Sticker] Cache de WebP indisponível, usando somente memória:', dirErr.message);
   }
 
-  const metadataSignature = `${PACK_NAME}::${AUTHOR_NAME}`;
+  const metadataSignature = `${PACK_NAME}::${AUTHOR_NAME}::${forceAnimatedReencode ? 'force-anim-reencode' : 'default'}`;
   const hash = crypto.createHash('md5').update(originalBuffer).update(metadataSignature).digest('hex');
   const cachedPath = path.join(FIXED_WEBP_DIR, `${hash}.webp`);
 
@@ -223,6 +229,22 @@ async function ensureSafeWebpSticker(filePath) {
         quality: 80,
       });
       rebuiltBuffer = await sticker.build();
+    } else if (forceAnimatedReencode) {
+      if (typeof sharp !== 'function') {
+        throw new Error('Sharp não disponível para re-encode de WebP animado');
+      }
+
+      rebuiltBuffer = await sharp(originalBuffer, { animated: true })
+        .webp({
+          quality: 80,
+          alphaQuality: 100,
+          effort: 6,
+          smartSubsample: true,
+          loop: 0
+        })
+        .toBuffer();
+
+      console.log('[Sticker] WebP animado re-encodado para normalização');
     }
 
     const withMetadata = await injectStickerMetadata(rebuiltBuffer, {
@@ -289,6 +311,7 @@ async function sendStickerForMediaRecord(client, chatId, media) {
   }
 
   const mimetype = media.mimetype || mime.lookup(filePath) || '';
+  console.log(`[Sticker] sendStickerForMediaRecord: chatId=${chatId} mediaId=${media.id} mimetype=${mimetype} filePath=${filePath}`);
 
   // Helpers
   const isGif = mimetype === 'image/gif' || filePath.endsWith('.gif');
@@ -464,5 +487,6 @@ module.exports = {
   isAnimatedWebpBuffer,
   isAnimatedWebpFile,
   ensureDirSync,
-  ensureSafeWebpSticker
+  ensureSafeWebpSticker,
+  ensureSafeWebpStickerWithOptions
 };

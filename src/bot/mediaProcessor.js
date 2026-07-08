@@ -704,8 +704,8 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
               ? (candidateSizeBytes / MAX_STICKER_BYTES).toFixed(2)
               : null;
             const noticeMessage = sizeInMb
-              ? `Recebi um GIF curtinho mas grandinho (~${sizeInMb}MB). Estou compactando para caber como figurinha animada, aguarde só um instante...`
-              : 'Recebi um GIF curtinho mas grandinho. Estou compactando para caber como figurinha animada, aguarde só um instante...';
+              ? `Recebi um GIF (~${sizeInMb}MB). Vou compactar para caber como figurinha animada, aguarde só um instante...`
+              : 'Recebi um GIF. Vou transformar em figurinha animada, aguarde só um instante...';
 
             try {
               await safeReply(client, chatId, noticeMessage, message.id);
@@ -728,45 +728,63 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
             await sendCompressionNotice();
           }
 
+          // Convert MP4 → GIF first (reliable frame preservation), then GIF → animated WebP via sharp
+          const gifIntermediatePath = tmpFilePath.replace(/\.[^.]+$/, '.gif');
+
           for (const [attemptIndex, attempt] of ffmpegAttempts.entries()) {
             try {
               if (attemptIndex > 0 && !compressionNoticeSent) {
                 await sendCompressionNotice();
               }
 
-              if (fs.existsSync(outPath)) {
-                try { fs.unlinkSync(outPath); } catch {}
+              if (fs.existsSync(gifIntermediatePath)) {
+                try { fs.unlinkSync(gifIntermediatePath); } catch {}
               }
 
-              const filter = `fps=${attempt.fps},scale=512:512:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000,setsar=1`;
-              const outputOptions = [
-                '-vcodec', 'libwebp',
-                '-vf', filter,
-                '-loop', '0',
-                '-preset', 'default',
-                '-an',
-                '-vsync', '0',
-                '-quality', String(attempt.quality),
-                '-lossless', '0',
-                '-compression_level', '6',
-                '-pix_fmt', 'yuva420p'
-              ];
+              // Step 1: MP4 → GIF with proper palette (preserves all frames)
+              const gifFilter = `fps=${attempt.fps},scale=512:512:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000,setsar=1,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse`;
 
               await new Promise((resolve, reject) => {
                 ffmpeg(tmpFilePath)
-                  .outputOptions(outputOptions)
-                  .toFormat('webp')
-                  .save(outPath)
+                  .outputOptions(['-vf', gifFilter, '-loop', '0'])
+                  .toFormat('gif')
+                  .save(gifIntermediatePath)
                   .on('end', resolve)
                   .on('error', reject);
               });
 
-              const candidate = await fs.promises.readFile(outPath);
-              convertedBuffer = candidate;
+              if (!fs.existsSync(gifIntermediatePath)) {
+                throw new Error('GIF intermediate file not created');
+              }
 
-              const withinStickerLimit = candidate.length <= MAX_STICKER_BYTES;
+              // Step 2: GIF → animated WebP via sharp (preserves animation reliably)
+              const gifBuffer = await fs.promises.readFile(gifIntermediatePath);
+              const webpBuffer = await sharp(gifBuffer, { animated: true })
+                .webp({
+                  loop: 0,
+                  effort: 6,
+                  smartSubsample: true,
+                  lossless: false,
+                  quality: attempt.quality,
+                })
+                .toBuffer();
+
+              // Verify the output is actually animated
+              const riff = webpBuffer.slice(0, 4).toString('ascii') === 'RIFF';
+              const webp = webpBuffer.slice(8, 12).toString('ascii') === 'WEBP';
+              const hasAnimChunk = webpBuffer.indexOf('ANIM') !== -1 || webpBuffer.indexOf('ANMF') !== -1;
+              const hasAnimBit = webp && (() => { try { return webpBuffer.slice(12, 16).toString('ascii') === 'VP8X' && (webpBuffer[20] & 0x10) === 0x10; } catch { return false; } })();
+
+              if (!riff || !webp || (!hasAnimChunk && !hasAnimBit)) {
+                console.warn('[MediaProcessor] WebP animation verification failed, retrying with lower quality...');
+                throw new Error('webp_not_animated');
+              }
+
+              convertedBuffer = webpBuffer;
+
+              const withinStickerLimit = webpBuffer.length <= MAX_STICKER_BYTES;
               if (!withinStickerLimit && !compressionNoticeSent) {
-                await sendCompressionNotice(candidate.length);
+                await sendCompressionNotice(webpBuffer.length);
               }
 
               if (withinStickerLimit) {
@@ -774,7 +792,11 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
               }
             } catch (attemptErr) {
               ffmpegError = attemptErr;
-              console.warn('[MediaProcessor] WebP via ffmpeg falhou:', attemptErr.message);
+              console.warn('[MediaProcessor] GIF→WebP animation attempt falhou:', attemptErr.message);
+            } finally {
+              if (fs.existsSync(gifIntermediatePath)) {
+                try { fs.unlinkSync(gifIntermediatePath); } catch {}
+              }
             }
           }
 
@@ -787,7 +809,6 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
           if (bufferWebp.length > MAX_STICKER_BYTES) {
             console.warn('[MediaProcessor] GIF-like convertido continua acima de 1MB. Tamanho:', bufferWebp.length);
           }
-          try { fs.unlinkSync(outPath); } catch {}
         } catch (e) {
           console.warn('[MediaProcessor] Erro ao converter GIF-like para webp:', e.message);
           bufferWebp = null;
@@ -1248,7 +1269,9 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
         await sendStickerForMediaRecord(client, chatId, savedMedia);
       } catch (stickerError) {
         const contextLabel = treatedAsGif ? 'GIF' : 'imagem';
-        console.warn(`Erro ao enviar sticker da ${contextLabel}, continuando com resposta de texto:`, stickerError.message);
+        console.warn(`[Sticker] Erro ao enviar sticker da ${contextLabel} para ${chatId}:`, stickerError.message);
+        console.warn(`[Sticker] Stack:`, stickerError.stack?.split('\n').slice(0, 5).join('\n'));
+        console.warn(`[Sticker] Media: id=${savedMedia.id} path=${savedMedia.file_path} mimetype=${savedMedia.mimetype}`);
       }
     }
 

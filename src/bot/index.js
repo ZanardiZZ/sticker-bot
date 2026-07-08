@@ -126,8 +126,33 @@ async function syncAllGroupNames(client) {
  * Main bot start function
  * @param {Object} client - WhatsApp client instance
  */
+async function waitForClientReadiness(client, { attempts = 5, timeoutMs = 12000, baseDelayMs = 750 } = {}) {
+  if (!client || typeof client.waitUntilReady !== 'function') return;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      await client.waitUntilReady(timeoutMs);
+      if (attempt > 1) {
+        console.log(`[Bot] Cliente WhatsApp ficou pronto na tentativa ${attempt}/${attempts}`);
+      }
+      return;
+    } catch (err) {
+      const delay = baseDelayMs * (2 ** (attempt - 1));
+      if (attempt >= attempts) {
+        throw err;
+      }
+      console.warn(`[Bot] WhatsApp ainda não pronto (${err?.message || err}); retry ${attempt}/${attempts - 1} em ${delay}ms`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
 async function start(client) {
   console.log('🤖 Bot iniciado e aguardando mensagens...');
+  try {
+    await waitForClientReadiness(client);
+  } catch (err) {
+    console.warn('[Bot] Seguindo bootstrap sem readiness total; operações de envio usarão retries:', err?.message || err);
+  }
   memory.init();
   const memoryHealth = await memory.healthcheck();
   if (memoryHealth?.disabled) {

@@ -46,7 +46,7 @@ module.exports = {
       vizion: false,
       env: {
         PM2_DISABLE_MONIT: 'true',
-        PORT: process.env.PORT || 3000
+        PORT: globalThis.process?.env?.PORT || 3000
       }
     },
     {

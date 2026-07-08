@@ -6,7 +6,7 @@ const { Sticker, StickerTypes } = require('../utils/stickerFormatter');
 const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
-const { ensureSafeWebpSticker } = require('../bot/stickers');
+const { ensureSafeWebpSticker, ensureSafeWebpStickerWithOptions, isAnimatedWebpBuffer } = require('../bot/stickers');
 const { ROOT_DIR, MEDIA_DIR, BOT_MEDIA_DIR, OLD_STICKERS_DIR } = require('../paths');
 
 const { PACK_NAME, AUTHOR_NAME } = require('../../config/stickers');
@@ -196,7 +196,7 @@ async function sendMediaByType(client, chatId, media) {
  * @param {string} chatId - Chat ID
  * @param {object} media - Media object from database
  */
-async function sendMediaAsOriginal(client, chatId, media) {
+async function sendMediaAsOriginal(client, chatId, media, options = {}) {
   if (!media) {
     throw new Error('Media object is required');
   }
@@ -296,7 +296,9 @@ async function sendMediaAsOriginal(client, chatId, media) {
       if (isWebp) {
         try {
           console.log('[sendMediaAsOriginal] Tentando enviar WebP via ensureSafeWebpSticker...');
-          const { buffer: webpBuffer, animated } = await ensureSafeWebpSticker(filePath);
+          const { buffer: webpBuffer, animated } = await ensureSafeWebpStickerWithOptions(filePath, {
+            forceAnimatedReencode: Boolean(options.forceAnimatedReencode)
+          });
           const dataUrl = `data:image/webp;base64,${webpBuffer.toString('base64')}`;
           console.log('[sendMediaAsOriginal] Chamando client.sendRawWebpAsSticker (método 1)...');
           await client.sendRawWebpAsSticker(chatId, dataUrl, { pack: PACK_NAME, author: AUTHOR_NAME, animated });
@@ -305,6 +307,27 @@ async function sendMediaAsOriginal(client, chatId, media) {
           return;
         } catch (webpErr) {
           console.warn(`[sendMediaAsOriginal] ✗ Falha no método 1: ${webpErr.message}`);
+          try {
+            const originalBuffer = await fsp.readFile(filePath);
+            const isAnimatedOriginal = isAnimatedWebpBuffer(originalBuffer);
+            if (isAnimatedOriginal && !options.forceAnimatedReencode) {
+              console.warn('[sendMediaAsOriginal] Tentando fallback de re-encode para WebP animado...');
+              const { buffer: repairedBuffer } = await ensureSafeWebpStickerWithOptions(filePath, {
+                forceAnimatedReencode: true
+              });
+              const repairedDataUrl = `data:image/webp;base64,${repairedBuffer.toString('base64')}`;
+              await client.sendRawWebpAsSticker(chatId, repairedDataUrl, {
+                pack: PACK_NAME,
+                author: AUTHOR_NAME,
+                animated: true
+              });
+              console.log('[sendMediaAsOriginal] ✓ WebP animado enviado com sucesso após re-encode');
+              sent = true;
+              return;
+            }
+          } catch (retryErr) {
+            console.warn(`[sendMediaAsOriginal] ✗ Falha no fallback de re-encode: ${retryErr.message}`);
+          }
           console.warn('[sendMediaAsOriginal] Continuando para método 2...');
         }
       }

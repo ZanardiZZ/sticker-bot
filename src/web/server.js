@@ -566,7 +566,7 @@ const { bus } = require('./eventBus.js');
 const emailService = require('./emailService.js');
 console.timeEnd('[BOOT] requires');
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 const DEFAULT_MEDIA_DIR = MEDIA_DIR;
 const resolveDir = (preferred, fallback) => {
@@ -578,8 +578,16 @@ const resolveDir = (preferred, fallback) => {
   return fallback;
 };
 
-const STICKERS_DIR = resolveDir(process.env.STICKERS_DIR, DEFAULT_MEDIA_DIR);
-console.log('[WEB] STICKERS_DIR:', STICKERS_DIR, 'exists:', fs.existsSync(STICKERS_DIR));
+// Alguns ambientes antigos apontam STICKERS_DIR para "/media", que neste host
+// é apenas o mount raiz e não o diretório real dos arquivos do app.
+// Para evitar quebrar as URLs /media/*.webp, preferimos o diretório interno
+// storage/media quando a configuração vier como o mount genérico /media.
+const configuredStickersDir = process.env.STICKERS_DIR ? path.resolve(process.env.STICKERS_DIR) : '';
+const STICKERS_DIR = configuredStickersDir && configuredStickersDir !== '/media'
+  ? resolveDir(configuredStickersDir, DEFAULT_MEDIA_DIR)
+  : DEFAULT_MEDIA_DIR;
+console.log('[WEB] STICKERS_DIR config:', configuredStickersDir || '(none)');
+console.log('[WEB] STICKERS_DIR efetivo:', STICKERS_DIR, 'exists:', fs.existsSync(STICKERS_DIR));
 
 const oldStickersConfigured = process.env.OLD_STICKERS_DIR || process.env.OLD_STICKERS_PATH;
 const OLD_STICKERS_DIRS = Array.from(new Set([

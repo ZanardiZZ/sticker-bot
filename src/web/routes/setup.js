@@ -50,7 +50,7 @@ router.post('/setup/whatsapp', requireSetupMode, async (req, res) => {
   try {
     initSetupSession(req);
 
-    const { groupId, adminNumber } = req.body;
+    const { groupId, adminNumber, allowedGroupIds } = req.body;
 
     // Validations
     if (!groupId || !groupId.trim()) {
@@ -69,10 +69,28 @@ router.post('/setup/whatsapp', requireSetupMode, async (req, res) => {
       return res.status(400).json({ error: 'Invalid admin number format. Must include @ (e.g., 5511999999999@c.us)' });
     }
 
+    const normalizedAllowedGroups = String(allowedGroupIds || '')
+      .split(',')
+      .map(entry => entry.trim())
+      .filter(Boolean);
+
+    if (normalizedAllowedGroups.length > 0) {
+      const invalidGroup = normalizedAllowedGroups.find(group => !group.endsWith('@g.us'));
+      if (invalidGroup) {
+        return res.status(400).json({ error: 'All allowed group IDs must end with @g.us' });
+      }
+    }
+
+    const allowedGroupList = normalizedAllowedGroups.length > 0
+      ? Array.from(new Set([groupId.trim(), ...normalizedAllowedGroups]))
+      : [groupId.trim()];
+
     // Save to session
     req.session.setupData = {
       ...req.session.setupData,
       AUTO_SEND_GROUP_ID: groupId.trim(),
+      GROUP_CHAT_ALLOWED_IDS: allowedGroupList.join(','),
+      STICKER_BOT_ALLOWED_DM_IDS: '',
       ADMIN_NUMBER: adminNumber.trim(),
       BOT_WHATSAPP_NUMBER: adminNumber.replace('@c.us', '').replace('@s.whatsapp.net', '')
     };
@@ -200,6 +218,7 @@ router.get('/setup/summary', requireSetupMode, (req, res) => {
   res.json({
     whatsapp: {
       groupId: data.AUTO_SEND_GROUP_ID || '',
+      allowedGroupIds: data.GROUP_CHAT_ALLOWED_IDS || data.AUTO_SEND_GROUP_ID || '',
       adminNumber: data.ADMIN_NUMBER || '',
       botNumber: data.BOT_WHATSAPP_NUMBER || ''
     },
@@ -222,7 +241,7 @@ router.post('/setup/finalize', requireSetupMode, async (req, res) => {
     const setupData = req.session.setupData;
 
     // Validate we have minimum required data
-    if (!setupData.AUTO_SEND_GROUP_ID || !setupData.ADMIN_NUMBER || !setupData.ADMIN_INITIAL_USERNAME) {
+    if (!setupData.AUTO_SEND_GROUP_ID || !setupData.GROUP_CHAT_ALLOWED_IDS || !setupData.ADMIN_NUMBER || !setupData.ADMIN_INITIAL_USERNAME) {
       return res.status(400).json({
         error: 'Missing required configuration. Please complete all steps.'
       });
@@ -304,6 +323,8 @@ function generateEnvFile(data) {
 
 # ===== WHATSAPP CONFIGURATION =====
 AUTO_SEND_GROUP_ID=${data.AUTO_SEND_GROUP_ID}
+GROUP_CHAT_ALLOWED_IDS=${data.GROUP_CHAT_ALLOWED_IDS}
+STICKER_BOT_ALLOWED_DM_IDS=${data.STICKER_BOT_ALLOWED_DM_IDS || ''}
 ADMIN_NUMBER=${data.ADMIN_NUMBER}
 BOT_WHATSAPP_NUMBER=${data.BOT_WHATSAPP_NUMBER}
 
