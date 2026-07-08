@@ -24,6 +24,40 @@ class BaileysWsAdapter {
     this._readyWaiters = []; // resolve callbacks waiting for _ready
   }
 
+  _sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  _isTransientTransportError(err) {
+    const code = String(err?.message || err || '').toLowerCase();
+    return [
+      'ws_not_ready',
+      'whatsapp_not_ready',
+      'ack_timeout',
+      'socket hang up',
+      'econnreset',
+      'websocket is not open'
+    ].some((token) => code.includes(token));
+  }
+
+  async _withTransportRetry(label, fn, { maxAttempts = 3, baseDelayMs = 350 } = {}) {
+    let lastErr;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        if (attempt > 1) await this._ensureReady(12000);
+        return await fn();
+      } catch (err) {
+        lastErr = err;
+        const transient = this._isTransientTransportError(err);
+        if (!transient || attempt >= maxAttempts) throw err;
+        const delay = baseDelayMs * (2 ** (attempt - 1));
+        console.warn(`[WA Adapter] ${label} failed with transient error (${err.message || err}); retry ${attempt}/${maxAttempts - 1} in ${delay}ms`);
+        await this._sleep(delay);
+      }
+    }
+    throw lastErr || new Error('transport_retry_failed');
+  }
+
   async connect() {
     if (this.ws && this.ws.readyState === WebSocket.OPEN && this._ready) return this;
     this.ws = new WebSocket(this.url);
@@ -168,7 +202,7 @@ class BaileysWsAdapter {
     return p;
   }
 
-  async _ensureReady(timeoutMs = 10000) {
+  async _ensureReady(timeoutMs = 30000) {
     // Fast path: already connected and ready
     if (this.ws && this.ws.readyState === WebSocket.OPEN && this._ready) {
       return;
@@ -264,13 +298,17 @@ class BaileysWsAdapter {
   // Messaging primitives
   async sendText(chatId, text) {
     if (!chatId) throw new Error('chatId_required');
-    await this._ensureReady(5000);
-    return this._sendAndWaitForAck({ type: 'sendText', chatId, text }, 20000);
+    return this._withTransportRetry('sendText', async () => {
+      await this._ensureReady(8000);
+      return this._sendAndWaitForAck({ type: 'sendText', chatId, text }, 20000);
+    });
   }
 
   async sendReactionToMessage(messageId, chatId, emoji) {
-    await this._ensureReady();
-    return this._sendAndWaitForAck({ type: 'sendReactionToMessage', messageId, chatId, emoji }, 10000);
+    return this._withTransportRetry('sendReactionToMessage', async () => {
+      await this._ensureReady(10000);
+      return this._sendAndWaitForAck({ type: 'sendReactionToMessage', messageId, chatId, emoji }, 10000);
+    });
   }
 
   async reply(chatId, text, quotedMessageId) {
@@ -280,8 +318,10 @@ class BaileysWsAdapter {
 
   async simulateTyping(chatId, on) {
     if (!chatId) throw new Error('chatId_required');
-    await this._ensureReady(5000);
-    return this._sendAndWaitForAck({ type: 'simulateTyping', chatId, on: !!on }, 8000);
+    return this._withTransportRetry('simulateTyping', async () => {
+      await this._ensureReady(8000);
+      return this._sendAndWaitForAck({ type: 'simulateTyping', chatId, on: !!on }, 8000);
+    });
   }
 
   async sendFile(
@@ -298,50 +338,62 @@ class BaileysWsAdapter {
     requestConfig
   ) {
     // For file sends, wait for server ack before resolving so callers can rely on delivery ordering
-    await this._ensureReady();
-    return this._sendAndWaitForAck({
-      type: 'sendFile',
-      chatId,
-      filePath,
-      fileName,
-      caption,
-      quotedMessageId,
-      waitForId,
-      ptt,
-      withoutPreview,
-      hideTags,
-      viewOnce,
-      ...(requestConfig && typeof requestConfig === 'object' ? requestConfig : {})
-    }, 60000);
+    return this._withTransportRetry('sendFile', async () => {
+      await this._ensureReady(12000);
+      return this._sendAndWaitForAck({
+        type: 'sendFile',
+        chatId,
+        filePath,
+        fileName,
+        caption,
+        quotedMessageId,
+        waitForId,
+        ptt,
+        withoutPreview,
+        hideTags,
+        viewOnce,
+        ...(requestConfig && typeof requestConfig === 'object' ? requestConfig : {})
+      }, 60000);
+    });
   }
 
   async sendRawWebpAsSticker(chatId, dataUrl, options = {}) {
     console.log('[WA Adapter] sendRawWebpAsSticker called for chatId:', chatId, 'dataUrlLength:', dataUrl?.length);
     const stack = new Error().stack;
     console.log('[WA Adapter] Call stack:', stack.split('\n').slice(1, 4).join('\n'));
-    await this._ensureReady();
-    return this._sendAndWaitForAck({ type: 'sendRawWebpAsSticker', chatId, dataUrl, options }, 45000);
+    return this._withTransportRetry('sendRawWebpAsSticker', async () => {
+      await this._ensureReady(12000);
+      return this._sendAndWaitForAck({ type: 'sendRawWebpAsSticker', chatId, dataUrl, options }, 120000);
+    });
   }
 
   async sendImageAsSticker(chatId, filePath, options = {}) {
-    await this._ensureReady();
-    return this._sendAndWaitForAck({ type: 'sendImageAsSticker', chatId, filePath, options }, 45000);
+    return this._withTransportRetry('sendImageAsSticker', async () => {
+      await this._ensureReady(10000);
+      return this._sendAndWaitForAck({ type: 'sendImageAsSticker', chatId, filePath, options }, 45000);
+    });
   }
 
   async sendImageAsStickerGif(chatId, filePath, options = {}) {
-    await this._ensureReady();
-    return this._sendAndWaitForAck({ type: 'sendImageAsStickerGif', chatId, filePath, options }, 45000);
+    return this._withTransportRetry('sendImageAsStickerGif', async () => {
+      await this._ensureReady(10000);
+      return this._sendAndWaitForAck({ type: 'sendImageAsStickerGif', chatId, filePath, options }, 45000);
+    });
   }
 
   async sendMp4AsSticker(chatId, filePath, options = {}) {
-    await this._ensureReady();
-    return this._sendAndWaitForAck({ type: 'sendMp4AsSticker', chatId, filePath, options }, 45000);
+    return this._withTransportRetry('sendMp4AsSticker', async () => {
+      await this._ensureReady(10000);
+      return this._sendAndWaitForAck({ type: 'sendMp4AsSticker', chatId, filePath, options }, 45000);
+    });
   }
 
   async getAllGroupsMetadata() {
-    await this._ensureReady(8000);
-    const resp = await this._sendAndWaitForAck({ type: 'getAllGroupsMetadata' }, 15000);
-    return Array.isArray(resp?.groups) ? resp.groups : [];
+    return this._withTransportRetry('getAllGroupsMetadata', async () => {
+      await this._ensureReady(12000);
+      const resp = await this._sendAndWaitForAck({ type: 'getAllGroupsMetadata' }, 15000);
+      return Array.isArray(resp?.groups) ? resp.groups : [];
+    });
   }
 
   /**
@@ -351,12 +403,14 @@ class BaileysWsAdapter {
    * @param {string} action - Action to perform: 'add', 'remove', 'promote', 'demote'
    */
   async groupParticipantsUpdate(groupId, participants, action) {
-    await this._ensureReady();
-    return this._sendAndWaitForAck({
-      type: 'groupParticipantsUpdate',
-      groupId,
-      participants,
-      action
+    return this._withTransportRetry('groupParticipantsUpdate', async () => {
+      await this._ensureReady(10000);
+      return this._sendAndWaitForAck({
+        type: 'groupParticipantsUpdate',
+        groupId,
+        participants,
+        action
+      });
     });
   }
 

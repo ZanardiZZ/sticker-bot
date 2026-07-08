@@ -189,14 +189,34 @@ fetchBotConfig();
 function initializeLazyLoading() {
   const lazyImages = document.querySelectorAll('.lazy-img:not([src])');
   const lazyVideos = document.querySelectorAll('.lazy-video:not([src])');
+
+  const activateImage = (img) => {
+    if (!img || !img.dataset) return;
+    img.src = img.dataset.src;
+    img.classList.remove('lazy-img');
+  };
+
+  const activateVideo = (video) => {
+    if (!video || !video.dataset) return;
+    video.src = video.dataset.src;
+    video.autoplay = true;
+    video.loop = true;
+    video.classList.remove('lazy-video');
+  };
+
+  // Fallback para navegadores/ambientes sem IntersectionObserver.
+  // Garante que as figurinhas apareçam mesmo sem lazy-loading avançado.
+  if (typeof IntersectionObserver !== 'function') {
+    lazyImages.forEach(activateImage);
+    lazyVideos.forEach(activateVideo);
+    return;
+  }
   
   const imageObserver = new IntersectionObserver((entries, observer) => {
     entries.forEach(entry => {
       if (entry.isIntersecting) {
-        const img = entry.target;
-        img.src = img.dataset.src;
-        img.classList.remove('lazy-img');
-        observer.unobserve(img);
+        activateImage(entry.target);
+        observer.unobserve(entry.target);
       }
     });
   }, { rootMargin: '50px' });
@@ -204,12 +224,8 @@ function initializeLazyLoading() {
   const videoObserver = new IntersectionObserver((entries, observer) => {
     entries.forEach(entry => {
       if (entry.isIntersecting) {
-        const video = entry.target;
-        video.src = video.dataset.src;
-        video.autoplay = true;
-        video.loop = true;
-        video.classList.remove('lazy-video');
-        observer.unobserve(video);
+        activateVideo(entry.target);
+        observer.unobserve(entry.target);
       }
     });
   }, { rootMargin: '100px' });

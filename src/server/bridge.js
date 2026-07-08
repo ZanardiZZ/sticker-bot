@@ -73,6 +73,7 @@ const WPP_WHATSAPP_VERSION = (process.env.WS_WPP_WHATSAPP_VERSION || '').trim();
 // Silence-based rotation is opt-in. The bridge should not drop a healthy
 // WhatsApp session just because there were no messages for a few minutes.
 const WPP_MAX_SILENCE_MS = Number(process.env.WS_WPP_MAX_SILENCE_MS || 0);
+const WPP_USE_HERE_ON_DISCONNECTED_MOBILE = process.env.WS_WPP_USE_HERE_ON_DISCONNECTED_MOBILE === 'true';
 const BROWSER_ROTATION_GUARD_ENABLED = (
   BROWSER_MAX_RENDERERS > 0 ||
   BROWSER_MAX_PSS_MB > 0 ||
@@ -116,6 +117,128 @@ function logMediaDebug(...args) {
   if (WS_MEDIA_DEBUG) {
     console.log(...args);
   }
+}
+
+function isWppFrameDetachedError(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  return (
+    message.includes('detached frame') ||
+    message.includes('execution context was destroyed') ||
+    message.includes('session closed') ||
+    message.includes('target closed')
+  );
+}
+
+function maybeScheduleReconnectForWsError(error, context = 'unknown') {
+  if (!error) return;
+  if (!isWppFrameDetachedError(error)) return;
+  console.warn(`[WPPConnect] Detected transient browser/frame error in ${context}; scheduling reconnect`);
+  scheduleWPPReconnect(`frame-detached:${context}`, 1000);
+}
+
+// LID → PN mapping cache (in-memory, TTL 10 min)
+const lidToPnCache = new Map();
+const PN_CACHE_TTL = 10 * 60 * 1000;
+
+/**
+ * Resolve a @lid JID to @c.us using the local DB cache first,
+ * then falling back to WPPConnect contact resolution.
+ * Returns the original JID if resolution fails.
+ */
+async function resolveLid(jid) {
+  if (!jid || !jid.endsWith('@lid')) return jid;
+
+  // Check in-memory cache first
+  const cached = lidToPnCache.get(jid);
+  if (cached && Date.now() - cached.ts < PN_CACHE_TTL) {
+    return cached.pn || jid;
+  }
+
+  // Check SQLite lid_mapping table
+  try {
+    const { getDb } = require('./database/connection');
+    const db = getDb();
+    const row = await new Promise((resolve, reject) => {
+      db.get('SELECT pn FROM lid_mapping WHERE lid = ? AND pn IS NOT NULL AND pn != ""', [jid], (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+      });
+    });
+    if (row && row.pn) {
+      lidToPnCache.set(jid, { pn: row.pn, ts: Date.now() });
+      return row.pn;
+    }
+  } catch (dbErr) {
+    // DB not available, continue to fallback
+  }
+
+  // Check contacts table (has sender_id which is the @c.us JID)
+  try {
+    const { getDb } = require('./database/connection');
+    const db = getDb();
+    const contactRow = await new Promise((resolve, reject) => {
+      db.get('SELECT sender_id FROM contacts WHERE lid = ? AND sender_id IS NOT NULL AND sender_id != ""', [jid], (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+      });
+    });
+    if (contactRow && contactRow.sender_id) {
+      lidToPnCache.set(jid, { pn: contactRow.sender_id, ts: Date.now() });
+      // Also save to lid_mapping for future lookups
+      try {
+        const { getDb } = require('./database/connection');
+        const db = getDb();
+        db.run('INSERT OR REPLACE INTO lid_mapping (lid, pn) VALUES (?, ?)', [jid, contactRow.sender_id]);
+      } catch {}
+      return contactRow.sender_id;
+    }
+  } catch (dbErr) {
+    // DB not available, continue to fallback
+  }
+
+  // Fallback: try to resolve via WPPConnect getChatById
+  if (wppReady && wppClient) {
+    try {
+      // WPPConnect getChatById may return contact info with @c.us
+      const chat = await wppClient.getChatById(jid);
+      if (chat && chat.id) {
+        const resolvedJid = chat.id._serialized || chat.id;
+        if (resolvedJid && resolvedJid.endsWith('@c.us')) {
+          lidToPnCache.set(jid, { pn: resolvedJid, ts: Date.now() });
+          // Save to DB
+          try {
+            const { getDb } = require('./database/connection');
+            const db = getDb();
+            db.run('INSERT OR REPLACE INTO lid_mapping (lid, pn) VALUES (?, ?)', [jid, resolvedJid]);
+          } catch {}
+          return resolvedJid;
+        }
+      }
+    } catch (wppErr) {
+      logVerbose('[LID] Failed to resolve via WPPConnect getChatById:', wppErr.message);
+    }
+  }
+
+  // Last resort: try checkNumberStatus with the LID directly
+  if (wppReady && wppClient) {
+    try {
+      const status = await wppClient.checkNumberStatus(jid);
+      if (status && status.id && status.id.endsWith('@c.us')) {
+        lidToPnCache.set(jid, { pn: status.id, ts: Date.now() });
+        try {
+          const { getDb } = require('./database/connection');
+          const db = getDb();
+          db.run('INSERT OR REPLACE INTO lid_mapping (lid, pn) VALUES (?, ?)', [jid, status.id]);
+        } catch {}
+        return status.id;
+      }
+    } catch (wppErr) {
+      logVerbose('[LID] Failed to resolve via checkNumberStatus:', wppErr.message);
+    }
+  }
+
+  logVerbose('[LID] Could not resolve LID to PN:', jid);
+  return jid;
 }
 
 class AsyncLimiter {
@@ -768,7 +891,7 @@ async function initWPPConnect() {
         } else if (statusSession === 'disconnectedMobile') {
           console.warn('[WPPConnect] Status disconnectedMobile detected');
           const now = Date.now();
-          if (now - lastUseHereAttemptAt > 30000 && wppClient && typeof wppClient.useHere === 'function') {
+          if (WPP_USE_HERE_ON_DISCONNECTED_MOBILE && now - lastUseHereAttemptAt > 30000 && wppClient && typeof wppClient.useHere === 'function') {
             lastUseHereAttemptAt = now;
             wppClient.useHere()
               .then(() => {
@@ -777,6 +900,8 @@ async function initWPPConnect() {
               .catch((error) => {
                 console.warn('[WPPConnect] useHere failed:', error?.message || error);
               });
+          } else if (!WPP_USE_HERE_ON_DISCONNECTED_MOBILE) {
+            logVerbose('[WPPConnect] useHere on disconnectedMobile is disabled by env');
           }
         }
       },
@@ -1401,7 +1526,8 @@ wss.on('connection', (ws) => {
 
 async function handleSendMessage(ws, msg, allowedChats) {
   const { to, text, options } = msg;
-  logVerbose('[WS] handleSendMessage called:', { to, textLength: text?.length, wppReady, hasClient: !!wppClient });
+  const resolvedTo = await resolveLid(to);
+  logVerbose('[WS] handleSendMessage called:', { to, resolvedTo, textLength: text?.length, wppReady, hasClient: !!wppClient });
 
   if (!wppReady || !wppClient) {
     console.log('[WS] Rejecting send - WhatsApp not ready');
@@ -1410,13 +1536,13 @@ async function handleSendMessage(ws, msg, allowedChats) {
   }
 
   // Check authorization
-  if (!allowedChats.has('*') && !allowedChats.has(to)) {
+  if (!allowedChats.has('*') && !allowedChats.has(resolvedTo)) {
     ws.send(JSON.stringify({ type: 'error', requestId: msg.requestId, error: 'not_authorized_for_chat' }));
     return;
   }
 
   try {
-    const result = await sendLimiter.run(() => wppClient.sendText(to, text));
+    const result = await sendLimiter.run(() => wppClient.sendText(resolvedTo, text));
 
     ws.send(JSON.stringify({
       type: 'messageSent',
@@ -1436,13 +1562,14 @@ async function handleSendMessage(ws, msg, allowedChats) {
 
 async function handleSendMedia(ws, msg, allowedChats) {
   const { to, media, options } = msg;
+  const resolvedTo = await resolveLid(to);
 
   if (!wppReady || !wppClient) {
     ws.send(JSON.stringify({ type: 'error', message: 'WhatsApp not ready' }));
     return;
   }
 
-  if (!allowedChats.has('*') && !allowedChats.has(to)) {
+  if (!allowedChats.has('*') && !allowedChats.has(resolvedTo)) {
     ws.send(JSON.stringify({ type: 'error', message: 'Not authorized for this chat' }));
     return;
   }
@@ -1450,25 +1577,25 @@ async function handleSendMedia(ws, msg, allowedChats) {
   try {
     const result = await sendLimiter.run(async () => {
       if (options?.isSticker) {
-        return wppClient.sendImageAsSticker(to, media);
+        return wppClient.sendImageAsSticker(resolvedTo, media);
       }
       if (options?.mimetype?.startsWith('image/')) {
-        return wppClient.sendImage(to, media, options?.caption || '');
+        return wppClient.sendImage(resolvedTo, media, options?.caption || '');
       }
       if (options?.mimetype?.startsWith('video/')) {
-        return wppClient.sendVideoAsGif(to, media, options?.caption || '');
+        return wppClient.sendVideoAsGif(resolvedTo, media, options?.caption || '');
       }
       if (options?.mimetype?.startsWith('audio/')) {
-        return wppClient.sendVoice(to, media);
+        return wppClient.sendVoice(resolvedTo, media);
       }
-      return wppClient.sendFile(to, media, options?.fileName || 'file', options?.caption || '');
+      return wppClient.sendFile(resolvedTo, media, options?.fileName || 'file', options?.caption || '');
     });
 
     ws.send(JSON.stringify({
       type: 'mediaSent',
       requestId: msg.requestId,
-      messageId: result.id,
-      to: to
+      messageId: result?.id,
+      to: resolvedTo
     }));
   } catch (error) {
     console.error('[WS] Error sending media:', error);
@@ -1482,44 +1609,86 @@ async function handleSendMedia(ws, msg, allowedChats) {
 
 async function handleSendRawWebpAsSticker(ws, msg, allowedChats) {
   const { chatId, dataUrl, options = {} } = msg;
+  const resolvedChatId = await resolveLid(chatId);
 
   if (!wppReady || !wppClient) {
     ws.send(JSON.stringify({ type: 'error', message: 'WhatsApp not ready' }));
     return;
   }
 
-  if (!allowedChats.has('*') && !allowedChats.has(chatId)) {
+  if (!allowedChats.has('*') && !allowedChats.has(resolvedChatId)) {
     ws.send(JSON.stringify({ type: 'error', message: 'Not authorized for this chat' }));
     return;
   }
 
   try {
-    logVerbose('[WS] Sending raw webp as sticker to:', chatId, 'requestId:', msg.requestId, 'animated:', options.animated);
+    logVerbose('[WS] Sending raw webp as sticker to:', resolvedChatId, 'requestId:', msg.requestId, 'animated:', options.animated, 'dataUrlLength:', dataUrl?.length);
     // WPPConnect expects base64 data without the data:image/webp;base64, prefix
     let base64Data = dataUrl;
     if (dataUrl.startsWith('data:')) {
       base64Data = dataUrl.split(',')[1];
     }
 
+    // Check size before sending (WhatsApp animated sticker limit: ~1MB max)
+    const webpSizeBytes = Buffer.from(base64Data, 'base64').length;
+    const MAX_STICKER_BYTES = 950 * 1024; // 950KB safe limit
+    if (webpSizeBytes > MAX_STICKER_BYTES) {
+      logVerbose('[WS] WebP sticker too large (' + Math.round(webpSizeBytes/1024) + 'KB), compressing quality...');
+      try {
+        const sharp = require('sharp');
+        const inputBuf = Buffer.from(base64Data, 'base64');
+        const isAnimated = options.animated;
+        // Reduce quality progressively until under limit
+        for (const quality of [70, 50, 30]) {
+          let compressed;
+          if (isAnimated) {
+            compressed = await sharp(inputBuf, { animated: true })
+              .webp({ quality, effort: 6, smartSubsample: true })
+              .toBuffer();
+          } else {
+            compressed = await sharp(inputBuf)
+              .webp({ quality, effort: 6 })
+              .toBuffer();
+          }
+          const compressedSize = compressed.length;
+          logVerbose('[WS] Compressed quality=' + quality + ': ' + Math.round(webpSizeBytes/1024) + 'KB → ' + Math.round(compressedSize/1024) + 'KB');
+          if (compressedSize <= MAX_STICKER_BYTES) {
+            base64Data = compressed.toString('base64');
+            break;
+          }
+          // If still too large, try lower quality on next iteration
+          if (quality === 30 && compressedSize > MAX_STICKER_BYTES) {
+            // Last resort: use the smallest we got
+            base64Data = compressed.toString('base64');
+            console.warn('[WS] WebP sticker still ' + Math.round(compressedSize/1024) + 'KB after max compression, sending anyway');
+          }
+        }
+      } catch (compressErr) {
+        console.error('[WS] Error compressing WebP sticker:', compressErr.message);
+        // Continue with original if compression fails
+      }
+    }
+
     // WPPConnect usa funções diferentes para stickers estáticos e animados
     const result = await sendLimiter.run(async () => {
       if (options.animated) {
         logVerbose('[WS] Using sendImageAsStickerGif for animated sticker');
-        return wppClient.sendImageAsStickerGif(chatId, `data:image/webp;base64,${base64Data}`, options);
+        return wppClient.sendImageAsStickerGif(resolvedChatId, `data:image/webp;base64,${base64Data}`, options);
       }
       logVerbose('[WS] Using sendImageAsSticker for static sticker');
-      return wppClient.sendImageAsSticker(chatId, `data:image/webp;base64,${base64Data}`, options);
+      return wppClient.sendImageAsSticker(resolvedChatId, `data:image/webp;base64,${base64Data}`, options);
     });
 
-    logVerbose('[WS] Sticker sent successfully, messageId:', result.id, 'responding with requestId:', msg.requestId);
+    logVerbose('[WS] Sticker sent successfully, messageId:', result?.id, 'responding with requestId:', msg.requestId);
     ws.send(JSON.stringify({
       type: 'messageSent',
       requestId: msg.requestId,
-      messageId: result.id || result,
-      to: chatId
+      messageId: result?.id || result,
+      to: resolvedChatId
     }));
   } catch (error) {
     console.error('[WS] Error sending raw webp sticker:', error);
+    maybeScheduleReconnectForWsError(error, 'sendRawWebpAsSticker');
     ws.send(JSON.stringify({
       type: 'error',
       requestId: msg.requestId,
@@ -1530,13 +1699,14 @@ async function handleSendRawWebpAsSticker(ws, msg, allowedChats) {
 
 async function handleSendImageAsSticker(ws, msg, allowedChats) {
   const { chatId, filePath, options = {} } = msg;
+  const resolvedChatId = await resolveLid(chatId);
 
   if (!wppReady || !wppClient) {
     ws.send(JSON.stringify({ type: 'error', message: 'WhatsApp not ready' }));
     return;
   }
 
-  if (!allowedChats.has('*') && !allowedChats.has(chatId)) {
+  if (!allowedChats.has('*') && !allowedChats.has(resolvedChatId)) {
     ws.send(JSON.stringify({ type: 'error', message: 'Not authorized for this chat' }));
     return;
   }
@@ -1547,21 +1717,22 @@ async function handleSendImageAsSticker(ws, msg, allowedChats) {
     const result = await sendLimiter.run(async () => {
       if (options.animated) {
         logVerbose('[WS] Using sendImageAsStickerGif for animated sticker');
-        return wppClient.sendImageAsStickerGif(chatId, filePath, options);
+        return wppClient.sendImageAsStickerGif(resolvedChatId, filePath, options);
       }
       logVerbose('[WS] Using sendImageAsSticker for static sticker');
-      return wppClient.sendImageAsSticker(chatId, filePath, options);
+      return wppClient.sendImageAsSticker(resolvedChatId, filePath, options);
     });
 
-    logVerbose('[WS] Image sticker sent successfully, messageId:', result.id);
+    logVerbose('[WS] Image sticker sent successfully, messageId:', result?.id);
     ws.send(JSON.stringify({
       type: 'messageSent',
       requestId: msg.requestId,
       messageId: result.id || result,
-      to: chatId
+      to: resolvedChatId
     }));
   } catch (error) {
     console.error('[WS] Error sending image as sticker:', error);
+    maybeScheduleReconnectForWsError(error, 'sendImageAsSticker');
     ws.send(JSON.stringify({
       type: 'error',
       requestId: msg.requestId,
@@ -1572,30 +1743,31 @@ async function handleSendImageAsSticker(ws, msg, allowedChats) {
 
 async function handleSendImageAsStickerGif(ws, msg, allowedChats) {
   const { chatId, filePath, options = {} } = msg;
+  const resolvedChatId = await resolveLid(chatId);
 
   if (!wppReady || !wppClient) {
     ws.send(JSON.stringify({ type: 'error', message: 'WhatsApp not ready' }));
     return;
   }
 
-  if (!allowedChats.has('*') && !allowedChats.has(chatId)) {
+  if (!allowedChats.has('*') && !allowedChats.has(resolvedChatId)) {
     ws.send(JSON.stringify({ type: 'error', message: 'Not authorized for this chat' }));
     return;
   }
 
   try {
-    logVerbose('[WS] Sending GIF as sticker:', filePath);
-    const result = await sendLimiter.run(() => wppClient.sendImageAsStickerGif(chatId, filePath, options));
+    const result = await sendLimiter.run(() => wppClient.sendImageAsStickerGif(resolvedChatId, filePath, options));
 
-    logVerbose('[WS] GIF sticker sent successfully, messageId:', result.id);
+    logVerbose('[WS] GIF sticker sent successfully, messageId:', result?.id);
     ws.send(JSON.stringify({
       type: 'messageSent',
       requestId: msg.requestId,
-      messageId: result.id || result,
-      to: chatId
+      messageId: result?.id || result,
+      to: resolvedChatId
     }));
   } catch (error) {
     console.error('[WS] Error sending GIF as sticker:', error);
+    maybeScheduleReconnectForWsError(error, 'sendImageAsStickerGif');
     ws.send(JSON.stringify({
       type: 'error',
       requestId: msg.requestId,
@@ -1606,30 +1778,32 @@ async function handleSendImageAsStickerGif(ws, msg, allowedChats) {
 
 async function handleSendMp4AsSticker(ws, msg, allowedChats) {
   const { chatId, filePath, options = {} } = msg;
+  const resolvedChatId = await resolveLid(chatId);
 
   if (!wppReady || !wppClient) {
     ws.send(JSON.stringify({ type: 'error', message: 'WhatsApp not ready' }));
     return;
   }
 
-  if (!allowedChats.has('*') && !allowedChats.has(chatId)) {
+  if (!allowedChats.has('*') && !allowedChats.has(resolvedChatId)) {
     ws.send(JSON.stringify({ type: 'error', message: 'Not authorized for this chat' }));
     return;
   }
 
   try {
     logVerbose('[WS] Sending MP4 as sticker:', filePath);
-    const result = await sendLimiter.run(() => wppClient.sendVideoAsGif(chatId, filePath, options));
+    const result = await sendLimiter.run(() => wppClient.sendVideoAsGif(resolvedChatId, filePath, options));
 
-    logVerbose('[WS] MP4 sticker sent successfully, messageId:', result.id);
+    logVerbose('[WS] MP4 sticker sent successfully, messageId:', result?.id);
     ws.send(JSON.stringify({
       type: 'messageSent',
       requestId: msg.requestId,
-      messageId: result.id || result,
-      to: chatId
+      messageId: result?.id || result,
+      to: resolvedChatId
     }));
   } catch (error) {
     console.error('[WS] Error sending MP4 as sticker:', error);
+    maybeScheduleReconnectForWsError(error, 'sendMp4AsSticker');
     ws.send(JSON.stringify({
       type: 'error',
       requestId: msg.requestId,
@@ -1640,6 +1814,7 @@ async function handleSendMp4AsSticker(ws, msg, allowedChats) {
 
 async function handleSendFile(ws, msg, allowedChats) {
   const { chatId, filePath, filename, fileName, caption, quotedMessageId, ptt, asDocument, mimetype, options = {} } = msg;
+  const resolvedChatId = await resolveLid(chatId);
   const effectiveFilename = filename || fileName;
   const effectiveCaption = caption || options?.caption || '';
   const effectiveMimetype = mimetype || options?.mimetype;
@@ -1651,7 +1826,7 @@ async function handleSendFile(ws, msg, allowedChats) {
     return;
   }
 
-  if (!allowedChats.has('*') && !allowedChats.has(chatId)) {
+  if (!allowedChats.has('*') && !allowedChats.has(resolvedChatId)) {
     ws.send(JSON.stringify({ type: 'error', message: 'Not authorized for this chat' }));
     return;
   }
@@ -1660,16 +1835,14 @@ async function handleSendFile(ws, msg, allowedChats) {
     let result;
 
     if (isPtt) {
-      // Use sendPttFromBase64 — Node reads the file so the browser doesn't need to,
-      // avoiding Puppeteer "Promise was collected" GC errors on large audio files.
       const audioBase64 = fs.readFileSync(filePath).toString('base64');
       result = await sendLimiter.run(() =>
-        wppClient.sendPttFromBase64(chatId, audioBase64, effectiveFilename || 'audio.ogg', effectiveCaption || '', quotedMessageId || undefined)
+        wppClient.sendPttFromBase64(resolvedChatId, audioBase64, effectiveFilename || 'audio.ogg', effectiveCaption || '', quotedMessageId || undefined)
       );
     } else {
       logVerbose('[WS] Sending file:', filePath, { isDocument, mimetype: effectiveMimetype });
       result = await sendLimiter.run(() => wppClient.sendFile(
-        chatId,
+        resolvedChatId,
         filePath,
         effectiveFilename || 'file',
         effectiveCaption,
@@ -1684,10 +1857,11 @@ async function handleSendFile(ws, msg, allowedChats) {
       type: 'messageSent',
       requestId: msg.requestId,
       messageId: result?.id || result,
-      to: chatId
+      to: resolvedChatId
     }));
   } catch (error) {
     console.error('[WS] Error sending file:', error);
+    maybeScheduleReconnectForWsError(error, 'sendFile');
     ws.send(JSON.stringify({
       type: 'error',
       requestId: msg.requestId,
@@ -2194,6 +2368,7 @@ async function handleSimulateTyping(ws, msg, clientInfo) {
     }
   } catch (error) {
     console.error('[WS] handleSimulateTyping error:', error?.message || error);
+    maybeScheduleReconnectForWsError(error, 'simulateTyping');
     if (msg.requestId) {
       ws.send(JSON.stringify({ type: 'error', requestId: msg.requestId, error: error?.message || 'simulate_typing_failed' }));
     }

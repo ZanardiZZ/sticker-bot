@@ -39,6 +39,7 @@ const VALID_COMMANDS = [
   '#pack',
   '#addpack',
   '#reacts',
+  '#falha',
   '#comandos'
 ];
 
@@ -162,6 +163,11 @@ const HELP_ENTRIES = [
     command: '#reacts <texto>',
     description: 'Configura/aciona reações conforme implementação atual do bot.',
     example: '#reacts 👍😂🔥'
+  },
+  {
+    command: '#falha <id>',
+    description: 'Tenta recuperar figurinha WebP com problema: re-encoda e reenviar em seguida.',
+    example: '#falha 15065'
   },
   {
     command: '#ping',

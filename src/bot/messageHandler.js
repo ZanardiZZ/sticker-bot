@@ -10,6 +10,11 @@ const { processIncomingMedia } = require('./mediaProcessor');
 const { withTyping } = require('../utils/typingIndicator');
 const { safeReply } = require('../utils/safeMessaging');
 const { isJidGroup, normalizeJid } = require('../utils/jidUtils');
+const {
+  getAllowedGroupJids,
+  getAllowedDmJids,
+  isJidAllowed,
+} = require('../utils/whatsappRouting');
 const { resolveSenderId, markMessageAsProcessed, isMessageProcessed } = require('../database');
 const MediaQueue = require('../services/mediaQueue');
 const { getDmUser, upsertDmUser } = require('../web/dataAccess');
@@ -117,6 +122,8 @@ async function handleMessage(client, message) {
   const isVerifyCommand = typeof rawBody === 'string'
     && (rawBody.toLowerCase().startsWith('#verificar') || rawBody.toLowerCase().startsWith('#verify'));
   const shouldMarkProcessed = messageId && chatId && !isPingCommand;
+  const allowedGroupJids = getAllowedGroupJids();
+  const allowedDmJids = getAllowedDmJids();
 
   // Check if message was already processed (for history recovery)
   if (shouldMarkProcessed) {
@@ -157,61 +164,71 @@ async function handleMessage(client, message) {
       ? normalizeJid(senderId || remoteJid)
       : await resolveSenderIdSafe(client?.sock || client, senderId);
     
-    // Enforce DM authorization: if message is not from a group, only respond if
-    // the sender is allowed (or is admin number configured via ENV).
+    // Routing policy:
+    // - Only allowed groups may reach the group conversation handler.
+    // - Direct messages are ignored unless explicitly allowlisted.
   const isGroup = !!message.isGroupMsg || !!message.isGroup || isJidGroup(remoteJid);
-    const adminNumber = process.env.ADMIN_NUMBER;
 
-    if (!isGroup) {
+    if (isGroup) {
+      if (!isJidAllowed(remoteJid, allowedGroupJids)) {
+        console.log(`[MessageHandler] Grupo ignorado por allowlist: ${remoteJid}`);
+        return false;
+      }
+    } else {
+      if (!isJidAllowed(remoteJid, allowedDmJids) && !isJidAllowed(resolvedSenderId, allowedDmJids)) {
+        console.log(`[MessageHandler] DM ignorada por allowlist: ${remoteJid}`);
+        return false;
+      }
+
       try {
-        // Allow admin number always
-        if (adminNumber && (resolvedSenderId === adminNumber || senderId === adminNumber)) {
-          // update last activity
-          await upsertDmUser({ user_id: resolvedSenderId, allowed: 1, blocked: 0, last_activity: Math.floor(Date.now() / 1000) });
-        } else {
-          const dmUserRow = await getDmUser(resolvedSenderId);
-          const allowed = dmUserRow && dmUserRow.allowed;
-          const blocked = dmUserRow && dmUserRow.blocked;
-          // Permit #verificar / #verify even se não autorizado, desde que não esteja bloqueado
-          if (isVerifyCommand && !blocked) {
-            await upsertDmUser({ user_id: resolvedSenderId, allowed: 0, blocked: 0, note: 'verification-request', last_activity: Math.floor(Date.now() / 1000) });
-          } else
-          if (!allowed) {
-            // Record the request (ensure admin sees the user in admin panel)
-            const now = Math.floor(Date.now() / 1000);
-            try {
-              await upsertDmUser({ user_id: resolvedSenderId, allowed: 0, blocked: blocked ? 1 : 0, note: dmUserRow && dmUserRow.note ? dmUserRow.note : 'requested', last_activity: now });
-            } catch (e) {
-              console.error('[DM AUTH] falha ao registrar pedido DM:', e?.message || e);
-            }
+        const dmUserRow = await getDmUser(resolvedSenderId);
+        const allowed = dmUserRow && dmUserRow.allowed;
+        const blocked = dmUserRow && dmUserRow.blocked;
 
-            // Rate-limit auto-reply so we don't spam the user
-            const lastAuto = dmAutoReplyMap.get(resolvedSenderId) || 0;
-            const nowTs = Math.floor(Date.now() / 1000);
-            if (nowTs - lastAuto < DM_AUTO_REPLY_TTL) {
-              return; // recently informed
-            }
-
-            dmAutoReplyMap.set(resolvedSenderId, nowTs);
-
-            // Send a friendly, localized notice and return without further processing
-            try {
-              await withTyping(client, chatId, async () => {
-                await safeReply(client, chatId,
-                  'Olá — este bot responde apenas mediante autorização. Seu pedido foi registrado; por favor, aguarde a aprovação de um administrador. Obrigado!',
-                  message.id
-                );
-              });
-            } catch (err) {
-              console.error('[DM AUTH] falha ao enviar mensagem de aguardando autorização:', err?.message || err);
-            }
-
-            console.log('[DM REQUEST] usuário solicitou acesso via DM:', resolvedSenderId);
-            return;
-          }
-          // If allowed, update last activity stamp
-          await upsertDmUser({ user_id: resolvedSenderId, allowed: 1, blocked: 0, last_activity: Math.floor(Date.now() / 1000) });
+        // Hard block for direct messages: never reply when blocked.
+        if (blocked) {
+          return;
         }
+
+        // Permit #verificar / #verify even se não autorizado, desde que não esteja bloqueado
+        if (isVerifyCommand && !blocked) {
+          await upsertDmUser({ user_id: resolvedSenderId, allowed: 0, blocked: 0, note: 'verification-request', last_activity: Math.floor(Date.now() / 1000) });
+        } else
+        if (!allowed) {
+          // Record the request (ensure admin sees the user in admin panel)
+          const now = Math.floor(Date.now() / 1000);
+          try {
+            await upsertDmUser({ user_id: resolvedSenderId, allowed: 0, blocked: blocked ? 1 : 0, note: dmUserRow && dmUserRow.note ? dmUserRow.note : 'requested', last_activity: now });
+          } catch (e) {
+            console.error('[DM AUTH] falha ao registrar pedido DM:', e?.message || e);
+          }
+
+          // Rate-limit auto-reply so we don't spam the user
+          const lastAuto = dmAutoReplyMap.get(resolvedSenderId) || 0;
+          const nowTs = Math.floor(Date.now() / 1000);
+          if (nowTs - lastAuto < DM_AUTO_REPLY_TTL) {
+            return; // recently informed
+          }
+
+          dmAutoReplyMap.set(resolvedSenderId, nowTs);
+
+          // Send a friendly, localized notice and return without further processing
+          try {
+            await withTyping(client, chatId, async () => {
+              await safeReply(client, chatId,
+                'Olá — este bot responde apenas mediante autorização. Seu pedido foi registrado; por favor, aguarde a aprovação de um administrador. Obrigado!',
+                message.id
+              );
+            });
+          } catch (err) {
+            console.error('[DM AUTH] falha ao enviar mensagem de aguardando autorização:', err?.message || err);
+          }
+
+          console.log('[DM REQUEST] usuário solicitou acesso via DM:', resolvedSenderId);
+          return;
+        }
+        // If allowed, update last activity stamp
+        await upsertDmUser({ user_id: resolvedSenderId, allowed: 1, blocked: 0, last_activity: Math.floor(Date.now() / 1000) });
       } catch (err) {
         console.error('[DM AUTH] erro ao checar permissoes de DM:', err);
         // Fail safe: do not reply if permission check fails

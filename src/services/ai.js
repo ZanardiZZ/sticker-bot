@@ -523,6 +523,183 @@ function inferReasonCodeFromError(error) {
   return 'provider_error';
 }
 
+function sanitizeConversationalOutput(rawText) {
+  let text = String(rawText || '').trim();
+  if (!text) return '';
+
+  text = text
+    .replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, ' ')
+    .replace(/<\/?think\b[^>]*>/gi, ' ')
+    .replace(/^\s*(?:assistant|assistente|system|sistema)\s*:\s*/i, '')
+    .trim();
+
+  const respostaMatch = text.match(/(?:^|\n)\s*resposta\s*:\s*([\s\S]*)$/i);
+  if (respostaMatch && respostaMatch[1]) {
+    text = String(respostaMatch[1]).trim();
+  }
+
+  const leakPatterns = [
+    /você é lia, participante de grupo no whatsapp\.?/i,
+    /lia,\s*a\s+participant\s+in\s+a\s+whatsapp\s+group\.?/i,
+    /responda em português brasileiro, natural e direto\.?/i,
+    /no metadata, no labels/i,
+    /sem metadados, sem rótulos/i,
+    /^\s*pergunta\s*:/i,
+    /^\s*question\s*:/i,
+    /^\s*resposta\s*:/i,
+    /^\s*answer\s*:/i,
+    /^\s*\*+\s*\*\*\s*(?:role|input|output|style|task|constraints?|question|goal|determine|analysis|steps?)\s*:/i,
+    /^\s*\*\*\s*(?:role|input|output|style|task|constraints?|question|goal|determine|analysis|steps?)\s*:/i,
+    /^\s*\d+\.\s*\*\*\s*(?:determine|analyze|apply|respond)\b/i
+  ];
+
+  const filtered = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => {
+      const normalized = line.replace(/^[-*•]\s*/, '').trim();
+      if (!normalized) return false;
+      return !leakPatterns.some((re) => re.test(normalized));
+    });
+
+  return filtered.join('\n').trim();
+}
+
+function isValidConversationalOutput(text) {
+  const value = String(text || '').trim();
+  if (!value) return false;
+
+  const leakSignals = [
+    /\b(?:system|sistema|assistant|assistente)\s*:/i,
+    /<think\b/i,
+    /no metadata, no labels/i,
+    /sem metadados, sem rótulos/i,
+    /você é lia, participante de grupo no whatsapp/i,
+    /lia,\s*a\s+participant\s+in\s+a\s+whatsapp\s+group/i,
+    /\*\*\s*(?:role|input|output|style|task|constraints?|question|goal|determine|analysis|steps?)\s*:/i,
+    /^\s*\d+\.\s*\*\*\s*(?:determine|analyze|apply|respond)\b/im
+  ];
+  if (leakSignals.some((re) => re.test(value))) return false;
+
+  const shortValid = /^[-+]?\d+(?:[.,]\d+)?(?:\s*[.!?])?$/u.test(value)
+    || /^(?:sim|não|nao|ok|certo|beleza|perfeito|valeu)\b[.!?]*$/iu.test(value);
+
+  return shortValid || value.length >= 3;
+}
+
+function hasAbruptConversationalEnding(text = '') {
+  const value = String(text || '').trim();
+  if (!value) return true;
+  if (/[.!?…)]$/.test(value)) return false;
+
+  const tokens = value.split(/\s+/).filter(Boolean);
+  if (!tokens.length) return true;
+  const last = (tokens[tokens.length - 1] || '').toLowerCase();
+
+  if (/^(?:a|o|as|os|um|uma|uns|umas|de|do|da|dos|das|em|no|na|nos|nas|por|para|pra|com|sem|que|e|ou|mas|como)$/i.test(last)) {
+    return true;
+  }
+
+  if (last.length <= 2) return true;
+  return false;
+}
+
+async function repairConversationalOutput({ client, model, text, temperature, maxTokens }) {
+  if (!client) return '';
+  const raw = String(text || '').trim();
+  if (!raw) return '';
+
+  try {
+    const response = await executeWithAiRetry(
+      () => client.chat.completions.create({
+        model,
+        temperature: Math.min(Math.max(Number(temperature) || 0.2, 0), 0.7),
+        max_tokens: Math.min(Math.max(Number(maxTokens) || 120, 32), 240),
+        messages: [
+          {
+            role: 'system',
+            content: 'Reescreva apenas a resposta final para WhatsApp. Sem metadados, sem rótulos, sem explicações sobre regras, sem raciocínio em voz alta. Mantenha o sentido. Não inclua markdown estrutural (ex.: **Role**, **Task**, listas de política).'
+          },
+          {
+            role: 'user',
+            content: `Texto a limpar:\n${raw}`
+          }
+        ]
+      }),
+      { actionLabel: 'reparo de saída conversacional' }
+    );
+
+    return sanitizeConversationalOutput(response?.choices?.[0]?.message?.content || '');
+  } catch (error) {
+    console.warn('[AI] repairConversationalOutput failed:', error?.message || error);
+    return '';
+  }
+}
+
+async function repairConversationalOutputStrict({ client, model, text }) {
+  if (!client) return '';
+  const raw = String(text || '').trim();
+  if (!raw) return '';
+
+  try {
+    const response = await executeWithAiRetry(
+      () => client.chat.completions.create({
+        model,
+        temperature: 0,
+        max_tokens: 120,
+        messages: [
+          {
+            role: 'system',
+            content: 'Retorne SOMENTE uma frase final curta em português para WhatsApp. Proibido markdown, bullets, labels (Role/Input/Output/Question/Goal), instruções internas, justificativas e raciocínio. Apenas a resposta final ao usuário.'
+          },
+          {
+            role: 'user',
+            content: `Transforme este texto em uma única resposta final limpa:\n${raw}`
+          }
+        ]
+      }),
+      { actionLabel: 'reparo estrito de saída conversacional' }
+    );
+
+    return sanitizeConversationalOutput(response?.choices?.[0]?.message?.content || '');
+  } catch (error) {
+    console.warn('[AI] repairConversationalOutputStrict failed:', error?.message || error);
+    return '';
+  }
+}
+
+async function finalizeConversationalOutput({ client, model, text, temperature, maxTokens }) {
+  const sanitized = sanitizeConversationalOutput(text || '');
+  if (!sanitized) return 'Desculpa, não consegui formular uma resposta limpa agora. Pode repetir de outro jeito?';
+
+  // Second pass: ask the model to return a clean final message.
+  const repaired = await repairConversationalOutput({
+    client,
+    model,
+    text: sanitized,
+    temperature,
+    maxTokens
+  });
+
+  let candidate = sanitizeConversationalOutput(repaired || sanitized);
+  if (isValidConversationalOutput(candidate)) {
+    return candidate;
+  }
+
+  // Third pass (strict): single short plain-text sentence only.
+  const strict = await repairConversationalOutputStrict({
+    client,
+    model,
+    text: candidate || sanitized
+  });
+  candidate = sanitizeConversationalOutput(strict || candidate);
+  if (isValidConversationalOutput(candidate)) {
+    return candidate;
+  }
+
+  // Deterministic final fallback to avoid leaking scaffolding/prompt text.
+  return 'Desculpa, não consegui formular uma resposta limpa agora. Pode repetir de outro jeito?';
+}
 /**
  * Generates a conversational reply using the configured OpenAI chat model.
  * @param {Object} options
@@ -590,16 +767,16 @@ async function generateConversationalReply({
         { actionLabel: `resposta conversacional (${label})` }
       );
 
-      let text = String(completionFallback?.choices?.[0]?.text || '').trim();
+      const text = await finalizeConversationalOutput({
+        client,
+        model: targetModel,
+        text: completionFallback?.choices?.[0]?.text || '',
+        temperature: safeTemperature,
+        maxTokens: safeMaxTokens
+      });
       if (!text) return null;
 
-      text = text
-        .replace(/^\s*(?:assistant|assistente|system|sistema)\s*:\s*/i, '')
-        .replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, ' ')
-        .replace(/<\/?think\b[^>]*>/gi, ' ')
-        .trim();
-
-      return text || null;
+      return text;
     } catch (fallbackError) {
       console.warn(`[AI] ${label} failed:`, fallbackError?.message || fallbackError);
       return null;
@@ -623,7 +800,13 @@ async function generateConversationalReply({
         { actionLabel: 'resposta conversacional (fallback OpenAI)' }
       );
 
-      const choice = String(response?.choices?.[0]?.message?.content || '').trim();
+      const choice = await finalizeConversationalOutput({
+        client: conversationFallbackAi,
+        model: fallbackModel,
+        text: response?.choices?.[0]?.message?.content || '',
+        temperature: safeTemperature,
+        maxTokens: safeMaxTokens
+      });
       if (choice) {
         return choice;
       }
@@ -635,6 +818,18 @@ async function generateConversationalReply({
     }
   };
 
+  const isLikelyTruncatedOutput = (text = '', finishReason = '') => {
+    const value = String(text || '').trim();
+    if (!value) return true;
+    if (String(finishReason || '').toLowerCase() === 'length') return true;
+
+    if (!/[.!?…)]$/.test(value)) {
+      const tail = (value.split(/\s+/).pop() || '').trim();
+      if (tail.length > 0 && tail.length <= 3) return true;
+    }
+    return false;
+  };
+
   try {
     if (!conversationAi) {
       console.warn('[AI] Conversational AI requested sem client configurado.');
@@ -642,7 +837,7 @@ async function generateConversationalReply({
     }
 
     console.log('[AI][conversation] route=chat_completions reason_code=request');
-    const response = await executeWithAiRetry(
+    let response = await executeWithAiRetry(
       () => conversationAi.chat.completions.create({
         model,
         messages: preparedMessages,
@@ -652,9 +847,67 @@ async function generateConversationalReply({
       { actionLabel: 'resposta conversacional' }
     );
 
-    const choice = response?.choices?.[0]?.message?.content;
-    if (choice && String(choice).trim()) {
-      return String(choice).trim();
+    let choiceRaw = response?.choices?.[0]?.message?.content || '';
+    let finishReason = response?.choices?.[0]?.finish_reason || '';
+
+    if (isLikelyTruncatedOutput(choiceRaw, finishReason)) {
+      const boostedMaxTokens = Math.min(Math.max(safeMaxTokens * 2, safeMaxTokens + 120), 1200);
+      try {
+        console.warn(`[AI][conversation] detected_truncation retrying_with_more_tokens from=${safeMaxTokens} to=${boostedMaxTokens} finish_reason=${finishReason || 'unknown'}`);
+        response = await executeWithAiRetry(
+          () => conversationAi.chat.completions.create({
+            model,
+            messages: preparedMessages,
+            temperature: safeTemperature,
+            max_tokens: boostedMaxTokens
+          }),
+          { actionLabel: 'resposta conversacional (retry por truncamento)' }
+        );
+        choiceRaw = response?.choices?.[0]?.message?.content || choiceRaw;
+      } catch (retryErr) {
+        console.warn('[AI][conversation] truncation retry failed:', retryErr?.message || retryErr);
+      }
+    }
+
+    const choice = await finalizeConversationalOutput({
+      client: conversationAi,
+      model,
+      text: choiceRaw,
+      temperature: safeTemperature,
+      maxTokens: safeMaxTokens
+    });
+    if (choice && !hasAbruptConversationalEnding(choice)) {
+      return choice;
+    }
+
+    if (choice && hasAbruptConversationalEnding(choice)) {
+      const repairedMaxTokens = Math.min(Math.max(safeMaxTokens + 180, 320), 1200);
+      try {
+        console.warn(`[AI][conversation] abrupt_tail_detected retrying_with_more_tokens from=${safeMaxTokens} to=${repairedMaxTokens}`);
+        const continuityRetry = await executeWithAiRetry(
+          () => conversationAi.chat.completions.create({
+            model,
+            messages: preparedMessages,
+            temperature: safeTemperature,
+            max_tokens: repairedMaxTokens
+          }),
+          { actionLabel: 'resposta conversacional (retry por final abrupto)' }
+        );
+
+        const continuityChoice = await finalizeConversationalOutput({
+          client: conversationAi,
+          model,
+          text: continuityRetry?.choices?.[0]?.message?.content || '',
+          temperature: safeTemperature,
+          maxTokens: repairedMaxTokens
+        });
+
+        if (continuityChoice && !hasAbruptConversationalEnding(continuityChoice)) {
+          return continuityChoice;
+        }
+      } catch (continuityErr) {
+        console.warn('[AI][conversation] abrupt-tail retry failed:', continuityErr?.message || continuityErr);
+      }
     }
 
     console.warn('[AI][conversation] route=safe_completions reason_code=empty_chat_choice');
@@ -681,7 +934,13 @@ async function generateConversationalReply({
         { actionLabel: 'resposta conversacional (fallback de exceção completions)' }
       );
 
-      const text = String(completionFallback?.choices?.[0]?.text || '').trim();
+      const text = await finalizeConversationalOutput({
+        client: conversationAi,
+        model,
+        text: completionFallback?.choices?.[0]?.text || '',
+        temperature: safeTemperature,
+        maxTokens: Number.isFinite(maxTokens) && maxTokens > 0 ? Math.floor(maxTokens) : 220
+      });
       if (text) {
         return text;
       }

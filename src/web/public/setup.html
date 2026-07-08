@@ -490,13 +490,21 @@
       <!-- Step 1: WhatsApp Configuration -->
       <div class="step active" id="step1">
         <h2>Configuração do WhatsApp</h2>
-        <p class="step-description">Configure o grupo onde o bot enviará os stickers e o número do administrador.</p>
+        <p class="step-description">Configure o grupo principal de automação, os grupos permitidos para conversa e o número do administrador.</p>
 
         <div class="form-group">
-          <label for="groupId">ID do Grupo</label>
+          <label for="groupId">Grupo principal de automação</label>
           <input type="text" id="groupId" placeholder="120363123456789@g.us">
           <div class="input-help">
-            Envie o comando <code>#groupinfo</code> no grupo para obter o ID
+            Este grupo receberá envios automáticos e notificações de versão.
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="allowedGroupIds">Grupos permitidos para conversa <span class="optional">(opcional)</span></label>
+          <input type="text" id="allowedGroupIds" placeholder="120363123456789@g.us,120363420825912004@g.us">
+          <div class="input-help">
+            Separe por vírgulas. Se vazio, o grupo principal será usado como único grupo permitido.
           </div>
         </div>
 
@@ -617,8 +625,12 @@
         <div class="summary-section">
           <h3>📱 WhatsApp</h3>
           <div class="summary-item">
-            <span class="summary-label">Grupo:</span>
+            <span class="summary-label">Grupo principal:</span>
             <span class="summary-value" id="summaryGroupId">-</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">Grupos permitidos:</span>
+            <span class="summary-value" id="summaryAllowedGroupIds">-</span>
           </div>
           <div class="summary-item">
             <span class="summary-label">Admin:</span>
@@ -736,6 +748,7 @@
 
     async function saveStep1() {
       const groupId = document.getElementById('groupId').value.trim();
+      const allowedGroupIds = document.getElementById('allowedGroupIds').value.trim();
       const adminNumber = document.getElementById('adminNumber').value.trim();
 
       if (!groupId || !adminNumber) {
@@ -747,7 +760,7 @@
         const response = await fetch('/setup/whatsapp', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ groupId, adminNumber })
+          body: JSON.stringify({ groupId, allowedGroupIds, adminNumber })
         });
 
         const data = await response.json();
@@ -757,7 +770,7 @@
           return;
         }
 
-        setupData.whatsapp = { groupId, adminNumber };
+        setupData.whatsapp = { groupId, allowedGroupIds, adminNumber };
         goToStep(2);
       } catch (err) {
         showError('Erro de conexão. Tente novamente.');
@@ -835,6 +848,10 @@
         const data = await response.json();
 
         document.getElementById('summaryGroupId').textContent = data.whatsapp.groupId || '-';
+        const allowedGroupIdsEl = document.getElementById('summaryAllowedGroupIds');
+        if (allowedGroupIdsEl) {
+          allowedGroupIdsEl.textContent = data.whatsapp.allowedGroupIds || data.whatsapp.groupId || '-';
+        }
         document.getElementById('summaryAdminNumber').textContent = data.whatsapp.adminNumber || '-';
         document.getElementById('summaryUsername').textContent = data.admin.username || '-';
         document.getElementById('summaryOpenAI').textContent = data.features.hasOpenAI ? 'Configurado ✓' : 'Não configurado';

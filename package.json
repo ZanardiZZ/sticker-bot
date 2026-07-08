@@ -17,6 +17,8 @@
     "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",
     "smoke": "node scripts/agent/smoke-check.js",
+    "ops:watchdog": "node scripts/ops/health-watchdog.js",
+    "ops:watchdog:test-alert": "HEALTH_ALERT_TEST=true node scripts/ops/health-watchdog.js",
     "test": "npm run test:unit && npm run test:integration",
     "test:integration": "node tests/integration/runIntegrationTests.js",
     "test:unit": "node tests/runTests.js",

@@ -62,3 +62,24 @@ open-wa-session.sw_col.json
 *.wastickers
 *.wastickers.zip
 stickers.db
+
+# Ignore numbered backup files (e.g. file.bak.1)
+*.bak.[0-9]*
+src/bot/mediaProcessor.js.bak.anim.20260406140506
+.gitignore
+.gitignore
+.gitignore
+.gitignore
+.gitignore
+.hermes/plans/2026-05-24_003448-sticker-bot-hermes-routing-separation.md
+.gitignore
+core.460
+core.547
+core.565
+core.737
+core.101559
+core.1880329
+core.1880577
+core.1880880
+core.3308836
+core.3478829
