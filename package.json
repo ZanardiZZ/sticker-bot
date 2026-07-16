@@ -74,15 +74,18 @@
   },
   "overrides": {
     "@tensorflow/tfjs-node": {
-      "tar": "7.5.13",
+      "tar": "7.5.20",
       "@mapbox/node-pre-gyp": "1.0.11"
     },
     "@mapbox/node-pre-gyp": {
-      "tar": "7.5.13"
+      "tar": "7.5.20"
     },
     "@wppconnect-team/wppconnect": {
       "file-type": "file:vendor/npm-overrides/file-type",
       "latest-version": "file:vendor/npm-overrides/latest-version"
-    }
+    },
+    "tar": "7.5.20",
+    "form-data": "4.0.6",
+    "cookie": "0.7.2"
   }
 }
