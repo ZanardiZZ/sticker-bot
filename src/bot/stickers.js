@@ -130,7 +130,10 @@ function isAnimatedWebpBuffer(buf) {
     const vp8x = buf.slice(12, 16).toString('ascii') === 'VP8X';
     const hasAnimBit = vp8x && (buf[20] & 0x10) === 0x10;
     const hasAnimChunk = buf.indexOf('ANIM') !== -1 || buf.indexOf('ANMF') !== -1;
-    return riff && webp && (hasAnimBit || hasAnimChunk);
+    // Some legacy static WebPs incorrectly retain the VP8X animation bit.
+    // Require real animation chunks so WPPConnect does not route valid
+    // static images through the GIF path.
+    return riff && webp && hasAnimBit && hasAnimChunk;
   } catch { return false; }
 }
 
@@ -203,7 +206,7 @@ async function ensureSafeWebpStickerWithOptions(filePath, options = {}) {
     console.warn('[Sticker] Cache de WebP indisponível, usando somente memória:', dirErr.message);
   }
 
-  const metadataSignature = `${PACK_NAME}::${AUTHOR_NAME}::${forceAnimatedReencode ? 'force-anim-reencode' : 'default'}`;
+  const metadataSignature = `${PACK_NAME}::${AUTHOR_NAME}::safe-webp-v2::${forceAnimatedReencode ? 'force-anim-reencode' : 'default'}`;
   const hash = crypto.createHash('md5').update(originalBuffer).update(metadataSignature).digest('hex');
   const cachedPath = path.join(FIXED_WEBP_DIR, `${hash}.webp`);
 
