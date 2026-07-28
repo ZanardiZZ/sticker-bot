@@ -6,19 +6,22 @@ const { safeReply } = require('../utils/safeMessaging');
 const { getLogCollector } = require('../utils/logCollector');
 const memory = require('../client/memory-client');
 const { CONVERSATIONS_DIR } = require('../paths');
+const { ConversationRuntime, toPositiveNumber } = require('./conversationRuntime');
 
 const ENABLED = (process.env.CONVERSATION_AGENT_ENABLED || '1').toLowerCase() !== '0' &&
   (process.env.CONVERSATION_AGENT_ENABLED || '1').toLowerCase() !== 'false';
-const HISTORY_LIMIT = Math.max(Number(process.env.CONVERSATION_HISTORY_LIMIT) || 16, 8);
+const HISTORY_LIMIT = Math.max(Number(process.env.CONVERSATION_HISTORY_LIMIT) || 16, 6);
 const COOLDOWN_MS = Number.isFinite(Number(process.env.CONVERSATION_COOLDOWN_MS))
   ? Number(process.env.CONVERSATION_COOLDOWN_MS)
   : 120000;
 const ACTIVE_REPLY_WINDOW_MS = Number.isFinite(Number(process.env.CONVERSATION_ACTIVE_REPLY_WINDOW_MS))
   ? Number(process.env.CONVERSATION_ACTIVE_REPLY_WINDOW_MS)
   : 180000;
+const CONVERSATION_DEBOUNCE_MS = toPositiveNumber(process.env.CONVERSATION_DEBOUNCE_MS, 0);
+const CONVERSATION_RESPONSE_TIMEOUT_MS = toPositiveNumber(process.env.CONVERSATION_RESPONSE_TIMEOUT_MS, 12000, 1000);
 const MIN_MESSAGES_BEFORE_RESPONSE = Math.max(Number(process.env.CONVERSATION_MIN_MESSAGES) || 3, 1);
 const MAX_REPLY_CHARS = Math.max(Number(process.env.CONVERSATION_MAX_RESPONSE_CHARS) || 360, 120);
-const REPLY_SPLIT_DELAY_MS = Math.max(Number(process.env.CONVERSATION_REPLY_SPLIT_DELAY_MS) || 350, 0);
+const REPLY_SPLIT_DELAY_MS = toPositiveNumber(process.env.CONVERSATION_REPLY_SPLIT_DELAY_MS, 0);
 const DEFAULT_MAX_CHUNKS = Math.max(Number(process.env.CONVERSATION_MAX_CHUNKS) || 2, 1);
 const SPECIFIC_MAX_CHUNKS = Math.max(Number(process.env.CONVERSATION_MAX_CHUNKS_SPECIFIC) || 4, DEFAULT_MAX_CHUNKS);
 const DEFAULT_SHORT_MAX_CHARS = Math.max(Number(process.env.CONVERSATION_DEFAULT_SHORT_MAX_CHARS) || 420, 180);
@@ -34,6 +37,24 @@ const ENABLE_MEMORY_CONTEXT = (process.env.CONVERSATION_ENABLE_MEMORY_CONTEXT ||
 const DEFENSIVE_TONE_ENABLED = (process.env.CONVERSATION_DEFENSIVE_TONE_ENABLED || '1').toLowerCase() !== '0' && (process.env.CONVERSATION_DEFENSIVE_TONE_ENABLED || '1').toLowerCase() !== 'false';
 const USER_ATTACK_GUARDRAILS_ENABLED = (process.env.CONVERSATION_USER_ATTACK_GUARDRAILS || '1').toLowerCase() !== '0' && (process.env.CONVERSATION_USER_ATTACK_GUARDRAILS || '1').toLowerCase() !== 'false';
 const ADVERSARIAL_INTENT_THRESHOLD = Math.min(Math.max(Number(process.env.CONVERSATION_ADVERSARIAL_INTENT_THRESHOLD) || 0.58, 0.3), 0.95);
+const CONTEXT_TIME_ENABLED = /^(1|true)$/i.test(process.env.CONVERSATION_CONTEXT_TIME_ENABLED || '0');
+const CONTEXT_HUMOR_ENABLED = /^(1|true)$/i.test(process.env.CONVERSATION_CONTEXT_HUMOR_ENABLED || '0');
+const CONTEXT_SENTIMENT_ENABLED = /^(1|true)$/i.test(process.env.CONVERSATION_CONTEXT_SENTIMENT_ENABLED || '0');
+
+function buildContextualDirective(text = '') {
+  const parts = []; const now = new Date();
+  if (CONTEXT_TIME_ENABLED) {
+    const hour = Number(new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', hour12: false, timeZone: process.env.CONVERSATION_CONTEXT_TIMEZONE || 'America/Sao_Paulo' }).format(now));
+    parts.push(hour < 6 ? 'É madrugada.' : hour < 12 ? 'É manhã.' : hour < 18 ? 'É tarde.' : 'É noite.');
+  }
+  const value = String(text || '').toLowerCase();
+  if (CONTEXT_HUMOR_ENABLED && /(kkkk|hahaha|rsrs|zoeira|troll|pegadinha|meme|piada)/i.test(value)) parts.push('O usuário parece estar em tom humorístico; acompanhe com leveza sem forçar a piada.');
+  if (CONTEXT_SENTIMENT_ENABLED) {
+    if (/(odiei|frustrad|irritad|não aguento|nao aguento|deu errado|problema)/i.test(value)) parts.push('O usuário pode estar frustrado; responda com calma e objetividade.');
+    else if (/(amei|adorei|excelente|perfeito|obrigad)/i.test(value)) parts.push('O usuário demonstra tom positivo; responda de forma cordial.');
+  }
+  return parts.join(' ');
+}
 
 function normalizeIdentifier(value) {
   if (value === null || value === undefined) return '';
@@ -113,6 +134,10 @@ function getCollector() {
 }
 
 const stateCache = new Map();
+const conversationRuntime = new ConversationRuntime({
+  debounceMs: CONVERSATION_DEBOUNCE_MS,
+  timeoutMs: CONVERSATION_RESPONSE_TIMEOUT_MS
+});
 let storageReady = false;
 
 function defaultState() {
@@ -525,7 +550,7 @@ function detectRawSelfMention(text, identifierSet = new Set()) {
   return false;
 }
 
-function buildSystemPrompt(groupName) {
+function buildSystemPrompt(groupName, contextualText = '') {
   const template = process.env.CONVERSATION_SYSTEM_PROMPT;
   if (template) {
     return template
@@ -542,8 +567,9 @@ function buildSystemPrompt(groupName) {
     // Modo de segurança pragmático:
     // - Pode conversar sobre temas sensíveis/ilegais em nível informativo (contexto, risco, prevenção, lei).
     // - Nunca forneça instruções operacionais, passo a passo, receita, tática de execução ou evasão.
-    'Em temas sensíveis, mantenha resposta informativa (contexto/riscos/prevenção/legal) e sem instruções operacionais.'
-  ].join(' ');
+    'Em temas sensíveis, mantenha resposta informativa (contexto/riscos/prevenção/legal) e sem instruções operacionais.',
+    buildContextualDirective(contextualText)
+  ].filter(Boolean).join(' ');
 }
 
 function resolveReadyMemoryPrompt(memoryContext = null, senderId = null) {
@@ -769,9 +795,10 @@ function buildAiMessages(state, { groupName, memoryContext = null, senderId = nu
 
   const dialogue = userTurns.slice(-4);
   const memoryPrompt = buildMemoryPrompt(memoryContext, senderId);
+  const latestText = userTurns.length ? userTurns[userTurns.length - 1].content : '';
   const defensiveDirective = buildDefensiveStyleDirective(memoryContext, senderId);
   return [
-    { role: 'system', content: `${buildSystemPrompt(groupName)} ${memoryPrompt} ${defensiveDirective}`.trim() },
+    { role: 'system', content: `${buildSystemPrompt(groupName, latestText)} ${memoryPrompt} ${defensiveDirective}`.trim() },
     ...dialogue
   ];
 }
@@ -912,6 +939,8 @@ function sanitizeReplyText(reply, participantNames = []) {
 
   // Remove hidden reasoning/thinking artifacts.
   cleaned = cleaned
+    .replace(/(?:💭\s*)?\*{0,2}Reasoning\*{0,2}\s*:\s*\x60\x60\x60[\s\S]*?\x60\x60\x60/giu, ' ')
+    .replace(/(?:💭\s*)?\*{0,2}Reasoning\*{0,2}\s*:\s*\x60\x60\x60[\s\S]*$/giu, ' ')
     .replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, ' ')
     .replace(/<\/?think\b[^>]*>/gi, ' ')
     .replace(/<\/?thinking\b[^>]*>/gi, ' ');
@@ -1261,44 +1290,76 @@ async function handleGroupChatMessage(client, message, context = {}) {
       return false;
     }
 
-    let memoryContext = null;
-    if (ENABLE_MEMORY_CONTEXT && typeof memory?.isReady === 'function' && memory.isReady() && typeof memory?.buildContext === 'function') {
+    return await conversationRuntime.schedule(chatId, {
+      client,
+      chatId,
+      groupName,
+      senderId
+    }, async (request, guard) => {
+      const latestState = await getState(request.chatId);
+      let memoryContext = null;
+      if (ENABLE_MEMORY_CONTEXT && typeof memory?.isReady === 'function' && memory.isReady() && typeof memory?.buildContext === 'function') {
+        try {
+          const memoryQuery = latestState.history
+            .slice(-6)
+            .map(item => item?.text || '')
+            .filter(Boolean)
+            .join(' ')
+            .slice(-1200);
+          memoryContext = await memory.buildContext(request.chatId, [request.senderId], {
+            senderId: request.senderId,
+            query: memoryQuery
+          });
+        } catch (err) {
+          console.warn('[ConversationAgent] Falha ao montar contexto de memória:', err?.message || err);
+        }
+      }
+
+      const stopTyping = typeof startTyping === 'function' ? startTyping(request.client, request.chatId) : () => {};
       try {
-        memoryContext = await memory.buildContext(chatId, [senderId], { senderId });
-      } catch (err) {
-        console.warn('[ConversationAgent] Falha ao montar contexto de memória:', err?.message || err);
+        const aiMessages = buildAiMessages(latestState, {
+          groupName: request.groupName,
+          memoryContext,
+          senderId: request.senderId
+        });
+        const reply = await generateConversationalReply({
+          messages: aiMessages,
+          maxTokens: Number(process.env.CONVERSATION_MAX_TOKENS) || 240,
+          signal: guard.signal
+        });
+
+        if (!guard.isCurrent() || guard.isExpired()) {
+          console.warn(`[ConversationAgent] Resposta descartada: stale_or_timeout chat=${request.chatId}`);
+          return false;
+        }
+
+        const sanitized = sanitizeReplyText(reply || '');
+        if (!sanitized) return false;
+
+        if (typeof request.client.sendText === 'function') {
+          await request.client.sendText(request.chatId, sanitized);
+        } else if (typeof request.client.sendMessage === 'function') {
+          await request.client.sendMessage(request.chatId, sanitized);
+        } else {
+          await safeReply(request.client, request.chatId, sanitized);
+        }
+
+        // Never let an answer that raced with a newer message overwrite its state.
+        if (!guard.isCurrent()) {
+          console.warn(`[ConversationAgent] Estado não persistido após nova mensagem: chat=${request.chatId}`);
+          return false;
+        }
+
+        latestState.history.push({ role: 'assistant', senderId: 'bot', senderName: PERSONA_NAME, text: sanitized, timestamp: Date.now() });
+        latestState.lastReplyAt = Date.now();
+        latestState.messagesSinceLastReply = 0;
+        pruneHistory(latestState);
+        await persistState(request.chatId, latestState);
+        return true;
+      } finally {
+        stopTyping();
       }
-    }
-
-    const stopTyping = typeof startTyping === 'function' ? startTyping(client, chatId) : () => {};
-    try {
-      const aiMessages = buildAiMessages(state, { groupName, memoryContext, senderId });
-      const reply = await generateConversationalReply({
-        messages: aiMessages,
-        maxTokens: Number(process.env.CONVERSATION_MAX_TOKENS) || 700
-      });
-
-      const sanitized = sanitizeReplyText(reply || '');
-      if (!sanitized) return false;
-
-      if (typeof client.sendText === 'function') {
-        await client.sendText(chatId, sanitized);
-      } else if (typeof client.sendMessage === 'function') {
-        await client.sendMessage(chatId, sanitized);
-      } else {
-        await safeReply(client, chatId, sanitized, message?.id);
-      }
-
-      state.history.push({ role: 'assistant', senderId: 'bot', senderName: PERSONA_NAME, text: sanitized, timestamp: Date.now() });
-      state.lastReplyAt = Date.now();
-      state.messagesSinceLastReply = 0;
-      pruneHistory(state);
-      await persistState(chatId, state);
-
-      return true;
-    } finally {
-      stopTyping();
-    }
+    });
   } catch (err) {
     console.error('[ConversationAgent] Erro ao processar mensagem de grupo:', err);
     return false;
@@ -1306,5 +1367,7 @@ async function handleGroupChatMessage(client, message, context = {}) {
 }
 
 module.exports = {
-  handleGroupChatMessage
+  handleGroupChatMessage,
+  buildContextualDirective,
+  buildSystemPrompt
 };

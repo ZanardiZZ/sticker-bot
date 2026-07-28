@@ -29,7 +29,9 @@ module.exports = {
       automation: false,
       vizion: false,
       env: {
-        PM2_DISABLE_MONIT: 'true'
+        PM2_DISABLE_MONIT: 'true',
+        OPENAI_MULTIMODAL_BASE_URL: 'http://YOUR_LLM_HOST:8080/v1',
+        OPENAI_MULTIMODAL_MODEL: 'C:\\Users\\Zanardi\\Downloads\\LLM_Models\\gemma-4-12B-it-qat-UD-Q4_K_XL.gguf'
       }
     },
     {
