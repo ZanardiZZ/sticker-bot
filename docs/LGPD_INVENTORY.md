@@ -2,6 +2,12 @@
 
 > Documento técnico de trabalho. Não substitui revisão jurídica nem a política pública final.
 
+## Responsável e canal de privacidade
+
+- Responsável/controlador informado pelo projeto: **ZZ-Bot**.
+- Canal para solicitações de privacidade e direitos do titular: **privacidade@zanardizz.uk**.
+- A identificação jurídica completa (pessoa física/jurídica, endereço e eventual encarregado) ainda deve ser confirmada antes da publicação da política definitiva.
+
 ## Escopo
 
 Site público do StickerBot/Sticker Browser, servido pelo WebServer do projeto `sticker-bot2`. O inventário foi feito sobre o código e o domínio em execução; valores de segredos e dados de usuários não são registrados aqui.
@@ -50,6 +56,35 @@ Site público do StickerBot/Sticker Browser, servido pelo WebServer do projeto `
 ## Primeira correção técnica aplicada
 
 A sessão Express foi alterada para `saveUninitialized: false`. Uma visita anônima que apenas navega no catálogo não cria automaticamente `connect.sid`; a sessão continua sendo criada quando necessária para CAPTCHA, CSRF ou autenticação.
+
+## Política de retenção recomendada (baseline operacional)
+
+A LGPD não fornece um prazo único para todas as categorias. Os prazos abaixo são uma proposta de minimização por finalidade; obrigação legal, investigação de incidente ou defesa de direitos pode exigir preservação limitada e documentada.
+
+| Categoria | Prazo recomendado | Destino ao final |
+|---|---:|---|
+| Sessão CSRF/CAPTCHA | 15 minutos | expiração automática |
+| Sessão autenticada | máximo de 7 dias sem renovação, revogável no logout | expiração/invalidação |
+| Token de confirmação de e-mail | 24 horas | exclusão/invalidado |
+| Logs técnicos com IP/user-agent | 30 dias | exclusão; manter apenas agregados sem IP quando necessário |
+| Registros de segurança/IP rules | duração do bloqueio, máximo de 90 dias após expiração | exclusão ou agregação de incidente |
+| Analytics Umami brutos | 90 dias | exclusão automática; agregados mensais sem identificadores por até 12 meses |
+| Conta pendente sem confirmação | 90 dias | exclusão dos dados cadastrais e token |
+| Conta ativa | enquanto necessária; revisar após 12 meses sem atividade e excluir/anonimizar após aviso | exclusão/anonimização conforme solicitação |
+| Telefone/contato WhatsApp sem atividade | 12 meses após a última atividade | exclusão ou anonimização, salvo justificativa documentada |
+| Backups operacionais | 30 dias | rotação segura |
+| Solicitações de privacidade | 24 meses após encerramento | exclusão ou retenção legal justificada |
+
+Esses prazos precisam ser implementados por rotinas de limpeza, não apenas declarados na política.
+
+## Política Umami recomendada
+
+1. Usar a instalação própria, sem cookies, sem fingerprinting, sem rastreamento entre sites e sem identificadores de usuário.
+2. Manter apenas medição de audiência e desempenho, com finalidade específica, transparência e mecanismo simples de oposição/opt-out.
+3. Não enviar e-mail, telefone, JID, username, IP bruto ou qualquer identificador de conta ao Umami.
+4. Remover `sticker_id` dos eventos comportamentais ou só enviá-lo após consentimento explícito; a opção preferida é registrar apenas eventos agregáveis, como `sticker_view`, `sticker_share` e `sticker_whatsapp_click` sem o ID.
+5. Configurar retenção automática de 90 dias no servidor Umami; a documentação do Umami informa que instalações self-hosted retêm dados indefinidamente se não houver limpeza manual.
+6. Publicar a política e a opção de oposição antes de considerar o tratamento baseado em legítimo interesse. Validar o teste de balanceamento antes da produção.
 
 ## Decisões pendentes
 
