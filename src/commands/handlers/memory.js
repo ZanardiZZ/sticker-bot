@@ -1,0 +1,5 @@
+const memory=require('../../client/memory-client');
+const {safeReply}=require('../../utils/safeMessaging');
+async function handleMemoriasCommand(client,message,chatId,context={}){const uid=context.resolvedSenderId||message.sender?.id||message.author||message.from;try{const r=await memory.getFacts(uid,{limit:20});if(!r.facts.length)return safeReply(client,chatId,'🧠 Nenhuma memória salva para você.',message.id);const lines=r.facts.map((f,i)=>(i+1)+'. '+f.fact);return safeReply(client,chatId,'🧠 *Memórias salvas*\n'+lines.join('\n'),message.id);}catch(e){return safeReply(client,chatId,'Não consegui consultar suas memórias agora.',message.id);}}
+async function handleEsquecerCommand(client,message,chatId,context={}){const uid=context.resolvedSenderId||message.sender?.id||message.author||message.from;try{await memory.forgetUser(uid);return safeReply(client,chatId,'🧹 Memórias locais e sessões semânticas associadas foram removidas.',message.id);}catch(e){return safeReply(client,chatId,'Não consegui remover suas memórias.',message.id);}}
+module.exports={handleMemoriasCommand,handleEsquecerCommand};

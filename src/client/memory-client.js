@@ -625,6 +625,8 @@ function buildMemoryPromptFromContext(memoryContext = {}, senderId = null) {
   const confirmedFacts = Array.isArray(user?.confirmedFacts) ? user.confirmedFacts : [];
   const softSignals = Array.isArray(user?.softSignals) ? user.softSignals : [];
   const provisionalMemories = Array.isArray(user?.provisionalMemories) ? user.provisionalMemories : [];
+  const semanticMemories = Array.isArray(user?.semanticMemories) ? user.semanticMemories : [];
+  const groupSemanticMemories = Array.isArray(context.semanticMemories) ? context.semanticMemories : [];
   const runningJokes = Array.isArray(context.runningJokes) ? context.runningJokes : [];
   const activeTopics = Array.isArray(context.activeTopics) ? context.activeTopics : [];
   const groupDynamics = Array.isArray(context.groupDynamics) ? context.groupDynamics : [];
@@ -659,6 +661,26 @@ function buildMemoryPromptFromContext(memoryContext = {}, senderId = null) {
       .slice(0, 3);
     if (signals.length) {
       sections.push(`Pistas fracas do usuário atual, só use se combinar com a conversa: ${signals.join('; ')}.`);
+    }
+  }
+
+  if (semanticMemories.length) {
+    const memories = semanticMemories
+      .map((item) => item?.fact || item?.content || item?.text)
+      .filter(Boolean)
+      .slice(0, 3);
+    if (memories.length) {
+      sections.push(`Memórias semânticas recuperadas do usuário, trate como contexto provável e confirme pela conversa: ${memories.join('; ')}.`);
+    }
+  }
+
+  if (groupSemanticMemories.length) {
+    const memories = groupSemanticMemories
+      .map((item) => item?.fact || item?.content || item?.text)
+      .filter(Boolean)
+      .slice(0, 3);
+    if (memories.length) {
+      sections.push(`Memórias semânticas recuperadas do grupo, use somente se forem pertinentes ao assunto atual: ${memories.join('; ')}.`);
     }
   }
 
@@ -700,24 +722,100 @@ function buildMemoryPromptFromContext(memoryContext = {}, senderId = null) {
   return sections.join(' ');
 }
 
+// ============================================================
+// CAMADA DE STORAGE HÍBRIDA (Opção 2)
+//  - Índice JSON local por usuário/grupo (controle total, sempre recuperável)
+//  - OpenViking (CT138 :1933) para busca semântica enriquecida
+// Isolamento por usuário via header X-OpenViking-User.
+// ============================================================
+
+const fs = require('fs');
+const path = require('path');
+
+let _STORAGE_DIR = null;
+function memoryDir() {
+  if (_STORAGE_DIR) return _STORAGE_DIR;
+  try {
+    const paths = require('../paths');
+    _STORAGE_DIR = path.join(paths.STORAGE_DIR, 'data', 'memory');
+  } catch (e) {
+    _STORAGE_DIR = path.join(__dirname, '..', 'storage', 'data', 'memory');
+  }
+  if (!fs.existsSync(_STORAGE_DIR)) fs.mkdirSync(_STORAGE_DIR, { recursive: true });
+  return _STORAGE_DIR;
+}
+
+function userFilePath(userId) {
+  const safe = String(userId).replace(/[^a-zA-Z0-9_@.-]/g, '_');
+  return path.join(memoryDir(), `${safe}.json`);
+}
+
+function loadStore(userId) {
+  const fp = userFilePath(userId);
+  try {
+    if (fs.existsSync(fp)) {
+      const data = JSON.parse(fs.readFileSync(fp, 'utf8'));
+      data.facts = Array.isArray(data.facts) ? data.facts : [];
+      data.jokes = Array.isArray(data.jokes) ? data.jokes : [];
+      data.events = Array.isArray(data.events) ? data.events : [];
+      data.openvikingSessions = Array.isArray(data.openvikingSessions) ? data.openvikingSessions : [];
+      return data;
+    }
+  } catch (e) {
+    console.error(`[MemoryClient] Erro ao ler store ${userId}: ${e.message}`);
+  }
+  return { userId, facts: [], jokes: [], events: [], openvikingSessions: [] };
+}
+
+function saveStore(userId, data) {
+  const fp = userFilePath(userId);
+  try {
+    fs.writeFileSync(fp, JSON.stringify(data, null, 2));
+    return true;
+  } catch (e) {
+    console.error(`[MemoryClient] Erro ao gravar store ${userId}: ${e.message}`);
+    return false;
+  }
+}
+
+// Converte um item de memória retornado pelo OpenViking em entrada estruturada
+function parseStoredFactEntry(m) {
+  if (!m || typeof m !== 'object') return null;
+  const uri = String(m.uri || '').trim();
+  if (uri.endsWith('/.overview.md') || uri.endsWith('/.abstract.md')) return null;
+  const fact = String(m.abstract || m.description || m.content || m.text || m.title || '').trim();
+  if (!fact || fact.startsWith('viking://')) return null;
+  return {
+    fact,
+    category: 'general',
+    memoryType: 'confirmed',
+    confidence: typeof m.score === 'number' ? Math.min(Math.max(m.score, 0), 1) : 0.7,
+    source: 'openviking'
+  };
+}
+
 class MemoryClient {
   constructor() {
     this.baseUrl = this.resolveBaseUrl();
     this.initialized = false;
     this.lastHealthcheck = null;
-    this.timeoutMs = parsePositiveNumber(process.env.MEMORY_TIMEOUT_MS, 3000);
+    this.timeoutMs = parsePositiveNumber(process.env.MEMORY_TIMEOUT_MS, 4000);
+    this.semanticSearchTimeoutMs = parsePositiveNumber(process.env.MEMORY_SEMANTIC_SEARCH_TIMEOUT_MS, 600);
+    this.semanticSearchLimit = Math.max(parsePositiveNumber(process.env.MEMORY_SEMANTIC_SEARCH_LIMIT, 4), 1);
     this.retryCount = Math.max(parsePositiveNumber(process.env.MEMORY_RETRY_COUNT, 1) - 1, 0);
+    this.agent = process.env.OPENVIKING_AGENT || 'stickerbot';
+    this.enabled = this.isEnabled();
   }
 
   resolveBaseUrl() {
-    return String(process.env.MEMORY_API_URL || DEFAULT_MEMORY_API_URL).trim();
+    return String(process.env.OPENVIKING_URL || process.env.MEMORY_API_URL || 'http://127.0.0.1:1933').trim();
   }
 
   isEnabled() {
     const raw = process.env.MEMORY_ENABLED;
-    const hasBaseUrl = !!this.resolveBaseUrl();
-    if (raw === undefined) return hasBaseUrl;
-    return hasBaseUrl && !['0', 'false', 'off', 'no'].includes(String(raw).trim().toLowerCase());
+    const hasUrl = !!this.resolveBaseUrl();
+    if (raw === undefined) return hasUrl;
+    return hasUrl && !['0', 'false', 'off', 'no'].includes(String(raw).trim().toLowerCase());
   }
 
   isReady() {
@@ -726,39 +824,41 @@ class MemoryClient {
 
   init() {
     this.baseUrl = this.resolveBaseUrl();
-    this.timeoutMs = parsePositiveNumber(process.env.MEMORY_TIMEOUT_MS, 3000);
+    this.timeoutMs = parsePositiveNumber(process.env.MEMORY_TIMEOUT_MS, 4000);
+    this.semanticSearchTimeoutMs = parsePositiveNumber(process.env.MEMORY_SEMANTIC_SEARCH_TIMEOUT_MS, 600);
+    this.semanticSearchLimit = Math.max(parsePositiveNumber(process.env.MEMORY_SEMANTIC_SEARCH_LIMIT, 4), 1);
     this.retryCount = Math.max(parsePositiveNumber(process.env.MEMORY_RETRY_COUNT, 1) - 1, 0);
     this.initialized = true;
-    if (!this.baseUrl) {
-      console.log('[MemoryClient] Integração desabilitada sem MEMORY_API_URL configurada');
-      return this;
-    }
     if (!this.isEnabled()) {
-      console.log('[MemoryClient] Integração desabilitada via MEMORY_ENABLED');
+      console.log('[MemoryClient] Integração de memória desabilitada (MEMORY_ENABLED=0 ou sem OPENVIKING_URL)');
       return this;
     }
-    console.log('[MemoryClient] 🧠 Bridge configurado em:', this.baseUrl);
+    console.log('[MemoryClient] 🧠 Memória híbrida: JSON local + OpenViking em', this.baseUrl);
     return this;
   }
 
-  // ============================================
-  // UTILITÁRIOS
-  // ============================================
-  
-  async request(method, endpoint, data = null) {
+  // ------------------------------------------------------------
+  // PRIMITIVAS OpenViking (busca semântica + gravação de fundo)
+  // ------------------------------------------------------------
+
+  _headers(userId) {
+    const h = { 'Content-Type': 'application/json' };
+    if (userId) {
+      // OpenViking rejects ':' in user_id; preserve the local group namespace safely.
+      const safeUserId = String(userId).replace(/:/g, '_');
+      h['X-OpenViking-User'] = safeUserId;
+    }
+    h['X-OpenViking-Agent'] = this.agent;
+    return h;
+  }
+
+  async _request(method, endpoint, data = null, userId = null) {
     if (!this.isEnabled()) return null;
-
     const url = `${this.baseUrl}${endpoint}`;
-    const config = {
-      method,
-      url,
-      timeout: this.timeoutMs
-    };
+    const config = { method, url, timeout: this.timeoutMs, headers: this._headers(userId) };
     if (data) config.data = data;
-
     let attempt = 0;
     const maxAttempts = this.retryCount + 1;
-
     while (attempt < maxAttempts) {
       try {
         const response = await axios(config);
@@ -771,107 +871,214 @@ class MemoryClient {
           `[MemoryClient] Erro em ${method} ${endpoint}${status}: ${err.message}`
           + (finalAttempt ? '' : ` (retry ${attempt}/${this.retryCount})`)
         );
-        if (finalAttempt) {
-          return null;
-        }
+        if (finalAttempt) return null;
       }
     }
   }
 
-  async healthcheck() {
-    if (!this.isEnabled()) {
-      this.lastHealthcheck = { ok: false, disabled: true };
-      return this.lastHealthcheck;
-    }
-
-    const response = await this.getUser('healthcheck');
-    const ok = !!response && typeof response === 'object' && Object.prototype.hasOwnProperty.call(response, 'exists');
-    this.lastHealthcheck = {
-      ok,
-      url: this.baseUrl,
-      checkedAt: new Date().toISOString()
-    };
-    return this.lastHealthcheck;
+  // Grava conteúdo como memória via sessão → commit (extração automática do OpenViking)
+  async _remember(content, userId) {
+    if (!content || !content.trim()) return null;
+    const requestedId = 'sb-' + (userId || 'anon') + '-' + Date.now();
+    const created = await this._request('POST', '/api/v1/sessions', { id: requestedId }, userId);
+    const sid = created?.result?.session_id || requestedId;
+    await this._request('POST', '/api/v1/sessions/' + sid + '/messages', { role: 'user', content }, userId);
+    const committed = await this._request('POST', '/api/v1/sessions/' + sid + '/commit', {}, userId);
+    const store = loadStore(userId);
+    store.openvikingSessions = Array.from(new Set([...(store.openvikingSessions || []), sid])).slice(-100);
+    saveStore(userId, store);
+    return { ...committed, sessionId: sid };
   }
 
-  // ============================================
-  // USUÁRIOS
-  // ============================================
+  async _search(query, userId, targetUri = null) {
+    const q = (query && query.trim()) ? query.trim() : 'memória do usuário';
+    const payload = { query: q, limit: this.semanticSearchLimit };
+    if (Array.isArray(targetUri) && targetUri.length) {
+      payload.target_uri = targetUri.map(uri => String(uri).endsWith('/') ? String(uri) : `${uri}/`);
+    } else if (targetUri) {
+      payload.target_uri = String(targetUri).endsWith('/') ? targetUri : `${targetUri}/`;
+    }
+    const r = await this._request('POST', '/api/v1/search/find', payload, userId);
+    return r?.result?.memories || [];
+  }
+
+  async _searchBounded(query, userId, targetUris = []) {
+    if (!this.isEnabled() || !userId || !Array.isArray(targetUris) || !targetUris.length) return [];
+    const timeoutMs = this.semanticSearchTimeoutMs;
+    let timer;
+    try {
+      return await Promise.race([
+        this._search(query, userId, targetUris),
+        new Promise(resolve => { timer = setTimeout(() => resolve([]), timeoutMs); })
+      ]);
+    } catch (error) {
+      console.warn(`[MemoryClient] Busca semântica indisponível para ${userId}: ${error?.message || error}`);
+      return [];
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  // ------------------------------------------------------------
+  // USUÁRIOS (JSON local como fonte primária)
+  // ------------------------------------------------------------
 
   async getUser(userId) {
-    return this.request('GET', `/api/user/${userId}`);
+    const store = loadStore(userId);
+    return { exists: true, userId, name: null, firstSeen: store.firstSeen || null, updatedAt: null, metadata: {} };
   }
 
   async saveUser(userId, data) {
-    return this.request('POST', `/api/user/${userId}`, data);
+    const store = loadStore(userId);
+    if (data?.name) store.name = data.name;
+    if (!store.firstSeen) store.firstSeen = new Date().toISOString();
+    saveStore(userId, store);
+    return { ok: true, exists: true, userId, name: store.name || null };
   }
 
   async addFact(userId, fact, category = 'general', confidence = 0.8, source = 'whatsapp_bot') {
-    return this.request('POST', `/api/user/${userId}/fact`, {
+    const store = loadStore(userId);
+    store.facts.push({
       fact,
       category,
       confidence,
-      source
+      source,
+      created_at: new Date().toISOString()
     });
+    saveStore(userId, store);
+    // fundo: enriquece OpenViking com busca semântica
+    const content = `FATO [${category}] (confiança ${confidence}) (origem ${source}): ${fact}`;
+    this._remember(content, userId).catch(() => {});
+    return { ok: true, fact };
   }
 
   async getFacts(userId, options = {}) {
-    const { category, limit = 20 } = options;
-    let url = `/api/user/${userId}/facts?limit=${limit}`;
-    if (category) url += `&category=${category}`;
-    return this.request('GET', url);
+    const { limit = 40 } = options;
+    const store = loadStore(userId);
+    return { facts: store.facts.slice(0, limit) };
   }
 
-  // ============================================
+  async forgetUser(userId) {
+    const store = loadStore(userId);
+    const sessions = Array.isArray(store.openvikingSessions) ? store.openvikingSessions : [];
+    const remote = [];
+    for (const sid of sessions) {
+      const result = await this._request('DELETE', '/api/v1/sessions/' + encodeURIComponent(sid), null, userId);
+      remote.push({ sessionId: sid, deleted: !!result });
+    }
+    const file = userFilePath(userId);
+    try { await fs.promises.unlink(file); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+    return { ok: true, userId, deletedLocal: true, remote };
+  }
+
+  // ------------------------------------------------------------
   // GRUPOS
-  // ============================================
+  // ------------------------------------------------------------
 
   async getGroup(groupId) {
-    return this.request('GET', `/api/group/${groupId}`);
+    return { exists: true, groupId, name: null, firstSeen: null, updatedAt: null, metadata: {} };
   }
 
   async saveGroup(groupId, data) {
-    return this.request('POST', `/api/group/${groupId}`, data);
+    return { ok: true, exists: true, groupId, name: data?.name || null };
   }
 
   async addRunningJoke(groupId, name, origin, context) {
-    return this.request('POST', `/api/group/${groupId}/joke`, {
-      name,
-      origin,
-      context
-    });
+    const userId = `group:${groupId}`;
+    const store = loadStore(userId);
+    store.jokes.push({ name, origin: origin || null, context: context || null, created_at: new Date().toISOString() });
+    saveStore(userId, store);
+    const content = `PIADA INTERNA do grupo ${groupId}: "${name}" (origem ${origin || 'desconhecida'}) — contexto: ${context || ''}`;
+    this._remember(content, userId).catch(() => {});
+    return { ok: true };
   }
 
-  // ============================================
+  // ------------------------------------------------------------
   // EVENTOS
-  // ============================================
+  // ------------------------------------------------------------
 
   async logEvent(eventData) {
-    return this.request('POST', '/api/event', {
-      ...eventData,
-      timestamp: new Date().toISOString()
+    const userId = eventData.userId || (eventData.groupId ? `group:${eventData.groupId}` : 'anon');
+    const store = loadStore(userId);
+    store.events.push({
+      type: eventData.type,
+      groupId: eventData.groupId || null,
+      userId: eventData.userId || null,
+      content: eventData.content || null,
+      topic: eventData.topic || null,
+      confidence: eventData.confidence || null,
+      created_at: new Date().toISOString()
     });
+    saveStore(userId, store);
+    const parts = [];
+    if (eventData.type) parts.push(`[${eventData.type}]`);
+    if (eventData.content) parts.push(eventData.content);
+    if (eventData.topic) parts.push(`tópico: ${eventData.topic}`);
+    this._remember(`EVENTO ${parts.join(' ')}`.trim(), userId).catch(() => {});
+    return { ok: true };
   }
 
   async getEvents(groupId, options = {}) {
-    const { type, limit = 20 } = options;
-    let url = `/api/events?groupId=${groupId}&limit=${limit}`;
-    if (type) url += `&type=${type}`;
-    return this.request('GET', url);
+    const { limit = 40, type } = options;
+    const store = loadStore(`group:${groupId}`);
+    let events = store.events;
+    if (type) events = events.filter((e) => e.type === type);
+    return events.slice(-limit);
   }
 
-  // ============================================
-  // INSIGHTS (Contexto Enriquecido)
-  // ============================================
+  // ------------------------------------------------------------
+  // INSIGHTS (Contexto Enriquecido) — JSON local + OpenViking semântico
+  // ------------------------------------------------------------
 
-  async getInsights(groupId, userIds = []) {
-    const userIdsParam = userIds.join(',');
-    return this.request('GET', `/api/insights/${groupId}?userIds=${userIdsParam}`);
+  async getInsights(groupId, userIds = [], options = {}) {
+    const users = {};
+    const semanticQuery = String(options?.query || '').trim() || 'fatos, preferências e informações importantes relacionados a esta conversa';
+    const normalizedUserIds = Array.isArray(userIds) ? userIds.filter(Boolean) : [];
+    const userStores = new Map(normalizedUserIds.map(userId => [userId, loadStore(userId)]));
+    const userSearches = await Promise.all(normalizedUserIds.map(async (userId) => {
+      const store = userStores.get(userId) || {};
+      const targets = (store.openvikingSessions || []).slice(-20)
+        .map(sid => `viking://session/${sid}/history/`);
+      const results = await this._searchBounded(semanticQuery, userId, targets);
+      return [userId, results.map(parseStoredFactEntry).filter(Boolean).slice(0, this.semanticSearchLimit)];
+    }));
+    const semanticByUser = new Map(userSearches);
+
+    for (const userId of normalizedUserIds) {
+      const store = userStores.get(userId) || {};
+      const memoryItems = (store.facts || []).map((f) => ({
+        fact: f.fact,
+        category: f.category,
+        memoryType: (f.category || '').startsWith('intent/') ? 'softSignal' : 'confirmed',
+        confidence: f.confidence,
+        source: f.source
+      }));
+      users[userId] = {
+        confirmedFacts: memoryItems.filter((e) => e.memoryType === 'confirmed'),
+        softSignals: memoryItems.filter((e) => e.memoryType === 'softSignal'),
+        provisionalMemories: [],
+        semanticMemories: semanticByUser.get(userId) || [],
+        recentFacts: memoryItems.slice(0, 8)
+      };
+    }
+
+    const groupStore = loadStore(`group:${groupId}`);
+    const runningJokes = (groupStore.jokes || []).map((j) => ({
+      name: j.name,
+      origin: j.origin,
+      context: j.context,
+      created_at: j.created_at
+    }));
+    const groupTargets = (groupStore.openvikingSessions || []).slice(-20)
+      .map(sid => `viking://session/${sid}/history/`);
+    const groupSemanticMemories = await this._searchBounded(semanticQuery, `group:${groupId}`, groupTargets);
+
+    return {
+      users,
+      group: { groupId, name: null, runningJokes, activeTopics: [] },
+      semanticMemories: groupSemanticMemories.map(parseStoredFactEntry).filter(Boolean).slice(0, this.semanticSearchLimit)
+    };
   }
-
-  // ============================================
-  // MÉTODOS DE ALTO NÍVEL (Para o Bot)
-  // ============================================
 
   /**
    * Extrai fatos importantes de uma mensagem e salva no perfil do usuário
@@ -960,10 +1167,7 @@ class MemoryClient {
           });
           const aiMentions = countJokeMentions(aiJoke, recentMessages);
           if (aiJoke && (aiMentions >= 1 || aiJoke.confidence >= 0.9)) {
-            runningJoke = {
-              ...aiJoke,
-              confidence: aiJoke.confidence
-            };
+            runningJoke = { ...aiJoke, confidence: aiJoke.confidence };
           }
         }
       }
@@ -983,21 +1187,15 @@ class MemoryClient {
       }
 
       if (runningJoke) {
-        await this.addRunningJoke(
-          groupId,
-          runningJoke.name,
-          runningJoke.origin || userId,
-          runningJoke.context
-        );
+        await this.addRunningJoke(groupId, runningJoke.name, runningJoke.origin || userId, runningJoke.context);
       }
     }
 
-    // Log da interação
     await this.logEvent({
       type: 'message',
       groupId,
       userId,
-      content: messageText.substring(0, 200), // limitar
+      content: messageText.substring(0, 200),
       factsExtracted: memoryItems.length,
       runningJokeDetected: !!runningJoke,
       groupDynamicsDetected: groupDynamics.length,
@@ -1013,7 +1211,7 @@ class MemoryClient {
   }
 
   /**
-   * Monta contexto para resposta do bot
+   * Monta contexto para resposta do bot (JSON local + enriquecimento semântico OpenViking)
    */
   async buildContext(groupId, userIds = [], options = {}) {
     const insights = await this.getInsights(groupId, userIds);
@@ -1021,14 +1219,8 @@ class MemoryClient {
 
     if (!insights || !insights.users) {
       return {
-        users: {},
-        group: null,
-        runningJokes: [],
-        activeTopics: [],
-        groupDynamics: [],
-        userIntentProfiles: {},
-        memoryPrompt: '',
-        memoryPromptsByUser: {}
+        users: {}, group: null, runningJokes: [], activeTopics: [],
+        groupDynamics: [], userIntentProfiles: {}, memoryPrompt: '', memoryPromptsByUser: {}
       };
     }
 
@@ -1037,12 +1229,13 @@ class MemoryClient {
       const baseUser = insights.users?.[userId] || {};
       const factsPayload = userId ? await this.getFacts(userId, { limit: 40 }) : { facts: [] };
       layeredUsers[userId] = hydrateLayeredUser(baseUser, factsPayload);
+      layeredUsers[userId].semanticMemories = Array.isArray(baseUser?.semanticMemories)
+        ? baseUser.semanticMemories
+        : [];
     }
 
     for (const [userId, user] of Object.entries(insights.users || {})) {
-      if (!layeredUsers[userId]) {
-        layeredUsers[userId] = hydrateLayeredUser(user, []);
-      }
+      if (!layeredUsers[userId]) layeredUsers[userId] = hydrateLayeredUser(user, []);
     }
 
     const recentMessageTexts = collectRecentMessageTexts(events);
@@ -1056,6 +1249,7 @@ class MemoryClient {
       users: layeredUsers,
       group: insights.group,
       runningJokes: insights.group?.runningJokes || [],
+      semanticMemories: Array.isArray(insights.semanticMemories) ? insights.semanticMemories : [],
       activeTopics: existingTopics.length ? existingTopics : derivedTopics,
       groupDynamics: collectGroupDynamics(events),
       userIntentProfiles
@@ -1076,34 +1270,32 @@ class MemoryClient {
     return contextPayload;
   }
 
-  /**
-   * Rápido: obtém ou cria perfil de usuário
-   */
+  // ------------------------------------------------------------
+  // COMPATIBILIDADE COM O MESSAGE HANDLER
+  // ------------------------------------------------------------
+
   async ensureUser(userId, defaultData = {}) {
-    let user = await this.getUser(userId);
-    if (!user || !user.exists) {
-      user = await this.saveUser(userId, {
-        userId,
-        ...defaultData,
-        firstSeen: new Date().toISOString()
-      });
-    }
-    return user;
+    return this.saveUser(userId, { userId, ...defaultData });
   }
 
-  /**
-   * Rápido: obtém ou cria perfil de grupo
-   */
   async ensureGroup(groupId, defaultData = {}) {
-    let group = await this.getGroup(groupId);
-    if (!group || !group.exists) {
-      group = await this.saveGroup(groupId, {
-        groupId,
-        ...defaultData,
-        firstSeen: new Date().toISOString()
-      });
+    return this.saveGroup(groupId, { groupId, ...defaultData });
+  }
+
+  // ------------------------------------------------------------
+  // HEALTHCHECK
+  // ------------------------------------------------------------
+
+  async healthcheck() {
+    try {
+      const r = await this._request('GET', '/health');
+      const ok = !!r && r.status === 'ok';
+      this.lastHealthcheck = { ok, url: this.baseUrl, checkedAt: new Date().toISOString() };
+      return this.lastHealthcheck;
+    } catch (e) {
+      this.lastHealthcheck = { ok: false, url: this.baseUrl, error: e.message };
+      return this.lastHealthcheck;
     }
-    return group;
   }
 }
 
