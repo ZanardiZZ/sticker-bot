@@ -74,7 +74,8 @@ app.use(cookieParser());
 app.use(session({
   secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
   resave: false,
-  saveUninitialized: true,
+  // Não criar sessão/cookie para visitantes anônimos que apenas leem o catálogo.
+  saveUninitialized: false,
   cookie: {
     secure: process.env.NODE_ENV === 'production',
     maxAge: 15 * 60 * 1000,
@@ -94,6 +95,12 @@ const csrfProtection = csurf({
 });
 app.use((req, res, next) => {
   if (shouldSkipCSRF(req)) {
+    return next();
+  }
+  // Métodos seguros de leitura não precisam inicializar sessão CSRF.
+  // O endpoint de token é a exceção explícita usada por operações mutáveis.
+  const safeMethod = ['GET', 'HEAD', 'OPTIONS'].includes(String(req.method || '').toUpperCase());
+  if (safeMethod && req.path !== '/api/csrf-token') {
     return next();
   }
   return csrfProtection(req, res, next);
