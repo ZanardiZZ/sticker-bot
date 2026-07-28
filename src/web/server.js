@@ -163,6 +163,7 @@ app.use(async (req, res, next) => {
   }
 });
 
+const { ensurePrivacySchema, runPrivacyRetention } = require('../services/privacyRetention');
 const { db, findDuplicateMedia, getDuplicateMediaDetails, deleteDuplicateMedia, deleteMediaByIds, getDuplicateStats } = require('../database/index.js');
 let whatsappClient = null;
 let whatsappClientPromise = null;
@@ -378,6 +379,11 @@ if (ENABLE_INTERNAL_ANALYTICS){
 initUsersTable(db);
 ensureInitialAdmin().catch(err => console.error('[INIT] migration error:', err));
 initDmUsersTable(db);
+ensurePrivacySchema(db).then(() => {
+  runPrivacyRetention(db).catch((err) => console.warn('[PRIVACY] Initial retention cleanup failed:', err.message));
+  const retentionTimer = setInterval(() => runPrivacyRetention(db).catch((err) => console.warn('[PRIVACY] Retention cleanup failed:', err.message)), 6 * 60 * 60 * 1000);
+  retentionTimer.unref?.();
+}).catch((err) => console.error('[PRIVACY] Schema initialization failed:', err));
 console.time('[BOOT] requires');
 const {
   listMedia,
@@ -712,6 +718,17 @@ app.get('/api/my-stickers', requireLogin, async (req, res) => {
 app.get('/api/csrf-token', (req, res) => {
   res.json({ csrfToken: getCSRFToken(req, res) });
 });
+
+const privacyRequestRateLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 3, standardHeaders: true, legacyHeaders: false });
+app.post('/api/privacy/requests', privacyRequestRateLimit, async (req, res) => {
+  const allowedTypes = new Set(['access','correction','deletion','opposition','other']);
+  const { request_type: requestType, email, message } = req.body || {};
+  const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+  const normalizedMessage = typeof message === 'string' ? message.trim() : '';
+  if (!allowedTypes.has(requestType) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) || normalizedEmail.length > 254 || !normalizedMessage || normalizedMessage.length > 5000) return res.status(400).json({ error: 'invalid_privacy_request', message: 'Informe o tipo, um e-mail válido e uma mensagem de até 5000 caracteres.' });
+  const now=Date.now();
+  try { await new Promise((resolve,reject)=>db.run(`INSERT INTO privacy_requests (request_type,email,message,user_id,status,created_at,updated_at) VALUES (?,?,?,?, 'pending', ?, ?)`,[requestType,normalizedEmail,normalizedMessage,req.user?.id||null,now,now],err=>err?reject(err):resolve())); res.status(201).json({success:true,message:'Solicitação recebida.'}); } catch(error) { console.error('[PRIVACY] Request persistence failed:',error.message); res.status(500).json({error:'privacy_request_unavailable',message:'Não foi possível registrar a solicitação agora.'}); }
+});
   // ========= Email Confirmation API =========
 app.get('/confirm-email', async (req, res) => {
   const { token } = req.query;
@@ -991,6 +1008,13 @@ app.get('/admin', requireAdmin, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 app.use('/admin-assets', express.static(path.join(__dirname, 'public')));
+
+// APIs administrativas de privacidade
+app.get('/api/admin/privacy/requests', requireAdmin, (req, res) => {
+  const status=['pending','in_progress','completed','rejected'].includes(String(req.query.status||''))?String(req.query.status):null; const limit=Math.min(Math.max(Number.parseInt(req.query.limit,10)||100,1),200); const params=status?[status,limit]:[limit]; const where=status?'WHERE status = ?':'';
+  db.all(`SELECT id,request_type,email,message,user_id,status,admin_note,created_at,updated_at,resolved_at FROM privacy_requests ${where} ORDER BY created_at ASC LIMIT ?`,params,(err,rows)=>{if(err)return res.status(500).json({error:'privacy_requests_unavailable'});res.json({requests:rows||[]})});
+});
+app.patch('/api/admin/privacy/requests/:id', requireAdmin, (req,res)=>{const status=String(req.body?.status||'');const allowed=new Set(['pending','in_progress','completed','rejected']);const note=typeof req.body?.admin_note==='string'?req.body.admin_note.trim().slice(0,2000):null;if(!allowed.has(status))return res.status(400).json({error:'invalid_privacy_request_status'});const now=Date.now();db.run(`UPDATE privacy_requests SET status=?,admin_note=?,updated_at=?,resolved_at=? WHERE id=?`,[status,note,now,['completed','rejected'].includes(status)?now:null,Number.parseInt(req.params.id,10)],function(err){if(err)return res.status(500).json({error:'privacy_request_update_failed'});if(!this.changes)return res.status(404).json({error:'privacy_request_not_found'});res.json({success:true})})});
 
 // APIs do dashboard
 if (ENABLE_INTERNAL_ANALYTICS) {
@@ -1677,6 +1701,7 @@ app.get('/login', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'login.html'
 app.get('/register', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'register.html')));
 app.get('/ranking/tags', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'ranking-tags.html')));
 app.get('/ranking/users', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'ranking-users.html')));
+app.get('/privacidade', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'privacy.html')));
 function escapeHtmlAttribute(value) {
   return String(value ?? '').replace(/[&<>\"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', "'": '&#39;' }[char]));
 }

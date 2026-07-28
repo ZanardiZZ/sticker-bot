@@ -86,6 +86,14 @@ Esses prazos precisam ser implementados por rotinas de limpeza, não apenas decl
 5. Configurar retenção automática de 90 dias no servidor Umami; a documentação do Umami informa que instalações self-hosted retêm dados indefinidamente se não houver limpeza manual.
 6. Publicar a política e a opção de oposição antes de considerar o tratamento baseado em legítimo interesse. Validar o teste de balanceamento antes da produção.
 
+## Controles implementados nesta fase
+
+- Página pública `/privacidade` com ZZ-Bot, contato, dados tratados, retenção proposta e direitos.
+- Preferência de analytics no navegador, desativada por padrão e revogável.
+- Umami carregado somente após autorização local; eventos sem `sticker_id`.
+- Tabela `privacy_requests`, formulário público com CSRF e rate limit, e endpoints administrativos protegidos.
+- Rotina de retenção executada no boot e a cada 6 horas para logs, regras expiradas, contas pendentes, tokens expirados e solicitações encerradas.
+
 ## Decisões pendentes
 
 - Nome/razão social ou identificação pública do responsável.
