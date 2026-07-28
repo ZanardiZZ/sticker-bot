@@ -22,11 +22,11 @@ async function shareStickerLink(stickerId, button) {
   try {
     if (navigator.share) {
       await navigator.share({ title: `Figurinha #${stickerId}`, text: 'Olha esta figurinha!', url });
-      trackEvent('sticker_share', { sticker_id: Number(stickerId), method: 'native', source: 'home' });
+      trackEvent('sticker_share', { method: 'native', source: 'home' });
       return;
     }
     await navigator.clipboard.writeText(url);
-    trackEvent('sticker_share', { sticker_id: Number(stickerId), method: 'clipboard', source: 'home' });
+    trackEvent('sticker_share', { method: 'clipboard', source: 'home' });
     const previous = button.textContent;
     button.textContent = 'Link copiado';
     setTimeout(() => { button.textContent = previous; }, 1800);
@@ -101,7 +101,7 @@ function openWhatsApp(stickerId) {
   
   const message = encodeURIComponent(`#ID ${stickerId}`);
   const whatsappUrl = `https://wa.me/${BOT_CONFIG.whatsappNumber}?text=${message}`;
-  trackEvent('sticker_whatsapp_click', { sticker_id: Number(stickerId), source: 'home' });
+  trackEvent('sticker_whatsapp_click', { source: 'home' });
   window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
 }
 
