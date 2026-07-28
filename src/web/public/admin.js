@@ -2817,6 +2817,10 @@ async function adminDecisionFromTab(editId, decision) {
 document.addEventListener('DOMContentLoaded', function() {
   // Add event listener for status filter
   document.getElementById('pendingEditsStatusFilter')?.addEventListener('change', loadPendingEditsTab);
+  document.getElementById('refreshHealthBtn')?.addEventListener('click', loadStickerHealth);
+  document.getElementById('refreshReactionAnalytics')?.addEventListener('click', loadReactionAnalytics);
+  loadReactionAnalytics();
+  loadStickerHealth();
   
   // Store current user info for pending edits functionality
   fetch('/api/me')
@@ -2846,3 +2850,19 @@ document.getElementById('saveGroupUser')?.addEventListener('click', (e) => {
   e.preventDefault();
   saveGroupUserModal();
 });
+
+
+async function loadStickerHealth() {
+  const summary=document.getElementById('healthSummary'), checks=document.getElementById('healthChecks');
+  if (!summary || !checks) return;
+  summary.textContent='Verificando dependências...';
+  try {
+    const r=await fetch('/api/health/deep',{credentials:'same-origin',cache:'no-store'}); const data=await r.json();
+    summary.textContent=(data.ok?'✅ Operacional':'⚠️ Degradado')+' — '+new Date(data.ts).toLocaleTimeString();
+    checks.innerHTML=Object.entries(data.checks||{}).map(([name,item])=>'<div style="padding:.6rem;border:1px solid '+(item.ok?'#86efac':'#fca5a5')+';border-radius:6px"><strong>'+name+'</strong><br><span>'+(item.ok?'✅ OK':'❌ Indisponível')+'</span>'+(item.state?'<br><small>'+item.state+'</small>':'')+'</div>').join('');
+  } catch(e) { summary.textContent='❌ Não foi possível consultar o healthcheck'; checks.innerHTML=''; }
+}
+window.loadStickerHealth=loadStickerHealth;
+
+async function loadReactionAnalytics(){const status=document.getElementById('reactionAnalyticsStatus'),body=document.getElementById('reactionAnalyticsBody');if(!status||!body)return;try{const r=await fetch('/api/admin/reactions/analytics?days=7',{credentials:'same-origin',cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);const d=await r.json();status.textContent='Últimos 7 dias — '+(d.totalReactions||0)+' reações';body.innerHTML='<strong>Top stickers</strong><br>'+(d.topMedia||[]).map((m,i)=>(i+1)+'. ID #'+m.media_id+' — '+m.reaction_count).join('<br>')+'<br><br><strong>Emojis</strong><br>'+(d.emojiCounts||[]).map(e=>e.emoji+' × '+e.count).join('  ');}catch(e){status.textContent='Não foi possível carregar analytics agora.';body.textContent='';}}
+window.loadReactionAnalytics=loadReactionAnalytics;

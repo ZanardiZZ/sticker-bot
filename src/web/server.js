@@ -1671,7 +1671,26 @@ app.get('/register', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'register
 app.get('/ranking/tags', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'ranking-tags.html')));
 app.get('/ranking/users', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'ranking-users.html')));
 
+// Reaction analytics
+app.get('/api/admin/reactions/analytics', requireAdmin, async (req, res) => {
+  try {
+    const days = Math.min(Math.max(Number.parseInt(req.query.days, 10) || 7, 1), 30);
+    const chatId = req.query.chatId && /^[0-9]+@g\.us$/.test(String(req.query.chatId)) ? String(req.query.chatId) : null;
+    const { getReactionAnalytics } = require('../database/models/reactions');
+    const data = await getReactionAnalytics({ from: Date.now() - days * 86400000, to: Date.now(), chatId, limit: 20 });
+    res.set('Cache-Control', 'no-store');
+    res.json(data);
+  } catch (error) { res.status(500).json({ error: 'reaction_analytics_unavailable' }); }
+});
+
 // Health
+app.get('/api/health/deep', requireAdmin, async (_req, res) => {
+  const checks = { process: { ok: true }, memory: { ok: false }, whatsapp: { ok: false }, ai: { ok: false } };
+  try { const m = require('../client/memory-client'); const h = await m.healthcheck(); checks.memory = { ok: !!h.ok, url: '127.0.0.1:1933' }; } catch (_) { checks.memory = { ok: false, error: 'memory_unavailable' }; }
+  try { const c = global.getCurrentWhatsAppClient ? global.getCurrentWhatsAppClient() : null; checks.whatsapp = { ok: !!c, state: c && c.getConnectionState ? await c.getConnectionState() : 'unknown' }; } catch (_) { checks.whatsapp = { ok: false, error: 'whatsapp_unavailable' }; }
+  try { const axios = require('axios'); const base = String(process.env.CONVERSATION_BASE_URL || '').replace(/\/$/, ''); const r = await axios.get(base + '/models', { timeout: 4000 }); checks.ai = { ok: r.status === 200 }; } catch (_) { checks.ai = { ok: false, error: 'ai_unavailable' }; }
+  const ok = Object.values(checks).every((x) => x.ok); res.status(ok ? 200 : 503).json({ ok, checks, ts: new Date().toISOString() });
+});
 app.get('/healthz', (_req, res) => {
   res.set('Cache-Control', 'no-store');
   res.json({ ok: true, ts: Date.now() });

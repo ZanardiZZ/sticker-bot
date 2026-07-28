@@ -316,6 +316,21 @@
           </form>
         </div>
 
+        <div class="panel admin-only" id="memory-health-panel">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;">
+            <h3>Saúde do StickerBot</h3><button id="refreshHealthBtn" class="btn-primary" type="button">Atualizar</button>
+          </div>
+          <div id="healthSummary" class="muted" style="margin:.5rem 0;">Verificando dependências...</div>
+          <div id="healthChecks" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.5rem;"></div>
+        </div>
+        <div class="panel admin-only" id="reaction-analytics-panel">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:.8rem;">
+            <h3>Analytics de reações</h3><button id="refreshReactionAnalytics" class="btn-primary" type="button">Atualizar</button>
+          </div>
+          <div id="reactionAnalyticsStatus" class="muted">Carregando...</div>
+          <div id="reactionAnalyticsBody" style="margin-top:.6rem;"></div>
+        </div>
+
         <div class="panel admin-only" id="admin-bot-control">
           <h3>Gerenciar Sticker Client</h3>
           <div class="muted">Reinicie o processo do bot (gerenciado por PM2) quando necessário. Use com cuidado.</div>
