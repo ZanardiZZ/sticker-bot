@@ -375,34 +375,15 @@ Após as melhorias, espera-se:
 
 ---
 
-## 💡 Próximos Passos (Futuro)
+## Estado atual e backlog
 
-Melhorias adicionais que podem ser implementadas:
+As melhorias principais deste documento estão implementadas. A memória de longo prazo usa OpenViking e o agente recebe contexto quando habilitado.
 
-1. **Análise de sentimento** - ajustar tom baseado na conversa
-2. **Memória de longo prazo** - lembrar de conversas antigas
-3. **Contexto de horário** - adaptar respostas ao período do dia
-4. **Detecção de humor** - participar de piadas/memes
-5. **Multi-modal** - responder a imagens/stickers com texto
+Ideias ainda não implementadas integralmente:
 
----
+- [ ] contexto de horário;
+- [ ] detecção leve de humor/trollagem;
+- [ ] análise de sentimento para ajuste de tom;
+- [ ] resposta conversacional multimodal.
 
-## 📝 Notas Técnicas
-
-### Estrutura do Código
-
-**Principais funções melhoradas:**
-- `buildSystemPrompt()` - Agora retorna 1 de 4 estilos aleatórios
-- `computeShouldRespond()` - Probabilidade mais orgânica e aleatória
-- `sanitizeReplyText()` - Menos agressivo, permite menções naturais
-- `clampReplyLength()` - Corta em fim de frase quando possível
-
-### Compatibilidade
-
-✅ Totalmente compatível com versões anteriores
-✅ Configurações antigas continuam funcionando
-✅ Novos comportamentos são opt-in via env vars
-
----
-
-Aproveite o bot mais natural e menos robótico! 🎉
+O backlog consolidado está em [ROADMAP.md](./ROADMAP.md).

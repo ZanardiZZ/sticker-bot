@@ -112,7 +112,7 @@ ps aux | grep -E '(index.js|server.js)' | grep -v grep | wc -l
 - `Bot-Client` - Main bot (index.js) with AdminWatcher
 - `WS-Socket-Server` - Baileys WebSocket bridge (server.js)
 - `WebServer` - Web interface (src/web/server.js)
-- `Memory-Bridge` - Memory bridge API (src/memory-bridge/server.js)
+- Memória híbrida: JSON local + OpenViking (`127.0.0.1:1933`)
 
 ### Testing
 

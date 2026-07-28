@@ -1,46 +1,17 @@
-# TODO - Future Enhancements
+# TODO — StickerBot2
 
-## Completed Items ✅
-- ✅ Bot: #top5users command - Fixed and working
-- ✅ Bot: #deletar command - Implemented with voting system (3 votes required, or immediate for original sender/admins)
-- ✅ Migration to Baileys - Complete
-- ✅ AI-powered meme generation - #criar command
-- ✅ Audio download feature - #downloadmp3, #baixarmp3, #baixaraudio
-- ✅ Photo upscaling - #fotohd command
-- ✅ User profiles - #perfil command
-- ✅ Issue reporting - #issue command
-- ✅ Bot status check - #ping command
+O backlog atual está em [ROADMAP.md](./ROADMAP.md). Este arquivo existe apenas como atalho para evitar duas listas divergentes.
 
-## Ideas for Future Development
+## Concluído recentemente
 
-### Bot Features
-- [ ] More AI integrations (image editing, style transfer)
-- [ ] Scheduled sticker sending to multiple groups
-- [ ] Sticker collections/packs management
-- [ ] Voice message to text with translation
+- Migração para o bridge atual.
+- Processamento de mídia com `directPath + mediaKey`.
+- Deduplicação de eventos sem ID nativo.
+- Sanitização de thinking spill.
+- Memória híbrida JSON + OpenViking.
+- `#memorias` e `#esquecer`.
+- Healthcheck profundo e painel administrativo.
+- Cache de mídia com TTL e limite.
+- Testes de regressão dos incidentes recentes.
 
-### Web Interface
-- [ ] Advanced analytics dashboard
-- [ ] Sticker pack creator tool
-- [ ] User-contributed sticker tags
-- [ ] Public sticker gallery (optional)
-- [ ] Multi-language support
-
-### Performance & Scalability
-- [ ] Redis cache for frequently accessed data
-- [ ] CDN integration for media delivery
-- [ ] Database query optimization
-- [ ] Horizontal scaling support
-
-### Integration
-- [ ] Public API with rate limiting
-- [ ] Webhook system for external integrations
-
-## Contributing
-
-If you'd like to work on any of these features, please:
-1. Open an issue to discuss the implementation
-2. Create a feature branch
-3. Submit a pull request with tests
-
-For questions, use the `#issue` command in the bot or create a GitHub issue.
+Consulte o roadmap antes de abrir uma nova tarefa.

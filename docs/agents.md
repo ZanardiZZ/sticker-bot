@@ -290,7 +290,7 @@ ps aux | grep -E '(index.js|server.js)' | grep -v grep | wc -l
 1. `node .../index.js` - Bot-Client (main bot)
 2. `node .../server.js` - WS-Socket-Server (Baileys bridge)
 3. `node .../src/web/server.js` - WebServer (web interface)
-4. `node .../src/memory-bridge/server.js` - Memory-Bridge API
+4. `OpenViking em `127.0.0.1:1933` + índice JSON local - Memória híbrida
 
 ### Cleanup Procedure (If Duplicates Found)
 

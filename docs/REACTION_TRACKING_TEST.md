@@ -188,17 +188,16 @@ Funções disponíveis em `database/models/reactions.js`:
 - `getMostReactedMedia(limit)` - Ranking de mais reagidas
 - `getUserReactionStats(reactorJid)` - Estatísticas de um usuário
 
-## Próximos passos (futuro)
+## Estado atual e backlog
 
-Possíveis melhorias:
+O rastreamento de reações e o comando `#reacts` estão implementados.
 
-1. **Comando #topreactions** - Mostrar stickers mais reagidas
-2. **Analytics web** - Dashboard de reações no painel web
-3. **Notificações** - Avisar quando sticker recebe muitas reações
-4. **Reação automática** - Bot pode reagir a mensagens de usuários
-5. **Emoji trends** - Análise de emojis mais usados ao longo do tempo
+Pendências:
 
----
+- [ ] `#topreactions` com período/grupo;
+- [ ] analytics de reações no painel;
+- [ ] notificações opcionais;
+- [ ] tendências de emojis;
+- [ ] reação automática, somente após regras de privacidade.
 
-**Última atualização:** 2026-01-27
-**Versão do bot:** 0.8.1
+Consulte [ROADMAP.md](./ROADMAP.md).

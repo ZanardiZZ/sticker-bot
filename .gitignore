@@ -63,6 +63,8 @@ open-wa-session.sw_col.json
 *.wastickers.zip
 stickers.db
 
+# Ignore timestamped backup files (e.g. file.bak.name-timestamp)
+*.bak.*
 # Ignore numbered backup files (e.g. file.bak.1)
 *.bak.[0-9]*
 src/bot/mediaProcessor.js.bak.anim.20260406140506
