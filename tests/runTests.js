@@ -35,8 +35,13 @@ const { tests: processedMessagesModelTests } = require('./unit/processedMessages
 const { tests: messageHistoryRecoveryTests } = require('./unit/messageHistoryRecovery.test');
 const { tests: mediaDownloadRetryTests } = require('./unit/mediaDownloadRetry.test');
 const { tests: schedulerTests } = require('./unit/scheduler.test');
-const { tests: memoryClientTests } = require('./unit/memoryClient.test');
+const { tests: conversationRuntimeTests } = require('./unit/conversationRuntime.test');
+const { tests: openvikingSemanticRecallTests } = require('./unit/openvikingSemanticRecall.test');
+const { tests: stickerDeliveryPolicyTests } = require('./unit/stickerDeliveryPolicy.test');
+const { tests: recentIncidentTests } = require('./unit/recentIncidents.test');
 const { tests: conversationAgentMemoryTests } = require('./unit/conversationAgentMemory.test');
+const { tests: roadmapFeatureTests } = require('./unit/roadmapFeatures.test');
+const { tests: nsfwExternalTests } = require('./unit/nsfwExternal.test');
 
 
 async function runAllTests() {
@@ -73,8 +78,13 @@ async function runAllTests() {
     results.push(await runTestSuite('Message History Recovery Tests', messageHistoryRecoveryTests));
     results.push(await runTestSuite('Media Download Retry Tests', mediaDownloadRetryTests));
     results.push(await runTestSuite('Scheduler Tests', schedulerTests));
-    results.push(await runTestSuite('Memory Client Tests', memoryClientTests));
+    results.push(await runTestSuite('Conversation Runtime Tests', conversationRuntimeTests));
+    results.push(await runTestSuite('OpenViking Semantic Recall Tests', openvikingSemanticRecallTests));
+    results.push(await runTestSuite('Sticker Delivery Policy Tests', stickerDeliveryPolicyTests));
+    results.push(await runTestSuite('Recent Incident Regression Tests', recentIncidentTests));
     results.push(await runTestSuite('Conversation Agent Memory Tests', conversationAgentMemoryTests));
+    results.push(await runTestSuite('Roadmap Feature Tests', roadmapFeatureTests));
+    results.push(await runTestSuite('NSFW Gemma Tests', nsfwExternalTests));
     
     // Run animated sticker tests (different format)
     await runAnimatedStickerTests();

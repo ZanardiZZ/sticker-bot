@@ -189,6 +189,7 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
   let description = null;
   let tags = null;
   let extractedText = null;
+  let richMetadata = {};
   let tmpFilePath = null;
   let gifSourceForAnalysis = null;
   try {
@@ -219,6 +220,7 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
     let pngBuffer = null;
     let hashVisual = null;
     let hashMd5 = null;
+    let hashMd5Stored = null;
     if (message.mimetype === 'image/gif') {
       try {
         pngBuffer = await sharp(tmpFilePath, { animated: true, page: 0 }).png().toBuffer();
@@ -836,13 +838,9 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
       if (hashMd5) {
         const exact = await findMediaByMd5Safe(hashMd5);
         if (exact) {
-          console.log(`[DuplicateCheck] BLOCKING save - exact MD5 duplicate found (ID ${exact.id})`);
-          await safeReply(
-            client,
-            chatId,
-            `Mídia idêntica já existe no banco (hash exato). ID: ${exact.id}. Use #forçar respondendo à mídia para salvar duplicado ou use #ID ${exact.id} para solicitar esta mídia.`,
-            message.id
-          );
+                    console.log('[MediaCache] CACHE HIT exact MD5 (ID ' + exact.id + ')');
+          try { await sendStickerForMediaRecord(client, chatId, exact); } catch (e) { console.warn('[MediaCache] sticker reuse failed:', e.message); }
+          await safeReply(client, chatId, '♻️ Mídia já processada. Reutilizei o sticker e a descrição existentes.\n📝 ' + (exact.description || '') + '\n🏷️ ' + (exact.tags || '') + '\n🆔 ' + exact.id, message.id);
           return;
         }
       }
@@ -918,6 +916,9 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
         throw copyErr;
       }
     }
+
+    // hashMd5 is the inbound/source bytes hash; hashMd5Stored is the persisted bytes hash.
+    hashMd5Stored = getMD5(await fs.promises.readFile(filePath));
 
     const groupId = message.from.endsWith('@g.us') ? message.from : null;
     
@@ -1134,6 +1135,7 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
           // Regular static image processing
           const aiResult = await getAiAnnotations(pngBuffer);
           if (aiResult && typeof aiResult === 'object') {
+            richMetadata = aiResult.metadata || richMetadata;
             const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
             description = clean.description;
             tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
@@ -1206,8 +1208,10 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
       tags,
       hashVisual,
       hashMd5,
+      hashMd5Stored,
       nsfw: nsfw ? 1 : 0,
-      extractedText
+      extractedText,
+      metadata: { ...richMetadata, ocr_text: richMetadata.ocr_text || extractedText || '' }
     });
 
     // Capture media ID and type for metrics

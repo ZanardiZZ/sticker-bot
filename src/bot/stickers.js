@@ -344,7 +344,7 @@ async function sendStickerForMediaRecord(client, chatId, media) {
           console.warn('[Sticker] Failed to link message to media:', linkErr.message);
         }
       }
-      return;
+      return { status: 'sent', messageId, mediaId: media.id };
     }
 
     // 2) GIF/Video → tentar sticker animado via conversão
@@ -460,7 +460,7 @@ async function sendStickerForMediaRecord(client, chatId, media) {
           console.warn('[Sticker] Failed to link message to media:', linkErr.message);
         }
       }
-      return;
+      return { status: 'sent', messageId, mediaId: media.id };
     }
 
     // 4) Fallback final (não linkamos arquivo)
@@ -470,8 +470,8 @@ async function sendStickerForMediaRecord(client, chatId, media) {
     // ack_timeout means WPPConnect didn't confirm in time, but the sticker was likely
     // already delivered. Falling back to sendFile would send a duplicate as a raw file.
     if (errMsg.includes('ack_timeout')) {
-      console.warn('[Sticker] ack_timeout ao enviar figurinha - sticker provavelmente já foi entregue, ignorando fallback.');
-      return;
+      console.warn('[Sticker] Entrega de figurinha ficou incerta após timeout; não haverá descrição automática.');
+      return { status: 'uncertain', mediaId: media.id, reason: 'ack_timeout' };
     }
     console.error('Falha ao enviar mídia como figurinha. Fallback para arquivo. Motivo:', errMsg);
     try {

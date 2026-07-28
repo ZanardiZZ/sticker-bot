@@ -10,6 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const { execFileSync } = require('child_process');
+const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 const mime = require('mime-types');
 const qrcode = require('qrcode-terminal');
@@ -456,7 +457,11 @@ function cleanupIncomingDedupes() {
 }
 
 function shouldProcessIncomingMessage(message) {
-  const messageId = message?.id;
+  const messageId = normalizeWppMessageId(message?.id)
+    || normalizeWppMessageId(message?.msgId)
+    || normalizeWppMessageId(message?.messageId)
+    || normalizeWppMessageId(message?.key?.id)
+    || ensureWppMessageId(message);
   if (!messageId) return true;
 
   cleanupIncomingDedupes();
@@ -997,17 +1002,14 @@ function setupWPPConnectEvents() {
     handleIncomingMessage(message);
   };
 
-  // Some WPPConnect versions are inconsistent between onAnyMessage/onMessage.
-  // Register both and dedupe by message id so we don't miss text/media events.
-  if (typeof wppClient.onAnyMessage === 'function') {
-    wppClient.onAnyMessage((message) => {
-      forwardIncomingMessage(message, 'onAnyMessage');
-    });
-  }
-
+  // Use one canonical event. Registering both listeners duplicates media events.
   if (typeof wppClient.onMessage === 'function') {
     wppClient.onMessage((message) => {
       forwardIncomingMessage(message, 'onMessage');
+    });
+  } else if (typeof wppClient.onAnyMessage === 'function') {
+    wppClient.onAnyMessage((message) => {
+      forwardIncomingMessage(message, 'onAnyMessage');
     });
   }
 
@@ -1169,6 +1171,28 @@ async function handleIncomingMessage(message) {
   }
 }
 
+function normalizeWppMessageId(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value.trim();
+  return String(value._serialized || value.id || value.msgId || value.messageId || "").trim();
+}
+
+function ensureWppMessageId(wppMessage) {
+  const candidates = [wppMessage?.id, wppMessage?.msgId, wppMessage?.messageId, wppMessage?.key?.id, wppMessage?.message?.key?.id];
+  for (const candidate of candidates) {
+    const id = normalizeWppMessageId(candidate);
+    if (id) {
+      if (!wppMessage.id) wppMessage.id = id;
+      return id;
+    }
+  }
+  const seed = [wppMessage?.chatId || wppMessage?.from || "", wppMessage?.author || wppMessage?.sender?.id || "", wppMessage?.timestamp || "", wppMessage?.type || "", wppMessage?.caption || "", wppMessage?.body || wppMessage?.url || ""].join("|");
+  const fallback = "wpp-fallback-" + crypto.createHash("sha1").update(seed).digest("hex");
+  wppMessage.id = fallback;
+  if (!wppMessage.key || typeof wppMessage.key !== "object") wppMessage.key = {};
+  if (!wppMessage.key.id) wppMessage.key.id = fallback;
+  return fallback;
+}
 function convertWPPMessageToBaileys(wppMessage) {
   try {
     logMediaDebug('[WS] Converting WPP message:', {
@@ -1195,7 +1219,7 @@ function convertWPPMessageToBaileys(wppMessage) {
     // 1. Check explicit fromMe flag
     // 2. Check if message ID starts with "true_" (WhatsApp convention for own messages)
     // 3. Check if it's a status broadcast message (ignore those)
-    const messageId = wppMessage.id || '';
+    const messageId = ensureWppMessageId(wppMessage);
     const isStatusBroadcast = chatIdStr.includes('status@broadcast');
     const fromMe = wppMessage.fromMe === true || messageId.startsWith('true_');
 
@@ -2075,32 +2099,27 @@ async function handleDownloadMedia(ws, msg) {
     // WPPConnect: Use custom downloader for GIFs and stickers to get full media instead of thumbnail
     let mediaData;
 
-    const needsEncryptedDownload = (wppMessage.isGif || wppMessage.type === 'sticker')
-      && wppMessage.directPath && wppMessage.mediaKey;
+    const hasEncryptedMedia = Boolean(wppMessage.directPath && wppMessage.mediaKey);
 
     mediaData = await downloadLimiter.run(async () => {
-      if (needsEncryptedDownload) {
-      const mediaLabel = wppMessage.isGif ? 'GIF' : 'sticker';
-        logMediaDebug(`[WS] ${mediaLabel} detected - using custom encrypted media downloader...`);
+      if (hasEncryptedMedia) {
+        const mediaLabel = wppMessage.type === 'image' ? 'IMAGE' : (wppMessage.isGif ? 'GIF' : (wppMessage.type || 'MEDIA'));
+        logMediaDebug('[WS] ' + mediaLabel + ' with directPath/mediaKey - using custom encrypted media downloader...');
         try {
           const { downloadEncryptedMedia } = require('../utils/wppGifDownloader');
           const decryptedBuffer = await Promise.race([
             downloadEncryptedMedia(wppMessage),
-            new Promise((_, reject) =>
-              setTimeout(() => reject(new Error('Download timeout after 40s')), 40000)
-            )
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Download timeout after 40s')), 40000))
           ]);
-
           const downloadedData = decryptedBuffer.toString('base64');
-          logMediaDebug(`[WS] Custom download successful: ${downloadedData.length} chars`);
+          logMediaDebug('[WS] Custom encrypted download successful: ' + downloadedData.length + ' chars');
           return downloadedData;
         } catch (customErr) {
-          console.warn(`[WS] Custom ${wppMessage.isGif ? 'GIF' : 'sticker'} download failed:`, customErr.message);
+          console.warn('[WS] Custom encrypted ' + mediaLabel + ' download failed:', customErr.message);
           console.warn('[WS] Falling back to standard downloadMedia...');
           return wppClient.downloadMedia(wppMessage);
         }
       }
-
       logMediaDebug('[WS] Downloading media using standard downloadMedia...');
       return Promise.race([
         wppClient.downloadMedia(wppMessage),

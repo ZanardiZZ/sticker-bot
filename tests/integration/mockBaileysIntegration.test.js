@@ -5,6 +5,7 @@ const { runTestSuite, assert, assertEqual } = require('../helpers/testUtils');
 const { MockBaileysClient } = require('../helpers/mockBaileysClient');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
+process.env.AUTO_SEND_GROUP_ID = '123456@g.us';
 
 function resolveFromRoot(relativePath) {
   const normalized = /^(bot|commands|services|utils|client|database|web|plugins)\//.test(relativePath)
@@ -242,7 +243,7 @@ const tests = [
     fn: async () => {
       const memoryCalls = [];
       const conversationCalls = [];
-      const groupJid = '987654@g.us';
+      const groupJid = '123456@g.us';
       const participantJid = 'participant@c.us';
 
       class ImmediateMediaQueue {

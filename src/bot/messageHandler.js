@@ -282,7 +282,7 @@ async function handleMessage(client, message) {
     }
 
     // 3) Conversas em grupo: tenta gerar resposta natural via IA
-    if (isGroup && message.type === 'chat' && message.body) {
+    if (isGroup && !message.isMedia && message.type === 'chat' && message.body) {
       const senderName = message.pushName || message.notifyName || message.sender?.name;
       const groupName = message.chat?.name || message.groupMetadata?.subject;
       const memorySync = await syncMemoryForGroupMessage({

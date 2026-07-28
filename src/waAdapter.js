@@ -364,7 +364,7 @@ class BaileysWsAdapter {
     return this._withTransportRetry('sendRawWebpAsSticker', async () => {
       await this._ensureReady(12000);
       return this._sendAndWaitForAck({ type: 'sendRawWebpAsSticker', chatId, dataUrl, options }, 120000);
-    });
+    }, { maxAttempts: 1 });
   }
 
   async sendImageAsSticker(chatId, filePath, options = {}) {

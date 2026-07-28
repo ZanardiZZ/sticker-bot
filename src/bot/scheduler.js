@@ -14,6 +14,7 @@ const { cleanDescriptionTags, renderInfoMessage } = require('../utils/messageUti
 const { withTyping } = require('../utils/typingIndicator');
 const { getBotConfig } = require('../web/dataAccess');
 const { bus } = require('../web/eventBus.js');
+const { isConfirmedStickerDelivery } = require('./deliveryPolicy');
 
 const AUTO_SEND_GROUP_ID = process.env.AUTO_SEND_GROUP_ID;
 let autoSendTasks = [];
@@ -87,7 +88,11 @@ async function sendRandomMediaToGroup(client, sendStickerFunction) {
       }
 
       await incrementRandomCount(media.id);
-      await sendStickerFunction(client, AUTO_SEND_GROUP_ID, media);
+      const delivery = await sendStickerFunction(client, AUTO_SEND_GROUP_ID, media);
+      if (!isConfirmedStickerDelivery(delivery)) {
+        console.warn(`[SCHEDULER] Entrega não confirmada para media ${media.id}; descrição não será enviada.`);
+        return;
+      }
 
       const full = await findById(media.id);
       if (full) {
