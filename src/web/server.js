@@ -1670,6 +1670,10 @@ app.get('/login', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'login.html'
 app.get('/register', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'register.html')));
 app.get('/ranking/tags', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'ranking-tags.html')));
 app.get('/ranking/users', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'ranking-users.html')));
+app.get('/sticker/:id', (req, res) => {
+  if (!/^\d+$/.test(String(req.params.id || ''))) return res.status(404).send('Figurinha não encontrada.');
+  return res.sendFile(path.join(PUBLIC_DIR, 'sticker.html'));
+});
 
 // Reaction analytics
 app.get('/api/admin/reactions/analytics', requireAdmin, async (req, res) => {

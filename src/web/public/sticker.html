@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Figurinha | Sticker Browser</title>
+  <meta name="description" content="Encontre esta figurinha e envie diretamente para o WhatsApp.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Figurinha | Sticker Browser">
+  <meta property="og:description" content="Encontre esta figurinha e envie diretamente para o WhatsApp.">
+  <meta property="og:site_name" content="Sticker Browser">
+  <link rel="stylesheet" href="/styles.css">
+  <script async defer src="https://analytics.zanardizz.uk/script.js" data-website-id="1ae7469e-7785-4f09-9956-8afdd8efa316"></script>
+</head>
+<body class="sticker-page">
+  <nav><a href="/">← Ver todas</a><span class="nav-divider">/</span><strong>Sticker Browser</strong></nav>
+  <main class="sticker-detail-shell">
+    <section id="stickerState" class="sticker-state" aria-live="polite">Carregando figurinha…</section>
+    <article id="stickerDetail" class="sticker-detail" hidden>
+      <div class="sticker-detail-media-wrap"><img id="stickerImage" class="sticker-detail-media" alt="Figurinha" hidden><video id="stickerVideo" class="sticker-detail-media" muted loop playsinline controls hidden></video></div>
+      <div class="sticker-detail-content"><p id="stickerId" class="sticker-id"></p><h1 id="stickerTitle">Figurinha</h1><p id="stickerDescription" class="sticker-description"></p><div id="stickerTags" class="tags" aria-label="Tags"></div><div class="sticker-detail-actions"><button id="whatsappBtn" class="whatsapp-btn">Enviar no WhatsApp</button><button id="shareBtn" class="share-btn">Compartilhar</button></div><p id="actionMessage" class="muted" role="status"></p></div>
+    </article>
+  </main>
+  <script src="/sticker.js" defer></script>
+</body>
+</html>

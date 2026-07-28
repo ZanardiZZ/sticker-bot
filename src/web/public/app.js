@@ -13,6 +13,28 @@ let page = 1, loading = false, done = false, perPage = 20; // Reduced from 30 to
 let sentinelEl = null;
 let sentinelObserver = null;
 
+function trackEvent(name, data = {}) {
+  try { if (typeof window.umami?.track === 'function') window.umami.track(name, data); } catch (_) {}
+}
+
+async function shareStickerLink(stickerId, button) {
+  const url = `${window.location.origin}/sticker/${encodeURIComponent(stickerId)}`;
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: `Figurinha #${stickerId}`, text: 'Olha esta figurinha!', url });
+      trackEvent('sticker_share', { sticker_id: Number(stickerId), method: 'native', source: 'home' });
+      return;
+    }
+    await navigator.clipboard.writeText(url);
+    trackEvent('sticker_share', { sticker_id: Number(stickerId), method: 'clipboard', source: 'home' });
+    const previous = button.textContent;
+    button.textContent = 'Link copiado';
+    setTimeout(() => { button.textContent = previous; }, 1800);
+  } catch (error) {
+    if (error?.name !== 'AbortError') alert('Não foi possível compartilhar esta figurinha.');
+  }
+}
+
 function updateNsfwSelectorState(lockOnlySafe = false) {
   if (!nsfwEl) return;
   const options = Array.from(nsfwEl.options || []);
@@ -79,7 +101,8 @@ function openWhatsApp(stickerId) {
   
   const message = encodeURIComponent(`#ID ${stickerId}`);
   const whatsappUrl = `https://wa.me/${BOT_CONFIG.whatsappNumber}?text=${message}`;
-  window.open(whatsappUrl, '_blank');
+  trackEvent('sticker_whatsapp_click', { sticker_id: Number(stickerId), source: 'home' });
+  window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
 }
 
 
@@ -133,6 +156,7 @@ function cardHTML(s) {
           </svg>
           WhatsApp
         </button>
+        <button class="share-btn" data-sticker-id="${s.id}" title="Compartilhar figurinha">Compartilhar</button>
         ${CURRENT_USER ? `<button class="editBtn" title="Editar sticker">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
             <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
@@ -639,6 +663,11 @@ document.addEventListener('click', function(e) {
     const stickerId = btn.dataset.stickerId;
     openWhatsApp(stickerId);
   }
+  // Share button
+  if (e.target.closest('.share-btn')) {
+    const btn = e.target.closest('.share-btn');
+    shareStickerLink(btn.dataset.stickerId, btn);
+  }
   // Edit button for logged users
   if (e.target.classList.contains('editBtn') || e.target.closest('.editBtn')) {
     const card = e.target.closest('.card');
@@ -652,7 +681,7 @@ document.addEventListener('click', function(e) {
   // Click on card to view details (for all users)
   if (e.target.closest('.card') && !e.target.closest('.card-expand-btn') && !e.target.closest('.card-collapse-btn') && 
       !e.target.closest('.card-expand-tags-btn') && !e.target.closest('.card-collapse-tags-btn') &&
-      !e.target.closest('.whatsapp-btn') && !e.target.closest('.editBtn') && !e.target.closest('.deleteBtn')) {
+      !e.target.closest('.whatsapp-btn') && !e.target.closest('.share-btn') && !e.target.closest('.editBtn') && !e.target.closest('.deleteBtn')) {
     const card = e.target.closest('.card');
     openStickerDetails(card.dataset.id);
   }
