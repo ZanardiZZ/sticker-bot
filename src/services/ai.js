@@ -2,11 +2,16 @@ require('dotenv').config();
 const OpenAI = require('openai');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const { spawn } = require('child_process');
+const ffmpegPath = require('ffmpeg-static');
 const { TEMP_DIR } = require('../paths');
 
 function createOpenAIClient({ apiKey, baseURL }) {
   if (!apiKey) return null;
   const options = { apiKey };
+  const backfillTimeout = Number(process.env.BACKFILL_OPENAI_TIMEOUT_MS || 0);
+  if (Number.isFinite(backfillTimeout) && backfillTimeout > 0) options.timeout = backfillTimeout;
   if (baseURL) options.baseURL = baseURL;
   return new OpenAI(options);
 }
@@ -147,49 +152,86 @@ function buildFallbackAnnotation(type = 'imagem') {
  * @returns {Promise<{description: string|null, tags: string[]|null}>}
  */
 
-async function transcribeAudioBuffer(buffer) {
+async function normalizeAudioBufferToWav(buffer) {
+  if (!ffmpegPath) throw new Error('FFmpeg não disponível para normalizar áudio');
+  const id = crypto.randomBytes(8).toString('hex');
+  const input = path.join(TEMP_DIR, 'gemma-audio-' + id + '.input');
+  const output = path.join(TEMP_DIR, 'gemma-audio-' + id + '.wav');
+  fs.mkdirSync(TEMP_DIR, { recursive: true });
+  fs.writeFileSync(input, buffer);
   try {
-    if (!openai) {
-      console.warn('[AI] OpenAI API key not configured. Audio transcription not available.');
-      return 'Áudio não transcrito - OpenAI API key não configurada.';
+    await new Promise((resolve, reject) => {
+      const timeoutMs = Number(process.env.GEMMA_AUDIO_NORMALIZE_TIMEOUT_MS || 30000);
+      const child = spawn(ffmpegPath, ['-hide_banner', '-loglevel', 'error', '-i', input, '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-f', 'wav', output], { stdio: ['ignore', 'ignore', 'pipe'] });
+      let stderr = '';
+      const timer = setTimeout(() => {
+        child.kill('SIGKILL');
+        reject(new Error('Timeout ao normalizar áudio para WAV'));
+      }, timeoutMs);
+      child.stderr.on('data', chunk => { stderr += chunk.toString(); });
+      child.on('error', error => { clearTimeout(timer); reject(error); });
+      child.on('close', code => {
+        clearTimeout(timer);
+        if (code === 0 && fs.existsSync(output)) resolve();
+        else reject(new Error('FFmpeg não conseguiu normalizar áudio (' + code + '): ' + stderr.slice(0, 240)));
+      });
+    });
+    return fs.readFileSync(output);
+  } finally {
+    for (const file of [input, output]) {
+      try { if (fs.existsSync(file)) fs.unlinkSync(file); } catch {}
     }
-
-    // Create a temporary file for the audio buffer (OpenAI API requires a file stream, not just a file)
-    const tmpDir = TEMP_DIR;
-    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
-    const tmpFile = path.join(tmpDir, `audio-${Date.now()}-${Math.floor(Math.random()*10000)}.wav`);
-    try {
-      fs.writeFileSync(tmpFile, buffer);
-      // Use OpenAI Whisper API for transcription
-      const transcription = await executeWithAiRetry(
-        () => openai.audio.transcriptions.create({
-          file: fs.createReadStream(tmpFile),
-          model: 'whisper-1',
-          language: 'pt', // Portuguese
-          response_format: 'text'
-        }),
-        { actionLabel: 'transcrição de áudio' }
-      );
-      const transcript = transcription.trim();
-      return transcript || 'Áudio sem conteúdo transcrito.';
-    } catch (apiError) {
-      console.warn('[AI] Erro ao transcrever áudio com OpenAI:', apiError.message);
-      return 'Áudio não transcrito - erro na API OpenAI.';
-    } finally {
-      // Clean up temporary file and directory if empty
-      try {
-        if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
-        if (fs.existsSync(tmpDir) && fs.readdirSync(tmpDir).length === 0) fs.rmdirSync(tmpDir);
-      } catch (cleanupErr) {
-        console.warn('[AI] Erro ao limpar arquivo/diretório temporário:', cleanupErr.message);
-      }
-    }
-  } catch (error) {
-    console.warn('[AI] Erro geral na transcrição de áudio:', error.message);
-    return 'Áudio não transcrito - erro geral.';
   }
 }
 
+const audioApiKey = process.env.GEMMA_AUDIO_API_KEY || process.env.OPENAI_API_KEY || 'not-required';
+const audioBaseURL = process.env.GEMMA_AUDIO_BASE_URL || process.env.OPENAI_MULTIMODAL_BASE_URL || '';
+const audioAi = createOpenAIClient({ apiKey: audioApiKey, baseURL: audioBaseURL });
+
+async function transcribeAudioBuffer(buffer, { language = process.env.AUDIO_TRANSCRIPTION_LANGUAGE || 'pt' } = {}) {
+  try {
+    if (!audioAi) {
+      console.warn('[AI] Cliente Gemma de áudio não configurado');
+      return 'Áudio não transcrito - Gemma não configurado.';
+    }
+    if (!buffer || buffer.length < 16) return 'Áudio não transcrito - arquivo inválido.';
+    const wav = await normalizeAudioBufferToWav(buffer);
+    const model = process.env.AUDIO_TRANSCRIPTION_MODEL || process.env.GEMMA_NSFW_MODEL || process.env.OPENAI_MULTIMODAL_MODEL;
+    if (!model) return 'Áudio não transcrito - modelo Gemma não configurado.';
+    const response = await executeWithAiRetry(
+      () => audioAi.chat.completions.create({
+        model,
+        temperature: 0,
+        max_tokens: Number(process.env.AUDIO_TRANSCRIPTION_MAX_TOKENS || 512),
+        chat_template_kwargs: { enable_thinking: false },
+        messages: [
+          {
+            role: 'system',
+            content: 'Você é um transcritor de áudio. Transcreva fielmente tudo que for falado. O idioma esperado é ' + language + '. Não resuma, não explique e não invente conteúdo. Responda somente com a transcrição em texto puro.'
+          },
+          {
+            role: 'user',
+            content: [
+              { type: 'input_audio', input_audio: { data: wav.toString('base64'), format: 'wav' } },
+              { type: 'text', text: 'Transcreva este áudio exatamente.' }
+            ]
+          }
+        ]
+      }),
+      { actionLabel: 'transcrição de áudio com Gemma' }
+    );
+    const text = String(response?.choices?.[0]?.message?.content || response?.choices?.[0]?.message?.reasoning_content || '').trim();
+    return text || 'Áudio sem conteúdo transcrito.';
+  } catch (error) {
+    console.warn('[AI] Erro ao transcrever áudio com Gemma:', error.message);
+    return 'Áudio não transcrito - erro no Gemma.';
+  }
+}
+
+async function transcribeAudioFile(filePath, options = {}) {
+  if (!fs.existsSync(filePath)) return 'Áudio não transcrito - arquivo não encontrado.';
+  return transcribeAudioBuffer(fs.readFileSync(filePath), options);
+}
 async function getTagsFromTextPrompt(prompt) {
   try {
     if (!openai) {
@@ -239,13 +281,13 @@ async function getAiAnnotations(buffer) {
     
     const sharp = require('sharp');
     const DESC_MAX = 200;
-    const VISION_MODEL = 'gpt-4o-mini';
+    const VISION_MODEL = process.env.OPENAI_MULTIMODAL_MODEL || 'gpt-4o-mini';
 
-    const webpBuffer = await sharp(buffer)
+    const imgBuffer = await sharp(buffer)
       .resize(512, 512, { fit: 'inside' })
-      .webp({ quality: 85 })
+      .png()
       .toBuffer();
-    const b64 = webpBuffer.toString('base64');
+    const b64 = imgBuffer.toString('base64');
 
     function cleanJsonBlock(text) {
       const start = text.indexOf('{');
@@ -267,11 +309,11 @@ async function getAiAnnotations(buffer) {
 1) Descreva a imagem de forma concisa (≤${DESC_MAX} chars), mencionando explicitamente o nome de toda pessoa/personagem/celebridade reconhecível. Se o nome não for conhecido, escreva "nome desconhecido". Inclua também o filme/série/anime/jogo ou contexto da obra quando aplicável.
 2) Identifique e extraia TODO o texto visível na imagem (caso exista). Se não houver texto, retorne "".
 3) Gere CINCO hashtags únicas e relevantes (começando com #), incluindo hashtags para os nomes e obras sempre que conhecidos.
-Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",...] }`
+Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",...],"metadata":{"visual_action":"...","emotion":"...","ocr_text":"...","cultural_reference":"...","usage_intent":"...","context_signals":"..."}}. A description deve continuar curta; metadata é interno. Não invente nomes, obras ou referências sem evidência visual.`
       },
       { role: 'user', content: [
           { type: 'text', text: `Descreva a imagem (≤${DESC_MAX} chars), identifique TODO o texto presente (caso exista) e gere CINCO hashtags. Certifique-se de manter na descrição e nas hashtags os nomes de pessoas/personagens reconhecíveis e o contexto de obras quando existir.` },
-          { type: 'image_url', image_url: { url: `data:image/webp;base64,${b64}` } }
+          { type: 'image_url', image_url: { url: `data:image/png;base64,${b64}` } }
         ]
       }
     ];
@@ -279,8 +321,9 @@ Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",
     const resp = await executeWithAiRetry(
       () => openai.chat.completions.create({
         model: VISION_MODEL,
-        max_tokens: 300,
-        temperature: 0.4,
+        max_tokens: process.env.BACKFILL_MODE === '1' ? Number(process.env.BACKFILL_MAX_TOKENS || 512) : 512,
+        temperature: process.env.BACKFILL_MODE === '1' ? Number(process.env.BACKFILL_TEMPERATURE || 0.2) : 0.4,
+        chat_template_kwargs: { enable_thinking: false },
         messages
       }),
       { actionLabel: 'anotação de imagem' }
@@ -303,15 +346,37 @@ Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",
       return {
         description: description.slice(0, DESC_MAX) || 'Sem descrição.',
         text,
-        tags
+        tags,
+        metadata: parsed.metadata && typeof parsed.metadata === 'object' ? parsed.metadata : {}
       };
     } catch {
-      const description = String(raw || '')
-        .replace(/#[^\s#]+/gu, '')
-        .trim()
-        .slice(0, DESC_MAX) || 'Sem descrição.';
-      const tags = pickHashtags(raw, 5);
-      return { description, text: '', tags };
+      // The VLM can truncate a JSON response while OCR/metadata is large.
+      // Never persist the raw JSON/fence as the public description or derive
+      // hashtags from JSON keys (which produced #json/#description).
+      const source = String(raw || '');
+      const descriptionMatch = source.match(/"description"\s*:\s*"((?:\\.|[^"\\])*)/su);
+      let description = '';
+      if (descriptionMatch) {
+        try { description = JSON.parse('"' + descriptionMatch[1] + '"').trim(); } catch {}
+      }
+      if (!description) {
+        description = source
+          .replace(/\x60{3}(?:json)?/giu, '')
+          .replace(/^[\s\{]+/u, '')
+          .replace(/(?:"(?:description|text|tags|metadata)"\s*:?).*$/su, '')
+          .replace(/#[^\s#]+/gu, '')
+          .trim();
+      }
+      description = description.slice(0, DESC_MAX);
+      const tagsMatch = source.match(/"tags"\s*:\s*\[([\s\S]*?)(?:\]|$)/u);
+      const tags = tagsMatch
+        ? [...tagsMatch[1].matchAll(/"((?:\\.|[^"\\])*)"/gu)].map(m => { try { return JSON.parse('"' + m[1] + '"').trim(); } catch { return ''; } }).filter(Boolean).slice(0, 5)
+        : [];
+      if (!description) {
+        const fallback = buildFallbackAnnotation('gif');
+        return { ...fallback, text: '', tags: tags.length ? tags : fallback.tags };
+      }
+      return { description, text: '', tags: tags.length ? tags : pickHashtags(description, 5) };
     }
   } catch (err) {
     console.error('❌ Erro na IA (imagem):', err);
@@ -331,13 +396,13 @@ async function getAiAnnotationsForGif(buffer) {
     
     const sharp = require('sharp');
     const DESC_MAX = 200;
-    const VISION_MODEL = 'gpt-4o-mini';
+    const VISION_MODEL = process.env.OPENAI_MULTIMODAL_MODEL || 'gpt-4o-mini';
 
-    const webpBuffer = await sharp(buffer)
+    const imgBuffer = await sharp(buffer)
       .resize(512, 512, { fit: 'inside' })
-      .webp({ quality: 85 })
+      .png()
       .toBuffer();
-    const b64 = webpBuffer.toString('base64');
+    const b64 = imgBuffer.toString('base64');
 
     function cleanJsonBlock(text) {
       const start = text.indexOf('{');
@@ -360,11 +425,11 @@ async function getAiAnnotationsForGif(buffer) {
 2) Identifique e extraia TODO o texto visível no frame (caso exista). Se não houver texto, retorne "".
 3) Gere CINCO hashtags únicas e relevantes (começando com #).
 IMPORTANTE: Isto é um frame de um GIF/meme, NÃO um vídeo. Use termos como "cena", "imagem", "frame", "meme" ao invés de "vídeo", "filmagem" ou "gravação".
-Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",...] }`
+Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",...],"metadata":{"visual_action":"...","emotion":"...","cultural_reference":"...","usage_intent":"..."}}. A description deve continuar curta; metadata é interno.`
       },
       { role: 'user', content: [
           { type: 'text', text: `Analise este frame de GIF/meme (≤${DESC_MAX} chars), identifique TODO o texto presente (caso exista) e gere CINCO hashtags. Foque na ação, expressão ou situação mostrada.` },
-          { type: 'image_url', image_url: { url: `data:image/webp;base64,${b64}` } }
+          { type: 'image_url', image_url: { url: `data:image/png;base64,${b64}` } }
         ]
       }
     ];
@@ -372,8 +437,9 @@ Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",
     const resp = await executeWithAiRetry(
       () => openai.chat.completions.create({
         model: VISION_MODEL,
-        max_tokens: 300,
+        max_tokens: 512,
         temperature: 0.4,
+        chat_template_kwargs: { enable_thinking: false },
         messages
       }),
       { actionLabel: 'anotação de GIF' }
@@ -393,18 +459,39 @@ Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",
         tags = tags.slice(0, 5);
       }
       if (tags.length === 0) tags = ['#gif'];
+      if (!description) {
+        const fallback = buildFallbackAnnotation('gif');
+        return { ...fallback, text, tags: tags.length ? tags : fallback.tags };
+      }
       return {
-        description: description.slice(0, DESC_MAX) || 'Sem descrição.',
+        description: description.slice(0, DESC_MAX),
         text,
         tags
       };
     } catch {
-      const description = String(raw || '')
-        .replace(/#[^\s#]+/gu, '')
-        .trim()
-        .slice(0, DESC_MAX) || 'Sem descrição.';
-      const tags = pickHashtags(raw, 5);
-      return { description, text: '', tags };
+      // The VLM can truncate a JSON response while OCR/metadata is large.
+      // Never persist the raw JSON/fence as the public description or derive
+      // hashtags from JSON keys (which produced #json/#description).
+      const source = String(raw || '');
+      const descriptionMatch = source.match(/"description"\s*:\s*"((?:\\.|[^"\\])*)/su);
+      let description = '';
+      if (descriptionMatch) {
+        try { description = JSON.parse('"' + descriptionMatch[1] + '"').trim(); } catch {}
+      }
+      if (!description) {
+        description = source
+          .replace(/\x60{3}(?:json)?/giu, '')
+          .replace(/^[\s\{]+/u, '')
+          .replace(/(?:"(?:description|text|tags|metadata)"\s*:?).*$/su, '')
+          .replace(/#[^\s#]+/gu, '')
+          .trim();
+      }
+      description = description.slice(0, DESC_MAX) || 'Sem descrição.';
+      const tagsMatch = source.match(/"tags"\s*:\s*\[([\s\S]*?)(?:\]|$)/u);
+      const tags = tagsMatch
+        ? [...tagsMatch[1].matchAll(/"((?:\\.|[^"\\])*)"/gu)].map(m => { try { return JSON.parse('"' + m[1] + '"').trim(); } catch { return ''; } }).filter(Boolean).slice(0, 5)
+        : pickHashtags(description, 5);
+      return { description, text: '', tags: tags.length ? tags : pickHashtags(description, 5) };
     }
   } catch (err) {
     console.error('❌ Erro na IA (GIF frame):', err);
@@ -713,7 +800,8 @@ async function generateConversationalReply({
   messages,
   model = process.env.CONVERSATION_MODEL || 'gpt-4o-mini',
   temperature,
-  maxTokens
+  maxTokens,
+  signal
 } = {}) {
   const envTemp = Number(process.env.CONVERSATION_TEMPERATURE);
   const envMaxTokens = Number(process.env.CONVERSATION_MAX_TOKENS);
@@ -762,7 +850,8 @@ async function generateConversationalReply({
           prompt: safeCompletionPrompt,
           temperature: safeTemperature,
           max_tokens: safeMaxTokens,
-          stop: ['\nUsuário:', '\nUser:', '\nSistema:', '\nSystem:']
+          stop: ['\nUsuário:', '\nUser:', '\nSistema:', '\nSystem:'],
+          signal
         }),
         { actionLabel: `resposta conversacional (${label})` }
       );
@@ -795,7 +884,8 @@ async function generateConversationalReply({
           model: fallbackModel,
           messages: preparedMessages,
           temperature: safeTemperature,
-          max_tokens: safeMaxTokens
+          max_tokens: safeMaxTokens,
+          signal
         }),
         { actionLabel: 'resposta conversacional (fallback OpenAI)' }
       );
@@ -842,7 +932,8 @@ async function generateConversationalReply({
         model,
         messages: preparedMessages,
         temperature: safeTemperature,
-        max_tokens: safeMaxTokens
+        max_tokens: safeMaxTokens,
+        signal
       }),
       { actionLabel: 'resposta conversacional' }
     );
@@ -859,7 +950,8 @@ async function generateConversationalReply({
             model,
             messages: preparedMessages,
             temperature: safeTemperature,
-            max_tokens: boostedMaxTokens
+            max_tokens: boostedMaxTokens,
+            signal
           }),
           { actionLabel: 'resposta conversacional (retry por truncamento)' }
         );
@@ -889,7 +981,8 @@ async function generateConversationalReply({
             model,
             messages: preparedMessages,
             temperature: safeTemperature,
-            max_tokens: repairedMaxTokens
+            max_tokens: repairedMaxTokens,
+            signal
           }),
           { actionLabel: 'resposta conversacional (retry por final abrupto)' }
         );
@@ -918,6 +1011,7 @@ async function generateConversationalReply({
 
     return await runCloudFallback('primary_empty_after_safe_fallback');
   } catch (error) {
+    if (signal?.aborted) return null;
     const reasonCode = inferReasonCodeFromError(error);
     console.error(`[AI][conversation] route=chat_completions reason_code=${reasonCode}`, error);
 
@@ -929,7 +1023,8 @@ async function generateConversationalReply({
           prompt: safeCompletionPrompt,
           temperature: safeTemperature,
           max_tokens: Number.isFinite(maxTokens) && maxTokens > 0 ? Math.floor(maxTokens) : 220,
-          stop: ['\nUsuário:', '\nUser:', '\nSistema:', '\nSystem:']
+          stop: ['\nUsuário:', '\nUser:', '\nSistema:', '\nSystem:'],
+          signal
         }),
         { actionLabel: 'resposta conversacional (fallback de exceção completions)' }
       );
@@ -1133,7 +1228,8 @@ module.exports = {
   getAiAnnotationsForGif,
   getAiAnnotationsFromPrompt,
   getTagsFromTextPrompt,
-  transcribeAudioBuffer, // mantenha se já tiver implementado
+  transcribeAudioBuffer,
+  transcribeAudioFile,
   isAiAvailable,
   generateConversationalReply,
   extractMemoryFactsFromText,

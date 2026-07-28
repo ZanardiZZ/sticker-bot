@@ -6,6 +6,7 @@ const OpenAI = require('openai');
 const sharp = require('sharp');
 
 const { downloadMediaForMessage } = require('../utils/mediaDownload');
+const { transcribeAudioBuffer } = require('../services/ai');
 const crypto = require('crypto');
 require('dotenv').config();
 const { DATA_DIR, BOT_MEDIA_DIR } = require('../paths');
@@ -313,41 +314,26 @@ async function processarAudioParaMeme(client, audioMessage) {
     throw new Error('Nenhuma mensagem de áudio fornecida');
   }
   await initMemesDB();
-  const openai = ensureOpenAiClient();
   const { buffer, mimetype } = await downloadMediaForMessage(client, audioMessage);
   if (!buffer || !buffer.length) {
     throw new Error('Falha ao baixar áudio para meme');
   }
 
-  const randomAudioSuffix = crypto.randomBytes(8).toString('hex');
-  const tmpAudioPath = path.join('/tmp', `meme-audio-${Date.now()}-${randomAudioSuffix}.ogg`);
-  await fsp.writeFile(tmpAudioPath, buffer);
-
-  try {
-    console.log('[MemeGen] audio - transcrevendo com whisper-1');
-    const transcription = await openai.audio.transcriptions.create({
-      file: fs.createReadStream(tmpAudioPath),
-      model: 'whisper-1',
-      language: TRANSCRIPTION_LANGUAGE,
-      response_format: 'text'
-    });
-    const textoOriginal = (typeof transcription === 'string' ? transcription : transcription?.text || '').trim();
-    if (!textoOriginal) {
-      throw new Error('Transcrição vazia');
-    }
-    const promptInfo = await gerarPromptMeme(textoOriginal);
-    const imagemInfo = await gerarImagemMeme(promptInfo.prompt, 'audio');
-    return {
-      textoOriginal,
-      promptInfo,
-      imagemInfo,
-      mimetype
-    };
-  } finally {
-    try { await fsp.unlink(tmpAudioPath); } catch (_) {}
+  console.log('[MemeGen] audio - transcrevendo com Gemma 4');
+  const transcription = await transcribeAudioBuffer(buffer, { language: TRANSCRIPTION_LANGUAGE });
+  const textoOriginal = String(transcription || '').trim();
+  if (!textoOriginal || textoOriginal.startsWith('Áudio não transcrito')) {
+    throw new Error(textoOriginal || 'Transcrição vazia');
   }
+  const promptInfo = await gerarPromptMeme(textoOriginal);
+  const imagemInfo = await gerarImagemMeme(promptInfo.prompt, 'audio');
+  return {
+    textoOriginal,
+    promptInfo,
+    imagemInfo,
+    mimetype
+  };
 }
-
 function normalizeMensagemId(value) {
   if (!value) return null;
   if (typeof value === 'string') return value;

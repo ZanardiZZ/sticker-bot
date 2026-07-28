@@ -1,9 +1,8 @@
 require('dotenv').config();
 const crypto = require('crypto');
-const OpenAI = require('openai');
 const fs = require('fs');
 const path = require('path');
-const { getAiAnnotationsFromPrompt, getAiAnnotations, getAiAnnotationsForGif } = require('./ai');
+const { getAiAnnotationsFromPrompt, getAiAnnotations, getAiAnnotationsForGif, transcribeAudioFile } = require('./ai');
 const sharp = require('sharp');
 const { getTopTags } = require('../utils/messageUtils');
 const { TEMP_DIR } = require('../paths');
@@ -23,14 +22,6 @@ try {
 } catch (error) {
   console.warn('[VideoProcessor] FFmpeg não disponível:', error.message);
   console.warn('[VideoProcessor] Funcionalidades de processamento de vídeo serão desabilitadas');
-}
-
-// Initialize OpenAI client for video transcription
-let openai = null;
-if (process.env.OPENAI_API_KEY) {
-  openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-  });
 }
 
 // Extrai frames (timestamps em segundos)
@@ -221,29 +212,11 @@ async function extractAudio(filePath) {
 
 async function transcribeAudioLocal(audioPath) {
   try {
-    if (!openai) {
-      console.warn('[VideoProcessor] OpenAI API key not configured, returning empty transcription');
-      return '';
-    }
-
-    if (!fs.existsSync(audioPath)) {
-      console.warn('[VideoProcessor] Audio file not found:', audioPath);
-      return '';
-    }
-
-    // Use OpenAI Whisper API for transcription
-    const transcription = await openai.audio.transcriptions.create({
-      file: fs.createReadStream(audioPath),
-      model: 'whisper-1',
-      language: 'pt', // Portuguese
-      response_format: 'text'
-    });
-
-    return transcription.trim() || '';
-
+    const transcription = await transcribeAudioFile(audioPath, { language: 'pt' });
+    return transcription.startsWith('Áudio não transcrito') ? '' : transcription;
   } catch (error) {
-    console.warn('[VideoProcessor] Error transcribing audio with OpenAI:', error.message);
-    return ''; // Return empty string on error (consistent with original behavior)
+    console.warn('[VideoProcessor] Erro ao transcrever áudio com Gemma:', error.message);
+    return '';
   }
 }
 
