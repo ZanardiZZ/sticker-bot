@@ -1670,9 +1670,46 @@ app.get('/login', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'login.html'
 app.get('/register', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'register.html')));
 app.get('/ranking/tags', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'ranking-tags.html')));
 app.get('/ranking/users', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'ranking-users.html')));
-app.get('/sticker/:id', (req, res) => {
+function escapeHtmlAttribute(value) {
+  return String(value ?? '').replace(/[&<>\"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', "'": '&#39;' }[char]));
+}
+
+function stickerPublicUrl(req, relativeUrl) {
+  const configured = process.env.PUBLIC_BASE_URL || process.env.BASE_URL || process.env.WEB_SERVER_URL;
+  const base = String(configured || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
+  if (!relativeUrl) return '';
+  if (/^https?:\/\//i.test(String(relativeUrl))) return String(relativeUrl);
+  return `${base}/${String(relativeUrl).replace(/^\/+/, '')}`;
+}
+
+app.get('/sticker/:id', async (req, res) => {
   if (!/^\d+$/.test(String(req.params.id || ''))) return res.status(404).send('Figurinha não encontrada.');
-  return res.sendFile(path.join(PUBLIC_DIR, 'sticker.html'));
+  const pagePath = path.join(PUBLIC_DIR, 'sticker.html');
+  let page = fs.readFileSync(pagePath, 'utf8');
+  const id = Number.parseInt(req.params.id, 10);
+  let row = null;
+  try { row = await getMediaById(id); } catch (_) { row = null; }
+
+  if (row) fixMediaUrl(row);
+
+  // Não expor descrição/imagem de conteúdo NSFW em previews públicos.
+  const publicSafe = Boolean(row && !row.nsfw && row.url);
+  const description = publicSafe
+    ? String(row.description || 'Encontre esta figurinha e envie diretamente para o WhatsApp.').replace(/\s+/g, ' ').trim().slice(0, 180)
+    : 'Encontre esta figurinha e envie diretamente para o WhatsApp.';
+  const title = publicSafe ? `Figurinha #${id} | Sticker Browser` : 'Sticker Browser';
+  const url = stickerPublicUrl(req, `/sticker/${id}`);
+  const image = publicSafe ? stickerPublicUrl(req, row.url) : '';
+  const values = {
+    '__STICKER_TITLE__': title,
+    '__STICKER_DESCRIPTION__': description,
+    '__STICKER_URL__': url,
+    '__STICKER_IMAGE__': image,
+    '__STICKER_IMAGE_ALT__': publicSafe ? `Figurinha #${id}` : 'Sticker Browser',
+    '__STICKER_ROBOTS__': publicSafe ? 'index,follow' : 'noindex,nofollow'
+  };
+  for (const [marker, value] of Object.entries(values)) page = page.split(marker).join(escapeHtmlAttribute(value));
+  return res.type('html').send(page);
 });
 
 // Reaction analytics
