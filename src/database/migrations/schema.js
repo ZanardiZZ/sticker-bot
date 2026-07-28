@@ -25,6 +25,13 @@ function initializeTables(db) {
         )
       `);
 
+      // Rich internal sticker metadata; never replaces media.description
+      db.run(`CREATE TABLE IF NOT EXISTS media_metadata (
+        media_id INTEGER PRIMARY KEY, visual_action TEXT, emotion TEXT, ocr_text TEXT,
+        cultural_reference TEXT, usage_intent TEXT, context_signals TEXT, updated_at INTEGER NOT NULL,
+        FOREIGN KEY(media_id) REFERENCES media(id) ON DELETE CASCADE
+      )`);
+
       // Processed files tracking table
       db.run(`
         CREATE TABLE IF NOT EXISTS processed_files (
@@ -257,6 +264,13 @@ function initializeTables(db) {
         )
       `);
 
+      // Backward-compatible media hash semantics migration. hash_md5 remains the source/inbound hash.
+      db.run('ALTER TABLE media ADD COLUMN hash_md5_stored TEXT', (err) => {
+        if (err && !/duplicate column name/i.test(err.message || '')) {
+          console.error('[DB] Failed to add media.hash_md5_stored:', err.message);
+        }
+      });
+
       // Create indexes for performance
       createIndexes(db);
 
@@ -282,6 +296,8 @@ function initializeTables(db) {
 
 function createIndexes(db) {
   // Primary indexes for media table
+  db.run(`CREATE INDEX IF NOT EXISTS idx_media_metadata_action ON media_metadata(visual_action)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_media_metadata_emotion ON media_metadata(emotion)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_media_timestamp ON media(timestamp DESC)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_media_sender_id ON media(sender_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_media_nsfw ON media(nsfw)`);
@@ -293,6 +309,7 @@ function createIndexes(db) {
   // Critical indexes for duplicate detection
   db.run(`CREATE INDEX IF NOT EXISTS idx_media_hash_visual ON media(hash_visual)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_media_hash_md5 ON media(hash_md5)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_media_hash_md5_stored ON media(hash_md5_stored)`);
 
   // Tag-related indexes
   db.run(`CREATE INDEX IF NOT EXISTS idx_media_tags_tag_id ON media_tags(tag_id)`);

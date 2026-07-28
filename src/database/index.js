@@ -30,6 +30,7 @@ const packsModel = require('./models/packs');
 const processedMessagesModel = require('./models/processedMessages');
 const whatsappVerificationModel = require('./models/whatsappVerification');
 const reactionsModel = require('./models/reactions');
+const mediaMetadataModel = require('./models/mediaMetadata');
 
 // Utilities
 const utils = require('./utils');
@@ -100,6 +101,9 @@ module.exports = {
 
   // Reactions operations
   ...reactionsModel,
+
+  // Internal sticker metadata/search
+  ...mediaMetadataModel,
 
   // Utilities
   ...utils

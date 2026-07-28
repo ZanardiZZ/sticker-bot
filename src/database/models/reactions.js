@@ -246,7 +246,29 @@ function getUserReactionStats(reactorJid) {
   });
 }
 
+async function getReactionAnalytics({ from, to, chatId = null, limit = 10 } = {}) {
+  const start = Math.floor(Number(from || (Date.now() - 7 * 86400000)) / 1000);
+  const end = Math.floor(Number(to || Date.now()) / 1000);
+  const safeLimit = Math.min(Math.max(Number(limit) || 10, 1), 50);
+  const filter = chatId ? ' AND l.chat_id = ?' : '';
+  const base = [start, end, ...(chatId ? [chatId] : [])];
+  const topParams = [start, end, start, end, ...(chatId ? [chatId] : []), safeLimit];
+  const topMedia = await new Promise((resolve, reject) => db.all(`SELECT r.media_id, COUNT(*) AS reaction_count, (SELECT r2.emoji FROM media_reactions r2 WHERE r2.media_id = r.media_id AND r2.created_at BETWEEN ? AND ? GROUP BY r2.emoji ORDER BY COUNT(*) DESC LIMIT 1) AS top_emoji
+    FROM media_reactions r JOIN message_media_links l ON l.media_id = r.media_id
+    WHERE r.created_at BETWEEN ? AND ?${filter}
+    GROUP BY r.media_id ORDER BY reaction_count DESC LIMIT ?`, topParams, (e, rows) => e ? reject(e) : resolve(rows || [])));
+  const emojiCounts = await new Promise((resolve, reject) => db.all(`SELECT r.emoji, COUNT(*) AS count
+    FROM media_reactions r JOIN message_media_links l ON l.media_id = r.media_id
+    WHERE r.created_at BETWEEN ? AND ?${filter}
+    GROUP BY r.emoji ORDER BY count DESC LIMIT 20`, base, (e, rows) => e ? reject(e) : resolve(rows || [])));
+  const total = await new Promise((resolve, reject) => db.get(`SELECT COUNT(*) AS total
+    FROM media_reactions r JOIN message_media_links l ON l.media_id = r.media_id
+    WHERE r.created_at BETWEEN ? AND ?${filter}`, base, (e, row) => e ? reject(e) : resolve(row?.total || 0)));
+  return { from: start * 1000, to: end * 1000, chatId: chatId || null, totalReactions: total, topMedia, emojiCounts };
+}
+
 module.exports = {
+  getReactionAnalytics,
   linkMessageToMedia,
   getMediaIdFromMessage,
   upsertReaction,

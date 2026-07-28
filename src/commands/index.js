@@ -12,6 +12,7 @@ const { handleIdCommand } = require('./handlers/id');
 const { handleForceCommand } = require('./handlers/force');
 const { handleEditCommand } = require('./handlers/edit');
 const { handleThemeCommand } = require('./handlers/theme');
+const { handlePesquisarCommand } = require('./handlers/pesquisar');
 const { handleVerifyCommand } = require('./handlers/verify');
 const { handleCriarMemeCommand, handleExportarMemesCommand } = require('./handlers/meme');
 const { handleDeleteCommand } = require('./handlers/delete');
@@ -25,7 +26,9 @@ const { handleAddPackCommand } = require('./handlers/addpack');
 const { handlePackCommand } = require('./handlers/pack');
 const { handlePingaCommand } = require('./handlers/pinga');
 const { handleReactsCommand } = require('./handlers/reacts');
+const { handleTopReactionsCommand } = require('./handlers/topreactions');
 const { handleFalhaCommand } = require('./handlers/falha');
+const { handleMemoriasCommand, handleEsquecerCommand } = require('./handlers/memory');
 
 // Utilities
 const validation = require('./validation');
@@ -148,6 +151,17 @@ async function handleCommand(client, message, chatId, context = {}) {
 
   try {
     switch (command) {
+      case '#pesquisar':
+        await handlePesquisarCommand(client, message, chatId, params);
+        handled = true;
+        shouldTrackUsage = true;
+        break;
+
+      case '#memorias':
+      case '#memoria':
+        await handleMemoriasCommand(client, message, chatId, context); handled = true; shouldTrackUsage = true; break;
+      case '#esquecer':
+        await handleEsquecerCommand(client, message, chatId, context); handled = true; shouldTrackUsage = true; break;
       case '#random':
         await handleRandomCommand(client, message, chatId);
         handled = true;
@@ -287,6 +301,12 @@ async function handleCommand(client, message, chatId, context = {}) {
 
       case '#reacts':
         await handleReactsCommand(client, message, params);
+        handled = true;
+        shouldTrackUsage = true;
+        break;
+
+      case '#topreactions':
+        await handleTopReactionsCommand(client, message, params);
         handled = true;
         shouldTrackUsage = true;
         break;
@@ -556,6 +576,8 @@ module.exports = {
   handleEditCommand,
   handleThemeCommand,
   handlePingaCommand,
+  handleMemoriasCommand,
+  handleEsquecerCommand,
   
   // Constants
   MAX_TAGS_LENGTH,

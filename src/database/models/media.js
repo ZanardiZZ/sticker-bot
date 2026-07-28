@@ -4,6 +4,7 @@
 
 const { db, dbHandler } = require('../connection');
 const { hammingDistance } = require('../utils');
+const { upsertMediaMetadata } = require('./mediaMetadata');
 
 /**
  * Retrieves the next available media ID, preferring gaps from deletions
@@ -52,8 +53,10 @@ async function saveMedia(mediaData) {
     description = null,
     hashVisual,
     hashMd5,
+    hashMd5Stored = hashMd5,
     nsfw = 0,
-    extractedText = null
+    extractedText = null,
+    metadata = {}
   } = mediaData;
 
   await dbHandler.run('BEGIN IMMEDIATE TRANSACTION');
@@ -63,8 +66,8 @@ async function saveMedia(mediaData) {
 
     await dbHandler.run(
       `INSERT INTO media (id, chat_id, group_id, sender_id, file_path, mimetype, timestamp,
-                          description, hash_visual, hash_md5, nsfw, extracted_text, count_random)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+                          description, hash_visual, hash_md5, hash_md5_stored, nsfw, extracted_text, count_random)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
       [
         mediaId,
         chatId,
@@ -76,6 +79,7 @@ async function saveMedia(mediaData) {
         description,
         hashVisual,
         hashMd5,
+        hashMd5Stored,
         nsfw,
         extractedText
       ]
@@ -92,6 +96,7 @@ async function saveMedia(mediaData) {
     }
 
     await dbHandler.run('COMMIT');
+    if (metadata && Object.keys(metadata).length) await upsertMediaMetadata(mediaId, metadata);
     return mediaId;
   } catch (error) {
     try {

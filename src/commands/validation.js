@@ -18,6 +18,7 @@ const VALID_COMMANDS = [
   '#forcar',
   '#forçar',
   '#count',
+  '#pesquisar',
   '#tema',
   '#theme',
   '#verificar',
@@ -39,6 +40,7 @@ const VALID_COMMANDS = [
   '#pack',
   '#addpack',
   '#reacts',
+  '#topreactions',
   '#falha',
   '#comandos'
 ];
@@ -48,6 +50,11 @@ const HELP_ENTRIES = [
     command: '#criar <descrição ou áudio>',
     description: 'Gera um meme inteligente. Use "texto em cima" / "texto em baixo" para legendar.',
     example: '#criar usuário nerd reclamando, texto em cima MIMIMIMI, texto em baixo ODEIO STICKERS'
+  },
+  {
+    command: '#pesquisar <situação, emoção ou referência>',
+    description: 'Pesquisa stickers por descrição e metadados internos.',
+    example: '#pesquisar reação de surpresa'
   },
   {
     command: '#tema <palavras-chave> <quantidade opcional>',
