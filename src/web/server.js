@@ -122,7 +122,6 @@ app.use(globalLimiter);
 app.use(async (req, res, next) => {
   try {
     const jwt = require('jsonwebtoken');
-    const JWT_SECRET = JWT_SECRET_VALUE;
     const getCookieName = () => process.env.NODE_ENV === 'production' ? '__Host-sid' : 'sid';
     
     const cookieName = getCookieName();

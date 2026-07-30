@@ -135,7 +135,7 @@ async function evaluateAccess(userId) {
     blocked,
     eligible,
     dailyLimit,
-    source: settings.allowAll ? 'allow_all' : (Boolean(entitlement) ? 'entitlement' : (explicitlyAllowed ? 'dm_users' : (pilotAllowed ? 'pilot' : 'none')))
+    source: settings.allowAll ? 'allow_all' : (entitlement ? 'entitlement' : (explicitlyAllowed ? 'dm_users' : (pilotAllowed ? 'pilot' : 'none')))
   };
 }
 

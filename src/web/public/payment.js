@@ -48,8 +48,9 @@ async function loadConfig() {
 }
 
 async function renderCardBrick() {
-  if (!window.MercadoPago) throw new Error('mercadopago_sdk_unavailable');
-  const mp = new MercadoPago(config.publicKey, { locale: 'pt-BR' });
+  const MercadoPagoClient = window.MercadoPago;
+  if (!MercadoPagoClient) throw new Error('mercadopago_sdk_unavailable');
+  const mp = new MercadoPagoClient(config.publicKey, { locale: 'pt-BR' });
   const bricksBuilder = mp.bricks();
   cardController = await bricksBuilder.create('cardPayment', 'cardPaymentBrick_container', {
     initialization: { amount: config.amountCents / 100 },

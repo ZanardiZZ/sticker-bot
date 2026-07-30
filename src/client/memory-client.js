@@ -759,7 +759,7 @@ function saveStore(userId, data) {
 }
 
 // Converte um item de memória retornado pelo OpenViking em entrada estruturada
-function parseStoredFactEntry(m) {
+function parseSemanticMemoryEntry(m) {
   if (!m || typeof m !== 'object') return null;
   const uri = String(m.uri || '').trim();
   if (uri.endsWith('/.overview.md') || uri.endsWith('/.abstract.md')) return null;
@@ -1020,7 +1020,7 @@ class MemoryClient {
       const targets = (store.openvikingSessions || []).slice(-20)
         .map(sid => `viking://session/${sid}/history/`);
       const results = await this._searchBounded(semanticQuery, userId, targets);
-      return [userId, results.map(parseStoredFactEntry).filter(Boolean).slice(0, this.semanticSearchLimit)];
+      return [userId, results.map(parseSemanticMemoryEntry).filter(Boolean).slice(0, this.semanticSearchLimit)];
     }));
     const semanticByUser = new Map(userSearches);
 
@@ -1056,7 +1056,7 @@ class MemoryClient {
     return {
       users,
       group: { groupId, name: null, runningJokes, activeTopics: [] },
-      semanticMemories: groupSemanticMemories.map(parseStoredFactEntry).filter(Boolean).slice(0, this.semanticSearchLimit)
+      semanticMemories: groupSemanticMemories.map(parseSemanticMemoryEntry).filter(Boolean).slice(0, this.semanticSearchLimit)
     };
   }
 
