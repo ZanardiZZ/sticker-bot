@@ -163,8 +163,8 @@ const tests = [
       const reply = replies[0];
       
       assert(reply.includes('Top 5 usuários que enviaram figurinhas'), 'Should have header');
-      assert(reply.includes('1. 5511000000000 - 1 figurinhas'), 'Should show first user with phone number');
-      assert(reply.includes('2. 5511888888888 - 1 figurinhas'), 'Should show second user with phone number');
+      assert(reply.includes('1. 5511000000000 - 1 figurinhas') || reply.includes('2. 5511000000000 - 1 figurinhas'), 'Should show first user with phone number');
+      assert(reply.includes('1. 5511888888888 - 1 figurinhas') || reply.includes('2. 5511888888888 - 1 figurinhas'), 'Should show second user with phone number');
       assert(!reply.includes('undefined'), 'Should not contain undefined');
       assert(!reply.includes('Desconhecido'), 'Should use sender_id instead of "Desconhecido"');
       

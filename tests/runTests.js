@@ -31,6 +31,7 @@ const { tests: processIncomingMediaTests } = require('./unit/processIncomingMedi
 const { tests: dataUrlTests } = require('./unit/dataUrl.test');
 const { tests: commandUsageModelTests } = require('./unit/commandUsageModel.test');
 const { tests: imageEnhancerTests } = require('./services/imageEnhancer.test');
+const { tests: lemonadeImageGenerationTests } = require('./services/lemonadeImageGeneration.test');
 const { tests: processedMessagesModelTests } = require('./unit/processedMessagesModel.test');
 const { tests: messageHistoryRecoveryTests } = require('./unit/messageHistoryRecovery.test');
 const { tests: mediaDownloadRetryTests } = require('./unit/mediaDownloadRetry.test');
@@ -42,6 +43,8 @@ const { tests: recentIncidentTests } = require('./unit/recentIncidents.test');
 const { tests: conversationAgentMemoryTests } = require('./unit/conversationAgentMemory.test');
 const { tests: roadmapFeatureTests } = require('./unit/roadmapFeatures.test');
 const { tests: nsfwExternalTests } = require('./unit/nsfwExternal.test');
+const { tests: publicDmStickerAccessTests, cleanup: publicDmStickerAccessCleanup } = require('./unit/publicDmStickerAccess.test');
+const { tests: mercadoPagoPaymentTests, cleanup: mercadoPagoPaymentCleanup } = require('./unit/mercadoPagoPayment.test');
 
 
 async function runAllTests() {
@@ -74,6 +77,7 @@ async function runAllTests() {
     results.push(await runTestSuite('Process Incoming Media Tests', processIncomingMediaTests));
     results.push(await runTestSuite('Data URL Utils Tests', dataUrlTests));
     results.push(await runTestSuite('Image Enhancer Service Tests', imageEnhancerTests));
+    results.push(await runTestSuite('Lemonade Image Generation Tests', lemonadeImageGenerationTests));
     results.push(await runTestSuite('Processed Messages Model Tests', processedMessagesModelTests));
     results.push(await runTestSuite('Message History Recovery Tests', messageHistoryRecoveryTests));
     results.push(await runTestSuite('Media Download Retry Tests', mediaDownloadRetryTests));
@@ -85,6 +89,8 @@ async function runAllTests() {
     results.push(await runTestSuite('Conversation Agent Memory Tests', conversationAgentMemoryTests));
     results.push(await runTestSuite('Roadmap Feature Tests', roadmapFeatureTests));
     results.push(await runTestSuite('NSFW Gemma Tests', nsfwExternalTests));
+    results.push(await runTestSuite('Public DM Sticker Access Tests', publicDmStickerAccessTests));
+    results.push(await runTestSuite('Mercado Pago Orders Payment Tests', mercadoPagoPaymentTests));
     
     // Run animated sticker tests (different format)
     await runAnimatedStickerTests();
@@ -134,6 +140,12 @@ async function runAllTests() {
     // Cleanup test resources
     if (tagSimilarityCleanup) {
       tagSimilarityCleanup();
+    }
+    if (publicDmStickerAccessCleanup) {
+      await publicDmStickerAccessCleanup();
+    }
+    if (mercadoPagoPaymentCleanup) {
+      await mercadoPagoPaymentCleanup();
     }
   }
 }

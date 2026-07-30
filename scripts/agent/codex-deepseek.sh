@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-export DEEPSEEK_BASE_URL="${DEEPSEEK_BASE_URL:-http://YOUR_LLM_HOST:11434}"
+export DEEPSEEK_BASE_URL="${DEEPSEEK_BASE_URL:-http://127.0.0.1:11434}"
 export DEEPSEEK_MODEL="${DEEPSEEK_MODEL:-deepseek-coder:6.7b}"
 export LOCAL_OLLAMA_PROXY_HOST="${LOCAL_OLLAMA_PROXY_HOST:-127.0.0.1}"
 export LOCAL_OLLAMA_PROXY_PORT="${LOCAL_OLLAMA_PROXY_PORT:-11434}"

@@ -58,6 +58,17 @@ Comando implementado: `#pesquisar <consulta>`; retorna stickers disponíveis, pr
 
 ## Projetos de produto
 
+## Projeto de produto — acesso público via WhatsApp
+
+Plano detalhado em [`PUBLIC_DM_STICKER_ACCESS_PLAN.md`](./PUBLIC_DM_STICKER_ACCESS_PLAN.md).
+
+- 🟢 implementado: Fases 1 e 2 atrás de piloto fechado (`#ID`, 10/dia, cooldown de 10s, +30/dia para usuários registrados); Fases 3–5 permanecem futuras.
+- ⚪ futuro: Fase 3 (pagamento/doação);
+- ⚪ futuro: Fase 4 (liberação gradual);
+- ⚪ futuro: Fase 5 (escala e fila dedicada).
+
+**Não ativado:** o atendimento público continua fechado até a implementação e validação das gates.
+
 ### Geração de memes com feedback — 🔵 não iniciado como módulo independente
 
 `texto/áudio → transcrição → prompt visual → imagem → sticker → reações → ranking`

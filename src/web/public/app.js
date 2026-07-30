@@ -89,7 +89,7 @@ async function fetchBotConfig() {
   } catch (e) {
     console.warn('Could not fetch bot config:', e);
     // Set default config if API fails
-    BOT_CONFIG = { whatsappNumber: '5511000000000' };
+    BOT_CONFIG = { whatsappNumber: '' };
   }
 }
 
@@ -416,8 +416,6 @@ function showReadOnlyDetails(data) {
   const detailsEl = document.getElementById('stickerDetails');
   const timestamp = data.timestamp ? new Date(data.timestamp).toLocaleString('pt-BR') : 'N/A';
   const senderInfo = data.sender_id ? `Usuário: ${data.sender_id}` : 'Usuário: N/A';
-  const hashVisual = data.hash_visual ? `Hash Visual: ${data.hash_visual}` : '';
-  const hashMd5 = data.hash_md5 ? `MD5: ${data.hash_md5}` : '';
   const nsfwStatus = data.nsfw ? 'NSFW: Sim' : 'NSFW: Não';
   const randomCount = data.count_random || 0;
   const tags = data.tags || [];
@@ -426,8 +424,7 @@ function showReadOnlyDetails(data) {
     <strong>Detalhes do Sticker #${data.id}:</strong><br>
     ${senderInfo} • ${timestamp}<br>
     ${nsfwStatus} • Enviado ${randomCount} vezes<br>
-    ${hashVisual ? hashVisual + '<br>' : ''}
-    ${hashMd5 ? hashMd5 : ''}<br><br>
+    <br>
     <strong>Descrição completa:</strong><br>
     <div style="background:#fff; padding:8px; border-radius:4px; margin:4px 0; border: 1px solid #ddd;">
       ${data.description || 'Sem descrição'}
@@ -472,8 +469,6 @@ async function openEdit(id){
   const detailsEl = document.getElementById('stickerDetails');
   const timestamp = data.timestamp ? new Date(data.timestamp).toLocaleString('pt-BR') : 'N/A';
     const senderInfo = data.sender_id ? `Usuário: ${data.sender_id}` : 'Usuário: N/A';
-    const hashVisual = data.hash_visual ? `Hash Visual: ${data.hash_visual}` : '';
-    const hashMd5 = data.hash_md5 ? `MD5: ${data.hash_md5}` : '';
   const nsfwStatus = data.nsfw ? 'NSFW: Sim' : 'NSFW: Não';
   const randomCount = data.count_random || 0;
   
@@ -481,8 +476,6 @@ async function openEdit(id){
     <strong>Detalhes do Sticker:</strong><br>
     ${senderInfo} • ${timestamp}<br>
     ${nsfwStatus} • Enviado ${randomCount} vezes<br>
-    ${hashVisual ? hashVisual + '<br>' : ''}
-    ${hashMd5 ? hashMd5 : ''}
   `;
   
   modal.style.display = 'flex';

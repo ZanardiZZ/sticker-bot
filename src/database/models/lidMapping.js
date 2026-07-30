@@ -204,11 +204,13 @@ function getAllMappings() {
 function deleteLidMapping(lid) {
     const { db } = require('../connection');
     if (!lid) return;
+    const normalizedLid = normalizeJid(lid);
+    lidToPnCache.delete(normalizedLid);
     
     try {
         db.run(
             'DELETE FROM lid_mapping WHERE lid = ?',
-            [normalizeJid(lid)],
+            [normalizedLid],
             function (err) {
                 if (err) {
                     console.error('[DB] Erro ao remover mapeamento LID:', err);

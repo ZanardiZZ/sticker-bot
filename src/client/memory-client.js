@@ -208,26 +208,6 @@ function extractHeuristicFacts(messageText = '') {
 
   return collected;
 }
-
-function dedupeFacts(facts = []) {
-  const unique = new Map();
-  for (const fact of facts) {
-    const normalizedFact = normalizeFactText(fact?.fact);
-    if (!normalizedFact) continue;
-    const key = normalizedFact.toLowerCase();
-    const existing = unique.get(key);
-    if (!existing || Number(fact.confidence || 0) > Number(existing.confidence || 0)) {
-      unique.set(key, {
-        fact: normalizedFact,
-        category: fact.category || 'general',
-        confidence: Number.isFinite(Number(fact.confidence)) ? Number(fact.confidence) : 0.7,
-        source: fact.source || 'whatsapp_bot'
-      });
-    }
-  }
-  return Array.from(unique.values());
-}
-
 function classifyMemoryTier(entry = {}) {
   if (entry.memoryType) return entry.memoryType;
   if (entry.layer === 'explicit') return 'confirmed';

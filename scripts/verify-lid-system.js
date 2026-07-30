@@ -131,7 +131,7 @@ async function testBasicFunctionality() {
         // Teste JID Utils
         const { isPnUser, isLidUser, normalizeJid } = require('../src/utils/jidUtils');
         
-        if (isPnUser('5511000000000@s.whatsapp.net') && 
+        if (isPnUser('5511000000000@s.whatsapp.net') &&
             isLidUser('123456@lid') && 
             normalizeJid('  TEST@domain  ') === 'test@domain') {
             console.log('  ✅ JID Utils funcionando');

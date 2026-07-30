@@ -1,7 +1,7 @@
 # Fix: Large Queue Processing Errors
 
 ## Problem Statement
-**Issue Reporter**: EXAMPLE_USER_LID  
+**Issue Reporter**: 100000000000000@lid
 **Description**: "uma fila muito grande gerou vários erros de processamento" (a very large queue generated various processing errors)
 
 ## Root Cause Analysis
@@ -252,6 +252,6 @@ const queue = new MediaQueue({
 ---
 
 **Status**: ✅ Complete  
-**Reporter**: EXAMPLE_USER_LID  
+**Reporter**: 100000000000000@lid
 **Fix Version**: Current  
 **Files Changed**: 3 (mediaQueue.js, messageHandler.js, queueSizeLimit.test.js)

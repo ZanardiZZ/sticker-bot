@@ -203,6 +203,45 @@ function initializeTables(db) {
         )
       `);
 
+      // Direct-message authorization shared by the bot and web admin.
+      db.run(`
+        CREATE TABLE IF NOT EXISTS dm_users (
+          user_id TEXT PRIMARY KEY,
+          allowed INTEGER NOT NULL DEFAULT 0,
+          blocked INTEGER NOT NULL DEFAULT 0,
+          note TEXT,
+          last_activity INTEGER,
+          created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+          updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+        )
+      `);
+
+      // Public WhatsApp DM access: persistent daily quota and delivery audit.
+      // Access itself remains controlled by dm_users.allowed/blocked and feature flags.
+      db.run(`
+        CREATE TABLE IF NOT EXISTS public_dm_daily_usage (
+          user_id TEXT NOT NULL,
+          quota_day TEXT NOT NULL,
+          used_count INTEGER NOT NULL DEFAULT 0,
+          last_delivery_at INTEGER,
+          PRIMARY KEY (user_id, quota_day)
+        )
+      `);
+      db.run(`
+        CREATE TABLE IF NOT EXISTS public_dm_delivery_usage (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id TEXT NOT NULL,
+          media_id INTEGER NOT NULL,
+          request_message_id TEXT NOT NULL,
+          status TEXT NOT NULL CHECK (status IN ('reserved','sent','failed','uncertain')),
+          error_code TEXT,
+          requested_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          UNIQUE(user_id, request_message_id),
+          FOREIGN KEY(media_id) REFERENCES media(id) ON DELETE CASCADE
+        )
+      `);
+
       // Message-media link table for reaction tracking
       db.run(`
         CREATE TABLE IF NOT EXISTS message_media_links (
@@ -270,6 +309,31 @@ function initializeTables(db) {
           console.error('[DB] Failed to add media.hash_md5_stored:', err.message);
         }
       });
+
+      // Payment entitlements and Mercado Pago Orders integration.
+      db.run(`CREATE TABLE IF NOT EXISTS payment_access_tokens (
+        token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at INTEGER NOT NULL,
+        used_at INTEGER, created_at INTEGER NOT NULL
+      )`);
+      db.run(`CREATE TABLE IF NOT EXISTS payment_orders (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL, token_hash TEXT NOT NULL,
+        provider_order_id TEXT UNIQUE, idempotency_key TEXT NOT NULL UNIQUE,
+        external_reference TEXT NOT NULL UNIQUE, amount_cents INTEGER NOT NULL,
+        status TEXT NOT NULL, provider_status TEXT, provider_status_detail TEXT,
+        provider_response_json TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+        UNIQUE(token_hash, status)
+      )`);
+      db.run(`CREATE TABLE IF NOT EXISTS payment_webhook_events (
+        event_key TEXT PRIMARY KEY, provider TEXT NOT NULL, provider_order_id TEXT,
+        status TEXT NOT NULL, error_code TEXT, received_at INTEGER NOT NULL,
+        processed_at INTEGER
+      )`);
+      db.run(`CREATE TABLE IF NOT EXISTS dm_entitlements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, provider TEXT NOT NULL,
+        provider_order_id TEXT NOT NULL UNIQUE, provider_payment_id TEXT, status TEXT NOT NULL,
+        amount_cents INTEGER NOT NULL, granted_at INTEGER, expires_at INTEGER,
+        updated_at INTEGER NOT NULL, UNIQUE(provider, provider_payment_id)
+      )`);
 
       // Create indexes for performance
       createIndexes(db);
@@ -355,6 +419,11 @@ function createIndexes(db) {
   // Processed messages indexes
   db.run(`CREATE INDEX IF NOT EXISTS idx_processed_messages_chat_id ON processed_messages(chat_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_processed_messages_processed_at ON processed_messages(processed_at DESC)`);
+
+  // Public DM quota and delivery indexes
+  db.run(`CREATE INDEX IF NOT EXISTS idx_public_dm_daily_usage_day ON public_dm_daily_usage(quota_day DESC)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_public_dm_delivery_user_time ON public_dm_delivery_usage(user_id, requested_at DESC)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_public_dm_delivery_status ON public_dm_delivery_usage(status)`);
 
   // Message-media links indexes
   db.run(`CREATE INDEX IF NOT EXISTS idx_message_media_links_media_id ON message_media_links(media_id)`);

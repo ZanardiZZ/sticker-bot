@@ -2,9 +2,9 @@
 
 const fs = require('fs');
 const path = require('path');
-const { assert, assertEqual, runTestSuite } = require('<PROJECT_ROOT>/tests/helpers/testUtils');
+const { assert, assertEqual, runTestSuite } = require('../helpers/testUtils');
 
-const PROJECT_ROOT = '<PROJECT_ROOT>';
+const PROJECT_ROOT = require('path').resolve(__dirname, '../..');
 const STORAGE_DIR = path.join(PROJECT_ROOT, 'storage', 'data', 'conversations');
 
 function resolveFromRoot(relativePath) {

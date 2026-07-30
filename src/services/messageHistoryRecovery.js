@@ -192,48 +192,10 @@ async function recoverChatHistory(client, chatId, messageHandler) {
   }
 }
 
-/**
- * Recover message history for multiple chats
- * @param {Object} client - WhatsApp client instance
- * @param {Array<string>} chatIds - Array of chat IDs to recover history from
- * @param {Function} messageHandler - Function to handle each message
- * @returns {Promise<Object>} Recovery statistics
- */
-async function recoverMultipleChatHistories(client, chatIds, messageHandler) {
-  if (!HISTORY_RECOVERY_CONFIG.enabled) {
-    console.log('[HistoryRecovery] History recovery is disabled');
-    return { totalRecovered: 0, totalErrors: 0, chatsProcessed: 0 };
-  }
-
-  console.log(`[HistoryRecovery] Starting history recovery for ${chatIds.length} chats`);
-
-  let totalRecovered = 0;
-  let totalErrors = 0;
-  let chatsProcessed = 0;
-
-  // Process each chat sequentially to avoid overwhelming the system
-  for (const chatId of chatIds) {
-    const { recovered, errors } = await recoverChatHistory(client, chatId, messageHandler);
-    totalRecovered += recovered;
-    totalErrors += errors;
-    chatsProcessed++;
-
-    // Add delay between chats
-    if (chatsProcessed < chatIds.length) {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-    }
-  }
-
-  console.log(`[HistoryRecovery] Multi-chat recovery complete: ${totalRecovered} recovered from ${chatsProcessed} chats, ${totalErrors} errors`);
-
-  return { totalRecovered, totalErrors, chatsProcessed };
-}
-
 module.exports = {
   fetchChatHistory,
   filterUnprocessedMessages,
   processBatch,
   recoverChatHistory,
-  recoverMultipleChatHistories,
   HISTORY_RECOVERY_CONFIG
 };

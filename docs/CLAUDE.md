@@ -465,7 +465,7 @@ BOT_WHATSAPP_NUMBER=5511000000000
 **Optional Features:**
 ```env
 # OpenAI for AI tagging and meme generation
-OPENAI_API_KEY=sk-your-key
+OPENAI_API_KEY=<YOUR_OPENAI_API_KEY>
 OPENAI_API_KEY_MEMECREATOR=sk-meme-key
 
 # SMTP for email verification

@@ -6,7 +6,7 @@ const { withTyping } = require('../../utils/typingIndicator');
 const { normalizeJid } = require('../../utils/jidUtils');
 
 const DEFAULT_LOG_LINES = Number(process.env.GITHUB_ISSUE_LOG_LINES || 50);
-const AUTHORIZED_LID = normalizeJid(process.env.GITHUB_ISSUE_ALLOWED_LID || 'EXAMPLE_USER_LID');
+const AUTHORIZED_LID = normalizeJid(process.env.GITHUB_ISSUE_ALLOWED_LID || '');
 const GITHUB_REPO = process.env.GITHUB_ISSUE_REPO || 'ZanardiZZ/sticker-bot';
 const GITHUB_ASSIGNEES = (process.env.GITHUB_ISSUE_ASSIGNEES || 'copilot')
   .split(',')

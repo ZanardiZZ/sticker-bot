@@ -1,7 +1,7 @@
 # Fix: Stickers Sent in Groups Being Counted for the Group Instead of the User
 
 ## Issue Report
-**Reporter:** Example User (EXAMPLE_USER_LID)
+**Reporter:** Example User (100000000000000@lid)
 **Problem:** When users send stickers in group chats, the stickers were being counted for the group (ID: 1203630000...) instead of for the individual user. This affected both `#top5usuarios` (top 5 users) and `#perfil` (user profile) commands.
 
 ## Root Cause Analysis

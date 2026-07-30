@@ -107,6 +107,8 @@ let lastRequestFinishedAt = 0;
 let lastWppEventAt = 0;
 let lastClientRegisteredAt = 0;
 const recentIncomingMessageIds = new Map();
+const historicalChatCache = new Map();
+const HISTORICAL_CHAT_CACHE_TTL_MS = Number(process.env.WS_HISTORICAL_CHAT_CACHE_TTL_MS || 15000);
 
 function logVerbose(...args) {
   if (WS_VERBOSE_LOGS) {
@@ -197,47 +199,34 @@ async function resolveLid(jid) {
     // DB not available, continue to fallback
   }
 
-  // Fallback: try to resolve via WPPConnect getChatById
-  if (wppReady && wppClient) {
+  // WPPConnect exposes the authoritative LID↔phone mapping through
+  // getPnLidEntry() returns the authoritative phone mapping before sending.
+  if (wppReady && wppClient && typeof wppClient.getPnLidEntry === 'function') {
     try {
-      // WPPConnect getChatById may return contact info with @c.us
-      const chat = await wppClient.getChatById(jid);
-      if (chat && chat.id) {
-        const resolvedJid = chat.id._serialized || chat.id;
-        if (resolvedJid && resolvedJid.endsWith('@c.us')) {
-          lidToPnCache.set(jid, { pn: resolvedJid, ts: Date.now() });
-          // Save to DB
-          try {
-            const { getDb } = require('./database/connection');
-            const db = getDb();
-            db.run('INSERT OR REPLACE INTO lid_mapping (lid, pn) VALUES (?, ?)', [jid, resolvedJid]);
-          } catch {}
-          return resolvedJid;
-        }
-      }
-    } catch (wppErr) {
-      logVerbose('[LID] Failed to resolve via WPPConnect getChatById:', wppErr.message);
-    }
-  }
-
-  // Last resort: try checkNumberStatus with the LID directly
-  if (wppReady && wppClient) {
-    try {
-      const status = await wppClient.checkNumberStatus(jid);
-      if (status && status.id && status.id.endsWith('@c.us')) {
-        lidToPnCache.set(jid, { pn: status.id, ts: Date.now() });
+      const mapping = await wppClient.getPnLidEntry(jid);
+      const phoneWid = mapping?.phoneNumber;
+      const phoneJid = typeof phoneWid === 'string'
+        ? phoneWid
+        : (phoneWid?._serialized || phoneWid?.id || '');
+      const normalizedPhone = phoneJid && phoneJid.includes('@')
+        ? phoneJid
+        : (phoneJid ? `${phoneJid}@c.us` : '');
+      if (normalizedPhone && normalizedPhone.endsWith('@c.us')) {
+        lidToPnCache.set(jid, { pn: normalizedPhone, ts: Date.now() });
         try {
           const { getDb } = require('./database/connection');
           const db = getDb();
-          db.run('INSERT OR REPLACE INTO lid_mapping (lid, pn) VALUES (?, ?)', [jid, status.id]);
+          db.run('INSERT OR REPLACE INTO lid_mapping (lid, pn) VALUES (?, ?)', [jid, normalizedPhone]);
         } catch {}
-        return status.id;
+        logVerbose('[LID] Resolved via getPnLidEntry:', { lid: jid, pn: normalizedPhone });
+        return normalizedPhone;
       }
     } catch (wppErr) {
-      logVerbose('[LID] Failed to resolve via checkNumberStatus:', wppErr.message);
+      logVerbose('[LID] Failed to resolve via getPnLidEntry:', wppErr.message);
     }
   }
 
+  // WPPConnect 2.x is authoritative for LID → PN resolution via getPnLidEntry().
   logVerbose('[LID] Could not resolve LID to PN:', jid);
   return jid;
 }
@@ -474,68 +463,63 @@ function shouldProcessIncomingMessage(message) {
 }
 
 async function pollIncomingMessages() {
-  if (!wppReady || !wppClient) {
-    return;
-  }
-
-  const silenceMs = lastWppEventAt > 0 ? Date.now() - lastWppEventAt : Infinity;
-  if (FALLBACK_POLL_SILENCE_MS > 0 && silenceMs < FALLBACK_POLL_SILENCE_MS) {
-    return;
-  }
+  if (!wppReady || !wppClient) return;
 
   try {
-    const collected = [];
-    const seenIds = new Set();
-    const addMessages = (messages) => {
-      if (!Array.isArray(messages)) return;
-      for (const message of messages) {
-        const messageId = message?.id;
-        const dedupeKey = messageId || `${message?.chatId || message?.from || 'unknown'}:${message?.timestamp || Date.now()}`;
-        if (seenIds.has(dedupeKey)) continue;
-        seenIds.add(dedupeKey);
-        collected.push(message);
+    const chatIds = new Set();
+    let wildcardAuthorized = false;
+    for (const clients of clientsByToken.values()) {
+      for (const clientInfo of clients) {
+        for (const chatId of clientInfo.allowedChats || []) {
+          if (chatId === '*') wildcardAuthorized = true;
+          else if (chatId) chatIds.add(chatId);
+        }
       }
-    };
-
-    if (typeof wppClient.getAllUnreadMessages === 'function') {
-      addMessages(await wppClient.getAllUnreadMessages());
     }
 
-    if (typeof wppClient.getAllNewMessages === 'function') {
-      addMessages(await wppClient.getAllNewMessages());
+    // WPPConnect's getAllUnreadMessages/getAllNewMessages are unreliable on
+    // the deployed WA-JS build (they can throw inside WAPI). For wildcard
+    // clients, first enumerate only chats currently marked unread; this also
+    // covers direct conversations without scanning every historical chat.
+    if (wildcardAuthorized && (typeof wppClient.listChats === 'function' || typeof wppClient.getAllChats === 'function')) {
+      const chats = await (typeof wppClient.listChats === 'function'
+        ? wppClient.listChats()
+        : wppClient.getAllChats());
+      for (const chat of Array.isArray(chats) ? chats : []) {
+        const id = normalizeWppMessageId(chat?.id);
+        if (id) chatIds.add(id);
+      }
     }
 
-    if (collected.length === 0) {
-      return;
-    }
+    // Read only authorized chats; age filtering and dedupe keep this bounded.
+    if (chatIds.size === 0 || typeof wppClient.getAllMessagesInChat !== 'function') return;
 
     let forwarded = 0;
-    for (const message of collected) {
-      const rawTs = Number(message?.timestamp || 0);
-      const messageTsMs = rawTs > 0 ? (rawTs > 1e12 ? rawTs : rawTs * 1000) : 0;
-      const ageMs = messageTsMs > 0 ? Math.max(0, Date.now() - messageTsMs) : 0;
+    for (const chatId of chatIds) {
+      const messages = await Promise.race([
+        wppClient.getAllMessagesInChat(chatId, true, false),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('chat_history_poll_timeout')), 10000)),
+      ]);
+      if (!Array.isArray(messages)) continue;
 
-      if (FALLBACK_MAX_MESSAGE_AGE_MS > 0 && ageMs > FALLBACK_MAX_MESSAGE_AGE_MS) {
-        continue;
+      for (const message of messages) {
+        const rawTs = Number(message?.timestamp || 0);
+        const messageTsMs = rawTs > 0 ? (rawTs > 1e12 ? rawTs : rawTs * 1000) : 0;
+        const ageMs = messageTsMs > 0 ? Math.max(0, Date.now() - messageTsMs) : 0;
+        if (FALLBACK_MAX_MESSAGE_AGE_MS > 0 && (!messageTsMs || ageMs > FALLBACK_MAX_MESSAGE_AGE_MS)) continue;
+        if (!shouldProcessIncomingMessage(message)) continue;
+
+        lastWppEventAt = Date.now();
+        forwarded += 1;
+        await handleIncomingMessage(message);
       }
-
-      if (!shouldProcessIncomingMessage(message)) {
-        continue;
-      }
-
-      lastWppEventAt = Date.now();
-      forwarded += 1;
-      await handleIncomingMessage(message);
     }
 
-    if (forwarded > 0) {
-      console.log(`[WS] Polled ${forwarded} WhatsApp message(s) as fallback`);
-    }
+    if (forwarded > 0) console.log(`[WS] Polled ${forwarded} WhatsApp message(s) via authorized chat history`);
   } catch (error) {
-    console.warn('[WS] Failed to poll fallback messages:', error?.message || error);
+    console.warn('[WS] Failed to poll authorized chat history:', error?.message || error);
   }
 }
-
 function cacheMessage(messageId, rawMessage, wppOriginal) {
   cleanupExpiredMessageCache();
   setBoundedMapEntry(messageCache, messageId, {
@@ -1177,21 +1161,115 @@ function normalizeWppMessageId(value) {
   return String(value._serialized || value.id || value.msgId || value.messageId || "").trim();
 }
 
-function ensureWppMessageId(wppMessage) {
-  const candidates = [wppMessage?.id, wppMessage?.msgId, wppMessage?.messageId, wppMessage?.key?.id, wppMessage?.message?.key?.id];
+function extractNativeWppMessageId(message) {
+  const candidates = [
+    message?.id,
+    message?.msgId,
+    message?.messageId,
+    message?.key?.id,
+    message?.message?.key?.id,
+  ];
   for (const candidate of candidates) {
     const id = normalizeWppMessageId(candidate);
-    if (id) {
-      if (!wppMessage.id) wppMessage.id = id;
-      return id;
-    }
+    if (id && !id.startsWith('wpp-fallback-')) return id;
   }
+  return '';
+}
+
+function ensureWppMessageId(wppMessage) {
+  const nativeId = extractNativeWppMessageId(wppMessage);
+  if (nativeId) return nativeId;
+
+  // Synthetic IDs are for the local cache/deduplication only. Never mutate the
+  // original WPP object: WPPConnect expects message.id to be a native MsgKey
+  // containing _serialized when downloadMedia() is called.
   const seed = [wppMessage?.chatId || wppMessage?.from || "", wppMessage?.author || wppMessage?.sender?.id || "", wppMessage?.timestamp || "", wppMessage?.type || "", wppMessage?.caption || "", wppMessage?.body || wppMessage?.url || ""].join("|");
-  const fallback = "wpp-fallback-" + crypto.createHash("sha1").update(seed).digest("hex");
-  wppMessage.id = fallback;
-  if (!wppMessage.key || typeof wppMessage.key !== "object") wppMessage.key = {};
-  if (!wppMessage.key.id) wppMessage.key.id = fallback;
-  return fallback;
+  return "wpp-fallback-" + crypto.createHash("sha1").update(seed).digest("hex");
+}
+
+function messageTimestampSeconds(message) {
+  const value = Number(message?.timestamp || message?.messageTimestamp || message?.t || 0);
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return value > 1e12 ? value / 1000 : value;
+}
+
+function messageChatId(message) {
+  return normalizeWppMessageId(message?.chatId || message?.from || message?.key?.remoteJid || message?.remoteJid);
+}
+
+function messageAuthorId(message) {
+  return normalizeWppMessageId(message?.author || message?.sender?.id || message?.key?.participant || message?.participant);
+}
+
+function isMediaLikeWppMessage(message) {
+  return Boolean(message && (message.isMedia || message.url || message.body || message.directPath || message.mediaKey || ['image', 'video', 'audio', 'ptt', 'sticker', 'document'].includes(message.type)));
+}
+
+function chooseHistoricalMediaMessage(messages, rawMessage) {
+  if (!Array.isArray(messages) || !messages.length) return null;
+  const targetTs = messageTimestampSeconds(rawMessage);
+  const targetChat = messageChatId(rawMessage);
+  const targetAuthor = messageAuthorId(rawMessage);
+  const targetType = rawMessage?.type || '';
+  const candidates = messages.map((candidate) => {
+    if (!isMediaLikeWppMessage(candidate)) return null;
+    const chat = messageChatId(candidate);
+    if (targetChat && chat && chat !== targetChat) return null;
+    const typeScore = targetType && candidate.type === targetType ? 4 : 0;
+    const author = messageAuthorId(candidate);
+    const authorScore = targetAuthor && author && targetAuthor === author ? 6 : 0;
+    const candidateTs = messageTimestampSeconds(candidate);
+    const delta = targetTs && candidateTs ? Math.abs(targetTs - candidateTs) : Infinity;
+    if (targetTs && candidateTs && delta > 120) return null;
+    const timeScore = Number.isFinite(delta) ? Math.max(0, 8 - Math.min(8, delta)) : 0;
+    const nativeScore = extractNativeWppMessageId(candidate) ? 2 : 0;
+    return { candidate, score: typeScore + authorScore + timeScore + nativeScore, delta };
+  }).filter(Boolean).sort((a, b) => b.score - a.score || a.delta - b.delta);
+  const best = candidates[0];
+  const second = candidates[1];
+  if (!best || best.score < 8) return null;
+  if (second && best.score === second.score && best.delta === second.delta) return null;
+  return best.candidate;
+}
+
+async function recoverHistoricalWppMessage(cachedMsg) {
+  const raw = cachedMsg?.raw;
+  const chatId = messageChatId(raw);
+  if (!chatId || typeof wppClient?.getAllMessagesInChat !== 'function') return null;
+  try {
+    // WPPConnect documents getAllMessagesInChat(chatId, includeMe,
+    // includeNotifications). It is deprecated in favor of getMessages, but is
+    // present in the deployed v2.x client and is the safest recovery fallback.
+    const cachedHistory = historicalChatCache.get(chatId);
+    let history;
+    if (cachedHistory && (Date.now() - cachedHistory.loadedAt) < HISTORICAL_CHAT_CACHE_TTL_MS) {
+      history = cachedHistory.messages;
+    } else {
+      history = await Promise.race([
+        wppClient.getAllMessagesInChat(chatId, true, false),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('history_lookup_timeout')), 15000)),
+      ]);
+      if (Array.isArray(history)) {
+        historicalChatCache.set(chatId, { loadedAt: Date.now(), messages: history });
+      }
+    }
+    const recovered = chooseHistoricalMediaMessage(history, raw);
+    if (recovered) {
+      cachedMsg.wppOriginal = recovered;
+      cachedMsg.historyRecovered = true;
+      logMediaDebug('[WS] Recovered WPP media message from chat history:', {
+        chatId,
+        type: recovered.type,
+        nativeId: Boolean(extractNativeWppMessageId(recovered)),
+        directPath: Boolean(recovered.directPath),
+        mediaKey: Boolean(recovered.mediaKey),
+      });
+    }
+    return recovered;
+  } catch (error) {
+    console.warn('[WS] History media recovery failed:', error.message);
+    return null;
+  }
 }
 function convertWPPMessageToBaileys(wppMessage) {
   try {
@@ -1231,7 +1309,7 @@ function convertWPPMessageToBaileys(wppMessage) {
       key: {
         remoteJid: chatIdStr,
         fromMe: fromMe,
-        id: wppMessage.id,
+        id: messageId,
         participant: senderId
       },
       messageTimestamp: wppMessage.timestamp || Math.floor(Date.now() / 1000),
@@ -1933,7 +2011,9 @@ async function handleGetChats(ws, msg) {
       return;
     }
 
-    const rawChats = await wppClient.getAllChats();
+    const rawChats = await (typeof wppClient.listChats === 'function'
+      ? wppClient.listChats()
+      : wppClient.getAllChats());
 
     const serializeWid = (wid) => {
       if (!wid) return wid;
@@ -1972,7 +2052,9 @@ async function handleGetAllGroupsMetadata(ws, msg) {
       return;
     }
 
-    const rawChats = await wppClient.getAllChats();
+    const rawChats = await (typeof wppClient.listChats === 'function'
+      ? wppClient.listChats()
+      : wppClient.getAllChats());
 
     // Normalize Wid objects to serialized strings so clients don't have to handle Wid
     const serializeWid = (wid) => {
@@ -2067,8 +2149,10 @@ async function handleDownloadMedia(ws, msg) {
 
     logMediaDebug('[WS] Found message in cache, downloading media...');
 
-    // Get the original WPPConnect message (not Baileys format)
-    const wppMessage = cachedMsg.wppOriginal;
+    // Get the original WPPConnect message (not Baileys format). The
+    // Baileys-compatible object can contain a synthetic cache ID and must never
+    // be passed to WPPConnect's downloadMedia().
+    let wppMessage = cachedMsg.wppOriginal;
 
     if (!wppMessage) {
       console.error('[WS] Original WPP message not found in cache');
@@ -2096,10 +2180,18 @@ async function handleDownloadMedia(ws, msg) {
       bodyLength: wppMessage.body?.length || 0
     });
 
-    // WPPConnect: Use custom downloader for GIFs and stickers to get full media instead of thumbnail
-    let mediaData;
+    // If the event was incomplete, resolve it from WPPConnect chat history
+    // before attempting any native download. This is the important path for
+    // ID-less incoming media events.
+    if (!wppMessage.directPath || !wppMessage.mediaKey) {
+      const recovered = await recoverHistoricalWppMessage(cachedMsg);
+      if (recovered) wppMessage = recovered;
+    }
 
-    const hasEncryptedMedia = Boolean(wppMessage.directPath && wppMessage.mediaKey);
+    // WPPConnect: use the encrypted downloader whenever possible. It does not
+    // require a native message ID and works for images, videos and stickers.
+    let mediaData;
+    let hasEncryptedMedia = Boolean(wppMessage.directPath && wppMessage.mediaKey);
 
     mediaData = await downloadLimiter.run(async () => {
       if (hasEncryptedMedia) {
@@ -2116,11 +2208,18 @@ async function handleDownloadMedia(ws, msg) {
           return downloadedData;
         } catch (customErr) {
           console.warn('[WS] Custom encrypted ' + mediaLabel + ' download failed:', customErr.message);
-          console.warn('[WS] Falling back to standard downloadMedia...');
-          return wppClient.downloadMedia(wppMessage);
+          console.warn('[WS] Encrypted media download failed:', customErr.message);
+          const nativeId = extractNativeWppMessageId(wppMessage);
+          if (nativeId) {
+            logMediaDebug('[WS] Retrying failed encrypted download with native WPP downloadMedia');
+            return wppClient.downloadMedia(wppMessage);
+          }
+          throw customErr;
         }
       }
-      logMediaDebug('[WS] Downloading media using standard downloadMedia...');
+      const nativeId = extractNativeWppMessageId(wppMessage);
+      if (!nativeId) throw new Error('native_message_id_missing_after_history_recovery');
+      logMediaDebug('[WS] Downloading media using standard downloadMedia with native message object');
       return Promise.race([
         wppClient.downloadMedia(wppMessage),
         new Promise((_, reject) =>

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10151f">
+  <title>Liberar acesso — Sticker Browser</title>
+  <link rel="stylesheet" href="/payment.css?v=20260729-mp-orders">
+  <script src="https://www.mercadopago.com/v2/security.js" view="checkout"></script>
+  <script src="https://sdk.mercadopago.com/js/v2" defer></script>
+  <script src="/payment.js?v=20260729-mp-orders" defer></script>
+</head>
+<body>
+  <main class="payment-shell">
+    <section class="payment-card" aria-labelledby="payment-title">
+      <div class="eyebrow">STICKER BROWSER · ACESSO</div>
+      <h1 id="payment-title">Libere seu acesso</h1>
+      <p class="lead">Pagamento único para usar o acesso público por <strong id="plan-days">30 dias</strong>, respeitando a quota diária e o cooldown do serviço.</p>
+      <div id="payment-message" class="message" role="status">Carregando checkout…</div>
+      <div id="payment-config-error" class="error" hidden>O checkout ainda não está configurado para testes. Nenhum pagamento foi iniciado.</div>
+
+      <div id="payment-form-area" hidden>
+        <label class="field-label" for="payer-email">Seu e-mail</label>
+        <input id="payer-email" type="email" autocomplete="email" placeholder="voce@exemplo.com" required>
+        <p class="field-help">Usaremos este e-mail somente para a transação no Mercado Pago.</p>
+        <div class="field-grid">
+          <label class="field-label" for="payer-first-name">Nome</label>
+          <input id="payer-first-name" type="text" autocomplete="given-name" maxlength="80" placeholder="Seu nome">
+          <label class="field-label" for="payer-last-name">Sobrenome</label>
+          <input id="payer-last-name" type="text" autocomplete="family-name" maxlength="80" placeholder="Seu sobrenome">
+        </div>
+        <label class="field-label" for="payer-identification-number">CPF (opcional)</label>
+        <div class="identification-row"><select id="payer-identification-type" aria-label="Tipo de identificação"><option value="CPF">CPF</option></select><input id="payer-identification-number" type="text" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="Somente se solicitado pelo Mercado Pago"></div>
+        <p class="field-help">O CPF, quando informado, é enviado diretamente ao Mercado Pago para análise do pagamento e não é armazenado pelo Sticker Browser.</p>
+
+        <div class="method-tabs" role="tablist" aria-label="Meio de pagamento">
+          <button id="card-tab" class="method-tab active" type="button" role="tab" aria-selected="true">Cartão</button>
+          <button id="pix-tab" class="method-tab" type="button" role="tab" aria-selected="false">PIX</button>
+        </div>
+
+        <section id="card-panel" class="method-panel" role="tabpanel">
+          <div id="cardPaymentBrick_container"></div>
+          <button id="card-submit" class="primary-button" type="button">Pagar com cartão</button>
+        </section>
+
+        <section id="pix-panel" class="method-panel" role="tabpanel" hidden>
+          <button id="pix-submit" class="primary-button" type="button">Gerar cobrança PIX</button>
+          <div id="pix-result" class="pix-result" hidden>
+            <p>Escaneie o QR Code ou copie o código abaixo. Esta tela será atualizada após a confirmação.</p>
+            <img id="pix-qr" alt="QR Code PIX" hidden>
+            <textarea id="pix-copy" readonly aria-label="Código PIX copia e cola"></textarea>
+            <button id="pix-copy-button" class="secondary-button" type="button">Copiar código PIX</button>
+          </div>
+        </section>
+      </div>
+
+      <div id="status-area" class="status-area" hidden>
+        <strong id="status-title"></strong>
+        <p id="status-detail"></p>
+      </div>
+      <p class="security-note">O cartão é tokenizado pelo Mercado Pago. O Sticker Browser não recebe nem armazena número do cartão ou CVV.</p>
+    </section>
+  </main>
+</body>
+</html>

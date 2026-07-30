@@ -249,7 +249,7 @@ Testes incluem:
 
 ## 📖 Referências
 
-- **Plan original:** `/root/.claude/plans/iterative-sparking-sky.md`
+- **Plan original:** `<HOST_PATH>/.claude/plans/iterative-sparking-sky.md`
 - **Código principal:** `services/openaiTools.js` (agora com 15 tools)
 - **System prompt:** `services/adminWatcher.js` (atualizado com instruções de correção)
 - **Testes:** `test-remediation-tools.js` (14 testes automatizados)

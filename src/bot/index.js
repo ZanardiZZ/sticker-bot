@@ -100,7 +100,7 @@ async function syncAllGroupNames(client) {
   }
 
   try {
-    const chats = await client.getAllChats();
+    const chats = await (typeof client.listChats === 'function' ? client.listChats() : client.getAllChats());
     let synced = 0;
 
     for (const chat of Array.isArray(chats) ? chats : []) {

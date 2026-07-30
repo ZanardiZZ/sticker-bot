@@ -5,6 +5,7 @@ const { authMiddleware, registerAuthRoutes, requireLogin, requireAdmin } = requi
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const ENABLE_INTERNAL_ANALYTICS = process.env.ENABLE_INTERNAL_ANALYTICS === '1';
 const { ROOT_DIR, MEDIA_DIR, BOT_MEDIA_DIR, OLD_STICKERS_DIR } = require('../paths');
 
@@ -18,6 +19,8 @@ try {
 } catch (e) {
   console.warn('[ENV] dotenv não carregado:', e.message);
 }
+const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+const JWT_SECRET = process.env.JWT_SECRET || SESSION_SECRET;
 const session = require('express-session');
 const cookieParser = require('cookie-parser');
 const bcrypt = require('bcryptjs');
@@ -72,7 +75,7 @@ app.use(cookieParser());
 
 // Session middleware must run before CSRF protection
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
+  secret: SESSION_SECRET,
   resave: false,
   // Não criar sessão/cookie para visitantes anônimos que apenas leem o catálogo.
   saveUninitialized: false,
@@ -119,7 +122,7 @@ app.use(globalLimiter);
 app.use(async (req, res, next) => {
   try {
     const jwt = require('jsonwebtoken');
-    const JWT_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET || 'dev-secret-change-me';
+    const JWT_SECRET = JWT_SECRET_VALUE;
     const getCookieName = () => process.env.NODE_ENV === 'production' ? '__Host-sid' : 'sid';
     
     const cookieName = getCookieName();
@@ -165,6 +168,31 @@ app.use(async (req, res, next) => {
 
 const { ensurePrivacySchema, runPrivacyRetention } = require('../services/privacyRetention');
 const { db, findDuplicateMedia, getDuplicateMediaDetails, deleteDuplicateMedia, deleteMediaByIds, getDuplicateStats } = require('../database/index.js');
+
+function recordAdminAudit(req, action, entity, entityId = null, details = {}) {
+  if (!req?.user || !db) return;
+  const safeDetails = {};
+  for (const [key, value] of Object.entries(details || {})) {
+    if (['password', 'token', 'secret', 'cookie', 'authorization'].some(part => key.toLowerCase().includes(part))) continue;
+    safeDetails[key] = typeof value === 'string' ? value.slice(0, 300) : value;
+  }
+  db.run(`INSERT INTO admin_audit_log (created_at, admin_id, admin_username, action, entity, entity_id, details_json) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [Date.now(), req.user.id || null, String(req.user.username || '').slice(0, 160), action, entity, entityId == null ? null : String(entityId).slice(0, 160), JSON.stringify(safeDetails)],
+    (err) => { if (err) console.warn('[ADMIN_AUDIT] write failed:', err.message); });
+}
+
+// Capture only administrative mutations after the handler has decided the outcome.
+app.use('/api/admin', (req, res, next) => {
+  if (!['POST', 'PATCH', 'PUT', 'DELETE'].includes(String(req.method || '').toUpperCase())) return next();
+  res.on('finish', () => {
+    if (res.statusCode >= 200 && res.statusCode < 400 && req.user) {
+      recordAdminAudit(req, String(req.method).toLowerCase(), req.path, req.params?.id || req.params?.userId || null, { status: res.statusCode });
+    }
+  });
+  next();
+});
+
+const paymentService = require('../services/mercadoPagoPayment');
 let whatsappClient = null;
 let whatsappClientPromise = null;
 
@@ -177,7 +205,7 @@ async function resolveWhatsAppClient() {
     }
   }
 
-  if (whatsappClient && typeof whatsappClient.getAllChats === 'function') {
+  if (whatsappClient && (typeof whatsappClient.listChats === 'function' || typeof whatsappClient.getAllChats === 'function')) {
     return whatsappClient;
   }
 
@@ -268,7 +296,31 @@ function initAnalyticsTables(db) {
     expires_at INTEGER,
     created_at INTEGER NOT NULL,
     created_by TEXT
+  )`);  db.run(`CREATE TABLE IF NOT EXISTS admin_audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at INTEGER NOT NULL,
+    admin_id INTEGER,
+    admin_username TEXT,
+    action TEXT NOT NULL,
+    entity TEXT NOT NULL,
+    entity_id TEXT,
+    details_json TEXT
   )`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_admin_audit_created_at ON admin_audit_log(created_at DESC)`);
+}
+
+function initAdminAuditTable(db) {
+  db.run(`CREATE TABLE IF NOT EXISTS admin_audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at INTEGER NOT NULL,
+    admin_id INTEGER,
+    admin_username TEXT,
+    action TEXT NOT NULL,
+    entity TEXT NOT NULL,
+    entity_id TEXT,
+    details_json TEXT
+  )`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_admin_audit_created_at ON admin_audit_log(created_at DESC)`);
 }
 
 function initDmUsersTable(db) {
@@ -376,6 +428,8 @@ async function ensureInitialAdmin() {
 if (ENABLE_INTERNAL_ANALYTICS){
   initAnalyticsTables(db);
 }
+// Auditoria administrativa é independente do analytics interno e permanece ativa.
+initAdminAuditTable(db);
 initUsersTable(db);
 ensureInitialAdmin().catch(err => console.error('[INIT] migration error:', err));
 initDmUsersTable(db);
@@ -413,6 +467,7 @@ const {
   getBotConfig,
   setBotConfig
 } = require('./dataAccess.js');
+const publicDmAccess = require('../services/publicDmStickerAccess');
 const { DEFAULT_DELETE_VOTE_THRESHOLD } = require('../../config/botDefaults');
 const { invalidateVoteThresholdCache } = require('../commands/handlers/delete');
 
@@ -478,10 +533,10 @@ app.get('/api/admin/connected-groups', requireAdmin, async (req, res) => {
     });
 
     const client = await resolveWhatsAppClient();
-    if (client && typeof client.getAllChats === 'function') {
+    if (client && (typeof client.listChats === 'function' || typeof client.getAllChats === 'function')) {
       try {
         console.log('[DEBUG] Getting chats from WhatsApp client...');
-        const chats = await client.getAllChats();
+        const chats = await (typeof client.listChats === 'function' ? client.listChats() : client.getAllChats());
         const whatsappGroups = chats.filter((c) => isGroupId(c?.id));
         console.log('[DEBUG] WhatsApp groups found:', whatsappGroups.length);
 
@@ -627,7 +682,10 @@ app.use(express.static(PUBLIC_DIR, {
   etag: false,
   lastModified: false,
   maxAge: 0,
-  setHeaders: (res) => res.setHeader('Cache-Control', 'no-store'),
+  setHeaders: (res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  },
 }));
 console.timeEnd('[BOOT] static');
 
@@ -718,6 +776,109 @@ app.get('/api/my-stickers', requireLogin, async (req, res) => {
 app.get('/api/csrf-token', (req, res) => {
   res.json({ csrfToken: getCSRFToken(req, res) });
 });
+
+// Mercado Pago Checkout Transparente via Orders.
+app.get('/api/payments/mercadopago/config', async (req, res) => {
+  try {
+    const context = await paymentService.getTokenContext(req.query.token);
+    const config = paymentService.getConfig();
+    if (!context) return res.status(400).json({ valid: false, error: 'invalid_or_expired_access_link' });
+    return res.json({
+      valid: true,
+      configured: paymentService.isConfigured(),
+      publicKey: config.publicKey || null,
+      amountCents: config.amountCents,
+      planDays: config.planDays,
+      currency: 'BRL',
+      environment: config.environment
+    });
+  } catch (error) {
+    console.error('[PAYMENTS] config error:', error?.message || error);
+    return res.status(500).json({ valid: false, error: 'payment_configuration_unavailable' });
+  }
+});
+
+app.post('/api/payments/mercadopago/order', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const email = String(body.payer?.email || '').trim().toLowerCase();
+    const order = await paymentService.createOrder({
+      rawToken: body.access_token || body.accessToken,
+      method: body.method,
+      token: body.token,
+      paymentMethodId: body.payment_method_id,
+      paymentType: body.payment_type_id || body.payment_type,
+      installments: body.installments,
+      deviceId: body.device_id || body.deviceId,
+      payer: {
+        email, first_name: body.payer?.first_name, last_name: body.payer?.last_name,
+        identification: body.payer?.identification
+      }
+    });
+    return res.status(201).json(order);
+  } catch (error) {
+    const known = new Map([
+      ['invalid_or_expired_access_token', [400, 'Este link de pagamento expirou. Solicite um novo link pelo WhatsApp.']],
+      ['mercadopago_not_configured', [503, 'O checkout de testes ainda não está configurado.']],
+      ['invalid_payment_method', [400, 'Meio de pagamento inválido.']],
+      ['invalid_card_payment', [400, 'Não foi possível validar os dados do cartão.']],
+      ['invalid_payer_email', [400, 'Informe um e-mail válido.']]
+    ]);
+    const [status, message] = known.get(error.message) || [502, 'O Mercado Pago não aprovou a criação do pagamento. Tente novamente.'];
+    if (status >= 500) console.error('[PAYMENTS] order error:', error?.message || error, error?.providerCode || '');
+    return res.status(status).json({ error: error.message, message });
+  }
+});
+
+app.get('/api/payments/mercadopago/status', async (req, res) => {
+  try {
+    return res.json(await paymentService.getStatus(req.query.token));
+  } catch (error) {
+    console.error('[PAYMENTS] status error:', error?.message || error);
+    return res.status(500).json({ error: 'payment_status_unavailable', message: 'Não foi possível consultar o status agora.' });
+  }
+});
+
+app.post('/api/payments/mercadopago/webhook', async (req, res) => {
+  const body = req.body || {};
+  const orderId = String(body.data?.id || req.query['data.id'] || req.query.id || '').trim();
+  const requestId = String(req.headers['x-request-id'] || '').trim();
+  const signature = String(req.headers['x-signature'] || '').trim();
+  if (!orderId || !paymentService.verifyWebhookSignature({ signature, requestId, dataId: orderId })) {
+    console.warn('[PAYMENTS] webhook rejeitado: assinatura ou order ausente');
+    return res.status(401).json({ error: 'invalid_webhook' });
+  }
+  const eventType = String(body.type || req.query.type || 'order');
+  const eventKey = `mercadopago:${eventType}:${orderId}:${requestId || 'unsigned'}`;
+  try {
+    await paymentService.processWebhook({ eventKey, orderId });
+    return res.status(200).json({ received: true });
+  } catch (error) {
+    const code = String(error?.message || error);
+    console.error('[PAYMENTS] webhook processing error:', code);
+    // Mercado Pago's dashboard test may use a synthetic/nonexistent Order ID.
+    // The event was authenticated, but it cannot grant entitlement without a
+    // real provider Order linked to a local payment record. Acknowledge these
+    // benign provider-side test/unknown-order cases to avoid endless retries;
+    // keep invalid signatures as 401 and unexpected failures as 500.
+    if (['payment_order_not_linked', 'mercadopago_http_400', 'mercadopago_http_404'].includes(code)) {
+      return res.status(200).json({ received: true, ignored: true });
+    }
+    return res.status(500).json({ error: 'webhook_processing_failed' });
+  }
+});
+
+app.get('/api/admin/payments/summary', requireAdmin, async (req, res) => {
+  try {
+    const orders = await new Promise((resolve, reject) => db.all(`SELECT id,user_id,provider_order_id,status,provider_status,amount_cents,created_at,updated_at FROM payment_orders ORDER BY created_at DESC LIMIT 100`, (err, rows) => err ? reject(err) : resolve(rows || [])));
+    const entitlements = await new Promise((resolve, reject) => db.all(`SELECT user_id,provider,provider_order_id,status,amount_cents,granted_at,expires_at,updated_at FROM dm_entitlements ORDER BY updated_at DESC LIMIT 100`, (err, rows) => err ? reject(err) : resolve(rows || [])));
+    return res.json({ orders, entitlements });
+  } catch (error) {
+    console.error('[PAYMENTS] admin summary error:', error?.message || error);
+    return res.status(500).json({ error: 'payment_summary_unavailable' });
+  }
+});
+
 
 const privacyRequestRateLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 3, standardHeaders: true, legacyHeaders: false });
 app.post('/api/privacy/requests', privacyRequestRateLimit, async (req, res) => {
@@ -1009,6 +1170,15 @@ app.get('/admin', requireAdmin, (req, res) => {
 });
 app.use('/admin-assets', express.static(path.join(__dirname, 'public')));
 
+// Auditoria administrativa — ações relevantes, sem expor logs técnicos ou segredos.
+app.get('/api/admin/audit', requireAdmin, (req, res) => {
+  const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 50, 1), 200);
+  db.all(`SELECT id, created_at, admin_id, admin_username, action, entity, entity_id, details_json FROM admin_audit_log ORDER BY created_at DESC LIMIT ?`, [limit], (err, rows) => {
+    if (err) return res.status(500).json({ error: 'admin_audit_unavailable' });
+    res.json({ entries: (rows || []).map(row => ({ ...row, details: (() => { try { return JSON.parse(row.details_json || '{}'); } catch (_) { return {}; } })() })) });
+  });
+});
+
 // APIs administrativas de privacidade
 app.get('/api/admin/privacy/requests', requireAdmin, (req, res) => {
   const status=['pending','in_progress','completed','rejected'].includes(String(req.query.status||''))?String(req.query.status):null; const limit=Math.min(Math.max(Number.parseInt(req.query.limit,10)||100,1),200); const params=status?[status,limit]:[limit]; const where=status?'WHERE status = ?':'';
@@ -1227,6 +1397,15 @@ app.delete('/api/admin/dm-users/:userId', requireAdmin, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: 'db_error', details: err.message });
+  }
+});
+
+app.get('/api/admin/public-dm/status', requireAdmin, async (req, res) => {
+  try {
+    const usage = await publicDmAccess.listUsage(req.query.limit);
+    res.json({ settings: publicDmAccess.getPublicDmSettings(), usage });
+  } catch (err) {
+    res.status(500).json({ error: 'public_dm_status_unavailable', message: 'Não foi possível carregar o status do acesso público.' });
   }
 });
 
@@ -1607,6 +1786,45 @@ app.get('/api/admin/duplicates/:hashVisual', requireAdmin, async (req, res) => {
   }
 });
 
+// Delete several duplicate groups in one authenticated request. Processing remains
+// sequential to keep SQLite/file operations bounded, while avoiding one HTTP/session
+// round-trip per group through the reverse proxy.
+app.delete('/api/admin/duplicates/bulk', requireAdmin, async (req, res) => {
+  const hashes = Array.isArray(req.body?.hashVisuals) ? req.body.hashVisuals : [];
+  const uniqueHashes = [...new Set(hashes.filter((value) => typeof value === 'string' && value.length > 0))];
+  if (uniqueHashes.length === 0 || uniqueHashes.length > 50) {
+    return res.status(400).json({ error: 'invalid_duplicate_groups', message: 'Informe entre 1 e 50 grupos de duplicatas.' });
+  }
+
+  const results = [];
+  for (const hashVisual of uniqueHashes) {
+    try {
+      const beforeDetails = await getDuplicateMediaDetails(hashVisual);
+      const deletedCount = await deleteDuplicateMedia(hashVisual, true);
+      const afterDetails = await getDuplicateMediaDetails(hashVisual);
+      results.push({
+        hash_visual: hashVisual,
+        ok: true,
+        deleted_count: deletedCount,
+        before_count: beforeDetails.length,
+        remaining_count: afterDetails.length
+      });
+    } catch (error) {
+      console.error('[ADMIN] Error deleting duplicate group in bulk:', error.message);
+      results.push({ hash_visual: hashVisual, ok: false, error: 'delete_failed' });
+    }
+  }
+
+  const failed = results.filter((result) => !result.ok).length;
+  res.status(failed === results.length ? 500 : 200).json({
+    ok: failed === 0,
+    processed: results.length,
+    success_count: results.length - failed,
+    error_count: failed,
+    results
+  });
+});
+
 // Delete duplicate media (auto-keep oldest)
 app.delete('/api/admin/duplicates/:hashVisual', requireAdmin, async (req, res) => {
   try {
@@ -1625,14 +1843,9 @@ app.delete('/api/admin/duplicates/:hashVisual', requireAdmin, async (req, res) =
     const afterDetails = await getDuplicateMediaDetails(hashVisual);
     console.log(`[ADMIN] After deletion: ${afterDetails.length} files remain, ${deletedCount} were deleted`);
     
-    // Double-check by querying findDuplicateMedia to see if group still exists
-    const allDuplicates = await findDuplicateMedia(100);
-    const groupStillExists = allDuplicates.find(d => d.hash_visual === hashVisual);
-    if (groupStillExists) {
-      console.error('[ADMIN] ERROR: Group %s still appears in duplicates list after deletion!', hashVisual, groupStillExists);
-    } else {
-      console.log(`[ADMIN] Confirmed: Group ${hashVisual} no longer appears in duplicates list`);
-    }
+    // The post-delete detail query is the bounded confirmation. Avoid a full
+    // duplicate-list scan here: this route can be called once per selected group.
+    console.log(`[ADMIN] Confirmed deletion state for ${hashVisual}: ${afterDetails.length} files remain`);
     
     console.log(`[ADMIN] Completed deletion for hash ${hashVisual}: deleted ${deletedCount}, remaining ${afterDetails.length}`);
     res.json({ 
@@ -1700,7 +1913,7 @@ app.get('/', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 app.get('/login', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'login.html')));
 app.get('/register', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'register.html')));
 app.get('/ranking/tags', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'ranking-tags.html')));
-app.get('/ranking/users', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'ranking-users.html')));
+app.get('/ranking/users', requireAdmin, (_req, res) => res.sendFile(path.join(__dirname, 'admin-ranking-users.html')));
 app.get('/privacidade', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'privacy.html')));
 function escapeHtmlAttribute(value) {
   return String(value ?? '').replace(/[&<>\"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', "'": '&#39;' }[char]));
@@ -1757,12 +1970,22 @@ app.get('/api/admin/reactions/analytics', requireAdmin, async (req, res) => {
 });
 
 // Health
-app.get('/api/health/deep', requireAdmin, async (_req, res) => {
+async function collectDeepHealth() {
   const checks = { process: { ok: true }, memory: { ok: false }, whatsapp: { ok: false }, ai: { ok: false } };
   try { const m = require('../client/memory-client'); const h = await m.healthcheck(); checks.memory = { ok: !!h.ok, url: '127.0.0.1:1933' }; } catch (_) { checks.memory = { ok: false, error: 'memory_unavailable' }; }
   try { const c = global.getCurrentWhatsAppClient ? global.getCurrentWhatsAppClient() : null; checks.whatsapp = { ok: !!c, state: c && c.getConnectionState ? await c.getConnectionState() : 'unknown' }; } catch (_) { checks.whatsapp = { ok: false, error: 'whatsapp_unavailable' }; }
   try { const axios = require('axios'); const base = String(process.env.CONVERSATION_BASE_URL || '').replace(/\/$/, ''); const r = await axios.get(base + '/models', { timeout: 4000 }); checks.ai = { ok: r.status === 200 }; } catch (_) { checks.ai = { ok: false, error: 'ai_unavailable' }; }
-  const ok = Object.values(checks).every((x) => x.ok); res.status(ok ? 200 : 503).json({ ok, checks, ts: new Date().toISOString() });
+  return { ok: Object.values(checks).every((x) => x.ok), checks, ts: new Date().toISOString() };
+}
+app.get('/api/health/deep', requireAdmin, async (_req, res) => {
+  const payload = await collectDeepHealth();
+  res.status(payload.ok ? 200 : 503).json(payload);
+});
+// Admin UI endpoint: returns the same sanitized diagnosis with HTTP 200 even when degraded,
+// so a known dependency outage is rendered as degraded rather than logged as a browser request error.
+app.get('/api/admin/health/deep', requireAdmin, async (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json(await collectDeepHealth());
 });
 app.get('/healthz', (_req, res) => {
   res.set('Cache-Control', 'no-store');
@@ -1772,7 +1995,7 @@ app.get('/healthz', (_req, res) => {
 // Bot Configuration
 app.get('/api/bot-config', (_req, res) => {
   res.set('Cache-Control', 'no-store');
-  const whatsappNumber = process.env.BOT_WHATSAPP_NUMBER || process.env.ADMIN_NUMBER?.replace('@c.us', '') || '5511000000000';
+  const whatsappNumber = process.env.BOT_WHATSAPP_NUMBER || process.env.ADMIN_NUMBER?.replace('@c.us', '') || '';
   res.json({ whatsappNumber });
 });
 
@@ -2287,7 +2510,7 @@ app.get('/api/rank/tags', (req, res) => {
   });
 });
 
-app.get('/api/rank/users', async (req, res) => {
+app.get('/api/rank/users', requireAdmin, async (req, res) => {
   try {
     const limit = Math.max(1, Math.min(parseInt(req.query.limit || '50', 10), 500));
     const nsfw = String(req.query.nsfw || 'all').toLowerCase();

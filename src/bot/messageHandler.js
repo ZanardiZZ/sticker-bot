@@ -19,6 +19,10 @@ const { resolveSenderId, markMessageAsProcessed, isMessageProcessed } = require(
 const MediaQueue = require('../services/mediaQueue');
 const { getDmUser, upsertDmUser } = require('../web/dataAccess');
 const { handleGroupChatMessage } = require('../services/conversationAgent');
+const publicDmAccess = require('../services/publicDmStickerAccess');
+const paymentService = require('../services/mercadoPagoPayment');
+const { findById } = require('../database');
+const { handleIdCommand } = require('../commands/handlers/id');
 const memory = require('../client/memory-client');
 // Rate-limited auto-reply tracker for DM request notifications
 const dmAutoReplyMap = new Map();
@@ -48,6 +52,106 @@ function upsertGroupUserSafe(groupId, memberId, role, ts) {
   if (typeof upsertGroupUser === 'function') {
     return upsertGroupUser(groupId, memberId, role, ts);
   }
+}
+
+function publicDmNoticeKey(userId) {
+  return `public:${userId}`;
+}
+
+async function handlePublicDmMessage(client, message, chatId, resolvedSenderId, rawBody, messageId) {
+  const userId = publicDmAccess.normalizeIdentity(resolvedSenderId || chatId);
+  const access = await publicDmAccess.evaluateAccess(userId);
+
+  if (access.blocked) return true;
+
+  if (!access.eligible) {
+    const now = Math.floor(Date.now() / 1000);
+    try {
+      await upsertDmUser({
+        user_id: userId,
+        allowed: access.settings.enabled ? 0 : 0,
+        blocked: 0,
+        note: 'public-dm-request',
+        last_activity: now
+      });
+    } catch (error) {
+      console.warn('[PUBLIC_DM] falha ao registrar solicitante:', error?.message || error);
+    }
+    const key = publicDmNoticeKey(userId);
+    if (message.type === 'chat' && /^#id\s+[1-9][0-9]*$/i.test(rawBody) && paymentService.isConfigured()) {
+      try {
+        const paymentLink = await paymentService.createAccessLink(userId);
+        if (paymentLink) {
+          await safeReply(client, chatId, `Este acesso requer uma contribuição. Abra o checkout seguro para liberar o uso por ${paymentService.getConfig().planDays} dias:\n${paymentLink}`, message.id);
+          return true;
+        }
+      } catch (error) {
+        console.warn('[PUBLIC_DM] falha ao criar link de pagamento:', error?.message || error);
+      }
+    }
+    if (now - (dmAutoReplyMap.get(key) || 0) >= DM_AUTO_REPLY_TTL) {
+      dmAutoReplyMap.set(key, now);
+      await safeReply(
+        client,
+        chatId,
+        'Este acesso ainda não está liberado para este número. Solicitações públicas aceitas: #ID número.',
+        message.id
+      );
+    }
+    return true;
+  }
+
+  // A DM pública nunca entra no roteador geral: somente #ID seguido de inteiro positivo.
+  if (message.type !== 'chat' || !/^#id\s+[1-9][0-9]*$/i.test(rawBody)) {
+    const key = publicDmNoticeKey(userId);
+    const now = Math.floor(Date.now() / 1000);
+    if (now - (dmAutoReplyMap.get(key) || 0) >= DM_AUTO_REPLY_TTL) {
+      dmAutoReplyMap.set(key, now);
+      await safeReply(client, chatId, 'Use somente #ID número para solicitar uma figurinha.', message.id);
+    }
+    return true;
+  }
+
+  const mediaId = Number(rawBody.match(/^#id\s+([1-9][0-9]*)$/i)[1]);
+  const media = await findById(mediaId);
+  if (!media) {
+    await safeReply(client, chatId, 'Mídia não encontrada para o ID fornecido.', message.id);
+    return true;
+  }
+
+  const reservation = await publicDmAccess.reserveDelivery({
+    userId,
+    mediaId,
+    messageId,
+    now: Math.floor(Date.now() / 1000)
+  });
+  if (!reservation.ok) {
+    const messages = {
+      cooldown: `Aguarde ${reservation.retryAfter}s antes de solicitar outra figurinha.`,
+      daily_limit: `Limite diário atingido (${reservation.access.dailyLimit} figurinhas).`,
+      duplicate: 'Esta solicitação já foi processada.',
+      not_allowed: 'Este acesso ainda não está liberado para este número.',
+      blocked: 'Este acesso está bloqueado.'
+    };
+    if (reservation.reason !== 'duplicate') {
+      await safeReply(client, chatId, messages[reservation.reason] || 'Não foi possível processar a solicitação agora.', message.id);
+    }
+    return true;
+  }
+
+  try {
+    const result = await handleIdCommand(client, message, chatId);
+    const status = result?.status === 'sent' ? 'sent' : (result?.status === 'failed' ? 'failed' : 'uncertain');
+    await publicDmAccess.finalizeDelivery({ reservationId: reservation.reservationId, status });
+  } catch (error) {
+    console.error('[PUBLIC_DM] falha na entrega:', error?.message || error);
+    await publicDmAccess.finalizeDelivery({
+      reservationId: reservation.reservationId,
+      status: 'uncertain',
+      errorCode: 'delivery_exception'
+    });
+  }
+  return true;
 }
 
 async function syncMemoryForGroupMessage({ userId, groupId, senderName, groupName, text }) {
@@ -175,7 +279,11 @@ async function handleMessage(client, message) {
         return false;
       }
     } else {
-      if (!isJidAllowed(remoteJid, allowedDmJids) && !isJidAllowed(resolvedSenderId, allowedDmJids)) {
+      const explicitlyAllowedDm = isJidAllowed(remoteJid, allowedDmJids) || isJidAllowed(resolvedSenderId, allowedDmJids);
+      if (!explicitlyAllowedDm && publicDmAccess.getPublicDmSettings().enabled) {
+        return handlePublicDmMessage(client, message, chatId, resolvedSenderId, rawBody, messageId);
+      }
+      if (!explicitlyAllowedDm) {
         console.log(`[MessageHandler] DM ignorada por allowlist: ${remoteJid}`);
         return false;
       }
@@ -334,11 +442,13 @@ async function handleMessage(client, message) {
     // Queue media processing to avoid resource contention
     try {
       await mediaProcessingQueue.add(async () => {
-        // Process media and mark as processed only on success
-        await processIncomingMedia(client, message, resolvedSenderId);
-        
-        // Mark message as processed ONLY after successful media processing
-        // This ensures failed downloads can be retried by history recovery
+        // Process media and mark as processed only on success. The media
+        // processor returns success:false after sending its bounded user-facing
+        // error, so failed downloads remain eligible for history recovery and
+        // do not receive a duplicate generic reply from the outer handler.
+        const processingResult = await processIncomingMedia(client, message, resolvedSenderId);
+        if (processingResult?.success === false) return;
+
         if (shouldMarkProcessed) {
           try {
             await markMessageAsProcessedSafe(messageId, chatId);

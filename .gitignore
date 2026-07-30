@@ -85,3 +85,14 @@ core.1880577
 core.1880880
 core.3308836
 core.3478829
+
+# Local Graphify artifacts (maintained outside the repository)
+graphify-out/
+# Local backups, rollback trees, caches and runtime scratch data
+node_modules.pre-*/
+backups/
+temp/
+.env.backup-*
+*.bak-*
+*.backup-*
+*-before-*

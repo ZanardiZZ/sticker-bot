@@ -16,15 +16,13 @@
     .warn { background:#fef3c7; color:#92400e; padding:.6rem; border:1px solid #fde68a; border-radius:6px; margin-bottom:10px; }
     .row { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; }
     .row > * { flex: 1 1 220px; }
-    
-    /* Better space utilization for user management controls */
+      /* Better space utilization for user management controls */
     .panel .row select { flex: 2 1 300px; max-width: 400px; }
     .panel .row button { flex: 0 0 auto; min-width: 140px; }
     table { width:100%; border-collapse:collapse; color: #334155; table-layout: auto; }
     th, td { text-align:left; padding:.5rem .6rem; border-bottom:1px solid #e2e8f0; font-size:.9rem; overflow-wrap: anywhere; white-space: normal; }
     th { color: #1e293b; background: #f8fafc; font-weight: 600; }
-    
-    /* Optimize column widths for better space usage on full page spanning panel */
+      /* Optimize column widths for better space usage on full page spanning panel */
     #tblUsers th:nth-child(1) { width: 3%; }    /* ID */
     #tblUsers th:nth-child(2) { width: 12%; }    /* Usuário */
     #tblUsers th:nth-child(3) { width: 18%; }    /* Email */
@@ -35,18 +33,15 @@
     #tblUsers th:nth-child(8) { width: 8%; }     /* Status */
     #tblUsers th:nth-child(9) { width: 8%; }     /* Pode Editar */
     #tblUsers th:nth-child(10) { width: 10%; }    /* Criado em */
-    
-    /* Fix table overflow issue - responsive table sizing */
+      /* Fix table overflow issue - responsive table sizing */
     #usersContainer { margin-top: 1rem; width: 100%; overflow-x: auto; }
     #tblUsers { width: 100%; min-width: 0; table-layout: fixed; }
-    
-    /* Table responsiveness - no horizontal scroll on large screens */
+      /* Table responsiveness - no horizontal scroll on large screens */
     @media (min-width: 1024px) {
       #usersContainer { overflow-x: visible; }
       #tblUsers { min-width: 100%; }
     }
-    
-    /* Only add horizontal scroll on smaller screens where needed */
+      /* Only add horizontal scroll on smaller screens where needed */
     @media (max-width: 1023px) {
       #usersContainer { overflow-x: auto; }
       #tblUsers { min-width: max-content; }
@@ -65,8 +60,7 @@
     .stat-card { background:#ffffff; border: 1px solid #e2e8f0; padding:.8rem; border-radius:6px; text-align:center; }
     .stat-value { font-size:1.5rem; font-weight:bold; color:#3b82f6; }
     .stat-label { font-size:.8rem; color:#64748b; margin-top:.2rem; }
-    
-    /* Form inputs styling for light dark theme */
+      /* Form inputs styling for light dark theme */
     input, select, textarea { 
       background: #ffffff; 
       border: 1px solid #d1d5db; 
@@ -80,8 +74,7 @@
       outline: none; 
       box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); 
     }
-    
-    /* Main navigation and workspace */
+      /* Main navigation and workspace */
     .admin-layout {
       display: grid;
       grid-template-columns: 280px 1fr;
@@ -224,8 +217,7 @@
     .tab-button.active { color: #3b82f6; border-bottom-color: #3b82f6; background: #fefefe; }
     .tab-content { display: none; }
     .tab-content.active { display: block; }
-    
-    /* User edit modal styles */
+      /* User edit modal styles */
     .status-btn, .permission-btn {
       padding: 0.5rem 1rem;
       border: 1px solid #d1d5db;
@@ -246,27 +238,43 @@
     .user-row:hover {
       background: #f8fafc;
     }
-    
-    /* Admin-only elements */
+      /* Admin-only elements */
     .admin-only { display: none; }
     .admin-only.visible { display: block; }
     .main-tab-button.admin-only { display: none; }
     .main-tab-button.admin-only.visible { display: flex; }
-    
-    /* Main tab content visibility - higher specificity */
+      /* Main tab content visibility - higher specificity */
     .main-tab-content.admin-only { display: none; }
     .main-tab-content.admin-only.visible { display: none; } /* Permanecem ocultas até serem ativadas */
     .main-tab-content.active { display: block !important; } /* Only active tab shows */
-  </style>
+    /* Legacy operational surfaces removed from the admin navigation. */
+    #main-tab-bot-frequency, #main-tab-logs, #main-tab-network { display: none !important; }
+    .nav-section-label { margin: .7rem .25rem .05rem; color: #64748b; font-size: .7rem; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
+    .tab-icon { display:inline-flex; width:1.15rem; color: currentColor; opacity:.78; }
+    .overview-hero { display:flex; justify-content:space-between; align-items:flex-end; gap:1rem; padding:1.4rem 1.5rem; margin-bottom:1rem; background:linear-gradient(135deg,#122536,#1e3a4f); color:#f8fafc; border-radius:14px; box-shadow:0 12px 28px rgba(15,23,42,.16); }
+    .overview-hero h2 { margin:.25rem 0 .35rem; font-size:1.65rem; letter-spacing:-.02em; }
+    .overview-hero p { margin:0; color:#b9cddd; }
+    .eyebrow { color:#f0b35a; font-size:.7rem; letter-spacing:.14em; font-weight:800; }
+    .overview-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.8rem; margin-bottom:1rem; }
+    .overview-card { min-height:106px; padding:1rem; background:#fff; border:1px solid #dbe4ec; border-radius:12px; box-shadow:0 2px 8px rgba(15,23,42,.06); display:flex; flex-direction:column; justify-content:space-between; }
+    .overview-card strong { font-size:1.45rem; color:#122536; }
+    .overview-card-label { color:#64748b; font-size:.82rem; font-weight:700; }
+    .overview-card small { color:#64748b; }
+    .overview-card.status-ok { border-top:3px solid #35a66f; }.overview-card.status-warn { border-top:3px solid #e2a93b; }.overview-card.status-error { border-top:3px solid #d85c5c; }.overview-card.is-loading { opacity:.65; }
+    .overview-alerts:empty { display:none; }.overview-alert { padding:.75rem 1rem; margin-bottom:.8rem; border-radius:10px; background:#fff7df; color:#795514; border:1px solid #f2d58b; }
+    .overview-actions { display:flex; flex-wrap:wrap; gap:.55rem; }.overview-action { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem .7rem; border-radius:8px; background:#f1f6fa; color:#16405b; text-decoration:none; font-weight:650; }
+    @media (max-width:900px) { .overview-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.overview-hero{align-items:flex-start;flex-direction:column;} }
+    @media (max-width:520px) { .overview-grid{grid-template-columns:1fr;} .overview-hero h2{font-size:1.35rem;} }
+    </style>
 
-  
-  <script src="/privacy.js" defer></script>
+  <script src="/privacy.js?v=analytics-gated-20260729" defer></script>
 </head>
 <body>
   <nav>
     <a href="/">Home</a>
     <span class="nav-divider">></span>
     <strong>Admin</strong>
+    <a href="/ranking/users" style="margin-left:1rem;">Ranking de usuários</a>
     <span id="adminUserInfo" style="margin-left:auto;"></span>
   </nav>
 
@@ -282,13 +290,15 @@
           <p>Acesse rapidamente as principais seções do bot.</p>
         </div>
         <div class="main-tab-nav" role="tablist">
-          <button id="main-tab-button-settings" type="button" role="tab" class="main-tab-button active" data-tab="settings" data-title="Configurações" data-description="Gerencie sua conta, grupos e preferências do bot." aria-controls="main-tab-settings" aria-selected="true" tabindex="0"><span class="tab-label">Configurações</span></button>
-          <button id="main-tab-button-bot-frequency" type="button" role="tab" class="main-tab-button admin-only" data-tab="bot-frequency" data-title="Frequência do Bot" data-description="Defina a janela diária de envio automático e o intervalo entre disparos." aria-controls="main-tab-bot-frequency" aria-selected="false" tabindex="-1"><span class="tab-label">Frequência do Bot</span></button>
-          <button id="main-tab-button-group-config" type="button" role="tab" class="main-tab-button admin-only" data-tab="group-config" data-title="Configurações de Grupo" data-description="Ajuste permissões e comportamentos específicos de cada grupo." aria-controls="main-tab-group-config" aria-selected="false" tabindex="-1"><span class="tab-label">Configurações de Grupo</span></button>
-          <button id="main-tab-button-logs" type="button" role="tab" class="main-tab-button admin-only" data-tab="logs" data-title="Logs" data-description="Acompanhe eventos recentes e monitore atividades técnicas." aria-controls="main-tab-logs" aria-selected="false" tabindex="-1"><span class="tab-label">Logs</span></button>
-          <button id="main-tab-button-network" type="button" role="tab" class="main-tab-button admin-only" data-tab="network" data-title="Rede" data-description="Controle listas de IP e regras de acesso à plataforma." aria-controls="main-tab-network" aria-selected="false" tabindex="-1"><span class="tab-label">Rede</span></button>
+           <div class="nav-section-label">Atalhos</div>
+           <button id="main-tab-button-overview" type="button" role="tab" class="main-tab-button active" data-tab="overview" data-title="Visão geral" data-description="Veja o que precisa da sua atenção agora." aria-controls="main-tab-overview" aria-selected="true" tabindex="0"><span class="tab-icon" aria-hidden="true">◈</span><span class="tab-label">Visão geral</span></button>
+          <div class="nav-section-label">Operação</div>
+           <button id="main-tab-button-settings" type="button" role="tab" class="main-tab-button" data-tab="settings" data-title="Operação" data-description="Acompanhe a saúde do bot e ajuste controles operacionais." aria-controls="main-tab-settings" aria-selected="true" tabindex="0"><span class="tab-label">Operação</span></button>
+          <div class="nav-section-label">Acesso e permissões</div>
+           <button id="main-tab-button-group-config" type="button" role="tab" class="main-tab-button admin-only" data-tab="group-config" data-title="Usuários e Grupos" data-description="Gerencie usuários DM, permissões de comandos e usuários dos grupos." aria-controls="main-tab-group-config" aria-selected="false" tabindex="-1"><span class="tab-label">Usuários e Grupos</span></button>
           <button id="main-tab-button-users" type="button" role="tab" class="main-tab-button admin-only" data-tab="users" data-title="Usuários" data-description="Administre contas cadastradas e permissões do painel." aria-controls="main-tab-users" aria-selected="false" tabindex="-1"><span class="tab-label">Usuários</span></button>
-          <button id="main-tab-button-pending-edits" type="button" role="tab" class="main-tab-button" data-tab="pending-edits" data-title="Aprovações" data-description="Revise e aprove contribuições enviadas pela comunidade." aria-controls="main-tab-pending-edits" aria-selected="false" tabindex="-1"><span class="tab-label">Aprovações</span></button>
+          <div class="nav-section-label">Conteúdo</div>
+           <button id="main-tab-button-pending-edits" type="button" role="tab" class="main-tab-button" data-tab="pending-edits" data-title="Aprovações" data-description="Revise e aprove contribuições enviadas pela comunidade." aria-controls="main-tab-pending-edits" aria-selected="false" tabindex="-1"><span class="tab-label">Aprovações</span></button>
           <button id="main-tab-button-duplicates" type="button" role="tab" class="main-tab-button admin-only" data-tab="duplicates" data-title="Mídias Duplicadas" data-description="Identifique e limpe arquivos duplicados do acervo." aria-controls="main-tab-duplicates" aria-selected="false" tabindex="-1"><span class="tab-label">Mídias Duplicadas</span></button>
         </div>
       </aside>
@@ -300,11 +310,28 @@
         </header>
 
         <div class="workspace-content">
+      <!-- Overview Tab Content -->
+      <div class="main-tab-content active" id="main-tab-overview" data-title="Visão geral" data-description="Veja o que precisa da sua atenção agora." role="tabpanel" aria-labelledby="main-tab-button-overview" aria-hidden="false">
+        <div class="overview-hero">
+          <div><span class="eyebrow">CENTRO DE OPERAÇÃO</span><h2>O que precisa da sua atenção?</h2><p id="overviewUpdatedAt">Consultando o estado atual...</p></div>
+          <button id="refreshOverviewBtn" class="btn-primary" type="button">Atualizar visão geral</button>
+        </div>
+        <div id="overviewAlerts" class="overview-alerts" aria-live="polite"></div>
+        <div id="overviewCards" class="overview-grid" aria-live="polite">
+          <div class="overview-card is-loading"><span class="overview-card-label">Saúde do bot</span><strong>Consultando...</strong></div>
+          <div class="overview-card is-loading"><span class="overview-card-label">Aprovações</span><strong>Consultando...</strong></div>
+          <div class="overview-card is-loading"><span class="overview-card-label">Usuários DM</span><strong>Consultando...</strong></div>
+          <div class="overview-card is-loading"><span class="overview-card-label">Mídias duplicadas</span><strong>Consultando...</strong></div>
+        </div>
+        <div class="panel overview-next"><h3>Próximas ações</h3><div id="overviewNextActions" class="overview-actions"><span class="muted">Carregando pendências...</span></div></div>
+      </div>
+
       <!-- Settings Tab Content -->
-      <div class="main-tab-content active" id="main-tab-settings" data-title="Configurações" data-description="Gerencie sua conta, grupos e preferências do bot." role="tabpanel" aria-labelledby="main-tab-button-settings" aria-hidden="false">
+      <div class="main-tab-content active" id="main-tab-settings" data-title="Operação" data-description="Acompanhe a saúde do bot e ajuste controles operacionais." role="tabpanel" aria-labelledby="main-tab-button-settings" aria-hidden="false">
         <div class="panel">
           <h3>Minha conta</h3>
-          <form id="changePasswordForm">
+          <form id="changePasswordForm" autocomplete="on">
+            <input type="text" name="username" autocomplete="username" tabindex="-1" aria-hidden="true" style="position:absolute;left:-10000px;width:1px;height:1px;opacity:0;">
             <div class="row">
               <input id="cp_current" type="password" placeholder="Senha atual" autocomplete="current-password">
               <input id="cp_new" type="password" placeholder="Nova senha (mín. 8)" autocomplete="new-password">
@@ -314,6 +341,12 @@
               <button type="submit" id="changePassBtn" class="btn-primary">Alterar Senha</button>
             </div>
           </form>
+        </div>
+
+        <div class="panel admin-only" id="admin-audit-panel">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;"><div><h3>Auditoria administrativa</h3><div class="muted">Ações feitas no painel, sem logs técnicos do servidor.</div></div><button id="refreshAuditBtn" class="btn-primary" type="button">Atualizar</button></div>
+          <div id="auditStatus" class="muted" style="margin:.7rem 0;">Nenhuma consulta realizada.</div>
+          <div style="overflow-x:auto;"><table id="adminAuditTable"><thead><tr><th>Quando</th><th>Administrador</th><th>Ação</th><th>Área</th><th>Resultado</th></tr></thead><tbody><tr><td colspan="5" class="muted">Clique em Atualizar para consultar.</td></tr></tbody></table></div>
         </div>
 
         <div class="panel admin-only" id="memory-health-panel">
@@ -441,21 +474,30 @@
         </div>
       </div>
 
-      <div class="main-tab-content admin-only" id="main-tab-group-config" data-title="Configurações de Grupo" data-description="Ajuste permissões e comportamentos específicos de cada grupo." role="tabpanel" aria-labelledby="main-tab-button-group-config" aria-hidden="true">
+      <div class="main-tab-content admin-only" id="main-tab-group-config" data-title="Usuários e Grupos" data-description="Gerencie usuários DM, permissões de comandos e usuários dos grupos." role="tabpanel" aria-labelledby="main-tab-button-group-config" aria-hidden="true">
         <div class="panel">
           <h3>Usuários - Mensagens Diretas (DM)</h3>
-          <div class="muted">Gerencie quais usuários podem enviar mensagens diretas ao bot. Por padrão, o bot não responde a DMs a menos que autorizado.</div>
-          <div style="margin-top:1rem; display:flex; gap:1rem; flex-wrap:wrap; align-items:end;">
+          <div class="muted">Gerencie quais usuários podem enviar mensagens diretas ao bot. Clique em <strong>Editar</strong> na linha desejada para carregar as configurações; o ID manual continua disponível como alternativa.</div>
+                     <div class="dm-toolbar" style="margin-top:1rem; display:flex; gap:.7rem; flex-wrap:wrap; align-items:end;">
+             <div style="flex:1 1 260px; display:flex; flex-direction:column; gap:.4rem;"><label for="dmSearchInput" class="muted">Buscar usuário DM</label><input id="dmSearchInput" type="search" placeholder="Nome ou User ID"></div>
+             <div style="flex:0 1 180px; display:flex; flex-direction:column; gap:.4rem;"><label for="dmStatusFilter" class="muted">Filtrar estado</label><select id="dmStatusFilter"><option value="all">Todos</option><option value="allowed">Permitidos</option><option value="blocked">Bloqueados</option><option value="pending">Pendentes</option></select></div>
+           </div>
+<div style="margin-top:1rem; display:flex; gap:1rem; flex-wrap:wrap; align-items:end;">
             <div style="flex:1 1 320px; display:flex; flex-direction:column; gap:.4rem;">
               <label class="muted">User ID (WhatsApp)</label>
               <input id="dmUserIdInput" type="text" placeholder="ex: 5511000000000@c.us">
+            </div>
+            <div style="flex:1 1 240px; display:flex; flex-direction:column; gap:.4rem;">
+              <label class="muted" for="dmNoteInput">Observação</label>
+              <input id="dmNoteInput" type="text" placeholder="Opcional">
             </div>
             <div style="display:flex; gap:.6rem; align-items:center;">
               <label style="display:flex; gap:.4rem; align-items:center;"><input id="dmAllowedInput" type="checkbox"> Permitido</label>
               <label style="display:flex; gap:.4rem; align-items:center;"><input id="dmBlockedInput" type="checkbox"> Bloqueado</label>
             </div>
-            <div style="flex:0 0 auto;">
+            <div style="flex:0 0 auto; display:flex; gap:.5rem;">
               <button id="addDmUserBtn" class="btn-primary">Adicionar/Atualizar</button>
+              <button id="cancelDmEditBtn" type="button" style="display:none;">Cancelar</button>
             </div>
           </div>
           <div id="dmUsersStatus" class="muted" style="margin-top:.6rem;"></div>
@@ -467,12 +509,11 @@
                   <th>Função</th>
                   <th>Bloqueado</th>
                   <th>Última Atividade</th>
-                  <th>Interações</th>
                   <th>Ações</th>
                 </tr>
               </thead>
               <tbody>
-                <tr><td colspan="6" style="text-align:center; color:#94a3b8;">Nenhum usuário selecionado.</td></tr>
+                <tr><td colspan="5" style="text-align:center; color:#94a3b8;">Nenhum usuário selecionado.</td></tr>
               </tbody>
             </table>
           </div>
@@ -598,8 +639,7 @@
           <div class="warn">
             <strong>Logs do Sistema:</strong> Visualize logs do servidor web, bot e outros componentes em tempo real.
           </div>
-          
-          <!-- Controles e Filtros -->
+                  <!-- Controles e Filtros -->
           <div class="row" style="margin-bottom: 1rem; gap: 1rem; flex-wrap: wrap;">
             <select id="logLevelFilter" style="flex: 0 0 150px;">
               <option value="all">Todos os níveis</option>
@@ -615,8 +655,7 @@
               <span>Auto-refresh</span>
             </label>
           </div>
-          
-          <!-- Estatísticas -->
+                  <!-- Estatísticas -->
           <div class="stats-grid" style="margin-bottom: 1rem;">
             <div class="stat-card">
               <div class="stat-value" id="totalLogs">-</div>
@@ -635,15 +674,13 @@
               <div class="stat-label">Errors</div>
             </div>
           </div>
-          
-          <!-- Container de Logs -->
+                  <!-- Container de Logs -->
           <div id="logsContainer" style="background: #000; color: #00ff00; padding: 1rem; border-radius: 6px; height: 400px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 0.85rem; line-height: 1.4;">
             <div id="logsContent">
               <div style="color: #666;">Carregando logs...</div>
             </div>
           </div>
-          
-          <!-- Paginação -->
+                  <!-- Paginação -->
           <div id="logsPagination" class="row" style="margin-top: 1rem; justify-content: space-between;">
             <span id="logsInfo" class="muted">Nenhum log carregado</span>
             <div>
@@ -653,8 +690,7 @@
           </div>
         </div>
       </div>
-      
-      <!-- Network Tab Content -->
+          <!-- Network Tab Content -->
       <div class="main-tab-content admin-only" id="main-tab-network" data-title="Rede" data-description="Controle listas de IP e regras de acesso à plataforma." role="tabpanel" aria-labelledby="main-tab-button-network" aria-hidden="true">
         <div class="panel">
           <h3>Regras de IP</h3>
@@ -674,8 +710,7 @@
           </table>
         </div>
       </div>
-      
-      <!-- Users Tab Content -->
+          <!-- Users Tab Content -->
       <div class="main-tab-content admin-only" id="main-tab-users" data-title="Usuários" data-description="Administre contas cadastradas e permissões do painel." role="tabpanel" aria-labelledby="main-tab-button-users" aria-hidden="true">
         <div class="panel panel-full-width">
           <h3>Gerenciamento de Usuários</h3>
@@ -722,8 +757,7 @@
         <div class="panel">
           <h3>🏛️ Aprovações Pendentes</h3>
           <div class="muted">Gerencie edições pendentes de figurinhas que necessitam aprovação.</div>
-          
-          <div class="info" style="background:#dbeafe; color:#1e40af; padding:.6rem; border:1px solid #93c5fd; border-radius:6px; margin:1rem 0;">
+                  <div class="info" style="background:#dbeafe; color:#1e40af; padding:.6rem; border:1px solid #93c5fd; border-radius:6px; margin:1rem 0;">
             <strong>Como funciona:</strong> Edições feitas por usuários (exceto admins e autores originais) precisam de 3 votos de aprovação ou 1 aprovação de admin.
           </div>
 
@@ -774,16 +808,14 @@
             <strong>Atenção:</strong> Esta função permite detectar e remover mídias duplicadas baseadas em hash visual. 
             Use com cuidado, pois a exclusão é permanente.
           </div>
-          
-          <div class="row" style="margin-bottom: 1rem;">
+                  <div class="row" style="margin-bottom: 1rem;">
             <div>
               <strong>Estatísticas:</strong>
               <span id="duplicateStats" class="muted">Carregando...</span>
             </div>
             <button id="refreshDuplicates" class="btn-primary">Atualizar</button>
           </div>
-          
-          <div id="duplicatesContainer" style="display: none;">
+                  <div id="duplicatesContainer" style="display: none;">
             <div class="row" style="margin-bottom: 1rem; align-items: center; gap: 1rem;">
               <label>
                 <input type="checkbox" id="selectAllDuplicates"> Selecionar todos
@@ -791,10 +823,8 @@
               <button id="deleteSelectedDuplicates" class="btn-danger" disabled>Deletar Selecionados</button>
               <span class="muted">Manterá sempre a mídia mais antiga de cada grupo</span>
             </div>
-            
-            <div id="duplicatesList"></div>
-            
-            <div id="duplicatesPagination" class="row" style="margin-top: 1rem; justify-content: space-between;">
+                      <div id="duplicatesList"></div>
+                      <div id="duplicatesPagination" class="row" style="margin-top: 1rem; justify-content: space-between;">
               <span id="duplicatesInfo" class="muted"></span>
               <div>
                 <button id="prevDuplicates" class="btn-primary" disabled>Anterior</button>
@@ -810,7 +840,7 @@
     <p class="muted">Métricas de acesso agora estão no Umami.</p>
   </div>
 
-  <script src="/admin.js" defer></script>
+  <script src="/admin.js?v=bulk-delete-session-safe-20260729" defer></script>
 </body>
 </html>
 
@@ -818,41 +848,34 @@
 <div id="userEditModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; z-index: 1000;">
   <div class="box" style="background: #ffffff; border: 1px solid #e2e8f0; padding: 1.5rem; width: 500px; border-radius: 8px; display: flex; flex-direction: column; gap: 1rem; max-height: 80vh; overflow-y: auto;">
     <h3 style="margin: 0; color: #1e293b;">Editar Usuário</h3>
-    
-    <div id="userInfo" style="background: #f8fafc; padding: 1rem; border-radius: 6px; border: 1px solid #e2e8f0;">
+      <div id="userInfo" style="background: #f8fafc; padding: 1rem; border-radius: 6px; border: 1px solid #e2e8f0;">
       <!-- User info will be populated here -->
     </div>
-    
-    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+      <div style="display: flex; flex-direction: column; gap: 0.5rem;">
       <label for="editContactName" style="font-weight: 500; color: #374151;">Nome de Contato:</label>
       <input type="text" id="editContactName" style="padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
     </div>
-    
-    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+      <div style="display: flex; flex-direction: column; gap: 0.5rem;">
       <label for="editPhone" style="font-weight: 500; color: #374151;">Telefone:</label>
       <input type="text" id="editPhone" style="padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
     </div>
-    
-    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+      <div style="display: flex; flex-direction: column; gap: 0.5rem;">
       <label for="editEmail" style="font-weight: 500; color: #374151;">Email:</label>
       <input type="email" id="editEmail" style="padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
     </div>
-    
-    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+      <div style="display: flex; flex-direction: column; gap: 0.5rem;">
       <label style="font-weight: 500; color: #374151;">Status:</label>
       <div id="statusButtons" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
         <!-- Status buttons will be populated here -->
       </div>
     </div>
-    
-    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+      <div style="display: flex; flex-direction: column; gap: 0.5rem;">
       <label style="font-weight: 500; color: #374151;">Permissões:</label>
       <div id="permissionButtons" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
         <!-- Permission buttons will be populated here -->
       </div>
     </div>
-    
-    <div style="display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1rem;">
+      <div style="display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1rem;">
       <button id="saveUserChanges" class="btn-primary" style="padding: 0.5rem 1rem;">Salvar</button>
       <button id="cancelUserEdit" class="btn-danger" style="padding: 0.5rem 1rem; background: #6c757d;">Cancelar</button>
       <button id="deleteUser" class="btn-danger" style="padding: 0.5rem 1rem;">Deletar Usuário</button>

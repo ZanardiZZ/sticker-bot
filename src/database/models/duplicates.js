@@ -3,7 +3,9 @@
  */
 
 const fs = require('fs');
+const path = require('path');
 const { db, dbHandler } = require('../connection');
+const { ROOT_DIR, MEDIA_DIR } = require('../../paths');
 
 // Get media queue for transaction safety
 let mediaQueue = null;
@@ -79,7 +81,19 @@ async function getDuplicateMediaDetails(hashVisual) {
     ORDER BY m.timestamp ASC
   `;
   
-  return dbHandler.all(sql, [hashVisual]);
+  const rows = await dbHandler.all(sql, [hashVisual]);
+  return rows.map((row) => {
+    const rawPath = typeof row.file_path === 'string' ? row.file_path.trim() : '';
+    const candidates = rawPath
+      ? (path.isAbsolute(rawPath)
+        ? [rawPath]
+        : [path.resolve(ROOT_DIR, rawPath), path.resolve(MEDIA_DIR, rawPath.replace(/^media[\/]/, ''))])
+      : [];
+    return {
+      ...row,
+      file_exists: candidates.some((candidate) => fs.existsSync(candidate))
+    };
+  });
 }
 
 /**

@@ -24,6 +24,7 @@ const processingModel = require('./models/processing');
 const versionModel = require('./models/version');
 const lidMappingModel = require('./models/lidMapping');
 const deleteRequestsModel = require('./models/deleteRequests');
+const pendingEditsModel = require('./models/pendingEdits');
 const configModel = require('./models/config');
 const commandUsageModel = require('./models/commandUsage');
 const packsModel = require('./models/packs');
@@ -83,6 +84,9 @@ module.exports = {
 
   // Delete vote requests
   ...deleteRequestsModel,
+
+  // Pending edits / approval operations
+  ...pendingEditsModel,
 
   // Bot configuration
   ...configModel,

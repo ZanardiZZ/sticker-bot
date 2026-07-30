@@ -3,23 +3,7 @@ module.exports = {
     {
       name: 'WS-Socket-Server',
       script: 'server.js',
-      cwd: '<PROJECT_ROOT>',
-      exec_mode: 'fork',
-      instances: 1,
-      watch: false,
-      autorestart: true,
-      merge_logs: true,
-      pmx: false,
-      automation: false,
-      vizion: false,
-      env: {
-        PM2_DISABLE_MONIT: 'true'
-      }
-    },
-    {
-      name: 'Bot-Client',
-      script: 'index.js',
-      cwd: '<PROJECT_ROOT>',
+      cwd: __dirname,
       exec_mode: 'fork',
       instances: 1,
       watch: false,
@@ -30,14 +14,35 @@ module.exports = {
       vizion: false,
       env: {
         PM2_DISABLE_MONIT: 'true',
-        OPENAI_MULTIMODAL_BASE_URL: 'http://YOUR_LLM_HOST:8080/v1',
-        OPENAI_MULTIMODAL_MODEL: 'C:\\Users\\Zanardi\\Downloads\\LLM_Models\\gemma-4-12B-it-qat-UD-Q4_K_XL.gguf'
+        // WPPConnect can intermittently stop delivering onMessage while
+        // the browser remains MAIN (NORMAL). Poll only unread/new messages as a
+        // bounded transport fallback; deduplication and age limits live in bridge.js.
+        WS_UNREAD_POLL_INTERVAL_MS: '3000',
+        WS_FALLBACK_POLL_SILENCE_MS: '0',
+        WS_FALLBACK_MAX_MESSAGE_AGE_MS: '30000'
+      }
+    },
+    {
+      name: 'Bot-Client',
+      script: 'index.js',
+      cwd: __dirname,
+      exec_mode: 'fork',
+      instances: 1,
+      watch: false,
+      autorestart: true,
+      merge_logs: true,
+      pmx: false,
+      automation: false,
+      vizion: false,
+      env: {
+        PM2_DISABLE_MONIT: 'true',
+        GEMMA_PROMPT_TIMEOUT_MS: '30000'
       }
     },
     {
       name: 'WebServer',
       script: 'src/web/server.js',
-      cwd: '<PROJECT_ROOT>',
+      cwd: __dirname,
       exec_mode: 'fork',
       instances: 1,
       watch: false,
@@ -51,21 +56,5 @@ module.exports = {
         PORT: globalThis.process?.env?.PORT || 3000
       }
     },
-    {
-      name: 'Memory-Bridge',
-      script: 'src/memory-bridge/server.js',
-      cwd: '<PROJECT_ROOT>',
-      exec_mode: 'fork',
-      instances: 1,
-      watch: false,
-      autorestart: true,
-      merge_logs: true,
-      pmx: false,
-      automation: false,
-      vizion: false,
-      env: {
-        PM2_DISABLE_MONIT: 'true'
-      }
-    }
   ]
 };

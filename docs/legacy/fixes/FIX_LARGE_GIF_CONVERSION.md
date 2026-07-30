@@ -144,6 +144,6 @@ Enhanced logging helps debug compression issues:
 
 ---
 
-**Issue ID**: Report via Sticker Bot (EXAMPLE_USER_LID)
+**Issue ID**: Report via Sticker Bot (100000000000000@lid)
 **Fix Version**: 1.0.0
 **Status**: ✅ Complete

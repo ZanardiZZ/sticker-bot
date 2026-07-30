@@ -146,6 +146,17 @@ function loadFfmpeg() {
   return require('fluent-ffmpeg');
 }
 
+function resolveFfmpegPath() {
+  let packagedPath = null;
+  try {
+    packagedPath = require('ffmpeg-static');
+  } catch (_) {}
+  const candidates = [process.env.FFMPEG_PATH, packagedPath, '/usr/bin/ffmpeg']
+    .filter(Boolean)
+    .filter((candidate, index, values) => values.indexOf(candidate) === index);
+  return candidates.find((candidate) => fs.existsSync(candidate)) || null;
+}
+
 // Fallback function if cleanDescriptionTags is not available
 function fallbackCleanDescriptionTags(description, tags) {
   const badPhrases = [
@@ -687,8 +698,9 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
         gifSourceForAnalysis = tmpFilePath;
         try {
           const ffmpeg = loadFfmpeg();
-          const ffmpegPath = require('ffmpeg-static');
-          if (ffmpegPath) ffmpeg.setFfmpegPath(ffmpegPath);
+          const ffmpegPath = resolveFfmpegPath();
+          if (!ffmpegPath) throw new Error('ffmpeg_binary_not_found');
+          ffmpeg.setFfmpegPath(ffmpegPath);
           const outPath = tmpFilePath.replace(/\.[^.]+$/, '.webp');
           const ffmpegAttempts = [
             { fps: 15, quality: 80 },
@@ -1344,6 +1356,10 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
       } catch (metricsErr) {
         console.warn('[MediaProcessor] Failed to log error metrics:', metricsErr.message);
       }
+      // The caller must not mark a failed download as processed. Keep the user
+      // notification and metrics above, but return an explicit failure result so
+      // the handler does not emit a duplicate generic reply.
+      return { success: false, error: e };
     } finally {
       if (tmpFilePath) {
         try {

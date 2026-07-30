@@ -91,17 +91,18 @@ function getMediaPreviewUrl(mimetype, url, filePath) {
   if (mime.startsWith('audio/')) {
     return '/media/audio.png';
   }
-  if (url) {
+  if (!filePath && url) {
     return url;
   }
-  if (filePath) {
-    const parts = String(filePath).split('/');
-    const base = parts[parts.length - 1] || '';
-    if (base) {
-      return '/media/' + base;
-    }
-  }
-  return '';
+  if (!filePath) return '';
+
+  const rawPath = String(filePath).replaceAll('\\', '/');
+  const marker = '/storage/media/';
+  const markerIndex = rawPath.lastIndexOf(marker);
+  let relativePath = markerIndex >= 0 ? rawPath.slice(markerIndex + marker.length) : rawPath;
+  relativePath = relativePath.replace(/^\/+/, '').replace(/^media\//, '');
+  if (!relativePath) return '';
+  return '/media/' + relativePath.split('/').map((part) => encodeURIComponent(part)).join('/');
 }
 
 function decodeHashSegment(value) {
@@ -129,6 +130,73 @@ function formatDateTime(value) {
 function fillTable(tbody, rows, cols) {
   tbody.innerHTML = rows.map(r => `<tr>${cols.map(c => `<td>${(r[c] ?? '').toString().slice(0,200)}</td>`).join('')}</tr>`).join('');
 }
+function overviewNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function overviewCard(label, value, detail, status = 'ok') {
+  return `<div class="overview-card status-${status}"><span class="overview-card-label">${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(detail || '')}</small></div>`;
+}
+
+async function fetchOverviewHealth() {
+  const response = await fetch('/api/admin/health/deep', { credentials: 'same-origin' });
+  let body = null;
+  try { body = await response.json(); } catch (_) { /* resposta sem JSON */ }
+  // 503 é o contrato de health: a aplicação respondeu, mas há dependência degradada.
+  if (!response.ok && response.status !== 503) throw new Error(`HTTP ${response.status}`);
+  if (!body || typeof body !== 'object') throw new Error('health_invalid_response');
+  return body;
+}
+
+async function loadAdminOverview() {
+  const cards = document.getElementById('overviewCards');
+  const alerts = document.getElementById('overviewAlerts');
+  const actions = document.getElementById('overviewNextActions');
+  const updated = document.getElementById('overviewUpdatedAt');
+  if (!cards || !alerts || !actions) return;
+  cards.innerHTML = '<div class="overview-card is-loading"><span class="overview-card-label">Atualizando</span><strong>Consultando...</strong></div>'.repeat(4);
+  alerts.innerHTML = '';
+  actions.innerHTML = '<span class="muted">Consultando pendências...</span>';
+  const results = await Promise.allSettled([
+    fetchOverviewHealth(),
+    fetchJSON('/api/pending-edits?status=pending'),
+    fetchJSON('/api/admin/dm-users'),
+    fetchJSON('/api/admin/duplicates/stats')
+  ]);
+  const [healthR, pendingR, dmR, duplicateR] = results;
+  const health = healthR.status === 'fulfilled' ? healthR.value : null;
+  const pending = pendingR.status === 'fulfilled' ? pendingR.value : null;
+  const dm = dmR.status === 'fulfilled' ? dmR.value : null;
+  const duplicates = duplicateR.status === 'fulfilled' ? duplicateR.value : null;
+  const healthOk = health?.ok === true;
+  const failedHealthChecks = health?.checks
+    ? Object.entries(health.checks).filter(([, check]) => !check?.ok).map(([name]) => name)
+    : [];
+  const healthDetail = health
+    ? (healthOk ? 'Todas as dependências operacionais responderam' : `Atenção: ${failedHealthChecks.join(', ') || 'dependência degradada'}`)
+    : 'Não foi possível consultar';
+  const pendingCount = Array.isArray(pending?.pending_edits) ? pending.pending_edits.length : overviewNumber(pending?.count ?? pending?.total);
+  const dmList = Array.isArray(dm) ? dm : (Array.isArray(dm?.users) ? dm.users : (Array.isArray(dm?.dm_users) ? dm.dm_users : []));
+  const dmCount = dmList.length || overviewNumber(dm?.total);
+  const duplicateCount = overviewNumber(duplicates?.total_duplicates ?? duplicates?.total ?? duplicates?.count);
+  cards.innerHTML = [
+    overviewCard('Saúde do bot', healthOk ? 'Operacional' : (health ? 'Atenção' : 'Indisponível'), healthDetail, healthOk ? 'ok' : 'warn'),
+    overviewCard('Aprovações pendentes', pendingCount, pendingCount ? 'Revisão necessária' : 'Nenhuma pendência encontrada', pendingCount ? 'warn' : 'ok'),
+    overviewCard('Usuários DM', dmCount, 'Registros configurados', 'ok'),
+    overviewCard('Mídias duplicadas', duplicateCount, duplicateCount ? 'Revisão disponível' : 'Nenhuma duplicata detectada', duplicateCount ? 'warn' : 'ok')
+  ].join('');
+  const failed = results.filter(r => r.status === 'rejected').length;
+  if (failed) alerts.innerHTML = `<div class="overview-alert">Algumas informações não puderam ser consultadas. As áreas individuais continuam disponíveis para nova tentativa.</div>`;
+  const links = [];
+  if (pendingCount) links.push('<button type="button" class="overview-action" data-tab="pending-edits">Revisar aprovações →</button>');
+  if (dmCount) links.push('<button type="button" class="overview-action" data-tab="group-config">Gerenciar usuários DM →</button>');
+  if (duplicateCount) links.push('<button type="button" class="overview-action" data-tab="duplicates">Revisar duplicatas →</button>');
+  if (!links.length) links.push('<span class="muted">Nenhuma ação pendente. O painel está limpo.</span>');
+  actions.innerHTML = links.join('');
+  if (updated) updated.textContent = `Atualizado em ${new Date().toLocaleTimeString('pt-BR')}`;
+}
+
 async function loadAccount() {
   try {
     const acc = await fetchJSON('/api/account');
@@ -207,6 +275,8 @@ document.getElementById('deleteVoteThresholdSave')?.addEventListener('click', as
 });
 
 async function loadRules(){
+  const table = document.querySelector('#tblRules tbody');
+  if (!table) return;
   const rules = await fetchJSON('/api/admin/ip-rules');
   const rows = rules.map(r => ({
     id: r.id, ip: r.ip, action: r.action,
@@ -222,7 +292,7 @@ async function loadRules(){
 }
 
 // Event listeners - removed range listener as element doesn't exist
-document.getElementById('addRule').addEventListener('click', async () => {
+document.getElementById('addRule')?.addEventListener('click', async () => {
   const ip = document.getElementById('ip').value.trim();
   const action = document.getElementById('action').value;
   const ttl = document.getElementById('ttl').value ? Number(document.getElementById('ttl').value) : undefined;
@@ -699,7 +769,7 @@ let mainTabContents = [];
 let tabButtons = [];
 let tabContents = [];
 
-let currentMainTab = 'settings';
+let currentMainTab = 'overview';
 let currentSubTab = 'account';
 let hashUpdateInProgress = false;
 let lastLoadedGroupUsersId = '';
@@ -713,7 +783,7 @@ function parseCommaList(value) {
   return str.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean);
 }
 
-const mainTabIds = new Set(['settings', 'bot-frequency', 'group-config', 'logs', 'network', 'users', 'pending-edits', 'duplicates']);
+const mainTabIds = new Set(['overview', 'settings', 'group-config', 'users', 'pending-edits', 'duplicates']);
 const initializedSubTabs = new Set();
 const tabPayload = {};
 
@@ -820,11 +890,11 @@ function updateWorkspaceHeader(tabId) {
 
 function setActiveMainTab(tabId, options = {}) {
   const { updateHash = false } = options;
-  let targetTab = mainTabIds.has(tabId) ? tabId : 'settings';
+  let targetTab = mainTabIds.has(tabId) ? tabId : 'overview';
 
   const requestedButton = mainTabButtons.find((btn) => btn.dataset.tab === targetTab);
   if (requestedButton && requestedButton.classList.contains('admin-only') && !requestedButton.classList.contains('visible')) {
-    targetTab = 'settings';
+    targetTab = 'overview';
   }
 
   currentMainTab = targetTab;
@@ -944,7 +1014,7 @@ function applyHashNavigation() {
   const rawHash = window.location.hash.replace(/^#/, '');
   const params = new URLSearchParams(window.location.search);
 
-  let mainTab = 'settings';
+  let mainTab = 'overview';
   let subTab = 'account';
   let payload = '';
 
@@ -1332,6 +1402,7 @@ function renderGroupUsersTable(users) {
 }
 
 // ====== DM Users (Direct Message Authorization) UI helpers ======
+let currentDmUsers = [];
 async function loadDmUsers() {
   const tableBody = document.querySelector('#dmUsersTable tbody');
   const statusEl = document.getElementById('dmUsersStatus');
@@ -1351,11 +1422,18 @@ async function loadDmUsers() {
 function renderDmUsersTable(users) {
   const tableBody = document.querySelector('#dmUsersTable tbody');
   if (!tableBody) return;
-  if (!Array.isArray(users) || users.length === 0) {
+  const query = (document.getElementById('dmSearchInput')?.value || '').trim().toLowerCase();
+  const state = document.getElementById('dmStatusFilter')?.value || 'all';
+  const filtered = (Array.isArray(users) ? users : []).filter(u => {
+    const haystack = [u.user_id, u.display_name, u.user_contact_display_name, u.user_username, u.note].filter(Boolean).join(' ').toLowerCase();
+    const stateOk = state === 'all' || (state === 'allowed' && u.allowed && !u.blocked) || (state === 'blocked' && u.blocked) || (state === 'pending' && !u.allowed && !u.blocked);
+    return stateOk && (!query || haystack.includes(query));
+  });
+  if (filtered.length === 0) {
     tableBody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#94a3b8;">Nenhum usuário DM autorizado.</td></tr>`;
     return;
   }
-  const rows = users.map(u => {
+  const rows = filtered.map(u => {
     const idRaw = u.user_id || '';
     const id = escapeHtml(idRaw);
     const displayNameRaw = u.display_name || u.user_contact_display_name || u.user_username || '';
@@ -1367,20 +1445,53 @@ function renderDmUsersTable(users) {
     const role = u.allowed ? '<span style="color:#16a34a; font-weight:600;">Permitido</span>' : '<span class="muted">Pendente</span>';
     const blocked = u.blocked ? '<span style="color:#dc2626; font-weight:600;">Sim</span>' : 'Não';
     const last = u.last_activity ? formatDateTime(u.last_activity) : '—';
-    const interactions = u.interaction_count === null || u.interaction_count === undefined
-      ? '—'
-      : escapeHtml(u.interaction_count);
+    const editPayload = encodeURIComponent(JSON.stringify(u));
     return `
       <tr>
         <td>${nameCell}</td>
         <td>${role}</td>
         <td>${blocked}</td>
         <td>${last}</td>
-        <td>${interactions}</td>
-        <td><button class="btn-primary" style="padding:0.25rem 0.6rem; font-size:0.8rem;" data-dm-remove="${encodeURIComponent(u.user_id)}">Remover</button></td>
+        <td style="white-space:nowrap;">
+          <button class="btn-primary" style="padding:0.25rem 0.6rem; font-size:0.8rem;" data-dm-edit="${editPayload}">Editar</button>
+          <button style="padding:0.25rem 0.6rem; font-size:0.8rem;" data-dm-remove="${encodeURIComponent(u.user_id)}">Remover</button>
+        </td>
       </tr>`;
   }).join('');
   tableBody.innerHTML = rows;
+}
+
+function resetDmUserEditor() {
+  const input = document.getElementById('dmUserIdInput');
+  const allowed = document.getElementById('dmAllowedInput');
+  const blocked = document.getElementById('dmBlockedInput');
+  const note = document.getElementById('dmNoteInput');
+  const saveBtn = document.getElementById('addDmUserBtn');
+  const cancelBtn = document.getElementById('cancelDmEditBtn');
+  if (input) input.value = '';
+  if (allowed) allowed.checked = false;
+  if (blocked) blocked.checked = false;
+  if (note) note.value = '';
+  if (saveBtn) saveBtn.textContent = 'Adicionar/Atualizar';
+  if (cancelBtn) cancelBtn.style.display = 'none';
+}
+
+function beginDmUserEdit(userData) {
+  const input = document.getElementById('dmUserIdInput');
+  const allowed = document.getElementById('dmAllowedInput');
+  const blocked = document.getElementById('dmBlockedInput');
+  const note = document.getElementById('dmNoteInput');
+  const saveBtn = document.getElementById('addDmUserBtn');
+  const cancelBtn = document.getElementById('cancelDmEditBtn');
+  const id = userData?.user_id || '';
+  if (!id) return;
+  if (input) input.value = id;
+  if (allowed) allowed.checked = !!userData.allowed;
+  if (blocked) blocked.checked = !!userData.blocked;
+  if (note) note.value = userData.note || '';
+  if (saveBtn) saveBtn.textContent = 'Salvar alterações';
+  if (cancelBtn) cancelBtn.style.display = 'inline-block';
+  document.getElementById('dmUserIdInput')?.focus();
 }
 
 async function addDmUser(userId, allowed = false, blocked = false, note = '') {
@@ -1975,6 +2086,18 @@ document.addEventListener('click', async (event) => {
     const groupId = groupAttr ? decodeURIComponent(groupAttr) : lastLoadedGroupCommandsId;
     deleteGroupCommand(groupId, command);
   }
+  const dmEditBtn = event.target instanceof Element ? event.target.closest('[data-dm-edit]') : null;
+  if (dmEditBtn) {
+    const payload = dmEditBtn.getAttribute('data-dm-edit');
+    if (payload) {
+      try {
+        beginDmUserEdit(JSON.parse(decodeURIComponent(payload)));
+      } catch (err) {
+        console.error('Dados de edição DM inválidos:', err);
+      }
+    }
+    return;
+  }
   const dmRemoveBtn = event.target instanceof Element ? event.target.closest('[data-dm-remove]') : null;
   if (dmRemoveBtn) {
     const uid = dmRemoveBtn.getAttribute('data-dm-remove');
@@ -1994,16 +2117,24 @@ document.getElementById('addDmUserBtn')?.addEventListener('click', async (e) => 
   const id = document.getElementById('dmUserIdInput')?.value?.trim();
   const allowed = !!document.getElementById('dmAllowedInput')?.checked;
   const blocked = !!document.getElementById('dmBlockedInput')?.checked;
+  const note = document.getElementById('dmNoteInput')?.value?.trim() || '';
   const statusEl = document.getElementById('dmUsersStatus');
   if (!id) return alert('Informe o User ID');
   if (statusEl) statusEl.textContent = 'Salvando...';
   try {
-    await addDmUser(id, allowed, blocked, '');
+    await addDmUser(id, allowed, blocked, note);
+    resetDmUserEditor();
     if (statusEl) statusEl.textContent = 'Salvo.';
   } catch (err) {
     console.error('Erro ao adicionar DM user:', err);
     if (statusEl) statusEl.textContent = 'Erro ao salvar.';
   }
+});
+
+document.getElementById('cancelDmEditBtn')?.addEventListener('click', () => {
+  resetDmUserEditor();
+  const statusEl = document.getElementById('dmUsersStatus');
+  if (statusEl) statusEl.textContent = '';
 });
 
 function renderAdminUserInfo(user) {
@@ -2211,6 +2342,10 @@ async function toggleGroupDetails(hashVisual) {
         const date = new Date(media.timestamp).toLocaleDateString('pt-BR');
         const isOldest = index === 0; // Details are returned sorted by timestamp ASC
         const previewUrl = getMediaPreviewUrl(media.mimetype, media.url, media.file_path);
+        const preview = media.file_exists && previewUrl
+          ? `<img class="media-preview" src="${previewUrl}" data-original-src="${previewUrl}" alt="Preview">`
+          : '<span class="muted">Arquivo não encontrado no armazenamento</span>';
+
 
         return `
           <div class="duplicate-item ${isOldest ? 'oldest' : ''}">
@@ -2223,8 +2358,7 @@ async function toggleGroupDetails(hashVisual) {
               </span>
             </div>
             <div class="media-actions">
-              <img class="media-preview" src="${previewUrl}" data-original-src="${media.url || ''}"
-                   onerror="this.src='/media/audio.png'" alt="Preview">
+          ${preview}
             </div>
           </div>
         `;
@@ -2283,34 +2417,34 @@ async function deleteSelectedDuplicates() {
   
   let successCount = 0;
   let errorCount = 0;
-  
-  for (const hashVisual of selectedHashes) {
-    try {
-      const result = await fetchWithCSRF(`/api/admin/duplicates/${encodeURIComponent(hashVisual)}`, {
-        method: 'DELETE'
-      });
-      
-      if (result.ok) {
-        successCount++;
-      } else {
-        const data = await result.json().catch(() => ({}));
-        if (data.error === 'forbidden') {
-          alert('Você não tem permissão de administrador para deletar duplicatas.');
-          break; // Stop processing if user lacks permissions
-        }
-        errorCount++;
-      }
-    } catch (error) {
-      console.error('Error deleting duplicate group:', error);
-      errorCount++;
+  let results = [];
+  try {
+    const response = await fetchWithCSRF('/api/admin/duplicates/bulk', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hashVisuals: selectedHashes })
+    });
+    const payload = await response.json().catch(() => ({}));
+    results = Array.isArray(payload.results) ? payload.results : [];
+    successCount = Number(payload.success_count || results.filter((item) => item.ok).length);
+    errorCount = Number(payload.error_count || results.filter((item) => !item.ok).length);
+    if (!response.ok && results.length === 0) {
+      errorCount = selectedHashes.length;
     }
+  } catch (error) {
+    console.error('Error deleting duplicate groups:', error);
+    errorCount = selectedHashes.length;
   }
-  
-  alert(`Exclusão concluída!\n\nGrupos deletados: ${successCount}\nErros: ${errorCount}`);
-  
-  // Reload the duplicates list
+
+  const failedHashes = results.filter((item) => !item.ok).map((item) => item.hash_visual);
+  const failedNotice = failedHashes.length > 0
+    ? `\n\nOs grupos que falharam permanecem na lista para nova tentativa manual.`
+    : '';
+  alert(`Exclusão concluída!\n\nGrupos deletados: ${successCount}\nErros: ${errorCount}${failedNotice}`);
+
+  // Recarrega somente após o resultado final; não repete exclusões ambíguas.
   await loadDuplicateStats();
-  
+
   deleteButton.disabled = false;
   deleteButton.textContent = originalText;
 }
@@ -2814,23 +2948,39 @@ async function adminDecisionFromTab(editId, decision) {
 }
 
 // Initialize pending edits functionality when the page loads
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('click', (event) => {
+  const shortcut = event.target instanceof Element ? event.target.closest('[data-tab]') : null;
+  if (!shortcut || !shortcut.classList.contains('overview-action')) return;
+  event.preventDefault();
+  setActiveMainTab(shortcut.dataset.tab, { updateHash: true });
+});
+
+document.addEventListener('DOMContentLoaded', async function() {
+  // Primeiro confirme a sessão. Sem isso, uma visita anônima ao admin.html
+  // disparava várias APIs administrativas em paralelo e parecia sondagem para o CrowdSec.
+  let sessionUser = null;
+  try {
+    const response = await fetch('/api/me', { credentials: 'same-origin' });
+    if (!response.ok) return;
+    const data = await response.json();
+    sessionUser = data?.user || null;
+  } catch (error) {
+    return;
+  }
+  if (!sessionUser) return;
+  currentPendingEditsUser = sessionUser;
+
   // Add event listener for status filter
   document.getElementById('pendingEditsStatusFilter')?.addEventListener('change', loadPendingEditsTab);
   document.getElementById('refreshHealthBtn')?.addEventListener('click', loadStickerHealth);
+  document.getElementById('refreshOverviewBtn')?.addEventListener('click', loadAdminOverview);
+  document.getElementById('refreshAuditBtn')?.addEventListener('click', loadAdminAudit);
+  document.getElementById('dmSearchInput')?.addEventListener('input', () => renderDmUsersTable(currentDmUsers));
+  document.getElementById('dmStatusFilter')?.addEventListener('change', () => renderDmUsersTable(currentDmUsers));
   document.getElementById('refreshReactionAnalytics')?.addEventListener('click', loadReactionAnalytics);
   loadReactionAnalytics();
   loadStickerHealth();
-  
-  // Store current user info for pending edits functionality
-  fetch('/api/me')
-    .then(response => response.json())
-    .then(data => {
-      currentPendingEditsUser = data.user;
-    })
-    .catch(error => {
-      console.error('Failed to get current user info:', error);
-    });
+  loadAdminOverview();
 });
 
 // Expose the function globally so it can be called from HTML
@@ -2852,12 +3002,29 @@ document.getElementById('saveGroupUser')?.addEventListener('click', (e) => {
 });
 
 
+async function loadAdminAudit() {
+  const status = document.getElementById('auditStatus');
+  const body = document.querySelector('#adminAuditTable tbody');
+  if (!status || !body) return;
+  status.textContent = 'Carregando ações administrativas...';
+  try {
+    const data = await fetchJSON('/api/admin/audit?limit=50');
+    const entries = Array.isArray(data?.entries) ? data.entries : [];
+    body.innerHTML = entries.length ? entries.map(entry => `<tr><td>${escapeHtml(formatDateTime(entry.created_at))}</td><td>${escapeHtml(entry.admin_username || '—')}</td><td>${escapeHtml(entry.action || '—')}</td><td>${escapeHtml(entry.entity || '—')}${entry.entity_id ? ` #${escapeHtml(entry.entity_id)}` : ''}</td><td>${escapeHtml(entry.details?.status ? `HTTP ${entry.details.status}` : 'Concluída')}</td></tr>`).join('') : '<tr><td colspan="5" class="muted">Nenhuma ação administrativa registrada.</td></tr>';
+    status.textContent = `${entries.length} ação(ões) recentes`;
+  } catch (error) {
+    status.textContent = 'Não foi possível carregar a auditoria.';
+    body.innerHTML = '<tr><td colspan="5" class="muted">Tente novamente em instantes.</td></tr>';
+  }
+}
+window.loadAdminAudit = loadAdminAudit;
+
 async function loadStickerHealth() {
   const summary=document.getElementById('healthSummary'), checks=document.getElementById('healthChecks');
   if (!summary || !checks) return;
   summary.textContent='Verificando dependências...';
   try {
-    const r=await fetch('/api/health/deep',{credentials:'same-origin',cache:'no-store'}); const data=await r.json();
+    const r=await fetch('/api/admin/health/deep',{credentials:'same-origin',cache:'no-store'}); const data=await r.json();
     summary.textContent=(data.ok?'✅ Operacional':'⚠️ Degradado')+' — '+new Date(data.ts).toLocaleTimeString();
     checks.innerHTML=Object.entries(data.checks||{}).map(([name,item])=>'<div style="padding:.6rem;border:1px solid '+(item.ok?'#86efac':'#fca5a5')+';border-radius:6px"><strong>'+name+'</strong><br><span>'+(item.ok?'✅ OK':'❌ Indisponível')+'</span>'+(item.state?'<br><small>'+item.state+'</small>':'')+'</div>').join('');
   } catch(e) { summary.textContent='❌ Não foi possível consultar o healthcheck'; checks.innerHTML=''; }

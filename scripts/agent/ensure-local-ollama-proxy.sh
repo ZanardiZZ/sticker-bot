@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LISTEN_HOST="${LOCAL_OLLAMA_PROXY_HOST:-127.0.0.1}"
 LISTEN_PORT="${LOCAL_OLLAMA_PROXY_PORT:-11434}"
-UPSTREAM_URL="${DEEPSEEK_BASE_URL:-http://YOUR_LLM_HOST:11434}"
+UPSTREAM_URL="${DEEPSEEK_BASE_URL:-http://127.0.0.1:11434}"
 PID_FILE="${ROOT_DIR}/storage/temp/ollama-local-proxy.pid"
 LOG_FILE="${ROOT_DIR}/storage/logs/ollama-local-proxy.log"
 HEALTH_URL="http://${LISTEN_HOST}:${LISTEN_PORT}/api/version"

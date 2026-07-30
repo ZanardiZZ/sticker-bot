@@ -233,7 +233,7 @@ dei um restart no baileys-bridge e no bot, agora tá tudo rodando de boa.
    ```env
    ADMIN_WATCHER_ENABLED=true
    ADMIN_WATCHER_MODEL=gpt-4o-mini
-   OPENAI_API_KEY=sk-your-key
+   OPENAI_API_KEY=<YOUR_OPENAI_API_KEY>
    ```
 
 3. Reinicie o bot:

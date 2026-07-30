@@ -100,7 +100,7 @@ def parse_args():
   parser = argparse.ArgumentParser(description='Expose a remote Ollama server on a local port.')
   parser.add_argument('--listen-host', default=os.environ.get('LOCAL_OLLAMA_PROXY_HOST', '127.0.0.1'))
   parser.add_argument('--listen-port', type=int, default=int(os.environ.get('LOCAL_OLLAMA_PROXY_PORT', '11434')))
-  parser.add_argument('--upstream', default=os.environ.get('DEEPSEEK_BASE_URL', 'http://YOUR_LLM_HOST:11434'))
+  parser.add_argument('--upstream', default=os.environ.get('DEEPSEEK_BASE_URL', 'http://127.0.0.1:11434'))
   return parser.parse_args()
 
 

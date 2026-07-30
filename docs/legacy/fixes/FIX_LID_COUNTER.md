@@ -4,7 +4,7 @@
 
 Users reported that the sticker counter was "stuck" (não estava aumentando) after WhatsApp migrated from Phone Number (PN) identifiers to Local Identifier (LID) format.
 
-**Issue Reporter:** EXAMPLE_USER_LID  
+**Issue Reporter:** 100000000000000@lid
 **Issue:** `contador de figurinhas está travado desde a mudança para @lid`
 
 ## Root Cause Analysis
@@ -55,7 +55,7 @@ User sends media
     ↓
 messageHandler.handleMessage()
     ↓
-resolveSenderId() → returns LID (e.g., "EXAMPLE_USER_LID")
+resolveSenderId() → returns LID (e.g., "100000000000000@lid")
     ↓
 processIncomingMedia(client, message, resolvedSenderId) ← NOW RECEIVES LID
     ↓
@@ -144,4 +144,4 @@ While this fix resolves the immediate issue, potential future improvements:
 
 - WhatsApp LID Migration: Related to Baileys library changes for WhatsApp's new LID system
 - Related PR: This pull request
-- Issue Reporter: EXAMPLE_USER_LID
+- Issue Reporter: 100000000000000@lid

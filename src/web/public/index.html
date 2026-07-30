@@ -3,61 +3,65 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sticker Browser</title>
+  <meta name="theme-color" content="#10151f">
+  <title>Sticker Browser — encontre a reação certa</title>
+  <meta name="description" content="Pesquise, descubra e compartilhe figurinhas do ZZ Bot.">
   <link rel="stylesheet" href="/styles.css">
-
-  
   <script src="/privacy.js" defer></script>
 </head>
-<body>
-<nav>
-  <a href="/">Home</a>
-  <a href="/ranking/tags">Ranking Tags</a>
-  <a href="/ranking/users">Ranking Usuários</a>
-  <span id="userInfo" style="margin-left:auto;"></span>
-</nav>
-<header>
-  <strong>Sticker Browser</strong>
-  <input id="q" placeholder="Busca..."/>
-  <input id="tag" placeholder="Tag (todas)"/>
-  <input id="anyTag" placeholder="Qualquer tag(s)"/>
-  <select id="nsfw">
-    <option value="0" selected>Só Safe</option>
-    <option value="all">NSFW: Todos (login)</option>
-    <option value="1">Só NSFW (login)</option>
-  </select>
-  <select id="sort">
-    <option value="newest">Mais novas</option>
-    <option value="oldest">Mais antigas</option>
-    <option value="popular">Populares</option>
-    <option value="name">Nome</option>
-    <option value="random">Aleatório</option>
-  </select>
-  <button id="reload">Recarregar</button>
-  <span id="count"></span>
-</header>
-<div class="grid" id="grid">
-  <div class="loading-placeholder" style="grid-column: 1/-1; text-align: center; padding: 2rem; color: #666;">
-    Carregando stickers...
-  </div>
-</div>
+<body class="catalog-page">
+  <nav class="site-nav" aria-label="Navegação principal">
+    <a class="brand" href="/" aria-label="Sticker Browser — início">
+      <span class="brand-mark" aria-hidden="true">✦</span>
+      <span><strong>Sticker</strong><small>Browser</small></span>
+    </a>
+    <div class="nav-links">
+      <a class="active" href="/">Explorar</a>
+      <a href="/ranking/tags">Tags em alta</a>
 
-<div id="editModal">
-  <div class="box">
-    <h3>Sticker <span id="editId"></span></h3>
-    <div id="stickerDetails" style="margin-bottom: 1rem; padding: 0.5rem; background: #f5f5f5; border-radius: 4px; font-size: 0.9rem;"></div>
-    <textarea id="editDesc" rows="3" placeholder="Descrição"></textarea>
-    <label style="font-size:.8rem;"><input type="checkbox" id="editNsfw"> NSFW</label>
-    <input id="editTags" placeholder="tags separadas por vírgula" />
-    <div style="display:flex; gap:.5rem; justify-content:flex-end;">
-      <button id="generateAi" class="btn-secondary">Gerar via IA</button>
-      <button id="cancelEdit" class="btn-secondary">Cancelar</button>
-      <button id="saveEdit" class="btn-primary">Salvar</button>
     </div>
-    <div id="editMsg" class="muted"></div>
-  </div>
-</div>
+    <span id="userInfo" class="user-area"></span>
+  </nav>
 
-<script src="/app.js" defer></script>
+  <main>
+    <section class="catalog-intro" aria-labelledby="page-title">
+      <div class="eyebrow"><span class="eyebrow-dot"></span> Catálogo vivo do ZZ Bot</div>
+      <h1 id="page-title">A reação certa<br><em>está aqui.</em></h1>
+      <p class="intro-copy">Encontre uma figurinha, compartilhe no WhatsApp e deixe a conversa falar por você.</p>
+      <div class="catalog-stat"><strong id="count">—</strong><span>figurinhas disponíveis</span></div>
+    </section>
+
+    <section class="search-panel" aria-label="Filtros do catálogo">
+      <div class="search-main">
+        <span class="search-icon" aria-hidden="true">⌕</span>
+        <input id="q" aria-label="Buscar por descrição" placeholder="O que você quer dizer? Busque por descrição…" autocomplete="off" />
+      </div>
+      <div class="filter-row">
+        <label class="filter-field"><span>Tag específica</span><input id="tag" placeholder="ex.: humor" /></label>
+        <label class="filter-field"><span>Qualquer uma destas</span><input id="anyTag" placeholder="ex.: gato, meme" /></label>
+        <label class="filter-field"><span>Mostrar</span><select id="nsfw"><option value="0" selected>Só conteúdo seguro</option><option value="all">Todos (login)</option><option value="1">Só NSFW (login)</option></select></label>
+        <label class="filter-field"><span>Ordenar por</span><select id="sort"><option value="newest">Mais novas</option><option value="oldest">Mais antigas</option><option value="popular">Populares</option><option value="name">Nome</option><option value="random">Aleatório</option></select></label>
+        <button id="reload" class="refresh-btn" type="button" title="Recarregar catálogo" aria-label="Recarregar catálogo">↻</button>
+      </div>
+    </section>
+
+    <div class="results-heading"><span>Descobertas recentes</span><span class="results-rule"></span><span class="results-hint">Role para carregar mais</span></div>
+    <div class="grid" id="grid">
+      <div class="loading-placeholder" style="grid-column:1/-1">Carregando figurinhas<span class="loading-dots">...</span></div>
+    </div>
+  </main>
+
+  <div id="editModal" role="dialog" aria-modal="true" aria-labelledby="editTitle">
+    <div class="box">
+      <div class="modal-heading"><div><span class="eyebrow">MANUTENÇÃO</span><h2 id="editTitle">Sticker <span id="editId"></span></h2></div><button id="cancelEdit" class="modal-close" type="button" aria-label="Fechar">×</button></div>
+      <div id="stickerDetails" class="modal-details"></div>
+      <label class="modal-label" for="editDesc">Descrição<textarea id="editDesc" rows="3" placeholder="Descrição"></textarea></label>
+      <label class="modal-label" for="editTags">Tags<input id="editTags" placeholder="tags separadas por vírgula" /></label>
+      <label class="check-label"><input type="checkbox" id="editNsfw"> Marcar como NSFW</label>
+      <div class="modal-actions"><button id="generateAi" class="btn-secondary" type="button">Gerar via IA</button><button id="saveEdit" class="btn-primary" type="button">Salvar alterações</button></div>
+      <div id="editMsg" class="muted" role="status"></div>
+    </div>
+  </div>
+  <script src="/app.js?v=20260728-no-hashes" defer></script>
 </body>
 </html>

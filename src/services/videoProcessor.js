@@ -12,13 +12,22 @@ const { TEMP_DIR } = require('../paths');
 let ffmpeg = null;
 let ffmpegPath = null;
 
+function resolveFfmpegPath() {
+  let packagedPath = null;
+  try {
+    packagedPath = require('ffmpeg-static');
+  } catch (_) {}
+  const candidates = [process.env.FFMPEG_PATH, packagedPath, '/usr/bin/ffmpeg']
+    .filter(Boolean)
+    .filter((candidate, index, values) => values.indexOf(candidate) === index);
+  return candidates.find((candidate) => fs.existsSync(candidate)) || null;
+}
+
 try {
   ffmpeg = require('fluent-ffmpeg');
-  ffmpegPath = require('ffmpeg-static');
-  
-  if (ffmpegPath) {
-    ffmpeg.setFfmpegPath(ffmpegPath);
-  }
+  ffmpegPath = resolveFfmpegPath();
+  if (!ffmpegPath) throw new Error('ffmpeg_binary_not_found');
+  ffmpeg.setFfmpegPath(ffmpegPath);
 } catch (error) {
   console.warn('[VideoProcessor] FFmpeg não disponível:', error.message);
   console.warn('[VideoProcessor] Funcionalidades de processamento de vídeo serão desabilitadas');

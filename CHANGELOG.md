@@ -1,5 +1,131 @@
 # Changelog
 
+Todas as mudanças relevantes do Sticker Bot serão documentadas neste arquivo.
+
+## [0.2.0] — Candidata à publicação
+
+> Esta entrada está preparada para a próxima publicação. O número em `package.json` ainda permanece `0.14.2` até a aprovação final do release e da estratégia de versionamento.
+
+### Compatibilidade WhatsApp
+
+- Atualizada a stack principal para:
+  - `@wppconnect-team/wppconnect` `2.2.5`;
+  - `@wppconnect/wa-js` `4.4.3`;
+  - `@wppconnect/wa-version` `1.5.4470`.
+- Validada a sessão WhatsApp Web `2.3000.1044151668` em estado `MAIN (NORMAL)`.
+- Substituídas chamadas ativas de `getAllChats()` por `listChats()`, mantendo fallback compatível somente nos caminhos que ainda precisam dele.
+- Mantido o contrato Baileys/WebSocket usado pelo bot, com conversão explícita das mensagens WPPConnect para o formato compatível.
+
+### LID, JID e envio de mídia
+
+- Mantida a normalização genérica de JIDs e o suporte a LID, PN, grupos, broadcast e demais formatos necessários ao runtime.
+- Simplificado o fluxo LID→PN para priorizar `getPnLidEntry()` nativo do WPPConnect.
+- Removidos fallbacks LID redundantes baseados em `getChatById()` e `checkNumberStatus()`.
+- Mantida a tabela `lid_mapping` como cache/histórico operacional, por ainda ser usada por consultas, relatórios e consistência de contatos.
+- Corrigida a invalidação do cache LID após exclusão de um mapeamento.
+- Validado envio privado real para uma mensagem recebida em `@lid`, com processamento, envio do sticker, descrição e ACK `messageSent`.
+- Validado também o caminho de grupo.
+- Mantidos os fallbacks de mídia que ainda possuem uso real, incluindo o caminho legado `deprecatedMms3Url` para GIFs quando disponível.
+
+### Limpeza de código
+
+- Removido o módulo não utilizado `src/memory-bridge/`.
+- Removido o processo `Memory-Bridge` do `ecosystem.config.cjs`; o runtime ativo utiliza OpenViking em `127.0.0.1:1933`.
+- Removida a função não utilizada `recoverMultipleChatHistories()`.
+- Removidos helpers órfãos de memória, memes e conversação:
+  - `dedupeFacts()`;
+  - `stripCaptionDirectives()`;
+  - `sendEmojiReaction()`;
+  - `violatesUserAttackGuardrails()`;
+  - `clampReplyLength()`;
+  - `isSpecificLongRequest()`;
+  - `isEchoLikeReply()`;
+  - `splitReplyIntoChunks()`;
+  - `isDegenerateListOnlyReply()`;
+  - `normalizeForEchoCheck()`;
+  - `pickReactionEmoji()`.
+- Removida a função órfã `rawGet()` do serviço Mercado Pago.
+- Removidos comentários stale que mencionavam os fallbacks LID já eliminados.
+- Corrigido comentário operacional que indicava incorretamente WPPConnect `2.8.x`; a configuração agora descreve a compatibilidade sem fixar uma versão incorreta.
+- Artefatos temporários de testes foram arquivados antes da remoção e retirados do diretório operacional.
+- Backups reversíveis foram preservados para os lotes de limpeza.
+
+### Graphify e auditoria
+
+- Instalado `graphifyy` `0.9.30` no LXC como ferramenta isolada do usuário operacional.
+- Adicionado o parser opcional SQL do Graphify.
+- Criado o wrapper externo:
+
+  ```text
+  /home/dev/bin/stickerbot2-graphify
+  ```
+
+- O corpus do Graphify passou a ser construído em:
+
+  ```text
+  /home/dev/graphify-work/stickerbot2
+  ```
+
+- O grafo não inclui `node_modules`, sessão WhatsApp, bancos, mídia, `.env`, backups ou temporários.
+- O `graphify update` foi executado com sucesso após as últimas alterações, gerando o grafo fora do escopo do bot.
+- As consultas Graphify foram usadas para confirmar relações de envio, resolução LID, recuperação histórica e candidatos órfãos.
+
+### Operação e armazenamento
+
+- Criado backup reversível antes da limpeza geral.
+- Removidos artefatos antigos e temporários após preservação de rollback.
+- Foram eliminados 9.678 artefatos antigos, liberando aproximadamente 3,60 GB.
+- Preservados banco operacional, sessão WhatsApp, mídia, configurações e rollback da stack anterior.
+
+### Testes e validação
+
+- Suíte unitária validada repetidamente após os lotes de limpeza:
+
+  ```text
+  205/205 testes aprovados
+  ```
+
+- Testes de consistência LID aprovados.
+- Integração de banco e recuperação histórica aprovadas.
+- Testes de Mercado Pago aprovados: `3/3`.
+- Testes de runtime de conversação aprovados: `3/3`.
+- `Bot-Client`, `WebServer` e `WS-Socket-Server` permaneceram online após os reinícios.
+
+### Correção de GIF — hotfix da candidata
+
+- Corrigida a resolução do executável FFmpeg quando o binário empacotado por `ffmpeg-static` está ausente.
+- O processamento agora tenta, nesta ordem:
+  1. `FFMPEG_PATH`, quando configurado;
+  2. binário válido de `ffmpeg-static`;
+  3. `/usr/bin/ffmpeg` do sistema.
+- Aplicada a correção tanto ao conversor de GIFs quanto ao `videoProcessor`.
+- A causa foi reproduzida em produção: o MP4 recebido como GIF foi baixado e descriptografado corretamente, mas falhou com `ENOENT` ao tentar executar `node_modules/ffmpeg-static/ffmpeg`.
+- Validado processamento local de um MP4 pelo caminho real, com `ffprobe`, extração de frames e análise concluída.
+
+### Portabilidade e saneamento para publicação
+
+- Removidos do `ecosystem.config.cjs` os caminhos locais de modelo, IPs internos e `cwd` específico do ambiente de desenvolvimento.
+- Transformado `ecosystem.config.js` em shim compatível para o `ecosystem.config.cjs`, evitando duas configurações PM2 divergentes.
+- Removido o fallback de modelo local Windows em `src/plugins/memeGenerator.js`; modelos e endpoints passam a vir do ambiente.
+- Removidos defaults de autorização, números WhatsApp e IDs de grupos específicos do ambiente em código, documentação e fixtures.
+- Substituídos caminhos absolutos de scripts operacionais por resolução relativa ao projeto ou variáveis de ambiente.
+- Eliminados defaults previsíveis de `SESSION_SECRET` e `JWT_SECRET`; quando não configurados, o WebServer usa valores aleatórios por processo.
+- Sanitizados `.env.example`, README, documentação e arquivos de agentes para não publicar IPs internos, caminhos do host ou identificadores operacionais.
+- Confirmada a ausência desses marcadores na árvore atual; o histórico Git ainda contém referências antigas a IP interno e precisa ser tratado separadamente antes de uma publicação pública.
+
+### Pendências antes da publicação
+
+- Atualizar `package.json` e `package-lock.json` para a versão final escolhida, somente após aprovação do release.
+- Executar smoke final privado e em grupo depois do último reinício.
+- Confirmar nos logs os ACKs `messageSent` do smoke final.
+- Executar a suíte de integração completa antes da tag/publicação.
+- Revisar e separar backups históricos do working tree antes de empacotar a versão.
+- Confirmar se a estratégia de versionamento final será `0.2.0` ou se deverá seguir a versão atual `0.14.2`.
+
+## [Unreleased]
+
+- Reservado para mudanças posteriores à preparação da candidata `0.2.0`.
+
 ## [0.14.2] - 2026-04-24
 
 ### Correções

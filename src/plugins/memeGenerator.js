@@ -9,21 +9,22 @@ const { downloadMediaForMessage } = require('../utils/mediaDownload');
 const { transcribeAudioBuffer } = require('../services/ai');
 const crypto = require('crypto');
 require('dotenv').config();
+require('dotenv').config({ path: '/etc/stickerbot/lemonade-image.env' });
 const { DATA_DIR, BOT_MEDIA_DIR } = require('../paths');
 
 const STICKER_DIR = BOT_MEDIA_DIR;
 const DB_PATH = path.join(DATA_DIR, 'memes.sqlite');
 const DATASET_PATH = path.join(DATA_DIR, 'prompt_training_set.json');
 const EXPORT_PATH = path.join(DATA_DIR, 'memes_best.json');
-const IMAGE_MODEL = 'gpt-image-1';
-const IMAGE_SIZE = process.env.MEME_IMAGE_SIZE || '1024x1024';
-const DEFAULT_IMAGE_QUALITY = process.env.MEME_IMAGE_QUALITY || 'low';
-const PROMPT_MODEL = process.env.MEME_PROMPT_MODEL || 'gpt-4o-mini';
+const GEMMA_PROMPT_BASE_URL = String(process.env.GEMMA_PROMPT_BASE_URL || process.env.OPENAI_MULTIMODAL_BASE_URL || 'http://127.0.0.1:8080/v1').replace(/\/$/, '');
+const GEMMA_PROMPT_MODEL = process.env.GEMMA_PROMPT_MODEL || process.env.OPENAI_MULTIMODAL_MODEL || 'gpt-4o-mini';
+const GEMMA_PROMPT_TIMEOUT_MS = Number(process.env.GEMMA_PROMPT_TIMEOUT_MS || 30000);
+const { generateImage } = require('../services/lemonadeImageGeneration');
 const TRANSCRIPTION_LANGUAGE = process.env.MEME_TRANSCRIPTION_LANGUAGE || 'pt';
 const PROMPT_CACHE_SIZE = 20;
 
 let dbInstance = null;
-let openaiClient = null;
+let gemmaPromptClient = null;
 let initialized = false;
 let promptCache = [];
 
@@ -32,14 +33,15 @@ function ensureDataDirs() {
   if (!fs.existsSync(STICKER_DIR)) fs.mkdirSync(STICKER_DIR, { recursive: true });
 }
 
-function ensureOpenAiClient() {
-  if (openaiClient) return openaiClient;
-  const apiKey = process.env.OPENAI_API_KEY_MEMECREATOR;
-  if (!apiKey) {
-    throw new Error('OPENAI_API_KEY_MEMECREATOR ausente');
-  }
-  openaiClient = new OpenAI({ apiKey });
-  return openaiClient;
+function ensureGemmaPromptClient() {
+  if (gemmaPromptClient) return gemmaPromptClient;
+  gemmaPromptClient = new OpenAI({
+    apiKey: process.env.GEMMA_PROMPT_API_KEY || 'not-required',
+    baseURL: GEMMA_PROMPT_BASE_URL,
+    timeout: GEMMA_PROMPT_TIMEOUT_MS,
+    maxRetries: 0
+  });
+  return gemmaPromptClient;
 }
 
 async function getDb() {
@@ -211,79 +213,86 @@ async function gerarPromptMeme(textoOriginal) {
     };
   }
 
-  const openai = ensureOpenAiClient();
-  console.log('[MemeGen] prompt - solicitando ao modelo GPT');
-  const response = await openai.chat.completions.create({
-    model: PROMPT_MODEL,
-    temperature: 0.6,
-    max_tokens: 500,
-    messages: [
-      {
-        role: 'system',
-        content: 'Você recebe pedidos de figurinhas e responde em JSON. Extraia exatamente o estilo visual solicitado pelo usuário, sem impor estilos genéricos ou mencionar “meme”. Sempre retorne apenas o JSON com as chaves "image_prompt" (descrição visual fiel ao pedido, sem palavras na arte), "caption_top" e "caption_bottom" (legendas externas; use string vazia se não houver). Nunca inclua texto dentro de "image_prompt".'
-      },
-      {
-        role: 'user',
-        content: normalized
-      }
-    ]
-  });
-
-  const rawContent = response.choices?.[0]?.message?.content || '';
-  let prompt = rawContent.trim();
-  let topText = '';
-  let bottomText = '';
+  const fallback = {
+    prompt: [
+      normalized,
+      'Create one coherent square image for a WhatsApp sticker.',
+      'Use a clear subject, readable silhouette, intentional composition, expressive action, coherent lighting and a polished illustrative or photographic finish.',
+      'Render any text explicitly requested by the user inside the image, preserving the wording and language; otherwise do not add text.'
+    ].join('\n'),
+    topText: '',
+    bottomText: '',
+    reutilizado: false,
+    promptProvider: 'fallback'
+  };
 
   try {
+    const gemma = ensureGemmaPromptClient();
+    console.log('[MemeGen] prompt - enriquecendo com Gemma4 para Z-Image-Turbo (' + GEMMA_PROMPT_MODEL + ')');
+    const response = await gemma.chat.completions.create({
+      model: GEMMA_PROMPT_MODEL,
+      temperature: 0.2,
+      max_tokens: 500,
+      chat_template_kwargs: { enable_thinking: false },
+      messages: [
+        {
+          role: 'system',
+          content: [
+            'You are a prompt planner for Z-Image-Turbo, not an image generator.',
+            'Transform the user idea into a single, vivid, production-ready image prompt.',
+            'Preserve the subject, action, joke, mood and requested style from the user; do not invent unrelated content.',
+            'Use clear natural language, preferably English for the diffusion model.',
+            'Specify the main subject, action, environment, composition, camera/viewpoint, lighting, materials, color palette and visual style when useful.',
+            'Prefer one coherent scene with a strong focal point and readable silhouette.',
+            'Do not use prompt weights, LoRA syntax, negative-prompt sections or technical diffusion parameters.',
+            'Text is allowed inside the generated image. When the user requests text, render it inside the scene, preserving the exact wording, spelling, language and requested placement; do not duplicate it as an external caption.',
+            'Return only valid JSON: {"image_prompt":"...","caption_top":"...","caption_bottom":"..."}.',
+            'Keep caption fields in the language used by the user and empty when captions were not requested.'
+          ].join(' ')
+        },
+        { role: 'user', content: normalized }
+      ]
+    });
+
+    const rawContent = String(response.choices?.[0]?.message?.content || '').trim();
     const jsonStart = rawContent.indexOf('{');
     const jsonEnd = rawContent.lastIndexOf('}');
-    if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
-      const parsed = JSON.parse(rawContent.slice(jsonStart, jsonEnd + 1));
-      prompt = String(parsed.image_prompt || '').trim();
-      topText = String(parsed.caption_top || '').trim();
-      bottomText = String(parsed.caption_bottom || '').trim();
-    }
-  } catch (err) {
-    console.warn('[MemeGen] prompt - resposta não JSON, utilizando fallback:', err.message);
-  }
+    if (jsonStart < 0 || jsonEnd <= jsonStart) throw new Error('Gemma4 não retornou JSON');
+    const parsed = JSON.parse(rawContent.slice(jsonStart, jsonEnd + 1));
+    const prompt = String(parsed.image_prompt || '').trim();
+    if (!prompt) throw new Error('Gemma4 retornou image_prompt vazio');
 
-  if (!prompt) {
-    prompt = rawContent || normalized;
+    return {
+      prompt,
+      topText: String(parsed.caption_top || '').trim(),
+      bottomText: String(parsed.caption_bottom || '').trim(),
+      reutilizado: false,
+      promptProvider: 'gemma4-zimage'
+    };
+  } catch (error) {
+    console.warn('[MemeGen] prompt - Gemma4 indisponível; usando fallback local (' + (error?.status || error?.code || error?.message || 'erro') + ')');
+    return fallback;
   }
-
-  if (!/sem texto/i.test(prompt)) {
-    prompt = `${prompt}
-Sem texto sobre a imagem.`.trim();
-  }
-
-  return {
-    prompt,
-    topText,
-    bottomText,
-    reutilizado: false
-  };
 }
-
-async function gerarImagemMeme(prompt, tipo = 'texto') {
+async function gerarImagemMeme(prompt, tipo = 'texto', options = {}) {
   if (!prompt || !prompt.trim()) {
     throw new Error('Prompt vazio para gerar imagem');
   }
   await initMemesDB();
-  const openai = ensureOpenAiClient();
-  const quality = tipo === 'audio' ? 'medium' : DEFAULT_IMAGE_QUALITY;
-  const safePrompt = `${prompt}
-Sem texto, palavras, letras ou legendas na imagem.`.trim();
+  const safePrompt = prompt.trim();
 
-  console.log(`[MemeGen] imagem - gerando com qualidade ${quality}`);
-  const imageResponse = await openai.images.generate({
-    model: IMAGE_MODEL,
-    prompt: safePrompt,
-    size: IMAGE_SIZE,
-    quality
+  console.log('[MemeGen] imagem - solicitando ao Lemonade (fila Z-Image, 8 steps, cfg 1)');
+  const queuedImage = generateImage(safePrompt, {
+    requesterId: options.requesterId,
+    onQueued: options.onQueued
   });
-  const imageData = imageResponse.data?.[0]?.b64_json;
+  if (typeof options.onQueued === 'function') {
+    options.onQueued({ jobId: queuedImage.jobId, position: queuedImage.position });
+  }
+  const imageResponse = await queuedImage;
+  const imageData = imageResponse.imageData;
   if (!imageData) {
-    throw new Error('OpenAI não retornou imagem');
+    throw new Error('Lemonade não retornou imagem');
   }
 
   const rawBuffer = Buffer.from(imageData, 'base64');
@@ -305,11 +314,13 @@ Sem texto, palavras, letras ou legendas na imagem.`.trim();
   return {
     originalPath: null,
     webpPath: finalPath,
-    qualidade: quality
+    qualidade: 'lemonade-z-image',
+    steps: imageResponse.steps,
+    cfgScale: imageResponse.cfgScale
   };
 }
 
-async function processarAudioParaMeme(client, audioMessage) {
+async function processarAudioParaMeme(client, audioMessage, options = {}) {
   if (!audioMessage) {
     throw new Error('Nenhuma mensagem de áudio fornecida');
   }
@@ -326,7 +337,7 @@ async function processarAudioParaMeme(client, audioMessage) {
     throw new Error(textoOriginal || 'Transcrição vazia');
   }
   const promptInfo = await gerarPromptMeme(textoOriginal);
-  const imagemInfo = await gerarImagemMeme(promptInfo.prompt, 'audio');
+  const imagemInfo = await gerarImagemMeme(promptInfo.prompt, 'audio', options);
   return {
     textoOriginal,
     promptInfo,

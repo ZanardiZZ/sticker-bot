@@ -122,51 +122,6 @@ function isJidHostedLidUser(jid) {
 }
 
 /**
- * Obtém o ID preferido do usuário (LID se disponível, senão PN)
- * @param {Object} sock - Instância do socket Baileys
- * @param {string} jid - JID do usuário
- * @returns {Promise<string>} ID preferido
- */
-async function getPreferredUserId(sock, jid) {
-    if (!jid) return null;
-    
-    // Se já é LID, retorna como está
-    if (isLidUser(jid)) {
-        return jid;
-    }
-    
-    // Se é PN, tenta obter o LID correspondente
-    if (isPnUser(jid)) {
-        try {
-            const lid = await sock.signalRepository.lidMapping.getLIDForPN(jid);
-            return lid || jid; // Retorna LID se encontrado, senão mantém PN
-        } catch (error) {
-            console.log(`[JID] Erro ao obter LID para ${jid}:`, error.message);
-            return jid;
-        }
-    }
-    
-    return jid;
-}
-
-/**
- * Obtém o número de telefone para um LID
- * @param {Object} sock - Instância do socket Baileys
- * @param {string} lid - LID do usuário
- * @returns {Promise<string|null>} Número de telefone ou null
- */
-async function getPhoneNumberForLid(sock, lid) {
-    if (!isLidUser(lid)) return null;
-    
-    try {
-        return await sock.signalRepository.lidMapping.getPNForLID(lid);
-    } catch (error) {
-        console.log(`[JID] Erro ao obter PN para ${lid}:`, error.message);
-        return null;
-    }
-}
-
-/**
  * Normaliza um JID para uso consistente no sistema
  * @param {string} jid 
  * @returns {string}
@@ -214,7 +169,5 @@ module.exports = {
     isJidNewsletter,
     isJidHostedPnUser,
     isJidHostedLidUser,
-    getPreferredUserId,
-    getPhoneNumberForLid,
     normalizeJid
 };

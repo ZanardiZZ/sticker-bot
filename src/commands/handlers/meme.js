@@ -18,6 +18,11 @@ const { generateResponseMessage } = require('../../utils/responseMessage');
 const sharp = require('sharp');
 const { getAiAnnotations } = require('../../services/ai');
 
+function imageQueueStatusMessage({ position }) {
+  if (position > 1) return `⏳ Geração enfileirada. Sua posição aproximada: ${position}.`;
+  return '⏳ Geração iniciando agora; o backend está protegido por fila.';
+}
+
 function formatPromptForDisplay(prompt) {
   const normalized = typeof prompt === 'string' ? prompt : String(prompt || '');
   const trimmed = normalized.trim();
@@ -75,31 +80,9 @@ function normalizeTag(tag) {
     .trim()
     .replace(/\s+/g, '');
 }
-
-function stripCaptionDirectives(text) {
-  if (!text || typeof text !== 'string') return text || '';
-  let result = text;
-  const patterns = [
-    /texto\s+em\s+cima(?:\s+escrito)?[\s,:;\-]*["“']?([^"“',.;]+)/gi,
-    /texto\s+no\s+topo(?:\s+escrito)?[\s,:;\-]*["“']?([^"“',.;]+)/gi,
-    /texto\s+superior(?:\s+escrito)?[\s,:;\-]*["“']?([^"“',.;]+)/gi,
-    /texto\s+em\s+baixo(?:\s+escrito)?[\s,:;\-]*["“']?([^"“',.;]+)/gi,
-    /texto\s+na\s+parte\s+de\s+baixo(?:\s+escrito)?[\s,:;\-]*["“']?([^"“',.;]+)/gi,
-    /texto\s+inferior(?:\s+escrito)?[\s,:;\-]*["“']?([^"“',.;]+)/gi
-  ];
-  patterns.forEach((regex) => {
-    result = result.replace(regex, '').trim();
-  });
-  return result.replace(/\s{2,}/g, ' ').trim();
-}
-
 function buildPromptSeed(rawText, captions) {
-  const baseText = stripCaptionDirectives(rawText || '');
-  const hasCaptions = captions && (captions.topText || captions.bottomText);
-  const instruction = hasCaptions
-    ? 'Importante: não inclua texto ou legendas na arte. Deixe espaço limpo para inserirmos texto depois.'
-    : '';
-  const parts = [baseText, instruction].map((part) => (part || '').trim()).filter(Boolean);
+  const baseText = typeof rawText === 'string' ? rawText.trim() : '';
+  const parts = [baseText].map((part) => (part || '').trim()).filter(Boolean);
   return parts.join('\n');
 }
 
@@ -290,11 +273,6 @@ async function enviarFigurinhaGerada(client, chatId, webpPath) {
 }
 
 async function handleCriarMemeCommand(client, message, chatId, params = '', context = {}) {
-  if (!process.env.OPENAI_API_KEY_MEMECREATOR) {
-    await sendStatusMessage(client, chatId, '🚫 Nenhuma chave OpenAI configurada para criação de memes.');
-    return true;
-  }
-
   try {
     await initMemesDB();
   } catch (error) {
@@ -321,7 +299,10 @@ async function handleCriarMemeCommand(client, message, chatId, params = '', cont
         const quoted = await client.getQuotedMessage(message.id);
         if (quoted?.isMedia && (quoted.mimetype?.startsWith('audio/') || quoted.type === 'ptt')) {
           tipo = 'audio';
-          const audioResult = await withTyping(client, chatId, async () => processarAudioParaMeme(client, quoted));
+          const audioResult = await withTyping(client, chatId, async () => processarAudioParaMeme(client, quoted, {
+            requesterId: senderId,
+            onQueued: (ticket) => { void sendStatusMessage(client, chatId, imageQueueStatusMessage(ticket)); }
+          }));
           textoOriginal = audioResult.textoOriginal;
           promptInfo = audioResult.promptInfo;
           imagemInfo = audioResult.imagemInfo;
@@ -358,12 +339,15 @@ async function handleCriarMemeCommand(client, message, chatId, params = '', cont
     await sendStatusMessage(client, chatId, `🧠 Prompt criado: ${display}`);
 
     if (!imagemInfo) {
-      imagemInfo = await withTyping(client, chatId, async () => gerarImagemMeme(promptInfo.prompt, tipo));
+      imagemInfo = await withTyping(client, chatId, async () => gerarImagemMeme(promptInfo.prompt, tipo, {
+        requesterId: senderId,
+        onQueued: (ticket) => { void sendStatusMessage(client, chatId, imageQueueStatusMessage(ticket)); }
+      }));
     }
 
     await sendStatusMessage(client, chatId, '🖼️ Enviando figurinha...');
 
-    if (captions.topText || captions.bottomText) {
+    if ((promptInfo.promptProvider !== 'gemma4-zimage') && (captions.topText || captions.bottomText)) {
       try {
         await applyCaptionsToSticker(imagemInfo.webpPath, captions);
       } catch (captionError) {
@@ -464,7 +448,17 @@ async function handleCriarMemeCommand(client, message, chatId, params = '', cont
     return true;
   } catch (error) {
     console.error('[MemeGen] criar - erro:', error.message);
-    await sendStatusMessage(client, chatId, 'Falha ao criar o meme.');
+    if (error?.code === 'IMAGE_USER_COOLDOWN') {
+      await sendStatusMessage(client, chatId, '⏱️ Aguarde um minuto antes de pedir outra imagem.');
+    } else if (error?.code === 'IMAGE_QUEUE_FULL') {
+      await sendStatusMessage(client, chatId, '🚦 A fila de imagens está cheia. Tente novamente em alguns minutos.');
+    } else if (error?.code === 'IMAGE_BACKEND_NOT_CONFIGURED') {
+      await sendStatusMessage(client, chatId, '⚠️ A geração de imagens está temporariamente indisponível.');
+    } else if (error?.code === 'IMAGE_SYSTEM_PRESSURE' || error?.code === 'IMAGE_SYSTEM_PRESSURE_TIMEOUT') {
+      await sendStatusMessage(client, chatId, '🛑 O servidor está sob pressão de I/O. A geração foi adiada; tente novamente em instantes.');
+    } else {
+      await sendStatusMessage(client, chatId, 'Falha ao criar o meme.');
+    }
     await registrarMeme({
       userJid: message.sender?.id || message.author || message.from,
       tipo,

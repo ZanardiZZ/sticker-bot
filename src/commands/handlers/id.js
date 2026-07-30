@@ -16,14 +16,14 @@ const { withTyping } = require('../../utils/typingIndicator');
  */
 async function handleIdCommand(client, message, chatId) {
   const parts = message.body.split(' ');
-  if (parts.length !== 2) return;
+  if (parts.length !== 2) return { handled: false, status: 'invalid' };
   const mediaId = parts[1];
 
   try {
     const media = await findById(mediaId);
     if (!media) {
       await safeReply(client, chatId, 'Mídia não encontrada para o ID fornecido.', message.id);
-      return;
+      return { handled: true, status: 'not_found' };
     }
 
     await incrementRandomCount(media.id);
@@ -37,9 +37,9 @@ async function handleIdCommand(client, message, chatId) {
       sentOk = true;
     } catch (mediaError) {
       console.error(`[handleIdCommand] Erro ao enviar mídia ${mediaId}:`, mediaError.message);
-      // Inform user about media sending failure
-      await safeReply(client, chatId, `⚠️ Erro ao enviar a mídia (ID: ${mediaId}): ${mediaError.message}`, message.id);
-      return;
+      // Never expose transport, filesystem, or provider errors to WhatsApp users.
+      await safeReply(client, chatId, 'Não foi possível enviar esta figurinha agora. Tente novamente mais tarde.', message.id);
+      return { handled: true, status: 'failed', errorCode: 'media_send_failed' };
     }
 
     // Small delay to help with socket mode timing (avoid race conditions)
@@ -61,10 +61,12 @@ async function handleIdCommand(client, message, chatId) {
       await safeReply(client, chatId, responseMessage, message.id);
       console.log(`[handleIdCommand] Mensagem de descrição enviada para mídia ${media.id}`);
     }
+    return { handled: true, status: 'sent', mediaId: media.id };
     
   } catch (err) {
     console.error('Erro geral no comando #ID:', err);
     await safeReply(client, chatId, 'Erro ao processar comando #ID.', message.id);
+    return { handled: true, status: 'uncertain', errorCode: 'id_command_error' };
   }
 }
 

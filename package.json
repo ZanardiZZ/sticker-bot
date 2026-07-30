@@ -33,7 +33,9 @@
   "license": "ISC",
   "dependencies": {
     "@tensorflow/tfjs-node": "^4.22.0",
-    "@wppconnect-team/wppconnect": "^1.41.0",
+    "@wppconnect-team/wppconnect": "2.2.5",
+    "@wppconnect/wa-js": "4.4.3",
+    "@wppconnect/wa-version": "1.5.4470",
     "adm-zip": "^0.5.10",
     "axios": "^1.13.5",
     "bcryptjs": "^3.0.3",

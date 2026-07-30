@@ -4,13 +4,14 @@ const { execFileSync } = require('child_process');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const WebSocket = require('ws');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 require('dotenv').config({ path: path.join(ROOT, '.env') });
 const LOG_DIR = path.join(ROOT, 'storage', 'logs');
 const WATCHDOG_LOG = path.join(LOG_DIR, 'health-watchdog.log');
-const PM2_ERROR_LOG = '<PM2_HOME>/logs/WS-Socket-Server-error.log';
+const PM2_ERROR_LOG = process.env.PM2_ERROR_LOG || path.join(process.env.PM2_HOME || path.join(os.homedir(), '.pm2'), 'logs', 'WS-Socket-Server-error.log');
 const STATE_FILE = path.join(ROOT, 'storage', 'logs', 'health-watchdog.state.json');
 
 const REQUIRED_APPS = ['WS-Socket-Server', 'Bot-Client', 'WebServer'];

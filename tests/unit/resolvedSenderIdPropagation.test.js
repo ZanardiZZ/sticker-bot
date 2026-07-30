@@ -14,7 +14,7 @@ async function testResolvedSenderIdPropagation() {
   
   // Simulate the LID resolution
   const rawSenderId = '5511000000000@s.whatsapp.net';
-  const resolvedLid = 'EXAMPLE_USER_LID';
+  const resolvedLid = '100000000000000@lid';
   
   // Test 1: processIncomingMedia should prefer resolvedSenderId
   console.log('Test 1: processIncomingMedia parameter handling');

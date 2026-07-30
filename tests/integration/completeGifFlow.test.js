@@ -81,7 +81,7 @@ async function testCompleteGifFlow() {
       name: 'Regular Video',
       mockMessage: {
         id: 'msg_003',
-        from: '5511000000000@c.us', 
+        from: '5511000000000@c.us',
         type: 'video',
         isMedia: true,
         mimetype: 'video/mp4',

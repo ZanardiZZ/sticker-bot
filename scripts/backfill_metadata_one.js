@@ -1,5 +1,5 @@
-const fs=require('fs');const sharp=require('<PROJECT_ROOT>/node_modules/sharp');const db=require('<PROJECT_ROOT>/src/database');const {getAiAnnotations}=require('<PROJECT_ROOT>/src/services/ai');const {upsertMediaMetadata}=require('<PROJECT_ROOT>/src/database/models/mediaMetadata');const id=Number(process.argv[2]);
-const VLM_BASE_URL=process.env.BACKFILL_VLM_BASE_URL || 'http://YOUR_IMAGE_HOST:8080/v1';
+const fs=require('fs');const path=require('path');const ROOT=path.resolve(__dirname,'..');const sharp=require(path.join(ROOT,'node_modules/sharp'));const db=require(path.join(ROOT,'src/database'));const {getAiAnnotations}=require(path.join(ROOT,'src/services/ai'));const {upsertMediaMetadata}=require(path.join(ROOT,'src/database/models/mediaMetadata'));const id=Number(process.argv[2]);
+const VLM_BASE_URL=process.env.BACKFILL_VLM_BASE_URL || 'http://127.0.0.1:8080/v1';
 const VLM_HEALTH_URL=VLM_BASE_URL.replace(/\/v1\/?$/, '') + '/health';
 const VLM_MODELS_URL=VLM_BASE_URL + '/models';
 const VLM_MODEL=process.env.BACKFILL_VLM_MODEL || process.env.OPENAI_MULTIMODAL_MODEL || 'Qwen3-VL-4B';

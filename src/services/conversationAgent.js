@@ -638,20 +638,6 @@ function buildDefensiveStyleDirective(memoryContext = {}, senderId = null) {
     'Mesmo com guardrails relaxados, mantenha mínimo profissional e evite abuso explícito.'
   ].join(' ');
 }
-
-function violatesUserAttackGuardrails(text = '') {
-  if (!USER_ATTACK_GUARDRAILS_ENABLED) return false;
-  const value = String(text || '').toLowerCase();
-  if (!value.trim()) return false;
-
-  const bannedPatterns = [
-    /\b(idiota|imbecil|burro|ot[aá]rio|animal|lixo humano|escroto|babaca|retardad[oa])\b/i,
-    /\b(vai se fuder|vai tomar no cu|seu lixo|te odeio|te destruir)\b/i
-  ];
-
-  return bannedPatterns.some((pattern) => pattern.test(value));
-}
-
 function buildMemoryPrompt(memoryContext = {}, senderId = null) {
   const readyPrompt = resolveReadyMemoryPrompt(memoryContext, senderId);
   if (readyPrompt) return readyPrompt;
@@ -802,125 +788,6 @@ function buildAiMessages(state, { groupName, memoryContext = null, senderId = nu
     ...dialogue
   ];
 }
-
-function clampReplyLength(reply) {
-  if (!reply) return reply;
-  if (reply.length <= MAX_REPLY_CHARS) return reply.trim();
-
-  const truncated = reply.slice(0, MAX_REPLY_CHARS + 1);
-  const safeCut = truncated.replace(/\s+\S*$/, '').trim();
-  return (safeCut || truncated.slice(0, MAX_REPLY_CHARS)).trim();
-}
-
-function isSpecificLongRequest(text) {
-  const lower = String(text || '').toLowerCase();
-  if (!lower) return false;
-
-  return /(passo a passo|detalhad|detalhe|aprofund|complet[ao]|lista|top\s*\d+|\b\d+\s*(itens|exemplos|formas)|v[aá]rios exemplos|quero muitos|explica melhor|explique melhor|tutorial|guia|piada|humor|anedota|hist[óo]ria)/i.test(lower);
-}
-
-function normalizeForEchoCheck(value = '') {
-  return String(value || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function isEchoLikeReply(reply = '', originalUserText = '') {
-  const a = normalizeForEchoCheck(reply);
-  const b = normalizeForEchoCheck(originalUserText);
-  if (!a || !b) return false;
-
-  if (a === b) return true;
-  if (a.startsWith(b) || b.startsWith(a)) return true;
-
-  const bWords = b.split(' ').filter(Boolean);
-  if (!bWords.length) return false;
-  const overlap = bWords.filter(w => a.includes(w)).length / bWords.length;
-  if (overlap >= 0.9 && a.length <= b.length * 1.4) return true;
-
-  return false;
-}
-
-function splitReplyIntoChunks(reply, { maxChars = MAX_REPLY_CHARS, maxChunks = DEFAULT_MAX_CHUNKS } = {}) {
-  const text = String(reply || '').trim();
-  if (!text) return [];
-
-  const safeMaxChars = Math.max(Number(maxChars) || MAX_REPLY_CHARS, 120);
-  const safeMaxChunks = Math.max(Number(maxChunks) || DEFAULT_MAX_CHUNKS, 1);
-
-  if (text.length <= safeMaxChars) return [text];
-
-  const chunks = [];
-  let remaining = text;
-
-  while (remaining.length > safeMaxChars) {
-    let cut = remaining.lastIndexOf('\n\n', safeMaxChars);
-    if (cut < safeMaxChars * 0.5) {
-      cut = remaining.lastIndexOf('\n', safeMaxChars);
-    }
-    if (cut < safeMaxChars * 0.5) {
-      cut = remaining.lastIndexOf('. ', safeMaxChars);
-      if (cut > -1) cut += 1;
-    }
-    if (cut < safeMaxChars * 0.5) {
-      cut = remaining.lastIndexOf(' ', safeMaxChars);
-    }
-    if (cut < 1) {
-      cut = safeMaxChars;
-    }
-
-    const piece = remaining.slice(0, cut).trim();
-    if (piece) chunks.push(piece);
-    remaining = remaining.slice(cut).trim();
-
-    if (chunks.length >= safeMaxChunks - 1) {
-      break;
-    }
-  }
-
-  if (remaining) {
-    const tail = remaining.length > safeMaxChars
-      ? `${remaining.slice(0, safeMaxChars - 1).trim()}…`
-      : remaining;
-    chunks.push(tail);
-  }
-
-  return chunks.filter(Boolean).slice(0, safeMaxChunks);
-}
-function isDegenerateListOnlyReply(text = '') {
-  const value = String(text || '').trim();
-  if (!value) return true;
-
-  // Valid short factual answers are allowed (e.g., "15", "3,14").
-  if (/^[-+]?\d+(?:[.,]\d+)?(?:\s*[.!?])?$/.test(value)) return false;
-
-  // Legitimate counting replies (e.g., "1 2 3 ...", "1,2,3", "1.\n2.\n3.") should be kept.
-  const numberTokens = (value.match(/\b\d+\b/g) || []).map((n) => Number(n));
-  if (numberTokens.length >= 3 && numberTokens.length <= 20) {
-    const unique = [...new Set(numberTokens)];
-    const isStrictSequence = unique.length === numberTokens.length
-      && unique.every((n, idx) => idx === 0 || n === unique[idx - 1] + 1);
-    if (isStrictSequence) return false;
-  }
-
-  // If it has no actual words, but has multiple numeric/list markers, treat as broken output.
-  const wordMatches = value.match(/\p{L}{2,}/gu) || [];
-  const numberMarkers = value.match(/\b\d+[.):-]?\b/g) || [];
-  if (wordMatches.length === 0 && numberMarkers.length >= 2) return true;
-
-  // Pure punctuation/numbers is also broken conversational content.
-  if (/^[\s\d.,;:()\-•*]+$/.test(value)) return true;
-
-  // Examples: "1. 1., 1., 1." / "1) 2) 3)" / "- - -"
-  if (/^(?:\s*(?:\d+[.):-]?|[•*\-])\s*(?:[,.;:]\s*)?){3,}$/u.test(value)) return true;
-
-  return false;
-}
-
 function neutralizeLeadingCommandLikeReply(text = '') {
   const value = String(text || '').trim();
   if (!value) return value;
@@ -1066,33 +933,6 @@ const REACTION_EMOJIS_LOVE   = ['❤️', '😍', '🥰', '💕', '😘'];
 const REACTION_EMOJIS_AGREE  = ['👍', '💯', '🫶', '✅', '☑️'];
 const REACTION_EMOJIS_THINK  = ['🤔', '👀', '🧐', '😮', '🫢'];
 const REACTION_EMOJIS_DEFAULT = ['😂', '🔥', '💀', '👀', '🤣', '🤯', '😭', '👏', '💯', '🫡'];
-
-function pickReactionEmoji(text) {
-  const lower = text.toLowerCase();
-  const rand = (arr) => arr[Math.floor(Math.random() * arr.length)];
-
-  if (/kkkk|kkk|hahaha|rsrs|lol|morre|morri|rir|engraçad/.test(lower)) return rand(REACTION_EMOJIS_FUNNY);
-  if (/inacreditável|absurdo|que isso|caramba|nossa|meu deus|caralho|puta|foda/.test(lower)) return rand(REACTION_EMOJIS_HYPE);
-  if (/amo|amor|amei|gostei|lindo|linda|adorei|perfeito|demais|incrível/.test(lower)) return rand(REACTION_EMOJIS_LOVE);
-  if (/concordo|exato|isso mesmo|verdade|com certeza|boa|certíssimo/.test(lower)) return rand(REACTION_EMOJIS_AGREE);
-  if (/[?？]|será|acho que|não sei|interessante|curioso|hm/.test(lower)) return rand(REACTION_EMOJIS_THINK);
-  return rand(REACTION_EMOJIS_DEFAULT);
-}
-
-async function sendEmojiReaction(client, message, text) {
-  if (!client || typeof client.sendReactionToMessage !== 'function') return;
-  const messageId = message?.id || message?.key?.id;
-  const chatId = message?.from || message?.key?.remoteJid;
-  if (!messageId || !chatId) return;
-  const emoji = pickReactionEmoji(text || '');
-  try {
-    await client.sendReactionToMessage(messageId, chatId, emoji);
-    console.log(`[ConversationAgent] Reacted to ${messageId} with ${emoji}`);
-  } catch (err) {
-    console.warn('[ConversationAgent] Failed to send reaction:', err.message);
-  }
-}
-
 function computeShouldRespond(state, text, { mentionDetected }) {
   const now = Date.now();
   const sinceLastReply = now - (state.lastReplyAt || 0);
