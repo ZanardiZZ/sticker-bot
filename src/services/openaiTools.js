@@ -176,7 +176,7 @@ function getOpenAITools() {
           properties: {
             filePath: {
               type: 'string',
-              description: 'Caminho relativo do arquivo (ex: bot/scheduler.js, package.json)'
+              description: 'Caminho relativo do arquivo (ex: src/bot/scheduler.js, package.json)'
             },
             lines: {
               type: 'number',

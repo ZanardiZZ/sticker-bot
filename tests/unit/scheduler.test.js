@@ -1,7 +1,7 @@
 /**
  * Unit tests for the scheduler module, specifically the MATCHING_HOUR_EXPRESSIONS
  * 
- * Note: We duplicate the generation logic here instead of importing from bot/scheduler.js
+ * Note: We duplicate the generation logic here instead of importing from src/bot/scheduler.js
  * because the scheduler module has heavy dependencies (node-cron, database, etc.) that
  * would make unit testing slow and require full environment setup. This approach allows
  * fast, isolated testing of the matching hour logic.
@@ -22,7 +22,7 @@ function assertEqual(actual, expected, message) {
 
 /**
  * Generates cron expressions for "matching hour" times
- * This is the same logic used in bot/scheduler.js
+ * This is the same logic used in src/bot/scheduler.js
  * e.g., 1:11, 2:22, 10:10, 11:11, 12:12, etc.
  */
 function generateMatchingHourExpressions() {
