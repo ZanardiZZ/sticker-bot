@@ -1,137 +1,73 @@
-# Sticker Bot Expert Agent
+# Sticker Bot Expert Profile
 
-You are working in a Node.js WhatsApp sticker bot with a web admin, SQLite storage, agent tooling, and a remote Ollama sidecar.
+This is an optional repository profile for broad Sticker Bot work. Read the root [`AGENTS.md`](<PROJECT_ROOT>/AGENTS.md) first; that file remains the only repository-wide contract. Load the narrower profile that matches the task when possible.
 
-## Primary Responsibilities
+## Current system
 
-- implement bot, web, database, and media-processing changes
-- keep validation fast and proportionate
-- avoid memory leaks and long-lived resource retention
-- preserve compatibility with the current test suite and partial mocks
+Sticker Bot is a Node.js WhatsApp bot with an Express administration surface, SQLite persistence, media processing, optional AI integrations, and WPPConnect/WA-JS compatibility layers. The production runtime is not a local Whisper or local LLM installation.
 
-## How To Use This File
+## When to use this profile
 
-Read this file as the repository index, then load only the domain guides relevant to the task:
+Use it for changes that cross bot, bridge, commands, media, database, web, or AI boundaries. For a single subsystem, prefer the narrower profile:
 
-- [BOT.md](<PROJECT_ROOT>/.github/agents/BOT.md)
-- [WEB.md](<PROJECT_ROOT>/.github/agents/WEB.md)
-- [OPERATIONS.md](<PROJECT_ROOT>/.github/agents/OPERATIONS.md)
-- [TESTING.md](<PROJECT_ROOT>/.github/agents/TESTING.md)
+- [`BOT.md`](<PROJECT_ROOT>/.github/agents/BOT.md): WhatsApp, messages, commands, and media.
+- [`WEB.md`](<PROJECT_ROOT>/.github/agents/WEB.md): Express, authentication, routes, and frontend.
+- [`OPERATIONS.md`](<PROJECT_ROOT>/.github/agents/OPERATIONS.md): optional agent tooling and operational scripts.
+- [`TESTING.md`](<PROJECT_ROOT>/.github/agents/TESTING.md): validation selection.
 
-## Repository Architecture
+## Current architecture
 
-### Runtime entrypoints
+### Entrypoints and processes
 
-- [index.js](<PROJECT_ROOT>/index.js): main bot entrypoint wrapper
-- [server.js](<PROJECT_ROOT>/server.js): WhatsApp bridge entrypoint wrapper
-- [src/bot/index.js](<PROJECT_ROOT>/src/bot/index.js): main bot process
-- [src/server/bridge.js](<PROJECT_ROOT>/src/server/bridge.js): WhatsApp bridge server, websocket fanout, cache lifecycle
-- [src/web/server.js](<PROJECT_ROOT>/src/web/server.js): web admin entrypoint
+- [`index.js`](<PROJECT_ROOT>/index.js): stable bot entrypoint wrapper.
+- [`server.js`](<PROJECT_ROOT>/server.js): stable bridge entrypoint wrapper.
+- [`src/bot/index.js`](<PROJECT_ROOT>/src/bot/index.js): bot process wiring.
+- [`src/server/bridge.js`](<PROJECT_ROOT>/src/server/bridge.js): WPPConnect bridge, media/message adaptation, chat listing, LID resolution, and websocket fanout.
+- [`src/web/server.js`](<PROJECT_ROOT>/src/web/server.js): Express administration server.
+- `ecosystem.config.cjs`: deployment process definition; the operational PM2 instance belongs to the configured `dev` user.
 
-### Bot subsystem
+### Main subsystems
 
-- [src/bot/messageHandler.js](<PROJECT_ROOT>/src/bot/messageHandler.js): message orchestration
-- [src/bot/mediaProcessor.js](<PROJECT_ROOT>/src/bot/mediaProcessor.js): media pipeline
-- [src/bot/stickers.js](<PROJECT_ROOT>/src/bot/stickers.js): sticker generation and animated WebP handling
-- [src/commands/](<PROJECT_ROOT>/src/commands): command modules
+- `src/bot/messageHandler.js`: message orchestration and routing.
+- `src/bot/mediaProcessor.js`: incoming media classification, descriptions, tags, and delivery.
+- `src/bot/stickers.js`: sticker creation and animated WebP handling.
+- `src/commands/`: command registry, validation, permissions, analytics, and handlers.
+- `src/database/`: SQLite bootstrap, models, migrations, and LID mapping.
+- `src/services/`: AI, media, payments, privacy, queues, and external integrations.
+- `src/web/`: routes, middleware, data access, authentication, and frontend.
 
-### Data and services
+## Contracts that must not regress
 
-- [src/database/](<PROJECT_ROOT>/src/database): database bootstrap and models
-- [src/services/](<PROJECT_ROOT>/src/services): AI, NSFW, video, email, integrations
-- [storage/](<PROJECT_ROOT>/storage): runtime persistence, logs, auth, cache
-- [media/](<PROJECT_ROOT>/media): local bot media storage outside source control
-- [scripts/](<PROJECT_ROOT>/scripts): migrations and maintenance tasks
+- Keep WPPConnect/WA-JS compatibility and the current WhatsApp Web adapter behavior.
+- Prefer `listChats()` and preserve the compatibility fallback to `getAllChats()`.
+- Preserve LID-to-phone-number resolution, `lid_mapping`, cache invalidation, and backward-compatible message IDs.
+- Preserve duplicate-media/hash fallbacks, permission checks, command analytics, and safe messaging behavior.
+- Preserve animated WebP/GIF detection and the FFmpeg fallback chain (`FFMPEG_PATH`, available `ffmpeg-static` binary, then system FFmpeg).
+- Audio transcription uses the configured remote multimodal provider through `src/services/ai.js`; do not reintroduce `whisper.cpp` or a local transcription binary.
+- Gemma endpoints/models are external runtime configuration. Never hardcode their host, model path, API key, or private network identity.
+- Runtime data remains outside Git: sessions, databases, WAL files, media, logs, backups, and local model caches.
 
-### Agent tooling
+## Official validation
 
-- [scripts/agent/context.js](<PROJECT_ROOT>/scripts/agent/context.js)
-- [scripts/agent/check-tooling.sh](<PROJECT_ROOT>/scripts/agent/check-tooling.sh)
-- [scripts/agent/deepseek-sidecar.sh](<PROJECT_ROOT>/scripts/agent/deepseek-sidecar.sh)
-- [scripts/agent/ensure-local-ollama-proxy.sh](<PROJECT_ROOT>/scripts/agent/ensure-local-ollama-proxy.sh)
-- [scripts/agent/codex-deepseek.sh](<PROJECT_ROOT>/scripts/agent/codex-deepseek.sh)
-- [scripts/agent/codex-deepseek-exec.sh](<PROJECT_ROOT>/scripts/agent/codex-deepseek-exec.sh)
+```bash
+npm run check
+npm run smoke
+npm run test:integration
+npm run agent:tooling
+```
 
-## Preferred Commands
+Use `npm run check` as the baseline. Add `npm run smoke` for startup or wiring changes and `npm run test:integration` for persistence, routing, bridge, LID, or cross-process behavior. Do not start WhatsApp or PM2 to validate a public CI change.
 
-### Validation
+## Agent tooling boundary
 
-- `npm run check`
-- `npm run smoke`
-- `npm run test:integration`
-- `npm run agent:tooling`
+The repository contains optional DeepSeek/Ollama helper scripts under `scripts/agent/`. They are developer tooling, not production dependencies and not prerequisites for ordinary code changes. Use them only when the task explicitly benefits from a sidecar or local agent workflow. Keep final edits, tests, and security decisions in the primary working tree.
 
-### Agent context
+## Change strategy
 
-- `npm run agent:context`
-- `just agent-context`
-- `make agent-context`
+1. Read the root contract and nearest local `AGENTS.md`.
+2. Query or inspect the exact implementation and tests before editing.
+3. Make the smallest compatible change.
+4. Run focused tests, then the applicable official gates.
+5. Check for secrets, host-specific paths, runtime artifacts, and stale documentation before committing.
 
-### Remote model workflows
-
-- `npm run agent:deepseek -- --prompt "task"`
-- `npm run agent:ollama:proxy`
-- `npm run agent:codex:deepseek`
-- `npm run agent:codex:deepseek:exec -- --skip-git-repo-check "task"`
-
-## Model Guidance
-
-- `deepseek-coder:6.7b` is valid for the sidecar wrapper.
-- `deepseek-coder:6.7b` is not valid as the direct Codex OSS engine because the model does not support tools.
-- Use `qwen3:8b` for `codex --oss --local-provider ollama`.
-
-## Engineering Constraints
-
-### Memory and lifecycle
-
-Be careful in:
-
-- websocket client sets
-- message caches
-- contact/chat stores
-- intervals and timers
-- event listeners attached per connection
-
-New long-lived structures must have cleanup rules, bounds, or TTL.
-
-### Test compatibility
-
-The test suite intentionally uses partial mocks. Do not assume every collaborator function exists in tests.
-
-Prefer tolerant wrappers when a dependency is optional in production or omitted in mocks.
-
-### Media behavior
-
-- preserve GIF-like conversion messaging behavior
-- preserve animated WebP detection, including VP8X fallback
-- do not regress duplicate media or hash lookup fallbacks
-
-## Change Strategy
-
-Use this order:
-
-1. inspect the exact module and its tests
-2. patch locally with minimal scope
-3. run narrow tests first
-4. run `npm run check`
-5. run `npm run test:integration` if behavior crosses modules
-
-Do not default to broad refactors unless the task explicitly requires one.
-
-## Good Prompts for Sidecars
-
-- `Summarize risks in src/bot/messageHandler.js`
-- `Identify cleanup obligations in src/server/bridge.js`
-- `Draft a minimal change plan for src/database/models/media.js`
-- `Compare current mediaProcessor behavior against tests`
-
-Use sidecars for analysis and drafting. Keep final edits and validation local.
-
-## Anti-Patterns
-
-- citing `npm test` as the only validation step
-- telling agents to start every service before changing code
-- assuming remote Ollama can be used directly by Codex without the local proxy
-- treating `deepseek-coder:6.7b` as tool-capable for Codex OSS
-- adding caches without bounds or cleanup
-- replacing narrow validation with a full manual runtime test when unit coverage already exists
+Avoid broad refactors, unbounded caches, duplicate PM2 instances, and changes that make mocks require production-only collaborators.
