@@ -73,12 +73,26 @@ function initializeTables(db) {
           must_change_password INTEGER DEFAULT 0,
           password_updated_at INTEGER,
           phone_number TEXT,
+          whatsapp_jid TEXT,
+          whatsapp_verified INTEGER DEFAULT 0,
           email TEXT,
           email_confirmed INTEGER DEFAULT 0,
           email_confirmation_token TEXT,
           email_confirmation_expires INTEGER
         )
       `);
+
+      // Keep existing installations compatible with WhatsApp verification fields.
+      db.run(`ALTER TABLE users ADD COLUMN whatsapp_jid TEXT`, (err) => {
+        if (err && !/duplicate column name/i.test(err.message)) {
+          console.warn('[DB] Could not add users.whatsapp_jid:', err.message);
+        }
+      });
+      db.run(`ALTER TABLE users ADD COLUMN whatsapp_verified INTEGER DEFAULT 0`, (err) => {
+        if (err && !/duplicate column name/i.test(err.message)) {
+          console.warn('[DB] Could not add users.whatsapp_verified:', err.message);
+        }
+      });
 
       // Contacts table for display names
       db.run(`

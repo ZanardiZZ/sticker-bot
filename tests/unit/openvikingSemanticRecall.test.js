@@ -29,6 +29,7 @@ const tests = [
       process.env.MEMORY_SEMANTIC_SEARCH_LIMIT = '4';
       const calls = [];
       const memoryDir = path.join(projectRoot, 'storage/data/memory');
+      fs.mkdirSync(memoryDir, { recursive: true });
       const userFile = path.join(memoryDir, 'semantic-test-user.json');
       const groupFile = path.join(memoryDir, 'group_semantic-test-group.json');
       const originalUserFile = fs.existsSync(userFile) ? fs.readFileSync(userFile) : null;
