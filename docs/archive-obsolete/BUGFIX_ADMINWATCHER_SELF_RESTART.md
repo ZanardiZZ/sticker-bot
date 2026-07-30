@@ -200,7 +200,7 @@ Para evitar bugs similares no futuro:
 - **Arquivo Modificado:** `services/openaiTools.js` (função `restartService`)
 - **Logs do Incidente:** PM2 logs de 2026-01-25 17:23
 - **Issue Original:** Admin reportou problema de duplicadas
-- **Documentação:** `docs/agents.md`, `docs/ADMIN_WATCHER_REMEDIATION_TOOLS.md`
+- **Documentação:** `docs/ai-systems.md`, `docs/ADMIN_WATCHER_REMEDIATION_TOOLS.md`
 
 ---
 

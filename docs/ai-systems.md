@@ -1,4 +1,4 @@
-# Agents - Self-Healing & AI Systems
+# AI Systems and Self-Healing Operations
 
 This document describes the autonomous agents and AI-powered systems in the Sticker Bot.
 
@@ -19,7 +19,7 @@ This document describes the autonomous agents and AI-powered systems in the Stic
 
 AdminWatcher is an autonomous agent that monitors admin messages in WhatsApp, detects problem reports, and automatically diagnoses and fixes common issues using OpenAI GPT-4 with 14 specialized tools.
 
-**Location:** `services/adminWatcher.js` + `services/openaiTools.js`
+**Location:** `src/services/adminWatcher.js` + `src/services/openaiTools.js`
 
 ### Features
 
@@ -61,7 +61,7 @@ Admin: "erro na verificação de duplicadas"
 Bot thinks:
 [getBotLogs] → sees "SQLITE_ERROR: no such table: media"
 [analyzeDatabaseSchema] → confirms media table has 0 records
-[readFile('database/models/media.js')] → analyzes media model
+[readFile('src/database/models/media.js')] → analyzes media model
 [executeSqlQuery("SELECT COUNT(*) FROM media")] → gets count
 [getQueueStatus] → checks processing queue
 
@@ -75,7 +75,7 @@ quando processarem as primeiras mídias vai funcionar normal"
 
 #### 🔍 Diagnostic Tools (10)
 
-1. **getBotLogs** - Read recent logs (bot/baileys/web)
+1. **getBotLogs** - Read recent logs (src/bot/baileys/web)
 2. **searchLogsForPattern** - Search logs with regex
 3. **getServiceStatus** - Check PM2 service status
 4. **getLastSentSticker** - Info of last sent sticker
@@ -156,7 +156,7 @@ Using **gpt-4o** (more capable):
 grep ADMIN_WATCHER_ENABLED .env
 
 # 2. Check if OpenAI key is set
-grep OPENAI_API_KEY .env | head -c 30
+test -n "${OPENAI_API_KEY:-}" && echo "OPENAI_API_KEY configured" || echo "OPENAI_API_KEY missing"
 
 # 3. Check logs
 sudo -u dev pm2 logs Bot-Client --lines 50 | grep -i admin
@@ -178,7 +178,7 @@ sudo -u dev pm2 logs Bot-Client --lines 50 | grep -i admin
 
 The ConversationAgent allows the bot to participate naturally in group conversations, responding to messages organically rather than only to commands.
 
-**Location:** `services/conversationAgent.js`
+**Location:** `src/services/conversationAgent.js`
 
 ### Features
 
@@ -339,7 +339,7 @@ module.exports = {
     },
     {
       name: 'web-interface',        // → WebServer in dev PM2
-      script: 'web/server.js',
+      script: 'src/web/server.js',
       // ...
     }
   ]
@@ -386,7 +386,7 @@ pgrep -fl node
 **Solution:**
 ```bash
 # Check if key exists
-grep OPENAI_API_KEY .env
+test -n "${OPENAI_API_KEY:-}" && echo "OPENAI_API_KEY configured" || echo "OPENAI_API_KEY missing"
 
 # Restart bot to reload env vars
 sudo -u dev pm2 restart Bot-Client

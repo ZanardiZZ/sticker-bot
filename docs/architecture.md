@@ -1,4 +1,4 @@
-# CLAUDE.md
+# Repository Architecture Reference
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -177,7 +177,7 @@ node scripts/inject-umami.js               # Inject analytics script
      │                       │
 ┌────▼─────┐          ┌──────▼──────┐
 │ Bot      │          │ Web Server  │  Port 3000
-│(index.js)│          │(web/server) │
+│(index.js)│          │(src/web/server) │
 └────┬─────┘          └──────┬──────┘
      │                       │
      └───────────┬───────────┘
@@ -187,15 +187,15 @@ node scripts/inject-umami.js               # Inject analytics script
          └───────────────┘
 ```
 
-### Message Processing Pipeline (bot/messageHandler.js)
+### Message Processing Pipeline (src/bot/messageHandler.js)
 
 1. Receive message → Log → Sync contact/group
-2. Check if command (`#...`) → Route to `commands/handlers/*`
+2. Check if command (`#...`) → Route to `src/commands/handlers/*`
 3. If media → NSFW filter → AI tagging → Save to database
 
 ### Available Commands
 
-User commands implemented in `commands/handlers/`:
+User commands implemented in `src/commands/handlers/`:
 
 **Core Commands:**
 - `#random` - Get random sticker
@@ -238,12 +238,12 @@ User commands implemented in `commands/handlers/`:
 
 ### Key Directories
 
-- `bot/` - WhatsApp bot modules (client, messageHandler, mediaProcessor, scheduler, contacts, stickers, historyRecovery)
-- `commands/handlers/` - Individual command handlers (see Available Commands section below)
-- `database/models/` - SQLite CRUD operations for each entity (see Database Models section below)
-- `services/` - Business logic (ai.js, nsfwFilter.js, videoProcessor.js, videoDownloader.js, adminWatcher.js, openaiTools.js)
-- `web/routes/` - Express API routes (index, admin, packs, account, captcha)
-- `web/middlewares/` - Rate limiting, CSRF, IP rules, CSP, request logger
+- `src/bot/` - WhatsApp bot modules (client, messageHandler, mediaProcessor, scheduler, contacts, stickers, historyRecovery)
+- `src/commands/handlers/` - Individual command handlers (see Available Commands section below)
+- `src/database/models/` - SQLite CRUD operations for each entity (see Database Models section below)
+- `src/services/` - Business logic (ai.js, nsfwFilter.js, videoProcessor.js, videoDownloader.js, adminWatcher.js, openaiTools.js)
+- `src/web/routes/` - Express API routes (index, admin, packs, account, captcha)
+- `src/web/middlewares/` - Rate limiting, CSRF, IP rules, CSP, request logger
 - `utils/` - Shared utilities (jidUtils, safeMessaging, commandNormalizer)
 - `tests/unit/` - Unit tests (one per module)
 - `tests/integration/` - Integration tests
@@ -253,7 +253,7 @@ User commands implemented in `commands/handlers/`:
 
 SQLite with WAL mode. 20+ tables. Automatic migrations on startup.
 
-**Database Models** (`database/models/`):
+**Database Models** (`src/database/models/`):
 
 *Core Models:*
 - `media.js` - Sticker storage with metadata (visual hash, MD5, tags, descriptions, AI analysis)
@@ -290,51 +290,51 @@ Client library that wraps WebSocket communication with the Baileys bridge. Used 
 
 ### Important Systems
 
-**LID System** (`database/models/lidMapping.js`):
+**LID System** (`src/database/models/lidMapping.js`):
 - Maps WhatsApp LIDs (Local IDs) to JIDs (full WhatsApp IDs)
 - Handles contact ID resolution and reuse
 - Automatic migration from historical data
 - See `docs/LID_MIGRATION.md` for details
 
-**Pack System** (`database/models/packs.js`, `commands/handlers/pack.js`, `commands/handlers/addpack.js`):
+**Pack System** (`src/database/models/packs.js`, `src/commands/handlers/pack.js`, `src/commands/handlers/addpack.js`):
 - Create and manage sticker collections (max 30 stickers per pack)
 - WhatsApp pack metadata (name, author)
 - Web sharing via `/packs/<id>` endpoint
 - Automatic sequel suggestions when pack is full
 - See `docs/PACK_FEATURE_GUIDE.md` for details
 
-**Voting System** (`database/models/deleteRequests.js`, `commands/handlers/delete.js`):
+**Voting System** (`src/database/models/deleteRequests.js`, `src/commands/handlers/delete.js`):
 - Democratic deletion: 3 votes required
 - Instant deletion for original sender or admins
 - One vote per user per sticker
 - Progress tracking
 
-**Verification System** (`database/models/whatsappVerification.js`, `commands/handlers/verify.js`):
+**Verification System** (`src/database/models/whatsappVerification.js`, `src/commands/handlers/verify.js`):
 - Links WhatsApp accounts to web accounts
 - 8-character verification codes (24h expiry)
 - Enables web editing privileges
 - See `docs/WHATSAPP_VERIFICATION.md` for details
 
-**Version Management** (`database/models/version.js`, `scripts/increment-version.js`, `scripts/release-version.js`):
+**Version Management** (`src/database/models/version.js`, `scripts/increment-version.js`, `scripts/release-version.js`):
 - Semantic versioning (SemVer)
 - Automatic version increments (0.1 per changelog)
 - Manual bumps via commit messages
 - Changelog generation
 - See `docs/VERSION_MANAGEMENT.md` and `docs/SEMVER_IMPLEMENTATION.md` for details
 
-**Media Processing Queue** (`database/models/processing.js`, `bot/mediaProcessor.js`):
+**Media Processing Queue** (`src/database/models/processing.js`, `src/bot/mediaProcessor.js`):
 - Concurrent processing (default: 3 jobs)
 - Automatic retries with exponential backoff
 - Job status tracking (queued, active, completed, failed)
 - NSFW filtering and AI tagging integration
 
-**History Recovery** (`bot/historyRecovery.js`):
+**History Recovery** (`src/bot/historyRecovery.js`):
 - Automatic recovery of missed messages on reconnection
 - Batch processing with configurable limits
 - Periodic sync (optional)
 - See `docs/MESSAGE_HISTORY_RECOVERY.md` for details
 
-**Admin Watcher (Self-Healing System)** (`services/adminWatcher.js`, `services/openaiTools.js`):
+**Admin Watcher (Self-Healing System)** (`src/services/adminWatcher.js`, `src/services/openaiTools.js`):
 - Monitors admin messages for problem reports
 - Detects keywords: "erro", "falha", "parou", "bug", "problema", "crashou", etc.
 - **15 specialized tools** (9 diagnostic + 6 remediation) for autonomous problem-solving:
@@ -347,9 +347,9 @@ Client library that wraps WebSocket communication with the Baileys bridge. Used 
 - Intelligent cooldown (5 minutes) to prevent spam
 - Cost-effective: ~$0.60/month with gpt-4o-mini (recommended)
 - Enable via `ADMIN_WATCHER_ENABLED=true` in .env (requires `OPENAI_API_KEY`)
-- See `docs/agents.md` for complete documentation and `docs/ADMIN_WATCHER_REMEDIATION_TOOLS.md` for tool details
+- See `docs/ai-systems.md` for complete documentation and `docs/ADMIN_WATCHER_REMEDIATION_TOOLS.md` for tool details
 
-**Conversation Agent** (`services/conversationAgent.js`):
+**Conversation Agent** (`src/services/conversationAgent.js`):
 - AI-powered group chat participant that converses naturally with users
 - **Improved for naturalness**: less robotic, more casual and authentic
 - 4 random system prompt variations to avoid predictable responses
@@ -362,7 +362,7 @@ Client library that wraps WebSocket communication with the Baileys bridge. Used 
 - Intelligent text truncation: cuts at sentence boundaries when possible
 - Configurable persona name and behavior via env vars
 - Enable/disable via `CONVERSATION_AGENT_ENABLED` (default: enabled)
-- Requires OpenAI API key (uses `generateConversationalReply` from `services/ai.js`)
+- Requires OpenAI API key (uses `generateConversationalReply` from `src/services/ai.js`)
 - See `docs/CONVERSATION_AGENT_IMPROVEMENTS.md` for details and examples
 
 ## Key Patterns
@@ -370,7 +370,7 @@ Client library that wraps WebSocket communication with the Baileys bridge. Used 
 ### Command Handler Structure
 
 ```javascript
-// commands/handlers/example.js
+// src/commands/handlers/example.js
 async function handleExampleCommand(client, message, args) {
   // Implementation
 }
@@ -380,7 +380,7 @@ module.exports = { handleExampleCommand };
 ### Database Model Pattern
 
 ```javascript
-// database/models/example.js
+// src/database/models/example.js
 module.exports = {
   create: (data) => { /* INSERT */ },
   getById: (id) => { /* SELECT */ },
@@ -466,7 +466,7 @@ BOT_WHATSAPP_NUMBER=5511000000000
 ```env
 # OpenAI for AI tagging and meme generation
 OPENAI_API_KEY=<YOUR_OPENAI_API_KEY>
-OPENAI_API_KEY_MEMECREATOR=sk-meme-key
+OPENAI_API_KEY_MEMECREATOR=<YOUR_OPENAI_API_KEY>
 
 # SMTP for email verification
 SMTP_HOST=smtp.gmail.com
@@ -525,8 +525,8 @@ See `docs/TESTING.md` for comprehensive testing documentation.
 
 ## Adding New Commands
 
-1. Create handler in `commands/handlers/newcommand.js`
-2. Register in `commands/index.js` command router
+1. Create handler in `src/commands/handlers/newcommand.js`
+2. Register in `src/commands/index.js` command router
 3. Set `shouldTrackUsage = true` for analytics inclusion
 4. Track usage with `commandUsage.incrementCommandUsage()`
 5. Add tests in `tests/unit/newcommand.test.js`
@@ -574,7 +574,7 @@ See `docs/TESTING.md` for comprehensive testing documentation.
 - **Symptoms:** Multiple node processes, SQLITE_BUSY errors, double message processing
 - **Cause:** Running both root and dev PM2 instances, or manual `node` commands while PM2 is active
 - **Check:** `ps aux | grep -E '(index.js|server.js)' | grep -v grep | wc -l` should return 3-4, not 6+
-- **Fix:** Follow cleanup procedure in "Running the Application" section above or see `docs/agents.md`
+- **Fix:** Follow cleanup procedure in "Running the Application" section above or see `docs/ai-systems.md`
 - **Prevention:** ALWAYS use `sudo -u dev pm2` commands, NEVER mix PM2 instances or run manual node commands
 
 **WhatsApp connection issues:**
@@ -595,7 +595,7 @@ See `docs/TESTING.md` for comprehensive testing documentation.
 ## Key Documentation
 
 **⭐ Process Management & AI Agents:**
-- `docs/agents.md` - **Complete guide to AdminWatcher (self-healing), ConversationAgent, and process management**
+- `docs/ai-systems.md` - **Complete guide to AdminWatcher (self-healing), ConversationAgent, and process management**
 - `docs/ADMIN_WATCHER_REMEDIATION_TOOLS.md` - AdminWatcher's 15 tools (diagnostic + remediation)
 - `docs/ADMIN_WATCHER_EXAMPLES.md` - Self-healing system response examples (natural language)
 - `docs/CONVERSATION_AGENT_IMPROVEMENTS.md` - Conversation agent naturalness improvements

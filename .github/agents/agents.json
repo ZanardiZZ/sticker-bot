@@ -36,12 +36,25 @@
     {
       "id": "bot",
       "file": "BOT.md",
-      "scope": ["index.js", "server.js", "src/bot/", "src/commands/", "src/server/", "src/waAdapter.js"]
+      "scope": [
+        "index.js",
+        "server.js",
+        "src/bot/",
+        "src/commands/",
+        "src/server/",
+        "src/waAdapter.js"
+      ]
     },
     {
       "id": "web",
       "file": "WEB.md",
-      "scope": ["src/web/server.js", "src/web/auth.js", "src/web/dataAccess.js", "src/web/routes/", "src/web/public/"]
+      "scope": [
+        "src/web/server.js",
+        "src/web/auth.js",
+        "src/web/dataAccess.js",
+        "src/web/routes/",
+        "src/web/public/"
+      ]
     },
     {
       "id": "operations",
@@ -90,6 +103,9 @@
     "copilot_instructions": "../copilot-instructions.md",
     "workflow": "../../docs/agent-workflow.md",
     "usage_guide": "USAGE_GUIDE.md",
-    "module_docs": ["BOT.md", "WEB.md", "OPERATIONS.md", "TESTING.md"]
+    "module_docs": ["BOT.md", "WEB.md", "OPERATIONS.md", "TESTING.md"],
+    "global_contract": "../../AGENTS.md",
+    "architecture": "../../docs/architecture.md",
+    "ai_systems": "../../docs/ai-systems.md"
   }
 }
