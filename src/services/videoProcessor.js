@@ -6,7 +6,7 @@ const { getAiAnnotationsFromPrompt, getAiAnnotations, getAiAnnotationsForGif, tr
 const sharp = require('sharp');
 const { getTopTags } = require('../utils/messageUtils');
 const { TEMP_DIR } = require('../paths');
-// (Removed unused constants whisperPath and modelPath)
+// Audio transcription uses the configured remote multimodal provider.
 
 // Conditional loading for FFmpeg - these may fail in some environments due to network restrictions
 let ffmpeg = null;
@@ -219,7 +219,7 @@ async function extractAudio(filePath) {
   });
 }
 
-async function transcribeAudioLocal(audioPath) {
+async function transcribeAudio(audioPath) {
   try {
     const transcription = await transcribeAudioFile(audioPath, { language: 'pt' });
     return transcription.startsWith('Áudio não transcrito') ? '' : transcription;
@@ -315,8 +315,8 @@ async function processVideo(filePath) {
       // Extrai áudio wav local
       try {
         const audioPath = await extractAudio(filePath);
-        // Transcreve localmente com whisper.cpp (ou similar) via CLI
-        transcription = await transcribeAudioLocal(audioPath);
+        // Transcreve com o provedor multimodal remoto configurado.
+        transcription = await transcribeAudio(audioPath);
         // Limpar arquivo áudio
         try { fs.unlinkSync(audioPath); } catch {}
       } catch (audioErr) {

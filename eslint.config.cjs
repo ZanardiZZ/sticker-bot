@@ -10,7 +10,6 @@ module.exports = [
       'node_modules/**',
       'storage/**',
       'tests/temp/**',
-      'whisper.cpp/**',
     ],
   },
   js.configs.recommended,
