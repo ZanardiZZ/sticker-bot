@@ -1,3 +1,24 @@
+# Changelog
+
+## [0.15.0] - 2026-07-30
+
+### Documentação
+- docs: refresh bot specialist profiles (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/0a840a2868dbf8359be8014bf15d8fe192595ae4))
+- docs: remove obsolete and duplicate documentation (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/6821b0260d8d89bb4b93206fffddd4627d6d4d95))
+- docs: make env example placeholders explicit (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/49854e03b4c8bdd67432abbad11db0cf19cd5c8b))
+- docs: establish canonical agent contract and scoped profiles (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/1cae2db5a6ef9c73672a3583e278f1ab711ef965))
+
+### CI
+- ci: modernize workflows and restore clean validation (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/bb0a19f80777090c2a2514340c3eb669eacdc50d))
+
+### Testes
+- test: make clean CI schema and fixtures portable (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/06eee246e72598490ebfdd4b84b87094864bbeea))
+
+### Tarefas
+- chore: remove empty legacy scheduler path (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/21b2e109418627c80e85df98d267c2bfa93386ea))
+- chore: remove unused local whisper runtime (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/51fe60b952f8ede8b45510b9a61bb14c692f6349))
+- chore: prepare sanitized 0.2.0 candidate (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/c0ae40f2bac1c44e3fc62daca3843058210c363c))
+
 ## [0.15.0] - 2026-07-30
 
 ### Documentação
