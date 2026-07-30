@@ -879,13 +879,25 @@ app.get('/api/admin/payments/summary', requireAdmin, async (req, res) => {
 });
 
 
+function isValidEmailAddress(value) {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 254) return false;
+  const at = value.indexOf('@');
+  if (at <= 0 || at !== value.lastIndexOf('@')) return false;
+  const local = value.slice(0, at);
+  const domain = value.slice(at + 1);
+  if (!domain || domain.startsWith('.') || domain.endsWith('.') || !domain.includes('.')) return false;
+  if (local.includes('..') || domain.includes('..')) return false;
+  if ([...value].some((character) => /\s/u.test(character))) return false;
+  return domain.split('.').every((label) => label.length > 0);
+}
+
 const privacyRequestRateLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 3, standardHeaders: true, legacyHeaders: false });
 app.post('/api/privacy/requests', privacyRequestRateLimit, async (req, res) => {
   const allowedTypes = new Set(['access','correction','deletion','opposition','other']);
   const { request_type: requestType, email, message } = req.body || {};
   const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
   const normalizedMessage = typeof message === 'string' ? message.trim() : '';
-  if (!allowedTypes.has(requestType) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) || normalizedEmail.length > 254 || !normalizedMessage || normalizedMessage.length > 5000) return res.status(400).json({ error: 'invalid_privacy_request', message: 'Informe o tipo, um e-mail válido e uma mensagem de até 5000 caracteres.' });
+  if (!allowedTypes.has(requestType) || !isValidEmailAddress(normalizedEmail) || !normalizedMessage || normalizedMessage.length > 5000) return res.status(400).json({ error: 'invalid_privacy_request', message: 'Informe o tipo, um e-mail válido e uma mensagem de até 5000 caracteres.' });
   const now=Date.now();
   try { await new Promise((resolve,reject)=>db.run(`INSERT INTO privacy_requests (request_type,email,message,user_id,status,created_at,updated_at) VALUES (?,?,?,?, 'pending', ?, ?)`,[requestType,normalizedEmail,normalizedMessage,req.user?.id||null,now,now],err=>err?reject(err):resolve())); res.status(201).json({success:true,message:'Solicitação recebida.'}); } catch(error) { console.error('[PRIVACY] Request persistence failed:',error.message); res.status(500).json({error:'privacy_request_unavailable',message:'Não foi possível registrar a solicitação agora.'}); }
 });
@@ -1920,7 +1932,8 @@ function escapeHtmlAttribute(value) {
 
 function stickerPublicUrl(req, relativeUrl) {
   const configured = process.env.PUBLIC_BASE_URL || process.env.BASE_URL || process.env.WEB_SERVER_URL;
-  const base = String(configured || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
+  let base = String(configured || `${req.protocol}://${req.get('host')}`);
+  while (base.endsWith('/')) base = base.slice(0, -1);
   if (!relativeUrl) return '';
   if (/^https?:\/\//i.test(String(relativeUrl))) return String(relativeUrl);
   return `${base}/${String(relativeUrl).replace(/^\/+/, '')}`;

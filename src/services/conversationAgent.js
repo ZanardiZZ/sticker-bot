@@ -525,7 +525,7 @@ function detectAliasMention(text) {
   return ALIASES.some(alias => {
     if (!alias) return false;
     const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const pattern = new RegExp(`(^|[^\p{L}\p{N}])${escaped}([^\p{L}\p{N}]|$)`, 'iu');
+    const pattern = new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}([^\\p{L}\\p{N}]|$)`, 'iu');
     return pattern.test(lower);
   });
 }
@@ -543,7 +543,7 @@ function detectRawSelfMention(text, identifierSet = new Set()) {
   if (!numbers.size) return false;
 
   for (const digits of numbers) {
-    const mentionRegex = new RegExp(`(^|\s)@${digits}(?=\D|$)`);
+    const mentionRegex = new RegExp(`(^|\\s)@${digits}(?=\\D|$)`);
     if (mentionRegex.test(content)) return true;
   }
 
@@ -840,7 +840,7 @@ function sanitizeReplyText(reply, participantNames = []) {
   for (const name of participantNames) {
     if (name && name.length > 2) {
       const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const namePattern = new RegExp(`\b${escaped}:\s*`, 'gi');
+      const namePattern = new RegExp(`\\b${escaped}:\\s*`, 'gi');
       cleaned = cleaned.replace(namePattern, '').trim();
     }
   }
