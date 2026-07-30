@@ -78,7 +78,7 @@ const summary = {
     'src/web/server.js',
     'ecosystem.config.js',
     '.github/copilot-instructions.md',
-    'docs/ARCHITECTURE_GUIDELINES.md',
+    'AGENTS.md',
     'docs/TESTING.md'
   ],
   tests: {

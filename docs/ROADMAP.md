@@ -1,6 +1,6 @@
 # StickerBot2 — Roadmap atual
 
-Atualizado em 2026-07-19. Este é o backlog principal. Documentos em `docs/legacy/` são históricos.
+Atualizado em 2026-07-19. Este é o backlog principal. Documentos históricos não fazem parte da árvore pública atual.
 
 ## Estado operacional
 
@@ -97,6 +97,5 @@ Plano detalhado em [`PUBLIC_DM_STICKER_ACCESS_PLAN.md`](./PUBLIC_DM_STICKER_ACCE
 
 ## Fora do backlog atual
 
-- Documentos em `docs/legacy/`.
 - Planos antigos de arquitetura Baileys/socket.
 - A antiga integração Memory-Bridge na porta `8766`.

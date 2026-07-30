@@ -144,7 +144,7 @@ E também:
 
 ## Documentação adicional
 
-- `docs/` para documentação técnica e histórica
+- `docs/` para documentação técnica e operacional atual
 - `.github/agents/README.md` para guias de agentes e workflow de desenvolvimento
 
 ## Licença

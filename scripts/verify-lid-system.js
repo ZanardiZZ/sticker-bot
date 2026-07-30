@@ -24,7 +24,7 @@ function checkFiles() {
         'scripts/migrate-to-lids.js',
         'tests/test-lid-functionality.js',
         'tests/test-lid-integration.js',
-        'docs/LID_MIGRATION.md'
+        'docs/architecture.md'
     ];
     
     let allExist = true;
@@ -205,7 +205,7 @@ function showNextSteps() {
     console.log('      - node tests/test-lid-functionality.js');
     console.log('      - node tests/test-lid-integration.js');
     console.log('      - node scripts/migrate-to-lids.js');
-    console.log('\n📖 Documentação: docs/LID_MIGRATION.md');
+    console.log('\n📖 Documentação: docs/architecture.md');
 }
 
 /**
