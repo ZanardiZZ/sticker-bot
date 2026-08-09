@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased] - 2026-08-09
+
+### IA e processamento
+- Corrigida a autenticação multimodal do Lemonade/Gemma4, priorizando a credencial específica do backend local.
+- Tornado o modelo multimodal configurável por `OPENAI_MULTIMODAL_MODEL`.
+- Adicionado o fluxo de reprocessamento de descrições falhas com checkpoint e validação.
+- Desabilitado o pensamento durante chamadas de geração que exigem resposta estruturada, reduzindo respostas truncadas.
+
+### Mídia e operação
+- Centralizada a resolução dos executáveis FFmpeg/ffprobe e ajustados os processadores de mídia para usar a configuração compartilhada.
+- Atualizados os fluxos de stickers, vídeos, áudio, GIFs e melhorias de imagem para maior resiliência.
+- Ajustados comandos, validações, painel administrativo, setup e bridge conforme os contratos atuais do bot.
+
 ## [0.15.1] - 2026-07-31
 
 ### Correções

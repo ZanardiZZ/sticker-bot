@@ -30,10 +30,11 @@ const { forceMap, MAX_TAGS_LENGTH, clearDescriptionCmds, forceVideoToStickerMap 
 const { cleanDescriptionTags } = require('../utils/messageUtils');
 const { generateResponseMessage } = require('../utils/responseMessage');
 const { safeReply } = require('../utils/safeMessaging');
-const { isAnimatedWebpBuffer, sendStickerForMediaRecord } = require('./stickers');
+const { isAnimatedWebpBuffer, sendStickerForMediaRecord, reencodeAnimatedWebpWithinLimit, MAX_ANIMATED_STICKER_BYTES } = require('./stickers');
 const { isGifLikeVideo } = require('../utils/gifDetection');
 const { withTyping } = require('../utils/typingIndicator');
 const { BOT_MEDIA_DIR, BOT_TEMP_DIR } = require('../paths');
+const { resolveFfmpegPath } = require('../utils/ffmpeg');
 
 const MAX_STICKER_BYTES = 1024 * 1024; // WhatsApp animated sticker limit ≈1MB
 let ffmpegFactory = null;
@@ -146,16 +147,6 @@ function loadFfmpeg() {
   return require('fluent-ffmpeg');
 }
 
-function resolveFfmpegPath() {
-  let packagedPath = null;
-  try {
-    packagedPath = require('ffmpeg-static');
-  } catch (_) {}
-  const candidates = [process.env.FFMPEG_PATH, packagedPath, '/usr/bin/ffmpeg']
-    .filter(Boolean)
-    .filter((candidate, index, values) => values.indexOf(candidate) === index);
-  return candidates.find((candidate) => fs.existsSync(candidate)) || null;
-}
 
 // Fallback function if cleanDescriptionTags is not available
 function fallbackCleanDescriptionTags(description, tags) {
@@ -403,6 +394,10 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
       const shouldPreserveOriginalWebp = message.mimetype === 'image/webp' && (isStickerMessage || incomingAnimatedWebp);
       if (shouldPreserveOriginalWebp) {
         bufferWebp = Buffer.from(buffer);
+        if (incomingAnimatedWebp && bufferWebp.length > MAX_ANIMATED_STICKER_BYTES) {
+          console.warn(`[MediaProcessor] WebP animado recebido acima do limite (${bufferWebp.length} bytes); reduzindo sem remover frames...`);
+          bufferWebp = await reencodeAnimatedWebpWithinLimit(bufferWebp, MAX_ANIMATED_STICKER_BYTES);
+        }
         await ensureVisualHashFromBuffer(bufferWebp, incomingAnimatedWebp ? 'animated-webp' : 'sticker');
       } else {
         const TARGET_STICKER_SIZE = 512;

@@ -179,20 +179,124 @@ function createRealEsrganRunner(deps = {}) {
  * @param {(buffer: Buffer, options: object) => Promise<{buffer: Buffer, info: object}>} [deps.aiRunner]
  * @returns {{ enhanceImage: (buffer: Buffer, options?: object) => Promise<{buffer: Buffer, info: object}> }}
  */
+
+function integerEnv(name, fallback, min = 0) {
+  const value = Number.parseInt(process.env[name] || '', 10);
+  return Number.isFinite(value) && value >= min ? value : fallback;
+}
+
+function createLemonadeUpscaleRunner(deps = {}) {
+  const sharpInstance = ensureSharpInstance(deps.sharp || sharp);
+  const baseUrl = String(deps.baseUrl || process.env.LEMONADE_UPSCALE_BASE_URL || '').replace(/\/$/, '');
+  const apiKey = deps.apiKey || process.env.LEMONADE_UPSCALE_API_KEY || '';
+  const model = deps.model || process.env.LEMONADE_UPSCALE_MODEL || 'RealESRGAN-x4plus';
+  const timeoutMs = deps.timeoutMs || integerEnv('LEMONADE_UPSCALE_TIMEOUT_MS', 120000, 1000);
+  const maxInputBytes = deps.maxInputBytes || integerEnv('LEMONADE_UPSCALE_MAX_INPUT_BYTES', 8 * 1024 * 1024, 1);
+  const fetchFn = deps.fetch || globalThis.fetch;
+
+  if (!baseUrl || !fetchFn) return null;
+
+  let tail = Promise.resolve();
+  const runSerialized = (job) => {
+    const result = tail.then(job, job);
+    tail = result.catch(() => undefined);
+    return result;
+  };
+
+  return (buffer, { factor, format }) => runSerialized(async () => {
+    if (buffer.length > maxInputBytes) {
+      const error = new Error('Imagem excede o limite do upscale remoto.');
+      error.code = 'LEMONADE_UPSCALE_INPUT_TOO_LARGE';
+      throw error;
+    }
+
+    const inputPng = await sharpInstance(buffer).png().toBuffer();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const headers = { 'content-type': 'application/json' };
+      if (apiKey) headers.Authorization = 'Bearer ' + apiKey;
+      const response = await fetchFn(baseUrl + '/v1/images/upscale', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ image: inputPng.toString('base64'), model }),
+        signal: controller.signal
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const error = new Error('Lemonade upscale HTTP ' + response.status);
+        error.status = response.status;
+        error.retryable = [408, 429, 500, 502, 503, 504].includes(response.status);
+        throw error;
+      }
+
+      const encoded = body && body.data && body.data[0] && body.data[0].b64_json;
+      if (!encoded) throw new Error('Lemonade não retornou imagem ampliada.');
+
+      const sourceMetadata = await sharpInstance(buffer).metadata();
+      const aiBuffer = Buffer.from(encoded, 'base64');
+      const aiMetadata = await sharpInstance(aiBuffer).metadata();
+      const targetWidth = Math.max(1, Math.round(sourceMetadata.width * factor));
+      const targetHeight = Math.max(1, Math.round(sourceMetadata.height * factor));
+      const output = sharpInstance(aiBuffer).resize({ width: targetWidth, height: targetHeight });
+      if (format) output.toFormat(format);
+      const result = await output.toBuffer({ resolveWithObject: true });
+
+      return {
+        buffer: result.data,
+        info: {
+          ...result.info,
+          width: result.info && result.info.width || targetWidth,
+          height: result.info && result.info.height || targetHeight,
+          scaleFactor: factor,
+          engine: 'ai',
+          backend: 'lemonade-realesrgan',
+          model,
+          sourceWidth: sourceMetadata.width,
+          sourceHeight: sourceMetadata.height,
+          backendWidth: aiMetadata.width,
+          backendHeight: aiMetadata.height
+        }
+      };
+    } catch (error) {
+      if (error && error.name === 'AbortError') {
+        const timeoutError = new Error('Tempo limite do upscale no Lemonade excedido.');
+        timeoutError.code = 'LEMONADE_UPSCALE_TIMEOUT';
+        timeoutError.retryable = true;
+        throw timeoutError;
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+}
+
 function createImageEnhancer(deps = {}) {
   const sharpInstance = ensureSharpInstance(deps.sharp || sharp);
   const lanczosUpscale = createLanczosUpscaler(sharpInstance);
-  const aiRunner = typeof deps.aiRunner === 'function' ? deps.aiRunner : createRealEsrganRunner({
-    sharp: sharpInstance,
-    executablePath: deps.executablePath,
-    spawn: deps.spawn,
-    fs: deps.fs,
-    os: deps.os,
-    path: deps.path,
-    uuid: deps.uuid,
-    modelName: deps.modelName,
-    extraArgs: deps.extraArgs
-  });
+  const aiRunner = typeof deps.aiRunner === 'function'
+    ? deps.aiRunner
+    : createLemonadeUpscaleRunner({
+      sharp: sharpInstance,
+      baseUrl: deps.baseUrl,
+      apiKey: deps.apiKey,
+      model: deps.model,
+      timeoutMs: deps.timeoutMs,
+      maxInputBytes: deps.maxInputBytes,
+      fetch: deps.fetch
+    }) || createRealEsrganRunner({
+      sharp: sharpInstance,
+      executablePath: deps.executablePath,
+      spawn: deps.spawn,
+      fs: deps.fs,
+      os: deps.os,
+      path: deps.path,
+      uuid: deps.uuid,
+      modelName: deps.modelName,
+      extraArgs: deps.extraArgs
+    });
 
   /**
    * Upscales an image buffer prioritising AI when configured.
@@ -261,5 +365,6 @@ const defaultEnhancer = createImageEnhancer();
 module.exports = {
   createImageEnhancer,
   enhanceImage: defaultEnhancer.enhanceImage,
-  createRealEsrganRunner
+  createRealEsrganRunner,
+  createLemonadeUpscaleRunner
 };

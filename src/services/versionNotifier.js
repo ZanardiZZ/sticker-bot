@@ -75,53 +75,49 @@ async function parseChangelogForVersion(version) {
   try {
     const changelogPath = path.join(__dirname, '..', '..', 'CHANGELOG.md');
     const content = await fs.readFile(changelogPath, 'utf-8');
-
-    // Find the section for this version
     const versionHeader = `## [${version}]`;
     const versionIndex = content.indexOf(versionHeader);
+    if (versionIndex === -1) return { novidades: [], correcoes: [], sections: [] };
 
-    if (versionIndex === -1) {
-      return { novidades: [], correcoes: [] };
+    const rest = content.slice(versionIndex + versionHeader.length);
+    const nextVersionMatch = rest.match(/^## \[/m);
+    const versionSection = nextVersionMatch ? rest.slice(0, nextVersionMatch.index) : rest;
+    const sectionMatches = [...versionSection.matchAll(/^### (.+?)\s*$/gm)];
+    const sections = [];
+
+    for (let i = 0; i < sectionMatches.length; i += 1) {
+      const title = sectionMatches[i][1].trim();
+      const bodyStart = sectionMatches[i].index + sectionMatches[i][0].length;
+      const bodyEnd = i + 1 < sectionMatches.length ? sectionMatches[i + 1].index : versionSection.length;
+      const translations = {
+        'docs: refresh bot specialist profiles': 'Atualiza os perfis especializados do bot',
+        'docs: remove obsolete and duplicate documentation': 'Remove documentação obsoleta e duplicada',
+        'docs: make env example placeholders explicit': 'Torna explícitos os placeholders dos exemplos de ambiente',
+        'docs: establish canonical agent contract and scoped profiles': 'Estabelece o contrato canônico do agente e perfis especializados',
+        'ci: modernize workflows and restore clean validation': 'Moderniza os workflows e restaura a validação limpa',
+        'test: make clean CI schema and fixtures portable': 'Torna o schema e os fixtures de CI limpos e portáveis',
+        'chore: remove empty legacy scheduler path': 'Remove o caminho legado vazio do agendador',
+        'chore: remove unused local whisper runtime': 'Remove o runtime local do Whisper não utilizado',
+        'chore: prepare sanitized 0.2.0 candidate': 'Prepara a candidata sanitizada 0.2.0',
+      };
+      const items = versionSection.slice(bodyStart, bodyEnd)
+        .split('\n')
+        .map(line => line.match(/^[-*]\s+(.+?)\s*$/)?.[1]?.trim())
+        .filter(Boolean)
+        .map(item => item.replace(/\s+\(por [^)]+\)\s+\(\[link\]\([^)]*\)\)\s*$/i, '').trim())
+        .map(item => translations[item.toLowerCase().replace(/\s+/g, ' ')] || (/^test:/i.test(item) ? 'Melhora a portabilidade do schema e dos fixtures de CI' : item))
+        .filter(Boolean);
+      if (items.length) sections.push({ title, items });
     }
 
-    // Extract content until next version header or end
-    const nextVersionIndex = content.indexOf('\n## [', versionIndex + 1);
-    const versionSection = nextVersionIndex !== -1
-      ? content.substring(versionIndex, nextVersionIndex)
-      : content.substring(versionIndex);
-
-    // Extract "Novidades" section
-    const novidades = [];
-    const novidadesMatch = versionSection.match(/### Novidades\n([\s\S]*?)(?=\n###|$)/);
-    if (novidadesMatch) {
-      const lines = novidadesMatch[1].trim().split('\n');
-      for (const line of lines) {
-        // Parse: "- feat: Description (por author) ([link]...)"
-        const match = line.match(/^-\s*(?:feat|feature):\s*([^(]+)/i);
-        if (match) {
-          novidades.push(match[1].trim());
-        }
-      }
-    }
-
-    // Extract "Correções" section
-    const correcoes = [];
-    const correcoesMatch = versionSection.match(/### Correções\n([\s\S]*?)(?=\n###|$)/);
-    if (correcoesMatch) {
-      const lines = correcoesMatch[1].trim().split('\n');
-      for (const line of lines) {
-        // Parse: "- fix: Description (por author) ([link]...)"
-        const match = line.match(/^-\s*fix:\s*([^(]+)/i);
-        if (match) {
-          correcoes.push(match[1].trim());
-        }
-      }
-    }
-
-    return { novidades, correcoes };
+    return {
+      novidades: sections.filter(s => /^(novidades|features?)$/i.test(s.title)).flatMap(s => s.items),
+      correcoes: sections.filter(s => /^(correções|correcoes|fixes?)$/i.test(s.title)).flatMap(s => s.items),
+      sections,
+    };
   } catch (err) {
     console.error('[VersionNotifier] Erro ao ler CHANGELOG:', err.message);
-    return { novidades: [], correcoes: [] };
+    return { novidades: [], correcoes: [], sections: [] };
   }
 }
 
@@ -144,22 +140,16 @@ async function buildUpdateMessage(currentVersion, previousVersion) {
   // Parse changelog for user-friendly changes
   const changelog = await parseChangelogForVersion(currentVersion);
 
-  // Add features (Novidades)
-  if (changelog.novidades.length > 0) {
-    message += `✨ *Novidades:*\n`;
-    for (const item of changelog.novidades) {
-      message += `  • ${item}\n`;
+  // Include every section emitted by the GitHub changelog workflow.
+  const sections = changelog.sections || [];
+  if (sections.length > 0) {
+    for (const section of sections) {
+      const icon = /^(correções|correcoes|fixes?)$/i.test(section.title) ? '🐛'
+        : /^(novidades|features?)$/i.test(section.title) ? '✨' : '📌';
+      message += `${icon} *${section.title}:*\n`;
+      for (const item of section.items) message += `  • ${item}\n`;
+      message += `\n`;
     }
-    message += `\n`;
-  }
-
-  // Add fixes (Correções)
-  if (changelog.correcoes.length > 0) {
-    message += `🐛 *Correções:*\n`;
-    for (const item of changelog.correcoes) {
-      message += `  • ${item}\n`;
-    }
-    message += `\n`;
   }
 
   // Fallback to database version_info if no changelog

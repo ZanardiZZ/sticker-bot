@@ -9,7 +9,8 @@ const { safeReply } = require('../../utils/safeMessaging');
 const { parseCommand, normalizeText } = require('../../utils/commandNormalizer');
 const { withTyping } = require('../../utils/typingIndicator');
 const { enhanceImage } = require('../../services/imageEnhancer');
-const { getHashVisual, findByHashVisual, findById } = require('../../database/index.js');
+const sharp = require('sharp');
+const { getHashVisual, findByHashVisual } = require('../../database/index.js');
 
 const TEMP_DIR = path.resolve(__dirname, '..', '..', 'temp');
 
@@ -37,48 +38,6 @@ function ensureTempDir() {
   }
 }
 
-function extractScaleFactor(params) {
-  if (!Array.isArray(params) || params.length === 0) {
-    return { factor: 2, remaining: params }; // default 2x
-  }
-
-  const [first, ...rest] = params;
-  const match = typeof first === 'string' ? first.toLowerCase().match(/^(\d+(?:\.\d+)?)x$/) : null;
-  if (!match) {
-    return { factor: 2, remaining: params };
-  }
-
-  const parsed = parseFloat(match[1]);
-  if (!Number.isFinite(parsed) || parsed <= 1) {
-    return { factor: 2, remaining: params };
-  }
-
-  return { factor: parsed, remaining: rest };
-}
-
-function extractMediaId(params) {
-  if (!Array.isArray(params) || params.length === 0) {
-    return { mediaId: null, remaining: params };
-  }
-
-  const [first, second, ...rest] = params;
-  const normalizedFirst = normalizeText(first);
-
-  if (normalizedFirst === 'id' && second) {
-    const parsed = parseInt(second, 10);
-    if (!Number.isNaN(parsed)) {
-      return { mediaId: parsed, remaining: rest };
-    }
-    return { mediaId: null, remaining: rest };
-  }
-
-  const numeric = parseInt(first, 10);
-  if (!Number.isNaN(numeric)) {
-    return { mediaId: numeric, remaining: [second, ...rest].filter(Boolean) };
-  }
-
-  return { mediaId: null, remaining: params };
-}
 
 function getOutputExtension(info, fallbackMime) {
   if (info?.format) {
@@ -127,7 +86,9 @@ async function loadBufferFromRecord(record) {
 
 async function resolveMediaFromQuoted(client, message) {
   try {
-    const quoted = await client.getQuotedMessage(message.id);
+    // WPP/bridge payloads may expose the native ID only at key.id.
+    const messageId = message?.id || message?.key?.id || message?.msgId || message?.messageId;
+    const quoted = await client.getQuotedMessage(messageId);
 
     if (!quoted || !quoted.isMedia) {
       return { error: 'quoted_not_media' };
@@ -191,47 +152,25 @@ async function handleFotoHdCommand(client, message, chatId, context = {}) {
     return false;
   }
 
-  let params = Array.isArray(originalParams) ? [...originalParams] : [];
-  const { factor, remaining: afterScaleParams } = extractScaleFactor(params);
-  params = afterScaleParams;
 
-  const { mediaId, remaining: afterIdParams } = extractMediaId(params);
+  const params = Array.isArray(originalParams) ? originalParams : [];
+  if (params.length > 0) {
+    await safeReply(client, chatId, 'Use somente #fotohd, respondendo diretamente a uma imagem ou figurinha.', message.id);
+    return true;
+  }
 
-  const usageMessage = 'Responda a uma figurinha ou imagem com #fotohd para ampliar em alta resolução.\n' +
-    'Você também pode usar #fotohd ID <número>. Opcional: adicione 4x para ampliar quatro vezes.';
+  const factor = 2;
+  const usageMessage = 'Responda a uma figurinha ou imagem com #fotohd para ampliar em 2x.';
 
   let buffer = null;
   let mimetype = null;
 
-  if (mediaId != null) {
-    try {
-      const record = await findById(mediaId);
-      if (!record) {
-        await safeReply(client, chatId, `Não encontrei a mídia com ID ${mediaId}.`, message.id);
-        return true;
-      }
 
-      if (!record.mimetype || !record.mimetype.startsWith('image/')) {
-        await safeReply(client, chatId, 'Apenas imagens podem ser ampliadas no momento.', message.id);
-        return true;
-      }
-
-      const storedBuffer = await loadBufferFromRecord(record);
-      if (!storedBuffer) {
-        await safeReply(client, chatId, 'Não consegui acessar o arquivo original dessa mídia.', message.id);
-        return true;
-      }
-
-      buffer = storedBuffer;
-      mimetype = record.mimetype;
-    } catch (error) {
-      console.error('[COMMAND:fotohd] Erro ao buscar mídia por ID:', error?.message || error);
-      await safeReply(client, chatId, 'Erro ao buscar a mídia solicitada.', message.id);
-      return true;
-    }
-  }
-
-  if (!buffer && message.hasQuotedMsg) {
+  // Some WPPConnect payloads omit hasQuotedMsg even though the incoming
+  // message is a reply. The bridge can recover the quoted object from the
+  // current message ID and its cached quotedMsgId, so do not gate this path
+  // solely on the boolean flag.
+  if (!buffer && (message.hasQuotedMsg || message.id || message.key?.id || message.msgId || message.messageId)) {
     const resolved = await resolveMediaFromQuoted(client, message);
     if (resolved.error) {
       await safeReply(client, chatId, 'Responda a uma figurinha ou imagem válida para usar #fotohd.', message.id);
@@ -256,6 +195,19 @@ async function handleFotoHdCommand(client, message, chatId, context = {}) {
   try {
     await withTyping(client, chatId, async () => {
       await safeReply(client, chatId, '🔄 Melhorando a qualidade da imagem, aguarde...', message.id);
+
+      const animatedMetadata = await sharp(buffer, { animated: true }).metadata();
+
+      if (Number(animatedMetadata?.pages || 1) > 1) {
+
+        const error = new Error('animated_fotohd_pending');
+
+        error.code = 'ANIMATED_FOTOHD_PENDING_CHAINNER';
+
+        throw error;
+
+      }
+
 
       const enhanced = await enhanceImage(buffer, { factor, format: mimetypeToFormat(mimetype) });
       if (!enhanced || !Buffer.isBuffer(enhanced.buffer)) {
@@ -297,6 +249,8 @@ async function handleFotoHdCommand(client, message, chatId, context = {}) {
   } catch (error) {
     if (error && error.message === 'send_file_not_supported') {
       await safeReply(client, chatId, 'Cliente não suporta envio de arquivos para #fotohd.', message.id);
+    } else if (error && error.code === 'ANIMATED_FOTOHD_PENDING_CHAINNER') {
+      await safeReply(client, chatId, 'GIFs e figurinhas animadas ainda estão em preparação para upscale quadro a quadro com ChaiNNer. Imagens estáticas já usam Real-ESRGAN no ai-lxc.', message.id);
     } else {
       console.error('[COMMAND:fotohd] Erro ao aprimorar imagem:', error?.message || error);
       await safeReply(client, chatId, 'Não consegui melhorar esta imagem agora. Tente novamente mais tarde.', message.id);

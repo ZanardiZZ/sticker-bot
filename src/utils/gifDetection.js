@@ -17,10 +17,10 @@ async function isGifLikeVideo(filePath, mimetype) {
   let ffmpeg = null;
   try {
     ffmpeg = require('fluent-ffmpeg');
-    const ffmpegPath = require('ffmpeg-static');
-    if (ffmpegPath) {
-      ffmpeg.setFfmpegPath(ffmpegPath);
-    }
+    const { configureFfmpeg } = require('./ffmpeg');
+    const ffmpegPath = configureFfmpeg(ffmpeg);
+    if (!ffmpegPath) throw new Error('ffmpeg_binary_not_found');
+    console.log('[GIF Detection] FFmpeg selecionado:', ffmpegPath);
   } catch (error) {
     console.warn('[GIF Detection] FFmpeg não disponível, não é possível analisar características do vídeo');
     return false;

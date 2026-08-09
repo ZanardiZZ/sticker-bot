@@ -15,6 +15,8 @@ const { BOT_MEDIA_DIR: STORAGE_BOT_MEDIA_DIR, BOT_TEMP_DIR } = require('../paths
 
 const MEDIA_DIR = STORAGE_BOT_MEDIA_DIR;
 const FIXED_WEBP_DIR = path.join(BOT_TEMP_DIR, 'fixed-webp');
+const MAX_ANIMATED_STICKER_BYTES = 950 * 1024; // margem abaixo do limite prático de 1 MiB
+const ANIMATED_REENCODE_VERSION = 'animated-limit-v1';
 
 // Conditional loading for FFmpeg
 let ffmpeg = null;
@@ -133,7 +135,7 @@ function isAnimatedWebpBuffer(buf) {
     // Some legacy static WebPs incorrectly retain the VP8X animation bit.
     // A complete file needs real animation chunks; preserve the project's
     // minimal-header test contract for short synthetic buffers.
-    return riff && webp && hasAnimBit && (hasAnimChunk || buf.length < 30);
+    return riff && webp && ((hasAnimChunk && (hasAnimBit || buf.length >= 30)) || (hasAnimBit && buf.length < 30));
   } catch { return false; }
 }
 
@@ -191,10 +193,53 @@ async function ensureSafeWebpSticker(filePath) {
   return ensureSafeWebpStickerWithOptions(filePath, {});
 }
 
+async function reencodeAnimatedWebpWithinLimit(originalBuffer, maxBytes = MAX_ANIMATED_STICKER_BYTES) {
+  const source = sharp(originalBuffer, { animated: true });
+  const metadata = await source.metadata();
+  const pages = Number(metadata.pages || 1);
+  if (pages <= 1) throw new Error('animated_webp_required');
+
+  const sourceMaxEdge = Math.max(Number(metadata.width || 0), Number(metadata.pageHeight || metadata.height || 0));
+  const dimensions = [...new Set([400, 320, 256, 192].filter((size) => !sourceMaxEdge || size <= sourceMaxEdge))];
+  if (dimensions.length === 0) dimensions.push(192);
+  const qualities = [60, 45];
+  let lastSize = originalBuffer.length;
+
+  for (const targetSize of dimensions) {
+    for (const quality of qualities) {
+      const webpOptions = {
+        quality,
+        alphaQuality: 100,
+        effort: 6,
+        smartSubsample: true,
+        lossless: false,
+        loop: 0,
+        ...(metadata.pageHeight ? { pageHeight: metadata.pageHeight } : {})
+      };
+      const candidate = await source.clone()
+        .resize(targetSize, targetSize, { fit: 'inside', withoutEnlargement: true })
+        .webp(webpOptions)
+        .toBuffer();
+      const candidateMeta = await sharp(candidate, { animated: true }).metadata();
+      lastSize = candidate.length;
+      if (Number(candidateMeta.pages || 1) <= 1) {
+        throw new Error(`animated_webp_staticized_at_${targetSize}x${targetSize}`);
+      }
+      if (candidate.length <= maxBytes) {
+        console.log(`[Sticker] WebP animado normalizado: ${candidate.length} bytes, ${candidateMeta.pages} frames, ${targetSize}px/q${quality}`);
+        return candidate;
+      }
+    }
+  }
+
+  throw new Error(`animated_webp_too_large_after_reencode:${lastSize}`);
+}
+
 async function ensureSafeWebpStickerWithOptions(filePath, options = {}) {
   const originalBuffer = await fsp.readFile(filePath);
   const animated = isAnimatedWebpBuffer(originalBuffer);
   const forceAnimatedReencode = Boolean(options.forceAnimatedReencode);
+  const needsAnimatedLimit = animated && (forceAnimatedReencode || originalBuffer.length > MAX_ANIMATED_STICKER_BYTES);
 
   let canCacheFixedWebp = true;
 
@@ -206,7 +251,7 @@ async function ensureSafeWebpStickerWithOptions(filePath, options = {}) {
     console.warn('[Sticker] Cache de WebP indisponível, usando somente memória:', dirErr.message);
   }
 
-  const metadataSignature = `${PACK_NAME}::${AUTHOR_NAME}::safe-webp-v2::${forceAnimatedReencode ? 'force-anim-reencode' : 'default'}`;
+  const metadataSignature = `${PACK_NAME}::${AUTHOR_NAME}::safe-webp-v3::${ANIMATED_REENCODE_VERSION}::${needsAnimatedLimit ? 'bounded-animated' : 'default'}`;
   const hash = crypto.createHash('md5').update(originalBuffer).update(metadataSignature).digest('hex');
   const cachedPath = path.join(FIXED_WEBP_DIR, `${hash}.webp`);
 
@@ -214,7 +259,13 @@ async function ensureSafeWebpStickerWithOptions(filePath, options = {}) {
     try {
       const cachedBuffer = await fsp.readFile(cachedPath);
       if (cachedBuffer.length > 0) {
-        return { buffer: cachedBuffer, animated: isAnimatedWebpBuffer(cachedBuffer), filePath: cachedPath };
+        const cachedAnimated = isAnimatedWebpBuffer(cachedBuffer);
+        const cachePreservesAnimation = !animated || cachedAnimated;
+        const cacheWithinAnimatedLimit = !needsAnimatedLimit || cachedBuffer.length <= MAX_ANIMATED_STICKER_BYTES;
+        if (cachePreservesAnimation && cacheWithinAnimatedLimit) {
+          return { buffer: cachedBuffer, animated: cachedAnimated, filePath: cachedPath };
+        }
+        console.warn('[Sticker] Cache animado antigo excede o limite; será reconstruído');
       }
     } catch (readErr) {
       console.warn('[Sticker] Falha ao ler WebP do cache:', readErr.message);
@@ -232,28 +283,22 @@ async function ensureSafeWebpStickerWithOptions(filePath, options = {}) {
         quality: 80,
       });
       rebuiltBuffer = await sticker.build();
-    } else if (forceAnimatedReencode) {
+    } else if (needsAnimatedLimit) {
       if (typeof sharp !== 'function') {
         throw new Error('Sharp não disponível para re-encode de WebP animado');
       }
-
-      rebuiltBuffer = await sharp(originalBuffer, { animated: true })
-        .webp({
-          quality: 80,
-          alphaQuality: 100,
-          effort: 6,
-          smartSubsample: true,
-          loop: 0
-        })
-        .toBuffer();
-
-      console.log('[Sticker] WebP animado re-encodado para normalização');
+      rebuiltBuffer = await reencodeAnimatedWebpWithinLimit(originalBuffer);
     }
 
     const withMetadata = await injectStickerMetadata(rebuiltBuffer, {
       pack: PACK_NAME,
       author: AUTHOR_NAME
     });
+    if (animated) {
+      const finalMeta = await sharp(withMetadata, { animated: true }).metadata();
+      if (Number(finalMeta.pages || 1) <= 1) throw new Error('animated_webp_staticized_after_metadata');
+      if (withMetadata.length > MAX_ANIMATED_STICKER_BYTES) throw new Error(`animated_webp_metadata_over_limit:${withMetadata.length}`);
+    }
 
     if (canCacheFixedWebp) {
       try {
@@ -266,6 +311,10 @@ async function ensureSafeWebpStickerWithOptions(filePath, options = {}) {
 
     return { buffer: withMetadata, animated, filePath };
   } catch (rebuildErr) {
+    if (animated && needsAnimatedLimit) {
+      console.error('[Sticker] WebP animado não coube no limite sem perder animação:', rebuildErr.message);
+      throw rebuildErr;
+    }
     console.warn('[Sticker] Falha ao normalizar metadata WebP, enviando original:', rebuildErr.message);
     return { buffer: originalBuffer, animated, filePath };
   }
@@ -491,5 +540,7 @@ module.exports = {
   isAnimatedWebpFile,
   ensureDirSync,
   ensureSafeWebpSticker,
-  ensureSafeWebpStickerWithOptions
+  ensureSafeWebpStickerWithOptions,
+  reencodeAnimatedWebpWithinLimit,
+  MAX_ANIMATED_STICKER_BYTES
 };

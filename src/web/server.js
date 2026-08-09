@@ -19,7 +19,7 @@ try {
 } catch (e) {
   console.warn('[ENV] dotenv não carregado:', e.message);
 }
-const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+const SESSION_SECRET = process.env.SESSION_SECRET || process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
 const JWT_SECRET = process.env.JWT_SECRET || SESSION_SECRET;
 const session = require('express-session');
 const cookieParser = require('cookie-parser');

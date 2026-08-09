@@ -5,6 +5,9 @@
 const { db, createVerificationCode, getVerifiedUser } = require('../../database/index');
 const { safeReply } = require('../../utils/safeMessaging');
 
+const SITE_BASE_URL = String(process.env.WEB_SERVER_URL || process.env.BASE_URL || 'https://figurinhas.zanardizz.uk').replace(/\/$/, '');
+const REGISTER_URL = SITE_BASE_URL + '/register';
+
 /**
  * Handle verification code generation command
  * @param {object} client - WhatsApp client
@@ -24,23 +27,23 @@ async function handleVerifyCommand(client, message, chatId) {
     // Check if user is already verified
     const existingUser = await getVerifiedUser(db, whatsappJid);
     if (existingUser) {
-      await safeReply(client, chatId, `✅ *Sua conta já está verificada!*\n\n👤 Usuário: *${existingUser.username}*\n\nVocê já pode editar figurinhas no site.`);
+      await safeReply(client, chatId, `✅ *Seu WhatsApp já está vinculado ao site!*\n\n👤 Usuário: *${existingUser.username}*\n\nAcesse: ${SITE_BASE_URL}`);
       return;
     }
 
     // Generate verification code
     const code = await createVerificationCode(db, whatsappJid);
     
-    const response = `🔐 *Código de Verificação Gerado*\n\n` +
+    const response = `🔐 *Código para vincular seu WhatsApp ao site*\n\n` +
       `Seu código: *${code}*\n\n` +
-      `📋 *Como usar:*\n` +
-      `1. Acesse o site do Sticker Bot\n` +
-      `2. Faça login na sua conta\n` +
-      `3. Vá em "Configurações" ou "Perfil"\n` +
-      `4. Digite este código no campo "Verificação WhatsApp"\n` +
-      `5. Clique em "Verificar"\n\n` +
-      `⏰ *Válido por 30 minutos*\n` +
-      `🔒 Mantenha este código em segurança`;
+      `📋 *Como concluir o cadastro:*\n` +
+      `1. Acesse: ${REGISTER_URL}\n` +
+      `2. Crie sua conta usando o mesmo número do WhatsApp\n` +
+      `3. Confirme seu e-mail e faça login\n` +
+      `4. Abra seu perfil e informe este código na área de vínculo WhatsApp\n` +
+      `5. Confirme a verificação\n\n` +
+      `⏰ *O código é válido por 30 minutos*\n` +
+      `🔒 Não compartilhe este código`;
 
     await safeReply(client, chatId, response);
     

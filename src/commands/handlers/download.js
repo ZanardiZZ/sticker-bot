@@ -17,7 +17,7 @@ const MEDIA_DIR = BOT_MEDIA_DIR;
 
 /**
  * Handles the #download command
- * Downloads short videos from various platforms and processes them as stickers
+ * Downloads videos; short videos keep the sticker flow and long videos are returned as video
  * 
  * Usage: #download <URL>
  * Example: #download https://youtube.com/shorts/xxxxx
@@ -42,7 +42,7 @@ async function handleDownloadCommand(client, message, chatId, params, context = 
       client,
       chatId,
       '❌ *Uso incorreto!*\n\n' +
-      'Para baixar um vídeo curto:\n' +
+      'Para baixar um vídeo ou gerar figurinha:\n' +
       '`#download <URL>`\n\n' +
       '*Exemplos:*\n' +
       '• `#download https://youtube.com/shorts/xxxxx`\n' +
@@ -111,6 +111,24 @@ async function handleDownloadCommand(client, message, chatId, params, context = 
       downloadedFile = result.filePath;
       
       console.log('[DownloadCommand] Video downloaded:', result.filePath);
+
+      // Long videos are returned as regular WhatsApp video only. Do not run
+      // NSFW, AI, frame extraction, sticker conversion, or saveMedia.
+      if (videoInfo.duration > MAX_VIDEO_DURATION) {
+        await sendMediaByType(client, chatId, {
+          file_path: downloadedFile,
+          mimetype: result.mimetype || 'video/mp4'
+        });
+        await safeReply(
+          client,
+          chatId,
+          `✅ Vídeo enviado para download no WhatsApp.\n\n` +
+          `⏱️ Duração: ${Math.round(videoInfo.duration)}s\n` +
+          `ℹ️ Vídeos acima de ${MAX_VIDEO_DURATION}s não são processados como figurinha.`,
+          message.id
+        );
+        return;
+      }
       
       // Send processing feedback
       await safeReply(

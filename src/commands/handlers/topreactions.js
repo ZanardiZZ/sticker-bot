@@ -1,7 +1,21 @@
 const { getReactionAnalytics } = require('../../database/models/reactions');
 const { safeReply } = require('../../utils/safeMessaging');
+function parseReactionWindow(args = []) {
+  if (!Array.isArray(args) || args.length === 0) return { days: 7 };
+  const input = args.join(' ').trim().toLowerCase();
+  const match = input.match(/^(\d{1,3})(?:\s*(?:d|dia|dias|day|days))?$/);
+  if (!match) return { error: 'Formato inválido' };
+  const days = Number(match[1]);
+  if (!Number.isInteger(days) || days < 1 || days > 30) return { error: 'A janela deve estar entre 1 e 30 dias' };
+  return { days };
+}
+
 async function handleTopReactionsCommand(client, message, args = []) {
-  const days = Math.min(Math.max(Number.parseInt(args[0], 10) || 7, 1), 30);
+  const window = parseReactionWindow(args);
+  if (window.error) {
+    return safeReply(client, message.from, 'Uso: #topreactions [dias]\nExemplos: #topreactions 7 ou #topreactions 30 dias\nA janela aceita valores de 1 a 30 dias.', message);
+  }
+  const { days } = window;
   try {
     const data = await getReactionAnalytics({ from: Date.now() - days * 86400000, to: Date.now(), chatId: message.from, limit: 10 });
     if (!data.totalReactions) return safeReply(client, message.from, '📊 Nenhuma reação encontrada nesta janela.', message);
@@ -15,4 +29,4 @@ async function handleTopReactionsCommand(client, message, args = []) {
     return safeReply(client, message.from, '❌ Não consegui calcular o ranking de reações.', message);
   }
 }
-module.exports={handleTopReactionsCommand};
+module.exports={handleTopReactionsCommand, parseReactionWindow};

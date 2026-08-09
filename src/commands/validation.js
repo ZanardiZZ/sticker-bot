@@ -8,6 +8,9 @@ const { normalizeText } = require('../utils/commandNormalizer');
  * List of valid commands
  */
 const VALID_COMMANDS = [
+  '#memorias',
+  '#memoria',
+  '#esquecer',
   '#random',
   '#editar',
   '#deletar',
@@ -17,31 +20,20 @@ const VALID_COMMANDS = [
   '#id',
   '#forcar',
   '#forçar',
-  '#count',
   '#pesquisar',
-  '#tema',
-  '#theme',
   '#verificar',
   '#verify',
   '#perfil',
   '#ping',
   '#pong',
   '#criar',
-  '#exportarmemes',
   '#download',
-  '#baixar',
   '#downloadmp3',
-  '#baixarmp3',
-  '#baixaraudio',
   '#fotohd',
   '#pinga',
   '#ban',
   '#issue',
-  '#pack',
-  '#addpack',
-  '#reacts',
   '#topreactions',
-  '#falha',
   '#comandos'
 ];
 
@@ -57,14 +49,19 @@ const HELP_ENTRIES = [
     example: '#pesquisar reação de surpresa'
   },
   {
-    command: '#tema <palavras-chave> <quantidade opcional>',
-    description: 'Busca stickers existentes pelo tema informado.',
-    example: '#tema carros futuristas 3'
+    command: '#topreactions [dias]',
+    description: 'Mostra o ranking de reações dos últimos 7 dias. Informe 1 a 30 dias, por exemplo #topreactions 30 dias.',
+    example: '#topreactions 30 dias'
   },
   {
-    command: '#theme <palavras-chave> <quantidade opcional>',
-    description: 'Alias de #tema.',
-    example: '#theme carros futuristas 3'
+    command: '#memorias / #memoria',
+    description: 'Mostra as memórias disponíveis sobre você e o contexto do bot.',
+    example: '#memorias'
+  },
+  {
+    command: '#esquecer <termo>',
+    description: 'Solicita a remoção de uma memória específica.',
+    example: '#esquecer apelido'
   },
   {
     command: '#random',
@@ -107,44 +104,19 @@ const HELP_ENTRIES = [
     example: '#forcar'
   },
   {
-    command: '#count',
-    description: 'Informa quantas figurinhas existem no acervo.',
-    example: '#count'
-  },
-  {
     command: '#perfil',
     description: 'Mostra seu resumo de figurinhas e comandos utilizados.',
     example: '#perfil'
   },
   {
-    command: '#exportarmemes',
-    description: 'Exporta os memes bem avaliados e o dataset de treinamento.',
-    example: '#exportarmemes'
-  },
-  {
     command: '#download <URL>',
-    description: 'Baixa mídia da URL (quando suportado pelo bot).',
+    description: 'Baixa vídeo: até 60s segue para figurinha; acima disso envia somente o vídeo para download, sem processamento.',
     example: '#download https://youtube.com/watch?v=xxxxx'
   },
   {
-    command: '#baixar <URL>',
-    description: 'Alias de #download.',
-    example: '#baixar https://youtube.com/watch?v=xxxxx'
-  },
-  {
     command: '#downloadmp3 <URL>',
-    description: 'Extrai o áudio em MP3 de um vídeo curto das plataformas suportadas. Use #baixarmp3 ou #baixaraudio como atalho.',
+    description: 'Extrai o áudio em MP3 de um vídeo curto das plataformas suportadas.',
     example: '#downloadmp3 https://youtube.com/watch?v=xxxxx'
-  },
-  {
-    command: '#baixarmp3 <URL>',
-    description: 'Alias de #downloadmp3.',
-    example: '#baixarmp3 https://youtube.com/watch?v=xxxxx'
-  },
-  {
-    command: '#baixaraudio <URL>',
-    description: 'Alias de #downloadmp3.',
-    example: '#baixaraudio https://youtube.com/watch?v=xxxxx'
   },
   {
     command: '#ban @usuário',
@@ -155,26 +127,6 @@ const HELP_ENTRIES = [
     command: '#issue <texto>',
     description: 'Registra uma issue/relato para acompanhamento.',
     example: '#issue sticker sem metadata no #random'
-  },
-  {
-    command: '#pack <nome>',
-    description: 'Envia figurinhas de um pack salvo.',
-    example: '#pack memes'
-  },
-  {
-    command: '#addpack <nome>',
-    description: 'Adiciona figurinha respondida a um pack.',
-    example: '#addpack memes'
-  },
-  {
-    command: '#reacts <texto>',
-    description: 'Configura/aciona reações conforme implementação atual do bot.',
-    example: '#reacts 👍😂🔥'
-  },
-  {
-    command: '#falha <id>',
-    description: 'Tenta recuperar figurinha WebP com problema: re-encoda e reenviar em seguida.',
-    example: '#falha 15065'
   },
   {
     command: '#ping',
@@ -192,14 +144,14 @@ const HELP_ENTRIES = [
     example: '#pong'
   },
   {
-    command: '#verificar / #verify',
-    description: 'Verifica status da mídia/entrada de acordo com as regras do bot.',
-    example: '#verificar'
+    command: '#verify / #verificar',
+    description: 'Gera o código para vincular seu WhatsApp ao cadastro no site do Sticker Bot.',
+    example: '#verify'
   },
   {
-    command: '#fotohd (respondendo a uma figurinha) 4x',
-    description: 'Amplia a imagem respondida com IA local (configure REAL_ESRGAN_BIN) e usa Lanczos3 como fallback. Opcionalmente informe o fator de ampliação (ex: 4x). Padrão 2x, use 4x para ampliar quatro vezes.',
-    example: '#fotohd 4x'
+    command: '#fotohd (respondendo a uma imagem ou figurinha)',
+    description: 'Amplia a imagem respondida em 2x com IA local; usa Lanczos3 como fallback.',
+    example: '#fotohd'
   },
   {
     command: '#comandos',

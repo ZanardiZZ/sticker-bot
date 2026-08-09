@@ -25,8 +25,8 @@ const mime = require('mime-types');
 const ffmpeg = (() => {
   try {
     const instance = require('fluent-ffmpeg');
-    const ffmpegPath = require('ffmpeg-static');
-    if (ffmpegPath) instance.setFfmpegPath(ffmpegPath);
+    const { configureFfmpeg } = require('../src/utils/ffmpeg');
+    if (!configureFfmpeg(instance)) throw new Error('ffmpeg_binary_not_found');
     return instance;
   } catch (err) {
     console.warn('[Backfill] FFmpeg indisponível. Vídeos não serão processados:', err.message);

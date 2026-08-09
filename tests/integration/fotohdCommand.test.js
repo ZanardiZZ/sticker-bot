@@ -23,7 +23,7 @@ const tests = [
         fs.mkdirSync(tempDir, { recursive: true });
       }
 
-      const originalBuffer = Buffer.from('original-image-data');
+      const originalBuffer = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
       const storedFilePath = path.join(tempDir, 'fotohd-source.webp');
       fs.writeFileSync(storedFilePath, originalBuffer);
 
@@ -80,16 +80,22 @@ const tests = [
       const commands = require(commandsPath);
 
       const client = new MockBaileysClient();
-      client.getQuotedMessage = async () => ({
+      let quotedRequestId = null;
+      client.getQuotedMessage = async (messageId) => {
+        quotedRequestId = messageId;
+        return ({
         id: 'quoted',
         isMedia: true,
         mimetype: 'image/webp'
       });
+      };
 
       const message = {
-        id: 'msg-1',
+        // Regression: real WPP payloads can expose the ID only in key.id.
+        key: { id: 'msg-1' },
+        type: 'chat',
         body: '#fotohd',
-        hasQuotedMsg: true
+        hasQuotedMsg: false
       };
 
       const chatId = '5511000000000@c.us';
@@ -97,6 +103,7 @@ const tests = [
       try {
         await commands.handleCommand(client, message, chatId, {});
 
+        assertEqual(quotedRequestId, 'msg-1', 'Should resolve quoted message ID from key.id');
         assert(enhanceCall, 'Enhance should be called');
         assert(enhanceCall.buffer.equals(originalBuffer), 'Enhancer should receive stored buffer');
         assertEqual(enhanceCall.options.factor, 2, 'Default factor should be 2x');

@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { configureFfmpeg } = require('../utils/ffmpeg');
 
 // Conditional loading for FFmpeg - these may fail in some environments due to network restrictions
 let ffmpeg = null;
@@ -7,11 +8,9 @@ let ffmpegStatic = null;
 
 try {
   ffmpeg = require('fluent-ffmpeg');
-  ffmpegStatic = require('ffmpeg-static');
+  ffmpegStatic = configureFfmpeg(ffmpeg);
   
-  if (ffmpegStatic) {
-    ffmpeg.setFfmpegPath(ffmpegStatic);
-  }
+  if (!ffmpegStatic) throw new Error('ffmpeg_binary_not_found');
 } catch (error) {
   console.warn('[AudioConverter] FFmpeg not available:', error.message);
   console.warn('[AudioConverter] Audio conversion features will be disabled');

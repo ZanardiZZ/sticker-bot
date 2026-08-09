@@ -113,6 +113,20 @@
   </div>
 
   <script>
+    let csrfToken = null;
+    async function getCsrfToken() {
+      if (csrfToken) return csrfToken;
+      const response = await fetch('/api/csrf-token', { credentials: 'same-origin' });
+      const data = await response.json();
+      csrfToken = data.csrfToken;
+      return csrfToken;
+    }
+    async function fetchWithCsrf(url, options = {}) {
+      const token = await getCsrfToken();
+      options.credentials = options.credentials || 'same-origin';
+      options.headers = { ...(options.headers || {}), 'X-CSRF-Token': token };
+      return fetch(url, options);
+    }
     let currentUser = null;
 
     // Check authentication and load user info
@@ -256,7 +270,7 @@
     // Vote on pending edit
     async function voteOnEdit(editId, vote) {
       try {
-        const response = await fetch(`/api/pending-edits/${editId}/vote`, {
+        const response = await fetchWithCsrf(`/api/pending-edits/${editId}/vote`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
@@ -289,7 +303,7 @@
       const reason = decision === 'reject' ? prompt('Motivo da rejeição (opcional):') : null;
       
       try {
-        const response = await fetch(`/api/pending-edits/${editId}/admin-decision`, {
+        const response = await fetchWithCsrf(`/api/pending-edits/${editId}/admin-decision`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'

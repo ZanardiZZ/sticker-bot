@@ -458,43 +458,40 @@ function updateUsersPagination(total, offset, limit) {
 
 async function approveUser(userId) {
   try {
-    const response = await fetch(`/api/admin/users/${userId}/status`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'approved' })
+    const data = await fetchJSON(`/api/admin/users/${userId}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "approved" })
     });
     
-    if (response.ok) {
+    if (data) {
       await loadUsers();
     } else {
-      const data = await response.json();
-      alert(getAdminErrorMessage(data, 'Erro ao aprovar usuário'));
+      alert(getAdminErrorMessage(data, "Erro ao aprovar usuário"));
     }
   } catch (error) {
-    console.error('Error approving user:', error);
-    alert('Erro ao aprovar usuário');
+    console.error("Error approving user:", error);
+    alert("Erro ao aprovar usuário");
   }
 }
 
 async function rejectUser(userId) {
-  if (!confirm('Tem certeza que deseja rejeitar este usuário?')) return;
-  
+  if (!confirm("Tem certeza que deseja rejeitar este usuário?")) return;
   try {
-    const response = await fetch(`/api/admin/users/${userId}/status`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'rejected' })
+    const data = await fetchJSON(`/api/admin/users/${userId}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "rejected" })
     });
     
-    if (response.ok) {
+    if (data) {
       await loadUsers();
     } else {
-      const data = await response.json();
-      alert(getAdminErrorMessage(data, 'Erro ao rejeitar usuário'));
+      alert(getAdminErrorMessage(data, "Erro ao rejeitar usuário"));
     }
   } catch (error) {
-    console.error('Error rejecting user:', error);
-    alert('Erro ao rejeitar usuário');
+    console.error("Error rejecting user:", error);
+    alert("Erro ao rejeitar usuário");
   }
 }
 
@@ -503,7 +500,7 @@ async function toggleEditPermission(userId, canEdit) {
   if (!confirm(`Tem certeza que deseja ${action} permissão de edição para este usuário?`)) return;
   
   try {
-    const response = await fetch(`/api/admin/users/${userId}/permissions`, {
+    const response = await fetchWithCSRF(`/api/admin/users/${userId}/permissions`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ can_edit: !canEdit })
@@ -2479,7 +2476,7 @@ if (refreshDuplicatesBtn) {
             btn.disabled = true;
             btn.textContent = 'Deletando...';
             try {
-              const res = await fetch(`/api/admin/duplicates/${id}`, { method: 'DELETE' });
+              const res = await fetchWithCSRF(`/api/admin/duplicates/${id}`, { method: 'DELETE' });
               if (res.ok) {
                 // Remove item da interface
                 const itemDiv = btn.closest('.duplicate-item');

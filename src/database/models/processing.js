@@ -13,6 +13,7 @@ const { getMD5, isFileProcessed, upsertProcessedFile, getDHash, getAnimatedDHash
 const { findByHashVisual, findByHashMd5, saveMedia } = require('./media');
 const { updateMediaTags } = require('./tags');
 const { OLD_STICKERS_DIR, OLD_STICKERS_SOURCE_DIR, ROOT_DIR } = require('../../paths');
+const { configureFfmpeg } = require('../../utils/ffmpeg');
 
 const repoRoot = ROOT_DIR;
 const SANITIZED_OLD_STICKERS_DIR = OLD_STICKERS_DIR;
@@ -196,11 +197,8 @@ let ffmpegPath = null;
 
 try {
   ffmpeg = require('fluent-ffmpeg');
-  ffmpegPath = require('ffmpeg-static');
-  
-  if (ffmpegPath) {
-    ffmpeg.setFfmpegPath(ffmpegPath);
-  }
+  ffmpegPath = configureFfmpeg(ffmpeg);
+  if (!ffmpegPath) throw new Error('ffmpeg_binary_not_found');
 } catch (ffmpegError) {
   console.warn('[Processing] FFmpeg não disponível:', ffmpegError.message);
   console.warn('[Processing] Funcionalidades de reparo de WebP serão desabilitadas');

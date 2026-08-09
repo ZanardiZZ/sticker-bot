@@ -692,6 +692,21 @@
 
   <script>
     let currentStep = 1;
+    let setupCsrfToken = null;
+    async function getSetupCsrfToken() {
+      if (setupCsrfToken) return setupCsrfToken;
+      const response = await fetch('/api/csrf-token', { credentials: 'same-origin' });
+      const data = await response.json();
+      setupCsrfToken = data.csrfToken;
+      return setupCsrfToken;
+    }
+    async function setupFetch(url, options = {}) {
+      const token = await getSetupCsrfToken();
+      options.credentials = options.credentials || 'same-origin';
+      options.headers = { ...(options.headers || {}), 'X-CSRF-Token': token };
+      return fetch(url, options);
+    }
+
     const setupData = {
       whatsapp: {},
       admin: {},
@@ -757,7 +772,7 @@
       }
 
       try {
-        const response = await fetch('/setup/whatsapp', {
+        const response = await setupFetch('/setup/whatsapp', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ groupId, allowedGroupIds, adminNumber })
@@ -787,7 +802,7 @@
       }
 
       try {
-        const response = await fetch('/setup/admin', {
+        const response = await setupFetch('/setup/admin', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username, password })
@@ -819,7 +834,7 @@
       };
 
       try {
-        const response = await fetch('/setup/features', {
+        const response = await setupFetch('/setup/features', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(features)
@@ -870,7 +885,7 @@
       document.getElementById('loadingState').classList.add('show');
 
       try {
-        const response = await fetch('/setup/finalize', {
+        const response = await setupFetch('/setup/finalize', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         });

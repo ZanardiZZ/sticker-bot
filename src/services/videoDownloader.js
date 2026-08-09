@@ -89,15 +89,44 @@ async function getVideoInfo(url) {
     console.log('[VideoDownloader] Extracting video info for:', url);
     
     // Get video info without downloading
-    const info = await ytDlpInstance.getVideoInfo(url);
-    
-    if (!info) {
+    const rawInfo = await ytDlpInstance.getVideoInfo(url);
+    if (!rawInfo) {
       throw new Error('Failed to extract video information');
     }
-    
+
+    // yt-dlp-wrap returns the dump-single-json payload as a Buffer in the
+    // installed version. Normalize it before reading metadata fields.
+    let info = rawInfo;
+    if (Buffer.isBuffer(info)) info = info.toString('utf8');
+    if (typeof info === 'string') {
+      try {
+        info = JSON.parse(info);
+      } catch (parseError) {
+        throw new Error(`Invalid yt-dlp metadata JSON: ${parseError.message}`);
+      }
+    }
+    if (Array.isArray(info)) {
+      if (info.length === 0) throw new Error('Empty video metadata payload');
+      let requestedId = null;
+      try {
+        requestedId = new URL(url).searchParams.get('v');
+      } catch (_) {}
+      info = (requestedId && info.find(item => String(item?.id || '') === requestedId))
+        || (requestedId && info.find(item => String(item?.webpage_url || '').includes(requestedId)))
+        || info[0];
+    }
+    if (!info || typeof info !== 'object') {
+      throw new Error('Invalid video metadata payload');
+    }
+
+    const numericDuration = Number(info.duration);
+    if (!Number.isFinite(numericDuration) || numericDuration < 0) {
+      throw new Error('Video duration could not be determined');
+    }
+
     console.log('[VideoDownloader] Video info extracted:', {
       title: info.title,
-      duration: info.duration,
+      duration: numericDuration,
       extractor: info.extractor
     });
 
@@ -106,9 +135,9 @@ async function getVideoInfo(url) {
     const infoMimeType = normalizedExt ? getMimeTypeByExtension(normalizedExt) : null;
 
     return {
-      title: info.title || 'Unknown',
-      duration: info.duration || 0,
-      extractor: info.extractor || 'unknown',
+      title: String(info.title || 'Unknown'),
+      duration: numericDuration,
+      extractor: String(info.extractor || info.extractor_key || 'unknown'),
       thumbnail: info.thumbnail,
       url: info.webpage_url || url,
       fileExt: normalizedExt,
@@ -144,13 +173,6 @@ async function downloadVideo(url) {
     // Get video info first to check duration
     const videoInfo = await getVideoInfo(url);
     
-    // Check if video is under 1 minute
-    if (videoInfo.duration > MAX_VIDEO_DURATION) {
-      throw new Error(
-        `Vídeo muito longo! Duração: ${Math.round(videoInfo.duration)}s. ` +
-        `Máximo permitido: ${MAX_VIDEO_DURATION}s (1 minuto).`
-      );
-    }
     
     // Create temp directory if it doesn't exist
     const tempDir = TEMP_DIR;

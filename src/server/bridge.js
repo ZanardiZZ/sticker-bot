@@ -19,12 +19,13 @@ const { normalizeJid } = require('../utils/jidUtils');
 const { BAILEYS_AUTH_DIR } = require('../paths');
 
 // FFmpeg setup for conversions
+const { configureFfmpeg } = require('../utils/ffmpeg');
 let ffmpeg = null;
 let ffmpegPath = null;
 try {
   ffmpeg = require('fluent-ffmpeg');
-  ffmpegPath = require('ffmpeg-static');
-  if (ffmpegPath) ffmpeg.setFfmpegPath(ffmpegPath);
+  ffmpegPath = configureFfmpeg(ffmpeg);
+  if (!ffmpegPath) throw new Error('ffmpeg_binary_not_found');
 } catch (e) {
   console.warn('[WS] FFmpeg not available for animated conversions:', e.message);
 }
@@ -1278,7 +1279,15 @@ function convertWPPMessageToBaileys(wppMessage) {
       hasContent: !!wppMessage.content,
       hasBody: !!wppMessage.body,
       hasUrl: !!wppMessage.url,
-      mimetype: wppMessage.mimetype
+      mimetype: wppMessage.mimetype,
+      quotedMsg: !!wppMessage.quotedMsg,
+      quotedMsgObj: !!wppMessage.quotedMsgObj,
+      quotedMessage: !!wppMessage.quotedMessage,
+      quotedMsgId: !!wppMessage.quotedMsgId,
+      quotedMessageId: !!wppMessage.quotedMessageId,
+      quotedStanzaID: !!wppMessage.quotedStanzaID,
+      stanzaId: !!wppMessage.stanzaId,
+      contextInfo: !!wppMessage.contextInfo
     });
 
     // Normalize Wid objects to serialized strings
@@ -1291,19 +1300,49 @@ function convertWPPMessageToBaileys(wppMessage) {
     // Extract sender info from WPPConnect message
     const senderId = serializeWid(wppMessage.sender?.id || wppMessage.author || wppMessage.from);
     const senderName = wppMessage.sender?.pushname || wppMessage.sender?.name || wppMessage.notifyName || 'Unknown';
-    const chatIdStr = serializeWid(wppMessage.chatId || wppMessage.from);
+    // Some quoted WPP objects omit chatId/from; conversion must remain
+    // total because the media downloader only needs the normalized message ID.
+    const chatIdStr = String(serializeWid(
+      wppMessage.chatId
+      || wppMessage.from
+      || wppMessage.key?.remoteJid
+      || wppMessage.remoteJid
+      || ''
+    ) || '');
 
     // Detect if message is from the bot itself
     // 1. Check explicit fromMe flag
     // 2. Check if message ID starts with "true_" (WhatsApp convention for own messages)
     // 3. Check if it's a status broadcast message (ignore those)
-    const messageId = ensureWppMessageId(wppMessage);
-    const isStatusBroadcast = chatIdStr.includes('status@broadcast');
+    const messageId = ensureWppMessageId(wppMessage) || '';
+    const isStatusBroadcast = String(chatIdStr || '').includes('status@broadcast');
     const fromMe = wppMessage.fromMe === true || messageId.startsWith('true_');
 
     // WPPConnect message structure -> Baileys structure
     const isMediaMessage = ['image', 'video', 'audio', 'ptt', 'sticker', 'document'].includes(wppMessage.type);
     const textBody = wppMessage.content || wppMessage.body || '';
+
+    // WPPConnect may provide either the full quoted object or only its ID.
+    // Replies can expose the stanza ID at the root or inside message/contextInfo.
+    const quotedMsg = wppMessage.quotedMsgObj
+      || wppMessage.quotedMsg
+      || wppMessage.quotedMessage
+      || wppMessage.contextInfo?.quotedMessage
+      || wppMessage.message?.extendedTextMessage?.contextInfo?.quotedMessage
+      || null;
+    const quotedMsgId = serializeWid(
+      quotedMsg?.id
+      || quotedMsg?.key?.id
+      || quotedMsg?._data?.id
+      || wppMessage.quotedMsgId
+      || wppMessage.quotedMessageId
+      || wppMessage.quoted_id
+      || wppMessage.quotedStanzaID
+      || wppMessage.stanzaId
+      || wppMessage.contextInfo?.stanzaId
+      || wppMessage.message?.extendedTextMessage?.contextInfo?.stanzaId
+      || wppMessage.message?.conversation?.contextInfo?.stanzaId
+    );
 
     const baileysMsg = {
       key: {
@@ -1315,6 +1354,7 @@ function convertWPPMessageToBaileys(wppMessage) {
       messageTimestamp: wppMessage.timestamp || Math.floor(Date.now() / 1000),
       pushName: senderName,
       from: chatIdStr,
+      id: messageId,  // OpenWA-compatible root ID used by command handlers
       fromMe: fromMe,  // Add fromMe at root level for bot to check
       // Add sender object for logging compatibility
       sender: wppMessage.sender || {
@@ -1331,9 +1371,9 @@ function convertWPPMessageToBaileys(wppMessage) {
       type: wppMessage.type || 'chat',
       isGroupMsg: wppMessage.isGroupMsg || false,
       // Quoted message support
-      hasQuotedMsg: !!(wppMessage.quotedMsgObj || wppMessage.quotedMsg),
-      quotedMsgId: wppMessage.quotedMsgObj?.id || wppMessage.quotedMsg?.id || null,
-      quotedMsg: wppMessage.quotedMsgObj || wppMessage.quotedMsg || null,
+      hasQuotedMsg: Boolean(quotedMsg || quotedMsgId),
+      quotedMsgId,
+      quotedMsg,
       message: {}
     };
 
@@ -2133,16 +2173,31 @@ async function handleDownloadMedia(ws, msg) {
 
     // WPPConnect: Download and decrypt media from message
     // First, we need to find the message in cache or fetch it
-    const cachedMsg = messageCache.get(messageId);
+    let cachedMsg = findCachedWppMessage(messageId);
+
+    // A quoted sticker may predate a bridge restart and therefore be absent from
+    // the in-memory cache. Ask WPPConnect for the native message before failing.
+    if (!cachedMsg && typeof wppClient.getMessageById === 'function') {
+      try {
+        const historical = await wppClient.getMessageById(messageId);
+        if (historical) {
+          cachedMsg = { wppOriginal: historical, raw: convertWPPMessageToBaileys(historical) };
+          messageCache.set(messageId, cachedMsg);
+          console.log('[WS] Recovered historical media message:', messageId);
+        }
+      } catch (historicalError) {
+        console.warn('[WS] Historical media lookup failed:', historicalError.message);
+      }
+    }
 
     if (!cachedMsg) {
-      console.error('[WS] Message not found in cache:', messageId);
+      console.error('[WS] Message not found in cache or history:', messageId);
       ws.send(JSON.stringify({
         type: 'error',
         requestId: msg?.requestId,
         action: 'downloadMedia',
         messageId: messageId,
-        error: 'Message not found in cache'
+        error: 'Message not found in cache or history'
       }));
       return;
     }
@@ -2183,7 +2238,7 @@ async function handleDownloadMedia(ws, msg) {
     // If the event was incomplete, resolve it from WPPConnect chat history
     // before attempting any native download. This is the important path for
     // ID-less incoming media events.
-    if (!wppMessage.directPath || !wppMessage.mediaKey) {
+    if (!wppMessage.directPath || !wppMessage.mediaKey || !extractNativeWppMessageId(wppMessage)) {
       const recovered = await recoverHistoricalWppMessage(cachedMsg);
       if (recovered) wppMessage = recovered;
     }
@@ -2334,6 +2389,27 @@ async function handleSendReactionToMessage(ws, msg) {
   }
 }
 
+function findCachedWppMessage(messageId) {
+  if (!messageId) return null;
+  const exact = messageCache.get(messageId);
+  if (exact) return exact;
+  const wanted = normalizeWppMessageId(messageId);
+  for (const [key, value] of messageCache.entries()) {
+    const candidates = [
+      key,
+      value?.raw?.id,
+      value?.raw?.key?.id,
+      value?.wppOriginal?.id,
+      value?.wppOriginal?.key?.id,
+      value?.wppOriginal?._data?.id
+    ].map(normalizeWppMessageId).filter(Boolean);
+    if (candidates.some(candidate => candidate === wanted || candidate.endsWith('_' + wanted) || candidate.includes('_' + wanted + '_'))) {
+      return value;
+    }
+  }
+  return null;
+}
+
 async function handleGetQuotedMessage(ws, msg) {
   const { messageId } = msg;
   if (!messageId) {
@@ -2345,9 +2421,33 @@ async function handleGetQuotedMessage(ws, msg) {
     // Check cache first
     const cached = messageCache.get(messageId);
     if (cached?.raw) {
-      const quotedId = cached.raw.quotedMsgId;
+      // WPP/bridge payloads may expose the quoted stanza in several shapes.
+      // The cache stores both the converted payload and the original WPP object,
+      // so normalize all supported forms before looking up the quoted media.
+      const raw = cached.raw;
+      const original = cached.wppOriginal;
+      const quotedObject = raw.quotedMsg || raw.quotedMsgObj || raw.quotedMessage
+        || original?.quotedMsgObj || original?.quotedMsg || original?.quotedMessage
+        || original?.contextInfo?.quotedMessage
+        || original?.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+      const quotedId = normalizeWppMessageId(
+        raw.quotedMsgId
+        || raw.quotedMessageId
+        || raw.quotedStanzaID
+        || raw.stanzaId
+        || original?.quotedMsgId
+        || original?.quotedMessageId
+        || original?.quoted_id
+        || original?.quotedStanzaID
+        || original?.stanzaId
+        || original?.contextInfo?.stanzaId
+        || original?.message?.extendedTextMessage?.contextInfo?.stanzaId
+        || quotedObject?.id
+        || quotedObject?.key?.id
+        || quotedObject?._data?.id
+      );
       if (quotedId) {
-        const quotedCached = messageCache.get(quotedId);
+        const quotedCached = findCachedWppMessage(quotedId);
         if (quotedCached?.raw) {
           ws.send(JSON.stringify({ type: 'quotedMessage', messageId, data: quotedCached.raw }));
           return;
@@ -2355,11 +2455,74 @@ async function handleGetQuotedMessage(ws, msg) {
       }
     }
 
-    // Fallback: fetch via WPPConnect
+    // Fallback: fetch the current WPP message, then resolve its quoted target.
+    // getMessageById(messageId) returns the command message itself; returning
+    // that object as the quoted message makes #fotohd see non-media and reply
+    // with usage text even when WhatsApp supplied a valid reply.
     if (!wppReady || !wppClient) throw new Error('WhatsApp not ready');
-    const quotedMsg = await wppClient.getMessageById(messageId);
+    // Prefer WPPConnect's native resolver. It receives the current command
+    // message ID and can resolve quoted targets that are not exposed by
+    // getMessageById() in newer WhatsApp Web payloads.
+    if (typeof wppClient.getQuotedMessage === 'function') {
+      try {
+        const nativeQuoted = await wppClient.getQuotedMessage(messageId);
+        if (nativeQuoted) {
+          const converted = convertWPPMessageToBaileys(nativeQuoted);
+          // WPPConnect's native quoted resolver can return a partial media object
+          // without the derived isMedia flag. Preserve the media contract for the
+          // command handler based on the native shape as well.
+          converted.isMedia = Boolean(converted.isMedia || isMediaLikeWppMessage(nativeQuoted));
+          converted.mimetype = converted.mimetype || nativeQuoted.mimetype || nativeQuoted.mediaType || '';
+          converted.type = converted.type || nativeQuoted.type || '';
+          // Native quoted objects may not expose a stable MsgKey. Keep the
+          // original WPP object under the converted ID so downloadMedia can
+          // operate on it even when the sticker was sent by this bot.
+          if (converted.id) {
+            messageCache.set(converted.id, { raw: converted, wppOriginal: nativeQuoted });
+          }
+          ws.send(JSON.stringify({ type: 'quotedMessage', messageId, data: converted }));
+          return;
+        }
+      } catch (nativeError) {
+        console.warn('[WS] Native quoted-message lookup failed; using fallback:', nativeError.message);
+      }
+    }
+
+    const currentMsg = await wppClient.getMessageById(messageId);
+    if (!currentMsg) throw new Error('current_message_not_found');
+
+    const quotedObject = currentMsg.quotedMsgObj
+      || currentMsg.quotedMsg
+      || currentMsg.quotedMessage
+      || currentMsg.contextInfo?.quotedMessage
+      || currentMsg.message?.extendedTextMessage?.contextInfo?.quotedMessage
+      || null;
+    const quotedId = normalizeWppMessageId(
+      currentMsg.quotedMsgId
+      || currentMsg.quotedMessageId
+      || currentMsg.quoted_id
+      || currentMsg.quotedStanzaID
+      || currentMsg.stanzaId
+      || currentMsg.contextInfo?.stanzaId
+      || currentMsg.message?.extendedTextMessage?.contextInfo?.stanzaId
+      || quotedObject?.id
+      || quotedObject?.key?.id
+      || quotedObject?._data?.id
+    );
+
+    let quotedMsg = quotedObject;
+    if (!quotedMsg && quotedId && quotedId !== messageId) {
+      quotedMsg = await wppClient.getMessageById(quotedId);
+    }
     if (!quotedMsg) throw new Error('quoted_not_found');
+
     const converted = convertWPPMessageToBaileys(quotedMsg);
+    converted.isMedia = Boolean(converted.isMedia || isMediaLikeWppMessage(quotedMsg));
+    converted.mimetype = converted.mimetype || quotedMsg.mimetype || quotedMsg.mediaType || '';
+    converted.type = converted.type || quotedMsg.type || '';
+    if (converted.id) {
+      messageCache.set(converted.id, { raw: converted, wppOriginal: quotedMsg });
+    }
     ws.send(JSON.stringify({ type: 'quotedMessage', messageId, data: converted }));
   } catch (error) {
     ws.send(JSON.stringify({ type: 'error', action: 'getQuotedMessage', messageId, error: error.message }));

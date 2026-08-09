@@ -6,26 +6,16 @@ const { getAiAnnotationsFromPrompt, getAiAnnotations, getAiAnnotationsForGif, tr
 const sharp = require('sharp');
 const { getTopTags } = require('../utils/messageUtils');
 const { TEMP_DIR } = require('../paths');
+const { configureFfmpeg } = require('../utils/ffmpeg');
 // Audio transcription uses the configured remote multimodal provider.
 
 // Conditional loading for FFmpeg - these may fail in some environments due to network restrictions
 let ffmpeg = null;
 let ffmpegPath = null;
 
-function resolveFfmpegPath() {
-  let packagedPath = null;
-  try {
-    packagedPath = require('ffmpeg-static');
-  } catch (_) {}
-  const candidates = [process.env.FFMPEG_PATH, packagedPath, '/usr/bin/ffmpeg']
-    .filter(Boolean)
-    .filter((candidate, index, values) => values.indexOf(candidate) === index);
-  return candidates.find((candidate) => fs.existsSync(candidate)) || null;
-}
-
 try {
   ffmpeg = require('fluent-ffmpeg');
-  ffmpegPath = resolveFfmpegPath();
+  ffmpegPath = configureFfmpeg(ffmpeg);
   if (!ffmpegPath) throw new Error('ffmpeg_binary_not_found');
   ffmpeg.setFfmpegPath(ffmpegPath);
 } catch (error) {

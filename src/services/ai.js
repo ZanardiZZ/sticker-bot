@@ -4,7 +4,8 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
-const ffmpegPath = require('ffmpeg-static');
+const { resolveFfmpegPath } = require('../utils/ffmpeg');
+const ffmpegPath = resolveFfmpegPath();
 const { TEMP_DIR } = require('../paths');
 
 function createOpenAIClient({ apiKey, baseURL }) {
@@ -16,7 +17,7 @@ function createOpenAIClient({ apiKey, baseURL }) {
   return new OpenAI(options);
 }
 
-const multimodalApiKey = process.env.OPENAI_API_KEY;
+const multimodalApiKey = process.env.OPENAI_MULTIMODAL_API_KEY || process.env.LEMONADE_UPSCALE_API_KEY || process.env.OPENAI_API_KEY;
 const multimodalBaseURL = process.env.OPENAI_MULTIMODAL_BASE_URL || '';
 let openai = createOpenAIClient({
   apiKey: multimodalApiKey,
@@ -241,7 +242,7 @@ async function getTagsFromTextPrompt(prompt) {
     
     const response = await executeWithAiRetry(
       () => openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: process.env.OPENAI_MULTIMODAL_MODEL || 'gpt-4o-mini',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.3,
         max_tokens: 200,
@@ -508,7 +509,7 @@ async function getAiAnnotationsFromPrompt(prompt) {
     
     const response = await executeWithAiRetry(
       () => openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: process.env.OPENAI_MULTIMODAL_MODEL || 'gpt-4o-mini',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.3,
         max_tokens: 200,
@@ -850,6 +851,7 @@ async function generateConversationalReply({
           prompt: safeCompletionPrompt,
           temperature: safeTemperature,
           max_tokens: safeMaxTokens,
+          chat_template_kwargs: { enable_thinking: false },
           stop: ['\nUsuário:', '\nUser:', '\nSistema:', '\nSystem:'],
           signal
         }),
@@ -885,6 +887,7 @@ async function generateConversationalReply({
           messages: preparedMessages,
           temperature: safeTemperature,
           max_tokens: safeMaxTokens,
+          chat_template_kwargs: { enable_thinking: false },
           signal
         }),
         { actionLabel: 'resposta conversacional (fallback OpenAI)' }
@@ -933,6 +936,7 @@ async function generateConversationalReply({
         messages: preparedMessages,
         temperature: safeTemperature,
         max_tokens: safeMaxTokens,
+        chat_template_kwargs: { enable_thinking: false },
         signal
       }),
       { actionLabel: 'resposta conversacional' }
@@ -951,6 +955,7 @@ async function generateConversationalReply({
             messages: preparedMessages,
             temperature: safeTemperature,
             max_tokens: boostedMaxTokens,
+            chat_template_kwargs: { enable_thinking: false },
             signal
           }),
           { actionLabel: 'resposta conversacional (retry por truncamento)' }
@@ -982,6 +987,7 @@ async function generateConversationalReply({
             messages: preparedMessages,
             temperature: safeTemperature,
             max_tokens: repairedMaxTokens,
+            chat_template_kwargs: { enable_thinking: false },
             signal
           }),
           { actionLabel: 'resposta conversacional (retry por final abrupto)' }
@@ -1023,6 +1029,7 @@ async function generateConversationalReply({
           prompt: safeCompletionPrompt,
           temperature: safeTemperature,
           max_tokens: Number.isFinite(maxTokens) && maxTokens > 0 ? Math.floor(maxTokens) : 220,
+          chat_template_kwargs: { enable_thinking: false },
           stop: ['\nUsuário:', '\nUser:', '\nSistema:', '\nSystem:'],
           signal
         }),
@@ -1077,6 +1084,7 @@ async function extractMemoryFactsFromText({
         model,
         temperature: 0.1,
         max_tokens: 300,
+        chat_template_kwargs: { enable_thinking: false },
         messages: [
           {
             role: 'system',

@@ -4,17 +4,15 @@
 
 // Command handlers
 const { handleRandomCommand } = require('./handlers/random');
-const { handleCountCommand } = require('./handlers/count');
 const { handleTop10Command } = require('./handlers/top10');
 const { handleTop5UsersCommand } = require('./handlers/top5users');
 const { handleTop5CommandsCommand } = require('./handlers/top5commands');
 const { handleIdCommand } = require('./handlers/id');
 const { handleForceCommand } = require('./handlers/force');
 const { handleEditCommand } = require('./handlers/edit');
-const { handleThemeCommand } = require('./handlers/theme');
 const { handlePesquisarCommand } = require('./handlers/pesquisar');
 const { handleVerifyCommand } = require('./handlers/verify');
-const { handleCriarMemeCommand, handleExportarMemesCommand } = require('./handlers/meme');
+const { handleCriarMemeCommand } = require('./handlers/meme');
 const { handleDeleteCommand } = require('./handlers/delete');
 const { handleIssueCommand } = require('./handlers/issue');
 const { handleDownloadCommand } = require('./handlers/download');
@@ -22,12 +20,8 @@ const { handleDownloadMp3Command } = require('./handlers/downloadMp3');
 const { handleBanCommand } = require('./handlers/ban');
 const { handlePerfilCommand } = require('./handlers/perfil');
 const { handleFotoHdCommand } = require('./handlers/fotohd');
-const { handleAddPackCommand } = require('./handlers/addpack');
-const { handlePackCommand } = require('./handlers/pack');
 const { handlePingaCommand } = require('./handlers/pinga');
-const { handleReactsCommand } = require('./handlers/reacts');
 const { handleTopReactionsCommand } = require('./handlers/topreactions');
-const { handleFalhaCommand } = require('./handlers/falha');
 const { handleMemoriasCommand, handleEsquecerCommand } = require('./handlers/memory');
 
 // Utilities
@@ -35,7 +29,7 @@ const validation = require('./validation');
 const media = require('./media');
 
 // Database functions
-const { db, updateMediaDescription, updateMediaTags, incrementCommandUsage } = require('../database/index.js');
+const { db, updateMediaDescription, updateMediaTags, incrementCommandUsage, countMedia } = require('../database/index.js');
 const { safeReply } = require('../utils/safeMessaging');
 const { parseCommand } = require('../utils/commandNormalizer');
 const { getAverageProcessingTime, getTotalMediaSize } = require('../database/models/mediaMetrics');
@@ -168,12 +162,6 @@ async function handleCommand(client, message, chatId, context = {}) {
         shouldTrackUsage = true;
         break;
 
-      case '#count':
-        await handleCountCommand(client, message, chatId);
-        handled = true;
-        shouldTrackUsage = true;
-        break;
-
       case '#top10':
         await handleTop10Command(client, message, chatId);
         handled = true;
@@ -210,13 +198,6 @@ async function handleCommand(client, message, chatId, context = {}) {
         shouldTrackUsage = true;
         break;
 
-      case '#tema':
-      case '#theme':
-        await handleThemeCommand(client, message, chatId, params);
-        handled = true;
-        shouldTrackUsage = true;
-        break;
-
       case '#verificar':
       case '#verify':
         await handleVerifyCommand(client, message, chatId);
@@ -226,12 +207,6 @@ async function handleCommand(client, message, chatId, context = {}) {
 
       case '#criar':
         await handleCriarMemeCommand(client, message, chatId, params, context);
-        handled = true;
-        shouldTrackUsage = true;
-        break;
-
-      case '#exportarmemes':
-        await handleExportarMemesCommand(client, message, chatId);
         handled = true;
         shouldTrackUsage = true;
         break;
@@ -249,15 +224,12 @@ async function handleCommand(client, message, chatId, context = {}) {
         break;
 
       case '#download':
-      case '#baixar':
         await handleDownloadCommand(client, message, chatId, params, context);
         handled = true;
         shouldTrackUsage = true;
         break;
 
       case '#downloadmp3':
-      case '#baixarmp3':
-      case '#baixaraudio':
         await handleDownloadMp3Command(client, message, chatId, params, context);
         handled = true;
         shouldTrackUsage = true;
@@ -281,38 +253,14 @@ async function handleCommand(client, message, chatId, context = {}) {
         shouldTrackUsage = true;
         break;
 
-      case '#addpack':
-        await handleAddPackCommand(client, message, chatId, params);
-        handled = true;
-        shouldTrackUsage = true;
-        break;
-
-      case '#pack':
-        await handlePackCommand(client, message, chatId, params);
-        handled = true;
-        shouldTrackUsage = true;
-        break;
-
       case '#pinga':
         await handlePingaCommand(client, message, chatId);
         handled = true;
         shouldTrackUsage = true;
         break;
 
-      case '#reacts':
-        await handleReactsCommand(client, message, params);
-        handled = true;
-        shouldTrackUsage = true;
-        break;
-
       case '#topreactions':
         await handleTopReactionsCommand(client, message, params);
-        handled = true;
-        shouldTrackUsage = true;
-        break;
-
-      case '#falha':
-        await handleFalhaCommand(client, message, chatId);
         handled = true;
         shouldTrackUsage = true;
         break;
@@ -372,12 +320,14 @@ async function handleCommand(client, message, chatId, context = {}) {
           let avgProcessing1h = null;
           let avgProcessing24h = null;
           let totalMediaSizeMB = null;
+           let totalMediaCount = null;
 
           try {
             avgProcessing1h = await getAverageProcessingTime(3600); // 1 hour
             avgProcessing24h = await getAverageProcessingTime(86400); // 24 hours
             const totalSizeBytes = await getTotalMediaSize();
             totalMediaSizeMB = (totalSizeBytes / (1024 * 1024)).toFixed(2);
+             totalMediaCount = await countMedia();
           } catch (metricsErr) {
             console.warn('[Ping] Failed to fetch metrics:', metricsErr.message);
           }
@@ -398,7 +348,8 @@ async function handleCommand(client, message, chatId, context = {}) {
             `📊 *Métricas de Performance*\n` +
             `⏱️ Proc. médio (1h): ${formatProcessingTime(avgProcessing1h)}\n` +
             `⏱️ Proc. médio (24h): ${formatProcessingTime(avgProcessing24h)}\n` +
-            `💾 Tamanho total: ${totalMediaSizeMB !== null ? totalMediaSizeMB + ' MB' : 'calculando...'}`;
+            `💾 Tamanho total: ${totalMediaSizeMB !== null ? totalMediaSizeMB + ' MB' : 'calculando...'}\n` +
+             `📦 Mídias no acervo: ${totalMediaCount !== null ? totalMediaCount : 'calculando...'}`;
 
           await safeReply(client, chatId, response, message);
           handled = true;
@@ -568,13 +519,11 @@ module.exports = {
   
   // Individual handlers
   handleRandomCommand,
-  handleCountCommand,
   handleTop10Command,
   handleTop5UsersCommand,
   handleIdCommand,
   handleForceCommand,
   handleEditCommand,
-  handleThemeCommand,
   handlePingaCommand,
   handleMemoriasCommand,
   handleEsquecerCommand,
