@@ -3,6 +3,7 @@
 ## [0.15.2] - 2026-08-09
 
 ### Correções
+- security: fixado `js-yaml` em `4.3.1` via override para eliminar o alerta de consumo quadrático de CPU.
 - fix: harden media processing and Gemma annotations (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/76b8908a69c142afefcc95e8b65af5a6ef6a2b54))
 
 ### Documentação
