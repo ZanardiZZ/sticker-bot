@@ -23,6 +23,7 @@ const testUrls = [
   { url: 'https://facebook.com/user/videos/123', expected: true },
   { url: 'https://v.redd.it/abc123', expected: true },
   { url: 'https://redd.it/abc123', expected: true },
+  { url: 'https://www.reddit.com/r/ShitpostBR/s/6AXFbl2rTk', expected: true },
   { url: 'https://google.com', expected: false },
   { url: 'not a url', expected: false },
   { url: '', expected: false },

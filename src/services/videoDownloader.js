@@ -89,7 +89,7 @@ async function getVideoInfo(url) {
     console.log('[VideoDownloader] Extracting video info for:', url);
     
     // Get video info without downloading
-    const rawInfo = await ytDlpInstance.getVideoInfo(url);
+    const rawInfo = await ytDlpInstance.getVideoInfo([url, '-f', 'bv*+ba/b']);
     if (!rawInfo) {
       throw new Error('Failed to extract video information');
     }
@@ -191,7 +191,8 @@ async function downloadVideo(url) {
     await ytDlpInstance.execPromise([
       url,
       '-o', outputTemplate,
-      '--format', 'best[ext=mp4]/best', // Prefer MP4 format
+      '--format', 'bv*+ba/b', // Supports separate video/audio streams used by Reddit
+      '--merge-output-format', 'mp4',
       '--no-playlist', // Don't download playlists
       '--max-filesize', '50M', // Max 50MB file size
       '--no-warnings',
@@ -401,6 +402,7 @@ function isVideoUrl(url) {
     /dailymotion\.com\//i,
     /twitch\.tv\/videos\//i,
     /reddit\.com\/.*\/comments\//i,
+    /reddit\.com\/r\/[^/]+\/s\//i,
     /v\.redd\.it\//i,
     /redd\.it\//i
   ];
