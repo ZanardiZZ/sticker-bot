@@ -1,4 +1,27 @@
-# Changelog
+## [0.15.4] - 2026-08-09
+
+### Correções
+- fix(download): support Reddit shared video links (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/b5882528e9636842ca161126869d9d524cefefeb))
+- fix(web): restrict trusted proxy hop (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/c7e77d83eb4b7780c805832d058e73673e2911b7))
+- fix(security): remediate js-yaml vulnerability (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/7a0d1ec6ad38d706b8b624fcdedcbb1e01c3a1a2))
+- fix: harden media processing and Gemma annotations (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/76b8908a69c142afefcc95e8b65af5a6ef6a2b54))
+
+### Documentação
+- docs: refresh project README (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/d9398fdacb440c4f1ba816ca11f14604fa945267))
+
+### Build
+- PR #343 – build(deps): bump undici from 6.27.0 to 6.28.0 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/343))
+- PR #342 – build(deps): bump ip-address from 10.2.0 to 10.4.0 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/342))
+- PR #341 – build(deps): bump uuid from 13.0.2 to 14.0.1 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/341))
+- PR #340 – build(deps): bump node-cron from 4.2.1 to 4.6.0 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/340))
+- PR #339 – build(deps-dev): bump globals from 17.6.0 to 17.8.0 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/339))
+- PR #337 – build(deps): bump express-rate-limit from 8.5.1 to 8.6.1 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/337))
+- PR #339 – build(deps-dev): bump globals from 17.6.0 to 17.8.0 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/339))
+- PR #337 – build(deps): bump express-rate-limit from 8.5.1 to 8.6.1 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/337))
+- PR #340 – build(deps): bump node-cron from 4.2.1 to 4.6.0 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/340))
+- PR #341 – build(deps): bump uuid from 13.0.2 to 14.0.1 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/341))
+- PR #343 – build(deps): bump undici from 6.27.0 to 6.28.0 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/343))
+- PR #342 – build(deps): bump ip-address from 10.2.0 to 10.4.0 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/342))
 
 ## [0.15.4] - 2026-08-09
 
