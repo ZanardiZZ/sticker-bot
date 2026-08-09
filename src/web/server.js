@@ -57,7 +57,8 @@ process.on('uncaughtException', (err) => {
 console.time('[BOOT] total');
 
 const app = express();
-app.set('trust proxy', true);
+// Trust only the immediate reverse proxy; never trust an arbitrary proxy chain.
+app.set('trust proxy', 1);
 
 // Basic middleware setup - MUST be before any routes
 app.use(cors());
