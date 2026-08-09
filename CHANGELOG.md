@@ -1,3 +1,13 @@
+# Changelog
+
+## [0.15.2] - 2026-08-09
+
+### Correções
+- fix: harden media processing and Gemma annotations (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/76b8908a69c142afefcc95e8b65af5a6ef6a2b54))
+
+### Documentação
+- docs: refresh project README (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/d9398fdacb440c4f1ba816ca11f14604fa945267))
+
 ## [0.15.2] - 2026-08-09
 
 ### Correções
