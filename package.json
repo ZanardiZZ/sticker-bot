@@ -35,7 +35,7 @@
     "@tensorflow/tfjs-node": "^4.22.0",
     "@wppconnect-team/wppconnect": "2.2.5",
     "@wppconnect/wa-js": "4.4.3",
-    "@wppconnect/wa-version": "1.5.4470",
+    "@wppconnect/wa-version": "1.5.4534",
     "adm-zip": "0.6.0",
     "axios": "^1.13.5",
     "bcryptjs": "^3.0.3",
