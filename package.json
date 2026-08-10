@@ -56,7 +56,7 @@
     "mime-types": "^3.0.2",
     "node-cron": "^4.6.0",
     "node-webpmux": "^3.2.1",
-    "nodemailer": "^9.0.1",
+    "nodemailer": "^9.0.5",
     "nsfwjs": "^4.2.1",
     "openai": "^6.17.0",
     "p-map": "^7.0.4",
