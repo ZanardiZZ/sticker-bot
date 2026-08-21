@@ -1,4 +1,14 @@
-# Changelog
+## [0.16.0] - 2026-08-21
+
+### Novidades
+- PR #350 – feat(runtime): add conversation health metrics and AI timeout (por @ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/350))
+- PR #350 – feat(runtime): add conversation health metrics and AI timeout (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/350))
+- PR #350 – feat(runtime): add conversation health metrics and AI timeout (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/350))
+
+### Correções
+- PR #349 – fix(stickers): normalize static and animated canvases (por @ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/349))
+- PR #349 – fix(stickers): normalize static and animated canvases (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/349))
+- PR #349 – fix(stickers): normalize static and animated canvases (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/349))
 
 ## [0.15.5] - 2026-08-21
 
