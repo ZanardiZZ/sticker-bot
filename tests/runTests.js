@@ -37,6 +37,7 @@ const { tests: messageHistoryRecoveryTests } = require('./unit/messageHistoryRec
 const { tests: mediaDownloadRetryTests } = require('./unit/mediaDownloadRetry.test');
 const { tests: schedulerTests } = require('./unit/scheduler.test');
 const { tests: conversationRuntimeTests } = require('./unit/conversationRuntime.test');
+const { tests: conversationMetricsTests } = require('./unit/conversationMetrics.test');
 const { tests: openvikingSemanticRecallTests } = require('./unit/openvikingSemanticRecall.test');
 const { tests: stickerDeliveryPolicyTests } = require('./unit/stickerDeliveryPolicy.test');
 const { tests: recentIncidentTests } = require('./unit/recentIncidents.test');
@@ -83,6 +84,7 @@ async function runAllTests() {
     results.push(await runTestSuite('Media Download Retry Tests', mediaDownloadRetryTests));
     results.push(await runTestSuite('Scheduler Tests', schedulerTests));
     results.push(await runTestSuite('Conversation Runtime Tests', conversationRuntimeTests));
+    results.push(await runTestSuite('Conversation Metrics Tests', conversationMetricsTests));
     results.push(await runTestSuite('OpenViking Semantic Recall Tests', openvikingSemanticRecallTests));
     results.push(await runTestSuite('Sticker Delivery Policy Tests', stickerDeliveryPolicyTests));
     results.push(await runTestSuite('Recent Incident Regression Tests', recentIncidentTests));

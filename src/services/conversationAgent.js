@@ -7,6 +7,7 @@ const { getLogCollector } = require('../utils/logCollector');
 const memory = require('../client/memory-client');
 const { CONVERSATIONS_DIR } = require('../paths');
 const { ConversationRuntime, toPositiveNumber } = require('./conversationRuntime');
+const { conversationMetrics } = require('./conversationMetrics');
 
 const ENABLED = (process.env.CONVERSATION_AGENT_ENABLED || '1').toLowerCase() !== '0' &&
   (process.env.CONVERSATION_AGENT_ENABLED || '1').toLowerCase() !== 'false';
@@ -1146,10 +1147,17 @@ async function handleGroupChatMessage(client, message, context = {}) {
             .filter(Boolean)
             .join(' ')
             .slice(-1200);
-          memoryContext = await memory.buildContext(request.chatId, [request.senderId], {
-            senderId: request.senderId,
-            query: memoryQuery
-          });
+          const finishMemoryMetric = conversationMetrics.start('memory_build_context');
+          try {
+            memoryContext = await memory.buildContext(request.chatId, [request.senderId], {
+              senderId: request.senderId,
+              query: memoryQuery
+            });
+            finishMemoryMetric('success');
+          } catch (memoryError) {
+            finishMemoryMetric(memoryError?.message?.toLowerCase().includes('timeout') ? 'timeout' : 'error');
+            throw memoryError;
+          }
         } catch (err) {
           console.warn('[ConversationAgent] Falha ao montar contexto de memória:', err?.message || err);
         }
@@ -1176,12 +1184,19 @@ async function handleGroupChatMessage(client, message, context = {}) {
         const sanitized = sanitizeReplyText(reply || '');
         if (!sanitized) return false;
 
-        if (typeof request.client.sendText === 'function') {
-          await request.client.sendText(request.chatId, sanitized);
-        } else if (typeof request.client.sendMessage === 'function') {
-          await request.client.sendMessage(request.chatId, sanitized);
-        } else {
-          await safeReply(request.client, request.chatId, sanitized);
+        const finishSendMetric = conversationMetrics.start('send_text');
+        try {
+          if (typeof request.client.sendText === 'function') {
+            await request.client.sendText(request.chatId, sanitized);
+          } else if (typeof request.client.sendMessage === 'function') {
+            await request.client.sendMessage(request.chatId, sanitized);
+          } else {
+            await safeReply(request.client, request.chatId, sanitized);
+          }
+          finishSendMetric('success');
+        } catch (sendError) {
+          finishSendMetric(sendError?.message?.toLowerCase().includes('timeout') ? 'timeout' : 'error');
+          throw sendError;
         }
 
         // Never let an answer that raced with a newer message overwrite its state.
@@ -1209,5 +1224,6 @@ async function handleGroupChatMessage(client, message, context = {}) {
 module.exports = {
   handleGroupChatMessage,
   buildContextualDirective,
-  buildSystemPrompt
+  buildSystemPrompt,
+  getConversationHealth: () => conversationMetrics.snapshot()
 };
