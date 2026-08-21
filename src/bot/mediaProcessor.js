@@ -31,6 +31,9 @@ const { cleanDescriptionTags } = require('../utils/messageUtils');
 const { generateResponseMessage } = require('../utils/responseMessage');
 const { safeReply } = require('../utils/safeMessaging');
 const { isAnimatedWebpBuffer, sendStickerForMediaRecord, reencodeAnimatedWebpWithinLimit, MAX_ANIMATED_STICKER_BYTES } = require('./stickers');
+
+const STICKER_CANVAS_SIZE = 512;
+const STICKER_CANVAS_BACKGROUND = { r: 0, g: 0, b: 0, alpha: 0 };
 const { isGifLikeVideo } = require('../utils/gifDetection');
 const { withTyping } = require('../utils/typingIndicator');
 const { BOT_MEDIA_DIR, BOT_TEMP_DIR } = require('../paths');
@@ -394,15 +397,18 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
       const shouldPreserveOriginalWebp = message.mimetype === 'image/webp' && (isStickerMessage || incomingAnimatedWebp);
       if (shouldPreserveOriginalWebp) {
         bufferWebp = Buffer.from(buffer);
-        if (incomingAnimatedWebp && bufferWebp.length > MAX_ANIMATED_STICKER_BYTES) {
-          console.warn(`[MediaProcessor] WebP animado recebido acima do limite (${bufferWebp.length} bytes); reduzindo sem remover frames...`);
-          bufferWebp = await reencodeAnimatedWebpWithinLimit(bufferWebp, MAX_ANIMATED_STICKER_BYTES);
+        if (incomingAnimatedWebp) {
+          console.log(`[MediaProcessor] Normalizando WebP animado para canvas ${STICKER_CANVAS_SIZE}x${STICKER_CANVAS_SIZE} sem remover frames...`);
+          bufferWebp = await reencodeAnimatedWebpWithinLimit(bufferWebp, MAX_ANIMATED_STICKER_BYTES, {
+            forceNormalize: true,
+            targetSize: STICKER_CANVAS_SIZE,
+            background: STICKER_CANVAS_BACKGROUND
+          });
         }
         await ensureVisualHashFromBuffer(bufferWebp, incomingAnimatedWebp ? 'animated-webp' : 'sticker');
       } else {
-        const TARGET_STICKER_SIZE = 512;
-        const MIN_CONTENT_EDGE = 420;
-        const maintainAlphaBackground = { r: 0, g: 0, b: 0, alpha: 0 };
+        const TARGET_STICKER_SIZE = STICKER_CANVAS_SIZE;
+        const maintainAlphaBackground = STICKER_CANVAS_BACKGROUND;
         const webpOptions = {
           quality: 90,
           alphaQuality: 100,
@@ -413,32 +419,18 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
         const sharpOptions = message.mimetype === 'image/webp' ? { animated: true } : undefined;
         const makeSharp = () => (sharpOptions ? sharp(tmpFilePath, sharpOptions) : sharp(tmpFilePath));
 
-        // Mantém aspecto original e centraliza em canvas 512x512.
-        // Para imagens pequenas (thumbnail), aplica upscale controlado para no mínimo 420px
-        // na maior aresta antes do encaixe final no canvas.
+        // Uma única operação final: amplia thumbnails e preserva o aspecto no canvas.
         const sourceMetadata = await makeSharp().metadata();
         const sourceWidth = sourceMetadata?.width || 0;
         const sourceHeight = sourceMetadata?.height || 0;
-        const maxSourceEdge = Math.max(sourceWidth, sourceHeight);
+        console.log(`[MediaProcessor] Normalizando imagem ${sourceWidth}x${sourceHeight} para canvas ${TARGET_STICKER_SIZE}x${TARGET_STICKER_SIZE}`);
 
-        const basePipeline = makeSharp();
-
-        if (maxSourceEdge > 0 && maxSourceEdge < MIN_CONTENT_EDGE) {
-          console.log(`[MediaProcessor] Small image detected (${sourceWidth}x${sourceHeight}) - applying controlled upscale to min edge ${MIN_CONTENT_EDGE}px`);
-          basePipeline.resize(MIN_CONTENT_EDGE, MIN_CONTENT_EDGE, {
-            fit: 'contain',
-            position: 'centre',
-            background: maintainAlphaBackground,
-            withoutEnlargement: false
-          });
-        }
-
-        bufferWebp = await basePipeline
+        bufferWebp = await makeSharp()
           .resize(TARGET_STICKER_SIZE, TARGET_STICKER_SIZE, {
             fit: 'contain',
             position: 'centre',
             background: maintainAlphaBackground,
-            withoutEnlargement: true
+            withoutEnlargement: false
           })
           .webp(webpOptions)
           .toBuffer();
@@ -491,7 +483,18 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
             try {
               const candidate = await gifSharp
                 .clone()
-                .webp({ ...animatedBase, lossless: false, ...qualityAttempt })
+                .resize(STICKER_CANVAS_SIZE, STICKER_CANVAS_SIZE, {
+                  fit: 'contain',
+                  position: 'centre',
+                  background: STICKER_CANVAS_BACKGROUND,
+                  withoutEnlargement: false
+                })
+                .webp({
+                  ...animatedBase,
+                  pageHeight: STICKER_CANVAS_SIZE,
+                  lossless: false,
+                  ...qualityAttempt
+                })
                 .toBuffer();
 
               if (candidate.length <= MAX_STICKER_BYTES) {
@@ -550,25 +553,20 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
           const resizeResults = await Promise.all(
             resizeAttempts.map(async ({ targetSize, quality }) => {
               try {
-                const resizedMetadata = metadata;
-                const resizedPageHeight = resizedMetadata.pageHeight || resizedMetadata.height;
-
                 const resizedBase = {
                   loop: 0,
                   effort: 6,
                   smartSubsample: true,
+                  pageHeight: targetSize,
                 };
-
-                if (resizedPageHeight) {
-                  const scaleFactor = targetSize / Math.max(width, height);
-                  resizedBase.pageHeight = Math.round(resizedPageHeight * scaleFactor);
-                }
 
                 const candidate = await gifSharp
                   .clone()
                   .resize(targetSize, targetSize, {
-                    fit: 'inside',
-                    withoutEnlargement: true
+                    fit: 'contain',
+                    position: 'centre',
+                    background: STICKER_CANVAS_BACKGROUND,
+                    withoutEnlargement: false
                   })
                   .webp({ ...resizedBase, lossless: false, ...quality })
                   .toBuffer();
@@ -628,9 +626,11 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
           try {
             const staticSharp = sharp(tmpFilePath, { animated: false, page: 0 });
             const staticBuffer = await staticSharp
-              .resize(512, 512, {
-                fit: 'inside',
-                withoutEnlargement: true
+              .resize(STICKER_CANVAS_SIZE, STICKER_CANVAS_SIZE, {
+                fit: 'contain',
+                position: 'centre',
+                background: STICKER_CANVAS_BACKGROUND,
+                withoutEnlargement: false
               })
               .webp({ quality: 90, effort: 6 })
               .toBuffer();
