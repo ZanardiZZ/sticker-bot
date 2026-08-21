@@ -193,15 +193,19 @@ async function ensureSafeWebpSticker(filePath) {
   return ensureSafeWebpStickerWithOptions(filePath, {});
 }
 
-async function reencodeAnimatedWebpWithinLimit(originalBuffer, maxBytes = MAX_ANIMATED_STICKER_BYTES) {
+async function reencodeAnimatedWebpWithinLimit(originalBuffer, maxBytes = MAX_ANIMATED_STICKER_BYTES, options = {}) {
   const source = sharp(originalBuffer, { animated: true });
   const metadata = await source.metadata();
   const pages = Number(metadata.pages || 1);
   if (pages <= 1) throw new Error('animated_webp_required');
 
   const sourceMaxEdge = Math.max(Number(metadata.width || 0), Number(metadata.pageHeight || metadata.height || 0));
-  const dimensions = [...new Set([400, 320, 256, 192].filter((size) => !sourceMaxEdge || size <= sourceMaxEdge))];
+  const requestedTarget = Number(options.targetSize || 512);
+  const dimensions = options.forceNormalize
+    ? [...new Set([requestedTarget, 400, 320, 256].filter((size) => size > 0))]
+    : [...new Set([400, 320, 256, 192].filter((size) => !sourceMaxEdge || size <= sourceMaxEdge))];
   if (dimensions.length === 0) dimensions.push(192);
+  const background = options.background || { r: 0, g: 0, b: 0, alpha: 0 };
   const qualities = [60, 45];
   let lastSize = originalBuffer.length;
 
@@ -214,10 +218,15 @@ async function reencodeAnimatedWebpWithinLimit(originalBuffer, maxBytes = MAX_AN
         smartSubsample: true,
         lossless: false,
         loop: 0,
-        ...(metadata.pageHeight ? { pageHeight: metadata.pageHeight } : {})
+        pageHeight: targetSize
       };
       const candidate = await source.clone()
-        .resize(targetSize, targetSize, { fit: 'inside', withoutEnlargement: true })
+        .resize(targetSize, targetSize, {
+          fit: 'contain',
+          position: 'centre',
+          background,
+          withoutEnlargement: false
+        })
         .webp(webpOptions)
         .toBuffer();
       const candidateMeta = await sharp(candidate, { animated: true }).metadata();
