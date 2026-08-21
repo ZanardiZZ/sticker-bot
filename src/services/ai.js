@@ -7,12 +7,15 @@ const { spawn } = require('child_process');
 const { resolveFfmpegPath } = require('../utils/ffmpeg');
 const ffmpegPath = resolveFfmpegPath();
 const { TEMP_DIR } = require('../paths');
+const { conversationMetrics } = require('./conversationMetrics');
 
-function createOpenAIClient({ apiKey, baseURL }) {
+function createOpenAIClient({ apiKey, baseURL, timeoutMs = 0 }) {
   if (!apiKey) return null;
   const options = { apiKey };
   const backfillTimeout = Number(process.env.BACKFILL_OPENAI_TIMEOUT_MS || 0);
-  if (Number.isFinite(backfillTimeout) && backfillTimeout > 0) options.timeout = backfillTimeout;
+  const configuredTimeout = Number(timeoutMs || 0);
+  const effectiveTimeout = backfillTimeout > 0 ? backfillTimeout : configuredTimeout;
+  if (Number.isFinite(effectiveTimeout) && effectiveTimeout > 0) options.timeout = effectiveTimeout;
   if (baseURL) options.baseURL = baseURL;
   return new OpenAI(options);
 }
@@ -21,7 +24,8 @@ const multimodalApiKey = process.env.OPENAI_MULTIMODAL_API_KEY || process.env.LE
 const multimodalBaseURL = process.env.OPENAI_MULTIMODAL_BASE_URL || '';
 let openai = createOpenAIClient({
   apiKey: multimodalApiKey,
-  baseURL: multimodalBaseURL
+  baseURL: multimodalBaseURL,
+  timeoutMs: Number(process.env.MULTIMODAL_AI_TIMEOUT_MS || 90000)
 });
 
 if (!openai) {
@@ -113,17 +117,24 @@ function shouldRetryOpenAiError(error) {
 async function executeWithAiRetry(action, {
   actionLabel = 'OpenAI request',
   maxRetries = DEFAULT_MAX_RETRIES,
-  baseDelayMs = DEFAULT_RETRY_DELAY_MS
+  baseDelayMs = DEFAULT_RETRY_DELAY_MS,
+  metricStage = null
 } = {}) {
   let attempt = 0;
 
   while (true) {
+    const finishMetric = metricStage ? conversationMetrics.start(metricStage) : null;
     try {
-      return await action();
+      const result = await action();
+      if (finishMetric) finishMetric('success', { attempt: attempt + 1 });
+      return result;
     } catch (error) {
-      if (!shouldRetryOpenAiError(error) || attempt >= maxRetries) {
-        throw error;
+      const isRetryable = shouldRetryOpenAiError(error) && attempt < maxRetries;
+      if (finishMetric) {
+        const status = inferReasonCodeFromError(error) === 'timeout' ? 'timeout' : 'error';
+        finishMetric(status, { attempt: attempt + 1, retryable: isRetryable });
       }
+      if (!isRetryable) throw error;
 
       attempt += 1;
       const backoffMs = baseDelayMs * attempt;
@@ -855,7 +866,7 @@ async function generateConversationalReply({
           stop: ['\nUsuário:', '\nUser:', '\nSistema:', '\nSystem:'],
           signal
         }),
-        { actionLabel: `resposta conversacional (${label})` }
+        { actionLabel: `resposta conversacional (${label})`, metricStage: 'ai_safe_fallback' }
       );
 
       const text = await finalizeConversationalOutput({
@@ -890,7 +901,7 @@ async function generateConversationalReply({
           chat_template_kwargs: { enable_thinking: false },
           signal
         }),
-        { actionLabel: 'resposta conversacional (fallback OpenAI)' }
+        { actionLabel: 'resposta conversacional (fallback OpenAI)', metricStage: 'ai_cloud_fallback' }
       );
 
       const choice = await finalizeConversationalOutput({
@@ -939,7 +950,7 @@ async function generateConversationalReply({
         chat_template_kwargs: { enable_thinking: false },
         signal
       }),
-      { actionLabel: 'resposta conversacional' }
+      { actionLabel: 'resposta conversacional', metricStage: 'ai_primary' }
     );
 
     let choiceRaw = response?.choices?.[0]?.message?.content || '';
@@ -958,7 +969,7 @@ async function generateConversationalReply({
             chat_template_kwargs: { enable_thinking: false },
             signal
           }),
-          { actionLabel: 'resposta conversacional (retry por truncamento)' }
+          { actionLabel: 'resposta conversacional (retry por truncamento)', metricStage: 'ai_retry_truncation' }
         );
         choiceRaw = response?.choices?.[0]?.message?.content || choiceRaw;
       } catch (retryErr) {
@@ -990,7 +1001,7 @@ async function generateConversationalReply({
             chat_template_kwargs: { enable_thinking: false },
             signal
           }),
-          { actionLabel: 'resposta conversacional (retry por final abrupto)' }
+          { actionLabel: 'resposta conversacional (retry por final abrupto)', metricStage: 'ai_retry_abrupt_tail' }
         );
 
         const continuityChoice = await finalizeConversationalOutput({
@@ -1033,7 +1044,7 @@ async function generateConversationalReply({
           stop: ['\nUsuário:', '\nUser:', '\nSistema:', '\nSystem:'],
           signal
         }),
-        { actionLabel: 'resposta conversacional (fallback de exceção completions)' }
+        { actionLabel: 'resposta conversacional (fallback de exceção completions)', metricStage: 'ai_exception_fallback' }
       );
 
       const text = await finalizeConversationalOutput({

@@ -1,5 +1,6 @@
 const DEFAULT_DEBOUNCE_MS = 0;
 const DEFAULT_TIMEOUT_MS = 12000;
+const { conversationMetrics } = require('./conversationMetrics');
 
 function toPositiveNumber(value, fallback, minimum = 0) {
   const parsed = Number(value);
@@ -11,6 +12,7 @@ class ConversationRuntime {
   constructor({ debounceMs = DEFAULT_DEBOUNCE_MS, timeoutMs = DEFAULT_TIMEOUT_MS, logger = console } = {}) {
     this.debounceMs = toPositiveNumber(debounceMs, DEFAULT_DEBOUNCE_MS);
     this.timeoutMs = toPositiveNumber(timeoutMs, DEFAULT_TIMEOUT_MS, 1);
+    conversationMetrics.setRuntimeTimeout(this.timeoutMs);
     this.logger = logger;
     this.entries = new Map();
   }
@@ -46,6 +48,7 @@ class ConversationRuntime {
 
       entry.active = true;
       const startedAt = Date.now();
+      const finishRuntimeMetric = conversationMetrics.start('runtime_total');
       const controller = new AbortController();
       let timeoutHandle;
       const guard = {
@@ -67,8 +70,10 @@ class ConversationRuntime {
             }, this.timeoutMs);
           })
         ]);
+        finishRuntimeMetric('success');
         this._resolveWaiter(entry, true);
       } catch (err) {
+        finishRuntimeMetric(err?.message === 'conversation_response_timeout' ? 'timeout' : 'error');
         this.logger.warn(`[ConversationRuntime] run failed key=${key} reason=${err?.message || err}`);
         this._resolveWaiter(entry, false);
       } finally {
