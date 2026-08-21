@@ -1,3 +1,12 @@
+# Changelog
+
+## [0.15.5] - 2026-08-21
+
+### Correções
+- PR #349 – fix(stickers): normalize static and animated canvases (por @ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/349))
+- PR #349 – fix(stickers): normalize static and animated canvases (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/349))
+- PR #349 – fix(stickers): normalize static and animated canvases (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/349))
+
 ## [0.15.4] - 2026-08-09
 
 ### Correções
