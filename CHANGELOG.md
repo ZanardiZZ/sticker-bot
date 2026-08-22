@@ -1,4 +1,23 @@
-# Changelog
+## [0.18.0] - 2026-08-22
+
+### Novidades
+- PR #353 – feat(stickers): add authorized Gemma reassessment workflow (por @ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/353))
+- PR #351 – feat(memory): add local index and resilient group context (por @ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/351))
+- PR #350 – feat(runtime): add conversation health metrics and AI timeout (por @ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/350))
+- PR #353 – feat(stickers): add authorized Gemma reassessment workflow (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/353))
+- PR #353 – feat(stickers): add authorized Gemma reassessment workflow (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/353))
+- PR #351 – feat(memory): add local index and resilient group context (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/351))
+- PR #351 – feat(memory): add local index and resilient group context (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/351))
+- PR #350 – feat(runtime): add conversation health metrics and AI timeout (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/350))
+- PR #350 – feat(runtime): add conversation health metrics and AI timeout (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/350))
+
+### Correções
+- PR #352 – fix(media): improve perceptual deduplication and search rotation (por @ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/352))
+- PR #349 – fix(stickers): normalize static and animated canvases (por @ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/349))
+- PR #352 – fix(media): improve perceptual deduplication and search rotation (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/352))
+- PR #352 – fix(media): improve perceptual deduplication and search rotation (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/352))
+- PR #349 – fix(stickers): normalize static and animated canvases (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/349))
+- PR #349 – fix(stickers): normalize static and animated canvases (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/349))
 
 ## [0.17.1] - 2026-08-22
 
