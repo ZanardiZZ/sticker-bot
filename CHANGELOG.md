@@ -1,4 +1,17 @@
-# Changelog
+## [0.17.0] - 2026-08-22
+
+### Novidades
+- PR #351 – feat(memory): add local index and resilient group context (por @ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/351))
+- PR #350 – feat(runtime): add conversation health metrics and AI timeout (por @ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/350))
+- PR #351 – feat(memory): add local index and resilient group context (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/351))
+- PR #351 – feat(memory): add local index and resilient group context (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/351))
+- PR #350 – feat(runtime): add conversation health metrics and AI timeout (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/350))
+- PR #350 – feat(runtime): add conversation health metrics and AI timeout (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/350))
+
+### Correções
+- PR #349 – fix(stickers): normalize static and animated canvases (por @ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/349))
+- PR #349 – fix(stickers): normalize static and animated canvases (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/349))
+- PR #349 – fix(stickers): normalize static and animated canvases (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/349))
 
 ## [0.16.0] - 2026-08-22
 
