@@ -23,6 +23,7 @@ const { handleFotoHdCommand } = require('./handlers/fotohd');
 const { handlePingaCommand } = require('./handlers/pinga');
 const { handleTopReactionsCommand } = require('./handlers/topreactions');
 const { handleMemoriasCommand, handleEsquecerCommand } = require('./handlers/memory');
+const { handleReavaliarCommand } = require('./handlers/reavaliar');
 
 // Utilities
 const validation = require('./validation');
@@ -151,6 +152,8 @@ async function handleCommand(client, message, chatId, context = {}) {
         shouldTrackUsage = true;
         break;
 
+      case '#reavaliar':
+        await handleReavaliarCommand(client, message, chatId, params, context); handled = true; shouldTrackUsage = true; break;
       case '#memorias':
       case '#memoria':
         await handleMemoriasCommand(client, message, chatId, context); handled = true; shouldTrackUsage = true; break;
@@ -527,6 +530,7 @@ module.exports = {
   handlePingaCommand,
   handleMemoriasCommand,
   handleEsquecerCommand,
+  handleReavaliarCommand,
   
   // Constants
   MAX_TAGS_LENGTH,

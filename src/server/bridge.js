@@ -1,3 +1,4 @@
+/* global WPP */
 // WPPConnect centralized WebSocket server
 // - Maintains a single WhatsApp session (persisted under storage/auth_info_baileys)
 // - Accepts multiple WS clients that register with a token and allowed chats
@@ -1749,6 +1750,42 @@ async function handleSendMedia(ws, msg, allowedChats) {
   }
 }
 
+async function sendStickerWithPreservedMetadata(chatId, dataUrl, options = {}) {
+  if (!wppClient?.page || typeof wppClient.page.evaluate !== 'function') {
+    throw new Error('WPP page unavailable for raw sticker send');
+  }
+
+  // WPPConnect's public sticker methods call stickerSelect(), and WA-JS then
+  // calls the native processRawSticker() routine. Both paths can re-encode a
+  // valid WebP and discard its EXIF. The application has already normalized and
+  // size-checked this WebP, so use a scoped pass-through for this bot path.
+  return wppClient.page.evaluate(async ({ chatId, dataUrl, options }) => {
+    const functions = WPP?.whatsapp?.functions;
+    const processor = functions?.processRawSticker;
+    if (typeof processor !== 'function') {
+      throw new Error('WPP processRawSticker API unavailable');
+    }
+
+    if (!processor.__hermesStickerMetadataPassthrough) {
+      const passthrough = async (data) => ({
+        type: 'sticker',
+        mediaBlob: data,
+        mimetype: typeof data?.type === 'function' ? data.type() : 'image/webp',
+        fullWidth: 512,
+        fullHeight: 512,
+      });
+      passthrough.__hermesStickerMetadataPassthrough = true;
+      functions.processRawSticker = passthrough;
+    }
+
+    const result = await WPP.chat.sendFileMessage(chatId, dataUrl, {
+      type: 'sticker',
+      ...options,
+    });
+    return result ? { id: result.id, ack: result.ack } : result;
+  }, { chatId, dataUrl, options });
+}
+
 async function handleSendRawWebpAsSticker(ws, msg, allowedChats) {
   const { chatId, dataUrl, options = {} } = msg;
   const resolvedChatId = await resolveLid(chatId);
@@ -1813,12 +1850,12 @@ async function handleSendRawWebpAsSticker(ws, msg, allowedChats) {
 
     // WPPConnect usa funções diferentes para stickers estáticos e animados
     const result = await sendLimiter.run(async () => {
-      if (options.animated) {
-        logVerbose('[WS] Using sendImageAsStickerGif for animated sticker');
-        return wppClient.sendImageAsStickerGif(resolvedChatId, `data:image/webp;base64,${base64Data}`, options);
-      }
-      logVerbose('[WS] Using sendImageAsSticker for static sticker');
-      return wppClient.sendImageAsSticker(resolvedChatId, `data:image/webp;base64,${base64Data}`, options);
+      logVerbose('[WS] Sending normalized WebP directly as sticker (preserving EXIF metadata)');
+      return sendStickerWithPreservedMetadata(
+        resolvedChatId,
+        `data:image/webp;base64,${base64Data}`,
+        options
+      );
     });
 
     logVerbose('[WS] Sticker sent successfully, messageId:', result?.id, 'responding with requestId:', msg.requestId);

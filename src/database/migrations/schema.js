@@ -32,6 +32,14 @@ function initializeTables(db) {
         FOREIGN KEY(media_id) REFERENCES media(id) ON DELETE CASCADE
       )`);
 
+      // Asynchronous advanced sticker reviews; preserves the original E2B result.
+      db.run(`CREATE TABLE IF NOT EXISTS sticker_reviews (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, media_id INTEGER NOT NULL, requester_id TEXT NOT NULL,
+        mode TEXT NOT NULL, status TEXT NOT NULL, review_json TEXT, error TEXT,
+        requested_at INTEGER NOT NULL, completed_at INTEGER,
+        FOREIGN KEY(media_id) REFERENCES media(id) ON DELETE CASCADE
+      )`);
+
       // Processed files tracking table
       db.run(`
         CREATE TABLE IF NOT EXISTS processed_files (

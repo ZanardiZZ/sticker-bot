@@ -34,7 +34,8 @@ const VALID_COMMANDS = [
   '#ban',
   '#issue',
   '#topreactions',
-  '#comandos'
+  '#comandos',
+  '#reavaliar'
 ];
 
 const HELP_ENTRIES = [
@@ -152,6 +153,11 @@ const HELP_ENTRIES = [
     command: '#fotohd (respondendo a uma imagem ou figurinha)',
     description: 'Amplia a imagem respondida em 2x com IA local; usa Lanczos3 como fallback.',
     example: '#fotohd'
+  },
+  {
+    command: '#reavaliar <id> [geral|personagem|texto|referencia]',
+    description: 'Reavalia um sticker com o Gemma 12B. Use uma flag para limitar o foco da revisão.',
+    example: '#reavaliar 5120 texto'
   },
   {
     command: '#comandos',
