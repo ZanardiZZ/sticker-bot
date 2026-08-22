@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { db, dbHandler } = require('../connection');
 const { ROOT_DIR, MEDIA_DIR } = require('../../paths');
+const { hammingDistance, getVisualBucketKey, isDegenerateHash } = require('../utils');
 
 // Get media queue for transaction safety
 let mediaQueue = null;
@@ -22,6 +23,75 @@ try {
   console.warn('[Duplicates] MediaQueue not available, using fallback');
 }
 
+// Every dependent row must be removed before an ID can be reused. SQLite's
+// foreign-key cascades are not guaranteed to be enabled in every runtime path.
+const MEDIA_DEPENDENT_TABLES = [
+  'media_tags',
+  'pending_edits',
+  'media_delete_requests',
+  'pack_stickers',
+  'message_media_links',
+  'media_reactions',
+  'hash_buckets',
+  'media_processing_log',
+  'media_metadata',
+  'public_dm_delivery_usage'
+];
+
+function buildMediaDeletionOperations(mediaId) {
+  return MEDIA_DEPENDENT_TABLES.map((table) => ({
+    sql: `DELETE FROM ${table} WHERE media_id = ?`,
+    params: [mediaId]
+  }));
+}
+
+function isComparableVisualHash(hashVisual) {
+  if (!hashVisual) return false;
+  const frames = hashVisual.split(':');
+  const validFrames = frames.filter((frame) => frame && !isDegenerateHash(frame));
+  return validFrames.length > 0 && (frames.length <= 1 || validFrames.length >= 2);
+}
+
+function visualBucket(hashVisual) {
+  return getVisualBucketKey(hashVisual);
+}
+
+// Keep the ingestion threshold/semantics, but avoid repeatedly re-validating
+// static 1024-bit hashes while scanning the duplicate list.
+function visualDistance(hashA, hashB) {
+  if (!hashA || !hashB) return 1024;
+  if (!hashA.includes(':') && !hashB.includes(':') && hashA.length === 256 && hashB.length === 256) {
+    let xor = BigInt(`0x${hashA}`) ^ BigInt(`0x${hashB}`);
+    let distance = 0;
+    while (xor > 0n) {
+      distance += Number(xor & 1n);
+      xor >>= 1n;
+    }
+    return distance;
+  }
+  return hammingDistance(hashA, hashB);
+}
+
+async function loadPerceptualMediaGroup(hashVisual) {
+  if (!isComparableVisualHash(hashVisual)) return [];
+  const rows = await dbHandler.all(
+    `SELECT m.*, c.display_name
+     FROM media m
+     LEFT JOIN contacts c ON c.sender_id = m.sender_id
+     WHERE m.hash_visual IS NOT NULL
+       AND (
+         CASE WHEN length(m.hash_visual) < 64 THEN m.hash_visual
+              ELSE substr(m.hash_visual, 1, 16) || ':' || substr(m.hash_visual, 81, 16) || ':' || substr(m.hash_visual, 97, 16)
+         END
+       ) = ?
+     ORDER BY m.timestamp ASC, m.id ASC`,
+    [visualBucket(hashVisual)]
+  );
+  return rows.filter((row) =>
+    isComparableVisualHash(row.hash_visual) && visualDistance(hashVisual, row.hash_visual) <= 102
+  );
+}
+
 /**
  * Find duplicate media based on visual hash
  * Returns groups of duplicated media
@@ -29,31 +99,64 @@ try {
  * @returns {Promise<object[]>} Array of duplicate groups
  */
 async function findDuplicateMedia(limit = 50) {
-  const sql = `
-    SELECT 
-      hash_visual,
-      COUNT(*) as duplicate_count,
-      GROUP_CONCAT(id) as media_ids,
-      MIN(timestamp) as first_created,
-      MAX(timestamp) as last_created
-    FROM media 
-    WHERE hash_visual IS NOT NULL 
-    GROUP BY hash_visual 
-    HAVING COUNT(*) > 1
-    ORDER BY duplicate_count DESC, first_created DESC
-    LIMIT ?
-  `;
-  
-  const rows = await dbHandler.all(sql, [limit]);
-  
-  // Parse the grouped results
-  return rows.map(row => ({
-    hash_visual: row.hash_visual,
-    duplicate_count: row.duplicate_count,
-    media_ids: row.media_ids.split(',').map(id => parseInt(id)),
-    first_created: row.first_created,
-    last_created: row.last_created
-  }));
+  const rows = await dbHandler.all(
+    `SELECT id, hash_visual, timestamp
+     FROM media
+     WHERE hash_visual IS NOT NULL
+     ORDER BY timestamp ASC, id ASC`
+  );
+  const comparable = rows.filter((row) => isComparableVisualHash(row.hash_visual));
+  const byBucket = new Map();
+  for (const row of comparable) {
+    const bucket = visualBucket(row.hash_visual);
+    if (!byBucket.has(bucket)) byBucket.set(bucket, []);
+    byBucket.get(bucket).push(row);
+  }
+
+  const parent = new Map(comparable.map((row) => [row.id, row.id]));
+  const find = (id) => {
+    let root = parent.get(id);
+    while (root !== parent.get(root)) {
+      parent.set(root, parent.get(parent.get(root)));
+      root = parent.get(root);
+    }
+    return root;
+  };
+  const union = (a, b) => {
+    const ra = find(a); const rb = find(b);
+    if (ra !== rb) parent.set(rb, ra);
+  };
+
+  for (const bucketRows of byBucket.values()) {
+    for (let i = 0; i < bucketRows.length; i += 1) {
+      for (let j = i + 1; j < bucketRows.length; j += 1) {
+        if (visualDistance(bucketRows[i].hash_visual, bucketRows[j].hash_visual) <= 102) {
+          union(bucketRows[i].id, bucketRows[j].id);
+        }
+      }
+    }
+  }
+
+  const groups = new Map();
+  for (const row of comparable) {
+    const root = find(row.id);
+    if (!groups.has(root)) groups.set(root, []);
+    groups.get(root).push(row);
+  }
+  return [...groups.values()]
+    .filter((group) => group.length > 1)
+    .sort((a, b) => b.length - a.length || b[b.length - 1].timestamp - a[a.length - 1].timestamp)
+    .slice(0, limit)
+    .map((group) => {
+      const ordered = [...group].sort((a, b) => a.timestamp - b.timestamp || a.id - b.id);
+      return {
+        hash_visual: ordered[0].hash_visual,
+        duplicate_count: ordered.length,
+        media_ids: ordered.map((row) => row.id),
+        first_created: ordered[0].timestamp,
+        last_created: ordered[ordered.length - 1].timestamp
+      };
+    });
 }
 
 /**
@@ -62,26 +165,8 @@ async function findDuplicateMedia(limit = 50) {
  * @returns {Promise<object[]>} Array of media details
  */
 async function getDuplicateMediaDetails(hashVisual) {
-  const sql = `
-    SELECT 
-      m.id,
-      m.chat_id,
-      m.group_id,
-      m.sender_id,
-      m.file_path,
-      m.mimetype,
-      m.timestamp,
-      m.description,
-      m.nsfw,
-      m.count_random,
-      c.display_name
-    FROM media m
-    LEFT JOIN contacts c ON c.sender_id = m.sender_id
-    WHERE m.hash_visual = ?
-    ORDER BY m.timestamp ASC
-  `;
   
-  const rows = await dbHandler.all(sql, [hashVisual]);
+  const rows = await loadPerceptualMediaGroup(hashVisual);
   return rows.map((row) => {
     const rawPath = typeof row.file_path === 'string' ? row.file_path.trim() : '';
     const candidates = rawPath
@@ -132,13 +217,7 @@ async function deleteDuplicateMedia(hashVisual, keepOldest = true) {
     const operations = [];
     
     for (const media of toDelete) {
-      // Delete media_tags associations
-      operations.push({
-        sql: `DELETE FROM media_tags WHERE media_id = ?`,
-        params: [media.id]
-      });
-      
-      // Delete media record
+      operations.push(...buildMediaDeletionOperations(media.id));
       operations.push({
         sql: `DELETE FROM media WHERE id = ?`,
         params: [media.id]
@@ -217,13 +296,7 @@ async function deleteMediaByIds(mediaIds) {
       }
       
       if (media) {
-        // Delete media_tags associations
-        operations.push({
-          sql: `DELETE FROM media_tags WHERE media_id = ?`,
-          params: [mediaId]
-        });
-        
-        // Delete media record
+        operations.push(...buildMediaDeletionOperations(mediaId));
         operations.push({
           sql: `DELETE FROM media WHERE id = ?`,
           params: [mediaId]

@@ -3,7 +3,7 @@
  */
 
 const { db, dbHandler } = require('../connection');
-const { hammingDistance } = require('../utils');
+const { hammingDistance, getVisualBucketKey } = require('../utils');
 const { upsertMediaMetadata } = require('./mediaMetadata');
 
 /**
@@ -87,7 +87,7 @@ async function saveMedia(mediaData) {
 
     // Insert into hash_buckets for LSH optimization (if hash exists)
     if (hashVisual) {
-      const bucketKey = hashVisual.substring(0, 16); // First 64 bits
+      const bucketKey = getVisualBucketKey(hashVisual);
       await dbHandler.run(
         `INSERT OR REPLACE INTO hash_buckets (media_id, bucket_key, hash_visual)
          VALUES (?, ?, ?)`,

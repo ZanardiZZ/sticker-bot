@@ -278,6 +278,17 @@ function isDegenerateHash(hash) {
  * @param {string} hash2 - Second hash string (single or multi-frame)
  * @returns {number} Minimum Hamming distance found between frames
  */
+/**
+ * Builds the LSH key used consistently by ingestion, rebuilds and duplicate listing.
+ * Multiple 64-bit bands avoid pathological all-zero prefixes from transparent stickers.
+ */
+function getVisualBucketKey(hashVisual) {
+  if (!hashVisual) return null;
+  const frame = hashVisual.split(':')[0];
+  if (!frame || frame.length < 64) return frame ? frame.substring(0, 16) : null;
+  return [0, 80, 96].map((offset) => frame.substring(offset, offset + 16)).join(':');
+}
+
 function hammingDistance(hash1, hash2) {
   if (!hash1 || !hash2) {
     return 1024; // Max distance if invalid
@@ -643,6 +654,7 @@ module.exports = {
   getDHash,
   getAnimatedDHashes,
   hammingDistance,
+  getVisualBucketKey,
   isDegenerateHash,
   isFileProcessed,
   upsertProcessedFile,

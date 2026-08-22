@@ -17,7 +17,7 @@ function findMediaByMetadata(query, limit = 10) {
         const haystack = normalizeSearch([row.description,row.name,row.visual_action,row.emotion,row.ocr_text,row.cultural_reference,row.usage_intent].join(' '));
         const score = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
         return {...row, metadata_score: score};
-      }).filter(row => row.metadata_score > 0).sort((a,b) => b.metadata_score-a.metadata_score || (a.count_random||0)-(b.count_random||0) || (b.timestamp||0)-(a.timestamp||0));
+      }).filter(row => row.metadata_score > 0).sort((a,b) => (a.count_random||0)-(b.count_random||0) || b.metadata_score-a.metadata_score || (b.timestamp||0)-(a.timestamp||0));
       resolve(scored.slice(0, Math.min(Math.max(Number(limit)||10,1),20)));
     });
   });
