@@ -7,6 +7,128 @@
  */
 
 const axios = require('axios');
+const sqlite3 = require('sqlite3');
+
+let memoryDb = null;
+let memoryDbReady = null;
+let memoryIndexQueue = Promise.resolve();
+
+function memoryDbPath() {
+  return require('path').join(memoryDir(), 'memory-index.sqlite');
+}
+
+function ensureMemoryDb() {
+  if (memoryDbReady) return memoryDbReady;
+  memoryDbReady = new Promise((resolve, reject) => {
+    memoryDb = new sqlite3.Database(memoryDbPath(), (error) => {
+      if (error) return reject(error);
+      memoryDb.serialize(() => {
+        memoryDb.run('PRAGMA journal_mode=WAL');
+        memoryDb.run('CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY, scope TEXT NOT NULL, scope_id TEXT NOT NULL, kind TEXT NOT NULL, category TEXT, text TEXT NOT NULL, confidence REAL, evidence_count INTEGER, last_seen TEXT)');
+        memoryDb.run('CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(id UNINDEXED, text, category, scope_id, content="memories", content_rowid="rowid")', (ftsError) => {
+          if (ftsError) return reject(ftsError);
+          resolve(memoryDb);
+        });
+      });
+    });
+  }).catch((error) => {
+    console.warn('[MemoryClient] SQLite híbrido indisponível:', error.message);
+    memoryDbReady = null;
+    return null;
+  });
+  return memoryDbReady;
+}
+
+function sqliteRun(sql, params = []) {
+  return ensureMemoryDb().then((db) => new Promise((resolve) => {
+    if (!db) return resolve(false);
+    db.run(sql, params, () => resolve(true));
+  }));
+}
+
+function indexLocalStore(scope, scopeId, store) {
+  memoryIndexQueue = memoryIndexQueue.then(async () => {
+    const db = await ensureMemoryDb();
+    if (!db) return;
+    await sqliteRun('DELETE FROM memories WHERE scope=? AND scope_id=?', [scope, scopeId]);
+    await sqliteRun('DELETE FROM memories_fts WHERE scope_id=?', [scopeId]);
+    const rows = [];
+    for (const fact of store.facts || []) rows.push(['fact', fact.category || 'general', fact.fact, fact.confidence || 0.7, fact.evidenceCount || 1, fact.last_seen || '']);
+    for (const joke of store.jokes || []) rows.push(['joke', 'group_joke', `${joke.name || ''} ${joke.context || ''}`.trim(), joke.confidence || 0.7, joke.evidenceCount || 1, joke.created_at || '']);
+    for (const event of (store.events || []).slice(-300)) {
+      const text = String(event.content || event.description || '').trim();
+      if (text.length >= 12 && !isLowValueMemoryText(text) && !isLikelyTransientEvent(event)) rows.push(['event', event.type || 'event', text.slice(0, 500), event.confidence || 0.35, 1, event.created_at || '']);
+    }
+    for (const row of rows) {
+      const id = `${scope}:${scopeId}:${row[0]}:${Buffer.from(row[2]).toString('base64').slice(0, 32)}`;
+      await sqliteRun('INSERT OR REPLACE INTO memories(id,scope,scope_id,kind,category,text,confidence,evidence_count,last_seen) VALUES (?,?,?,?,?,?,?,?,?)', [id, scope, scopeId, ...row]);
+      await sqliteRun('INSERT INTO memories_fts(id,text,category,scope_id) VALUES (?,?,?,?)', [id, row[2], row[1], scopeId]);
+    }
+  }).catch((error) => console.warn('[MemoryClient] Falha ao indexar SQLite:', error.message));
+  return memoryIndexQueue;
+}
+
+function graphOutboxPath() {
+  return require('path').join(memoryDir(), 'graphiti-outbox.jsonl');
+}
+
+function enqueueGraphMemory(scope, scopeId, kind, category, text, confidence = 0.7) {
+  if (['0', 'false', 'off', 'no'].includes(String(process.env.GRAPHITI_MEMORY_ENABLED || '1').toLowerCase())) return;
+  try {
+    const row = { id: `${scope}:${scopeId}:${kind}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`, scope, scopeId, kind, category, text: normalizeFactText(text).slice(0, 1000), confidence, createdAt: new Date().toISOString() };
+    fs.appendFile(graphOutboxPath(), `${JSON.stringify(row)}\n`, () => {});
+  } catch (error) {
+    console.warn('[MemoryClient] Não foi possível enfileirar Graphiti:', error.message);
+  }
+}
+
+function memoryMetricsPath() {
+  return require('path').join(memoryDir(), 'memory-metrics.jsonl');
+}
+
+function recordMemoryMetric(event) {
+  try {
+    const row = { ts: new Date().toISOString(), ...event };
+    fs.appendFile(memoryMetricsPath(), `${JSON.stringify(row)}\n`, () => {});
+  } catch (_) {
+    // Instrumentação nunca pode interromper memória ou resposta.
+  }
+}
+
+function bootstrapLocalIndex() {
+  try {
+    const files = fs.readdirSync(memoryDir()).filter((name) => name.endsWith('.json'));
+    for (const name of files) {
+      const userId = name.slice(0, -5);
+      const store = loadStore(userId);
+      const scope = userId.startsWith('group_') ? 'group' : 'user';
+      const scopeId = scope === 'group' ? userId.slice(6) : userId;
+      indexLocalStore(scope, scopeId, store);
+    }
+  } catch (error) {
+    console.warn('[MemoryClient] Bootstrap SQLite ignorado:', error.message);
+  }
+}
+
+function searchLocalMemories(query, scopes = [], limit = 8) {
+  return ensureMemoryDb().then((db) => new Promise((resolve) => {
+    if (!db) return resolve([]);
+    const terms = normalizeFactText(query).split(/\s+/).filter((x) => x.length > 2).slice(0, 8);
+    if (!terms.length) return resolve([]);
+    const match = terms.map((term) => `"${term.replace(/"/g, '')}"`).join(' OR ');
+    const params = [match];
+    let scopeSql = '';
+    if (scopes.length) {
+      scopeSql = ` AND (${scopes.map(() => '(m.scope=? AND m.scope_id=?)').join(' OR ')})`;
+      for (const [scope, scopeId] of scopes) params.push(scope, scopeId);
+    }
+    params.push(limit);
+    db.all(`SELECT m.id,m.scope,m.scope_id,m.kind,m.category,m.text,m.confidence,m.evidence_count,m.last_seen FROM memories_fts f JOIN memories m ON m.id=f.id WHERE memories_fts MATCH ?${scopeSql} ORDER BY bm25(memories_fts), m.confidence DESC, m.last_seen DESC LIMIT ?`, params, (error, rows) => {
+      if (error) return resolve([]);
+      resolve((rows || []).map((row) => ({ fact: row.text, category: row.category, memoryType: 'confirmed', confidence: row.confidence, source: 'sqlite_fts5', scope: row.scope, scopeId: row.scope_id, kind: row.kind })));
+    });
+  }));
+}
 
 const DEFAULT_MEMORY_API_URL = '';
 const CATEGORY_PREFIXES = {
@@ -16,7 +138,6 @@ const CATEGORY_PREFIXES = {
 };
 const GROUP_DYNAMIC_EVENT_TYPE = 'group_dynamic';
 const USER_INTENT_EVENT_TYPE = 'user_intent_signal';
-const INTENT_FACT_SOURCE = 'intent_profiler';
 
 const INTENT_RULES = [
   {
@@ -51,6 +172,41 @@ function normalizeFactText(value) {
     .normalize('NFKC')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function isLowValueMemoryText(value = '') {
+  const text = normalizeFactText(value);
+  if (!text || text.length < 5) return true;
+  if (/^(?:é|sou|eu sou|é o|sou o|sou a|eu sou o|eu sou a)\s+(?:eu|o usuário(?: que está interagindo comigo)?|a pessoa que está interagindo comigo)$/iu.test(text)) return true;
+  if (/^(?:o usuário|usuário atual|a pessoa que está interagindo comigo|quem está interagindo comigo)/iu.test(text)) return true;
+  if (/^(?:mentira|prove|huh|wtf|bot|responde|ué|oxe|kkkk+|haha+)$/iu.test(text)) return true;
+  if (/^(?:system update|decode this|ignore\b|reveal\b|sudo\b|execute\b|kill\s+-9|rm\s+-rf)/iu.test(text)) return true;
+  if (/^(?:perfil de intenção observado|intenção observada|sinal de intenção)/iu.test(text)) return true;
+  return false;
+}
+
+function isTransientMessageForMemory(text = '') {
+  const normalized = normalizeFactText(text);
+  return /^(?:estou|tô|to|vou|talvez|agora|hoje)\b.*\b(?:cansad|com sono|dormir|almoçar|jantar|sair|chegar|ocupad|rindo|kkkk|haha)\b/iu.test(normalized)
+    || /^(?:[!/?#]|@\S+\s*)?(?:reset|apague|delete|ignore|sudo|execute|reveal)\b/iu.test(normalized)
+    || /\b(?:ignore as instruções|prompt injection|jailbreak|revele os segredos)\b/iu.test(normalized);
+}
+
+function isLikelyTransientEvent(event = {}) {
+  const type = String(event.type || '').toLowerCase();
+  const text = normalizeFactText(event.content || event.description || '');
+  return type === USER_INTENT_EVENT_TYPE || type === 'message' || type === 'user_intent_signal' || isTransientMessageForMemory(text)
+    || /^(?:soft:|provisional:)/iu.test(String(event.category || ''));
+}
+
+function isLikelyUsefulMemoryMessage(text = '') {
+  const normalized = normalizeFactText(text);
+  if (isLowValueMemoryText(normalized) || normalized.length < 12) return false;
+  if (/^#|^[/!]/u.test(normalized)) return false;
+  if (/^(?:@\S+\s*)?(?:mentira|prove|responde|bot|huh|wtf|ué|oxe|kkkk+)/iu.test(normalized)) return false;
+  if (/system\s+update|prompt\s*injection|ignore\s+as\s+instruções|sudo\s+|kill\s+-9|rm\s+-rf/iu.test(normalized)) return false;
+  return /\b(?:meu|minha|moro|vivo|trabalho|atuo|sou|tenho|gosto|adoro|amo|curto|prefiro|odeio|estudo|curso|torço|programo|desenvolvo|aniversário)\b/iu.test(normalized)
+    || /\b(?:vamos\s+melhorar|bug\s+report|issue|pull\s+request|refactor)\b/iu.test(normalized);
 }
 
 function splitClauses(text) {
@@ -88,7 +244,7 @@ function cleanCapturedValue(value) {
 
 function extractHeuristicFacts(messageText = '') {
   const text = normalizeFactText(messageText);
-  if (!text || text.length < 4) {
+  if (isLowValueMemoryText(text) || text.length < 4) {
     return [];
   }
 
@@ -123,7 +279,7 @@ function extractHeuristicFacts(messageText = '') {
     {
       category: 'profession',
       confidence: 0.8,
-      regex: /(?:trabalho como|atuo como|sou)\s+(?:um|uma)?\s*([^,]+)$/iu,
+      regex: /(?:trabalho como|atuo como)\s+(?:um|uma)?\s*([^,]+)$/iu,
       guard: (value) => value.split(/\s+/).length <= 6,
       format: (value) => `é ${value}`
     },
@@ -571,7 +727,8 @@ function collectRecentMessageTexts(eventsPayload) {
 
   return events
     .map((event) => normalizeFactText(event?.content || event?.description || event?.message || ''))
-    .filter(Boolean);
+    .filter((text) => text && !isLowValueMemoryText(text))
+    .filter((text) => !/system\s+update|decode this|prompt\s*injection|sudo\s+|kill\s+-9|rm\s+-rf/iu.test(text));
 }
 
 function countJokeMentions(candidate, texts = []) {
@@ -610,6 +767,7 @@ function buildMemoryPromptFromContext(memoryContext = {}, senderId = null) {
   const runningJokes = Array.isArray(context.runningJokes) ? context.runningJokes : [];
   const activeTopics = Array.isArray(context.activeTopics) ? context.activeTopics : [];
   const groupDynamics = Array.isArray(context.groupDynamics) ? context.groupDynamics : [];
+  const recentGroupMessages = Array.isArray(context.recentGroupMessages) ? context.recentGroupMessages : [];
   const intentProfile = senderId && context.userIntentProfiles ? context.userIntentProfiles[senderId] : null;
 
   const preferredConfirmedFacts = confirmedFacts.length ? confirmedFacts : recentFacts;
@@ -664,6 +822,21 @@ function buildMemoryPromptFromContext(memoryContext = {}, senderId = null) {
     }
   }
 
+  if (recentGroupMessages.length) {
+    sections.push(`Contexto coletivo recente do grupo (mensagens compartilhadas, não fatos privados): ${recentGroupMessages.slice(-8).join(' | ')}.`);
+  }
+
+  const participantMemories = Array.isArray(context.participantMemories) ? context.participantMemories : [];
+  if (participantMemories.length) {
+    const summaries = participantMemories
+      .map((item) => item?.summary)
+      .filter(Boolean)
+      .slice(0, 6);
+    if (summaries.length) {
+      sections.push(`Memórias úteis de outros participantes ativos do grupo: ${summaries.join(' | ')}.`);
+    }
+  }
+
   if (runningJokes.length) {
     const jokes = runningJokes
       .map((item) => item?.name || item?.title || item?.context)
@@ -694,9 +867,9 @@ function buildMemoryPromptFromContext(memoryContext = {}, senderId = null) {
     }
   }
 
-  if (intentProfile?.topIntent) {
+  if (intentProfile?.topIntent && intentProfile.topIntent !== 'normal_use' && intentProfile.evidenceCount >= 3) {
     const confidencePct = Math.round(Math.min(Math.max(Number(intentProfile.confidence) || 0, 0), 1) * 100);
-    sections.push(`Perfil de intenção do usuário atual: ${normalizeIntentLabel(intentProfile.topIntent)} (${confidencePct}%).`);
+    sections.push(`Sinal temporário de estilo do usuário atual: ${normalizeIntentLabel(intentProfile.topIntent)} (${confidencePct}%). Não trate como fato pessoal.`);
   }
 
   return sections.join(' ');
@@ -751,6 +924,9 @@ function saveStore(userId, data) {
   const fp = userFilePath(userId);
   try {
     fs.writeFileSync(fp, JSON.stringify(data, null, 2));
+    const scope = String(userId).startsWith('group:') ? 'group' : 'user';
+    const scopeId = scope === 'group' ? String(userId).slice(6) : String(userId);
+    indexLocalStore(scope, scopeId, data);
     return true;
   } catch (e) {
     console.error(`[MemoryClient] Erro ao gravar store ${userId}: ${e.message}`);
@@ -782,8 +958,13 @@ class MemoryClient {
     this.timeoutMs = parsePositiveNumber(process.env.MEMORY_TIMEOUT_MS, 4000);
     this.semanticSearchTimeoutMs = parsePositiveNumber(process.env.MEMORY_SEMANTIC_SEARCH_TIMEOUT_MS, 600);
     this.semanticSearchLimit = Math.max(parsePositiveNumber(process.env.MEMORY_SEMANTIC_SEARCH_LIMIT, 4), 1);
-    this.retryCount = Math.max(parsePositiveNumber(process.env.MEMORY_RETRY_COUNT, 1) - 1, 0);
+    this.retryCount = Math.max(parsePositiveNumber(process.env.MEMORY_RETRY_COUNT, 2) - 1, 0);
     this.agent = process.env.OPENVIKING_AGENT || 'stickerbot';
+    // Serialize remote writes so message bursts do not open many session/commit
+    // pipelines concurrently and trip OpenViking/Lemonade timeouts.
+    this.writeChain = Promise.resolve();
+    this.writeQueueDepth = 0;
+    this.metricsStartedAt = Date.now();
     this.enabled = this.isEnabled();
   }
 
@@ -807,8 +988,9 @@ class MemoryClient {
     this.timeoutMs = parsePositiveNumber(process.env.MEMORY_TIMEOUT_MS, 4000);
     this.semanticSearchTimeoutMs = parsePositiveNumber(process.env.MEMORY_SEMANTIC_SEARCH_TIMEOUT_MS, 600);
     this.semanticSearchLimit = Math.max(parsePositiveNumber(process.env.MEMORY_SEMANTIC_SEARCH_LIMIT, 4), 1);
-    this.retryCount = Math.max(parsePositiveNumber(process.env.MEMORY_RETRY_COUNT, 1) - 1, 0);
+    this.retryCount = Math.max(parsePositiveNumber(process.env.MEMORY_RETRY_COUNT, 2) - 1, 0);
     this.initialized = true;
+    ensureMemoryDb().then(() => bootstrapLocalIndex()).catch(() => {});
     if (!this.isEnabled()) {
       console.log('[MemoryClient] Integração de memória desabilitada (MEMORY_ENABLED=0 ou sem OPENVIKING_URL)');
       return this;
@@ -857,17 +1039,25 @@ class MemoryClient {
   }
 
   // Grava conteúdo como memória via sessão → commit (extração automática do OpenViking)
-  async _remember(content, userId) {
-    if (!content || !content.trim()) return null;
-    const requestedId = 'sb-' + (userId || 'anon') + '-' + Date.now();
-    const created = await this._request('POST', '/api/v1/sessions', { id: requestedId }, userId);
-    const sid = created?.result?.session_id || requestedId;
-    await this._request('POST', '/api/v1/sessions/' + sid + '/messages', { role: 'user', content }, userId);
-    const committed = await this._request('POST', '/api/v1/sessions/' + sid + '/commit', {}, userId);
-    const store = loadStore(userId);
-    store.openvikingSessions = Array.from(new Set([...(store.openvikingSessions || []), sid])).slice(-100);
-    saveStore(userId, store);
-    return { ...committed, sessionId: sid };
+  // The public method is queued; only one remote session/commit pipeline runs at a time.
+  _remember(content, userId) {
+    if (!content || !content.trim()) return Promise.resolve(null);
+    this.writeQueueDepth += 1;
+    const task = this.writeChain.then(async () => {
+      const requestedId = 'sb-' + (userId || 'anon') + '-' + Date.now();
+      const created = await this._request('POST', '/api/v1/sessions', { id: requestedId }, userId);
+      const sid = created?.result?.session_id || requestedId;
+      await this._request('POST', '/api/v1/sessions/' + sid + '/messages', { role: 'user', content }, userId);
+      const committed = await this._request('POST', '/api/v1/sessions/' + sid + '/commit', {}, userId);
+      const store = loadStore(userId);
+      store.openvikingSessions = Array.from(new Set([...(store.openvikingSessions || []), sid])).slice(-100);
+      saveStore(userId, store);
+      return { ...committed, sessionId: sid };
+    }).finally(() => {
+      this.writeQueueDepth = Math.max(0, this.writeQueueDepth - 1);
+    });
+    this.writeChain = task.catch(() => null);
+    return task;
   }
 
   async _search(query, userId, targetUri = null) {
@@ -887,10 +1077,13 @@ class MemoryClient {
     const timeoutMs = this.semanticSearchTimeoutMs;
     let timer;
     try {
-      return await Promise.race([
+      const started = Date.now();
+      const result = await Promise.race([
         this._search(query, userId, targetUris),
         new Promise(resolve => { timer = setTimeout(() => resolve([]), timeoutMs); })
       ]);
+      recordMemoryMetric({ type: 'semantic_search', latency_ms: Date.now() - started, hit_count: Array.isArray(result) ? result.length : 0, backend: 'openviking' });
+      return result;
     } catch (error) {
       console.warn(`[MemoryClient] Busca semântica indisponível para ${userId}: ${error?.message || error}`);
       return [];
@@ -917,19 +1110,36 @@ class MemoryClient {
   }
 
   async addFact(userId, fact, category = 'general', confidence = 0.8, source = 'whatsapp_bot') {
+    const normalizedFact = normalizeFactText(fact);
+    if (isLowValueMemoryText(normalizedFact) || isTransientMessageForMemory(normalizedFact)) return { ok: true, skipped: true, fact: normalizedFact };
     const store = loadStore(userId);
-    store.facts.push({
-      fact,
-      category,
-      confidence,
+    const normalizedCategory = String(category || 'general').trim() || 'general';
+    const key = `${normalizedCategory.toLowerCase()}|${normalizedFact.toLowerCase()}`;
+    const existingIndex = store.facts.findIndex((entry) =>
+      `${String(entry.category || 'general').toLowerCase()}|${normalizeFactText(entry.fact).toLowerCase()}` === key
+    );
+    const now = new Date().toISOString();
+    const next = {
+      fact: normalizedFact,
+      category: normalizedCategory,
+      confidence: Math.min(Math.max(Number(confidence) || 0.7, 0), 1),
       source,
-      created_at: new Date().toISOString()
-    });
+      created_at: existingIndex >= 0 ? store.facts[existingIndex].created_at || now : now,
+      last_seen: now,
+      evidenceCount: Math.max(1, Number(existingIndex >= 0 ? store.facts[existingIndex].evidenceCount : 0) + 1)
+    };
+    if (existingIndex >= 0) store.facts[existingIndex] = { ...store.facts[existingIndex], ...next };
+    else store.facts.unshift(next);
+    store.facts = store.facts.slice(0, 40);
     saveStore(userId, store);
-    // fundo: enriquece OpenViking com busca semântica
-    const content = `FATO [${category}] (confiança ${confidence}) (origem ${source}): ${fact}`;
-    this._remember(content, userId).catch(() => {});
-    return { ok: true, fact };
+    if (!normalizedCategory.startsWith('soft:') && !normalizedCategory.startsWith('provisional:')) {
+      const scope = String(userId).startsWith('group:') ? 'group' : 'user';
+      const scopeId = scope === 'group' ? String(userId).slice(6) : String(userId);
+      enqueueGraphMemory(scope, scopeId, 'fact', normalizedCategory, normalizedFact, next.confidence);
+      const content = `FATO [${normalizedCategory}] (confiança ${next.confidence}) (origem ${source}): ${normalizedFact}`;
+      this._remember(content, userId).catch(() => {});
+    }
+    return { ok: true, fact: normalizedFact, updated: existingIndex >= 0 };
   }
 
   async getFacts(userId, options = {}) {
@@ -968,6 +1178,7 @@ class MemoryClient {
     const store = loadStore(userId);
     store.jokes.push({ name, origin: origin || null, context: context || null, created_at: new Date().toISOString() });
     saveStore(userId, store);
+    enqueueGraphMemory('group', String(groupId), 'joke', 'group_joke', `${name || ''} ${context || ''}`, 0.8);
     const content = `PIADA INTERNA do grupo ${groupId}: "${name}" (origem ${origin || 'desconhecida'}) — contexto: ${context || ''}`;
     this._remember(content, userId).catch(() => {});
     return { ok: true };
@@ -978,23 +1189,41 @@ class MemoryClient {
   // ------------------------------------------------------------
 
   async logEvent(eventData) {
-    const userId = eventData.userId || (eventData.groupId ? `group:${eventData.groupId}` : 'anon');
-    const store = loadStore(userId);
-    store.events.push({
+    const event = {
       type: eventData.type,
       groupId: eventData.groupId || null,
       userId: eventData.userId || null,
       content: eventData.content || null,
+      description: eventData.description || null,
+      participants: Array.isArray(eventData.participants) ? eventData.participants : undefined,
       topic: eventData.topic || null,
       confidence: eventData.confidence || null,
       created_at: new Date().toISOString()
-    });
-    saveStore(userId, store);
-    const parts = [];
-    if (eventData.type) parts.push(`[${eventData.type}]`);
-    if (eventData.content) parts.push(eventData.content);
-    if (eventData.topic) parts.push(`tópico: ${eventData.topic}`);
-    this._remember(`EVENTO ${parts.join(' ')}`.trim(), userId).catch(() => {});
+    };
+
+    // Eventos de grupo possuem cópia individual e cópia coletiva.
+    if (eventData.groupId) {
+      const groupKey = `group:${eventData.groupId}`;
+      const groupStore = loadStore(groupKey);
+      groupStore.events.push(event);
+      groupStore.events = groupStore.events.slice(-300);
+      saveStore(groupKey, groupStore);
+      // Eventos transitórios ficam no índice local; somente fatos/piadas úteis vão ao OpenViking.
+    }
+
+    if (eventData.userId) {
+      const userStore = loadStore(eventData.userId);
+      userStore.events.push(event);
+      userStore.events = userStore.events.slice(-200);
+      saveStore(eventData.userId, userStore);
+      // Não transforme cada mensagem em uma sessão semântica.
+    } else if (!eventData.groupId) {
+      const anonymousStore = loadStore('anon');
+      anonymousStore.events.push(event);
+      saveStore('anon', anonymousStore);
+      // Sem persistência semântica para eventos anônimos.
+    }
+
     return { ok: true };
   }
 
@@ -1011,16 +1240,21 @@ class MemoryClient {
   // ------------------------------------------------------------
 
   async getInsights(groupId, userIds = [], options = {}) {
+    const started = Date.now();
     const users = {};
     const semanticQuery = String(options?.query || '').trim() || 'fatos, preferências e informações importantes relacionados a esta conversa';
     const normalizedUserIds = Array.isArray(userIds) ? userIds.filter(Boolean) : [];
     const userStores = new Map(normalizedUserIds.map(userId => [userId, loadStore(userId)]));
+    const localUserSearches = await Promise.all(normalizedUserIds.map(async (userId) => [
+      userId, await searchLocalMemories(semanticQuery, [['user', userId]], 8)
+    ]));
     const userSearches = await Promise.all(normalizedUserIds.map(async (userId) => {
+      const local = new Map(localUserSearches).get(userId) || [];
+      if (local.length >= 3 || !this.isEnabled() || !['1', 'true', 'yes', 'on'].includes(String(process.env.MEMORY_OPENVIKING_FALLBACK || '1').toLowerCase())) return [userId, local.slice(0, this.semanticSearchLimit)];
       const store = userStores.get(userId) || {};
-      const targets = (store.openvikingSessions || []).slice(-20)
-        .map(sid => `viking://session/${sid}/history/`);
+      const targets = (store.openvikingSessions || []).slice(-20).map(sid => `viking://session/${sid}/history/`);
       const results = await this._searchBounded(semanticQuery, userId, targets);
-      return [userId, results.map(parseSemanticMemoryEntry).filter(Boolean).slice(0, this.semanticSearchLimit)];
+      return [userId, [...local, ...results.map(parseSemanticMemoryEntry).filter(Boolean)].slice(0, this.semanticSearchLimit)];
     }));
     const semanticByUser = new Map(userSearches);
 
@@ -1029,7 +1263,7 @@ class MemoryClient {
       const memoryItems = (store.facts || []).map((f) => ({
         fact: f.fact,
         category: f.category,
-        memoryType: (f.category || '').startsWith('intent/') ? 'softSignal' : 'confirmed',
+        memoryType: decodeFactCategory(f.category).memoryType,
         confidence: f.confidence,
         source: f.source
       }));
@@ -1051,12 +1285,17 @@ class MemoryClient {
     }));
     const groupTargets = (groupStore.openvikingSessions || []).slice(-20)
       .map(sid => `viking://session/${sid}/history/`);
-    const groupSemanticMemories = await this._searchBounded(semanticQuery, `group:${groupId}`, groupTargets);
+    const localGroupMemories = await searchLocalMemories(semanticQuery, [['group', String(groupId)]], 8);
+    const openVikingFallback = this.isEnabled() && ['1', 'true', 'yes', 'on'].includes(String(process.env.MEMORY_OPENVIKING_FALLBACK || '1').toLowerCase());
+    const groupSemanticMemories = localGroupMemories.length >= 3 || !openVikingFallback
+      ? localGroupMemories.slice(0, this.semanticSearchLimit)
+      : [...localGroupMemories, ...(await this._searchBounded(semanticQuery, `group:${groupId}`, groupTargets)).map(parseSemanticMemoryEntry).filter(Boolean)].slice(0, this.semanticSearchLimit);
 
+    recordMemoryMetric({ type: 'insights', latency_ms: Date.now() - started, local_backend: 'sqlite_fts5', group_id: String(groupId || '') });
     return {
       users,
       group: { groupId, name: null, runningJokes, activeTopics: [] },
-      semanticMemories: groupSemanticMemories.map(parseSemanticMemoryEntry).filter(Boolean).slice(0, this.semanticSearchLimit)
+      semanticMemories: groupSemanticMemories.slice(0, this.semanticSearchLimit)
     };
   }
 
@@ -1065,6 +1304,9 @@ class MemoryClient {
    */
   async learnFromMessage(userId, messageText, groupId = null) {
     const cleanedText = normalizeFactText(messageText);
+    if (!cleanedText || isLowValueMemoryText(cleanedText) || isTransientMessageForMemory(cleanedText)) {
+      return [];
+    }
     const heuristicFacts = extractHeuristicFacts(cleanedText);
     let aiFacts = [];
     let recentMessages = [];
@@ -1074,11 +1316,11 @@ class MemoryClient {
     let recentEvents = null;
     if (groupId) {
       recentEvents = await this.getEvents(groupId, { limit: 25 });
-      recentMessages = collectRecentMessageTexts(recentEvents);
+      recentMessages = collectRecentMessageTexts(recentEvents).slice(-8);
     }
 
     const { extractMemoryFactsFromText, extractRunningJokeFromText } = getAiHelpers();
-    if (typeof extractMemoryFactsFromText === 'function' && cleanedText.length >= 12) {
+    if (typeof extractMemoryFactsFromText === 'function' && isLikelyUsefulMemoryMessage(cleanedText)) {
       aiFacts = await extractMemoryFactsFromText({
         text: cleanedText,
         recentMessages,
@@ -1113,14 +1355,6 @@ class MemoryClient {
 
     const intentSignal = pickTopIntent(scoreIntentSignals(cleanedText));
     if (intentSignal.topIntent && intentSignal.topIntent !== 'normal_use' && intentSignal.confidence >= 0.45) {
-      await this.addFact(
-        userId,
-        `perfil de intenção observado: ${normalizeIntentLabel(intentSignal.topIntent)}`,
-        encodeFactCategory('softSignal', `intent/${intentSignal.topIntent}`),
-        intentSignal.confidence,
-        INTENT_FACT_SOURCE
-      );
-
       if (groupId) {
         await this.logEvent({
           type: USER_INTENT_EVENT_TYPE,
@@ -1171,17 +1405,19 @@ class MemoryClient {
       }
     }
 
-    await this.logEvent({
-      type: 'message',
-      groupId,
-      userId,
-      content: messageText.substring(0, 200),
+    if (!isLowValueMemoryText(cleanedText) && !isTransientMessageForMemory(cleanedText)) {
+      await this.logEvent({
+        type: 'message',
+        groupId,
+        userId,
+        content: cleanedText.substring(0, 200),
       factsExtracted: memoryItems.length,
       runningJokeDetected: !!runningJoke,
       groupDynamicsDetected: groupDynamics.length,
       inferredIntent: intentSignal.topIntent,
-      inferredIntentConfidence: intentSignal.confidence
-    });
+        inferredIntentConfidence: intentSignal.confidence
+      });
+    }
 
     return memoryItems.map((entry) => ({
       fact: entry.fact,
@@ -1194,7 +1430,8 @@ class MemoryClient {
    * Monta contexto para resposta do bot (JSON local + enriquecimento semântico OpenViking)
    */
   async buildContext(groupId, userIds = [], options = {}) {
-    const insights = await this.getInsights(groupId, userIds);
+    const started = Date.now();
+    const insights = await this.getInsights(groupId, userIds, options);
     const events = groupId ? await this.getEvents(groupId, { limit: 40 }) : null;
 
     if (!insights || !insights.users) {
@@ -1223,7 +1460,15 @@ class MemoryClient {
     const existingTopics = Array.isArray(insights.group?.activeTopics) ? insights.group.activeTopics : [];
 
     const selectedUserIds = Array.isArray(userIds) ? userIds.filter(Boolean) : [];
-    const userIntentProfiles = buildUserIntentProfile(events, selectedUserIds);
+    const eventList = Array.isArray(events?.events) ? events.events : (Array.isArray(events) ? events : []);
+    const activeParticipantIds = Array.from(new Set(eventList.slice(-40).map((event) => event?.userId).filter(Boolean))).slice(-6);
+    for (const participantId of activeParticipantIds) {
+      if (!layeredUsers[participantId]) {
+        const factsPayload = await this.getFacts(participantId, { limit: 12 });
+        layeredUsers[participantId] = hydrateLayeredUser({}, factsPayload);
+      }
+    }
+    const userIntentProfiles = buildUserIntentProfile(events, [...new Set([...selectedUserIds, ...activeParticipantIds])]);
 
     const contextPayload = {
       users: layeredUsers,
@@ -1232,7 +1477,15 @@ class MemoryClient {
       semanticMemories: Array.isArray(insights.semanticMemories) ? insights.semanticMemories : [],
       activeTopics: existingTopics.length ? existingTopics : derivedTopics,
       groupDynamics: collectGroupDynamics(events),
-      userIntentProfiles
+      recentGroupMessages: recentMessageTexts.slice(-8),
+      userIntentProfiles,
+      participantMemories: activeParticipantIds
+        .filter((participantId) => participantId !== (String(options?.senderId || '').trim() || selectedUserIds[0] || null))
+        .map((participantId) => {
+          const facts = (layeredUsers[participantId]?.confirmedFacts || []).map((item) => item?.fact).filter(Boolean).slice(0, 3);
+          return facts.length ? { userId: participantId, summary: `${participantId}: ${facts.join('; ')}` } : null;
+        })
+        .filter(Boolean)
     };
 
     const preferredSenderId = String(options?.senderId || '').trim() || selectedUserIds[0] || null;
@@ -1247,6 +1500,7 @@ class MemoryClient {
       ? (memoryPromptsByUser[preferredSenderId] || buildMemoryPromptFromContext(contextPayload, preferredSenderId))
       : buildMemoryPromptFromContext(contextPayload, null);
 
+    recordMemoryMetric({ type: 'context', latency_ms: Date.now() - started, local_backend: 'sqlite_fts5', group_id: String(groupId || ''), user_count: selectedUserIds.length, prompt_chars: String(contextPayload.memoryPrompt || '').length });
     return contextPayload;
   }
 

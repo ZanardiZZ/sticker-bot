@@ -158,6 +158,10 @@ async function syncMemoryForGroupMessage({ userId, groupId, senderName, groupNam
   if (!memory.isReady() || !groupId || !userId || !text) {
     return null;
   }
+  // Do not create a memory event for punctuation/emoji-only noise.
+  if (!/[A-Za-zÀ-ÿ0-9]/.test(String(text))) {
+    return null;
+  }
 
   try {
     await memory.ensureUser(userId, { name: senderName || 'Integrante' });
@@ -393,16 +397,20 @@ async function handleMessage(client, message) {
     if (isGroup && !message.isMedia && message.type === 'chat' && message.body) {
       const senderName = message.pushName || message.notifyName || message.sender?.name;
       const groupName = message.chat?.name || message.groupMetadata?.subject;
-      const memorySync = await syncMemoryForGroupMessage({
+      // Memory enrichment is best-effort and must never hold the reply path hostage.
+      syncMemoryForGroupMessage({
         userId: resolvedSenderId,
         groupId: remoteJid,
         senderName,
         groupName,
         text: message.body
+      }).then((memorySync) => {
+        if (memorySync?.learnedFacts?.length) {
+          console.log(`[MessageHandler] Memory learned ${memorySync.learnedFacts.length} facts for ${resolvedSenderId}`);
+        }
+      }).catch((error) => {
+        console.warn('[MessageHandler] Background memory sync failed:', error?.message || error);
       });
-      if (memorySync?.learnedFacts?.length) {
-        console.log(`[MessageHandler] Memory learned ${memorySync.learnedFacts.length} facts for ${resolvedSenderId}`);
-      }
 
       const conversationHandled = await handleGroupChatMessage(client, message, {
         chatId,
