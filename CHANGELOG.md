@@ -1,3 +1,20 @@
+# Changelog
+
+## [0.18.0] - 2026-08-23
+
+### Novidades
+- PR #353 – feat(stickers): add authorized Gemma reassessment workflow (por @ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/353))
+- PR #351 – feat(memory): add local index and resilient group context (por @ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/351))
+- PR #353 – feat(stickers): add authorized Gemma reassessment workflow (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/353))
+- PR #353 – feat(stickers): add authorized Gemma reassessment workflow (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/353))
+- PR #351 – feat(memory): add local index and resilient group context (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/351))
+- PR #351 – feat(memory): add local index and resilient group context (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/351))
+
+### Correções
+- PR #352 – fix(media): improve perceptual deduplication and search rotation (por @ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/352))
+- PR #352 – fix(media): improve perceptual deduplication and search rotation (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/352))
+- PR #352 – fix(media): improve perceptual deduplication and search rotation (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/352))
+
 ## [0.18.0] - 2026-08-22
 
 ### Novidades
