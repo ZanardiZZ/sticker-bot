@@ -14,7 +14,7 @@ const { getLogCollector } = require('../utils/logCollector');
 const logCollector = getLogCollector(2000); // Buffer de 2000 logs
 
 try {
-  require('dotenv').config({ path: path.resolve(ROOT_DIR, '.env') });
+  require('dotenv').config({ path: process.env.DOTENV_CONFIG_PATH || path.resolve(ROOT_DIR, '.env') });
   console.log('[ENV] .env carregado');
 } catch (e) {
   console.warn('[ENV] dotenv não carregado:', e.message);

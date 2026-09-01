@@ -1,7 +1,9 @@
 const path = require('path');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
-const STORAGE_DIR = path.join(ROOT_DIR, 'storage');
+const STORAGE_DIR = process.env.STICKERBOT_STORAGE_DIR
+  ? path.resolve(process.env.STICKERBOT_STORAGE_DIR)
+  : path.join(ROOT_DIR, 'storage');
 
 function resolveRepoPath(input, fallbackAbsolute, legacyRelative) {
   if (!input) return fallbackAbsolute;
@@ -27,8 +29,10 @@ const OLD_STICKERS_SOURCE_DIR = resolveRepoPath(
   OLD_STICKERS_DIR
 );
 const CONVERSATIONS_DIR = path.join(DATA_DIR, 'conversations');
-const DB_PATH = path.join(DATABASE_DIR, 'media.db');
-const DB_WAL_PATH = path.join(DATABASE_DIR, 'media.db-wal');
+const DB_PATH = process.env.STICKERBOT_DB_PATH
+  ? path.resolve(process.env.STICKERBOT_DB_PATH)
+  : path.join(DATABASE_DIR, 'media.db');
+const DB_WAL_PATH = `${DB_PATH}-wal`;
 const YTDLP_BINARY_PATH = path.join(TEMP_DIR, 'yt-dlp');
 const BAILEYS_AUTH_DIR = resolveRepoPath(
   process.env.BAILEYS_AUTH_DIR,

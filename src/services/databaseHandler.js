@@ -11,6 +11,7 @@ class DatabaseHandler {
     this.maxRetries = 5;
     this.retryDelay = 100; // Initial delay in ms
     this.isClosed = false; // Track if database is closed
+    this.slowQueryMs = Number(process.env.SQLITE_SLOW_QUERY_MS || 250);
 
     // Configure SQLite for better concurrency
     this.db.configure('busyTimeout', this.busyTimeout);
@@ -23,10 +24,17 @@ class DatabaseHandler {
    */
   async executeWithRetry(operation, params = []) {
     let lastError;
+    const operationLabel = this.describeOperation(operation);
+    const startedAt = Date.now();
     
     for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
       try {
-        return await this.promisifyOperation(operation, params);
+        const result = await this.promisifyOperation(operation, params);
+        const durationMs = Date.now() - startedAt;
+        if (durationMs >= this.slowQueryMs) {
+          console.warn(`[DB:Slow] op=${operationLabel} duration_ms=${durationMs}`);
+        }
+        return result;
       } catch (error) {
         lastError = error;
         
@@ -38,6 +46,9 @@ class DatabaseHandler {
                            errorMessage.includes('database is locked') ||
                            errorMessage.includes('database table is locked');
         
+        if (isBusyError) {
+          console.warn(`[DB:Busy] op=${operationLabel} attempt=${attempt} code=${error.code || 'unknown'}`);
+        }
         if (isBusyError && attempt < this.maxRetries) {
           const delay = this.retryDelay * Math.pow(2, attempt - 1); // Exponential backoff
           console.warn(`Database busy, retrying attempt ${attempt}/${this.maxRetries} in ${delay}ms`);
@@ -174,6 +185,15 @@ class DatabaseHandler {
    */
   async run(sql, params = []) {
     return this.executeWithRetry(sql, params);
+  }
+
+  describeOperation(operation) {
+    if (typeof operation !== 'string') return 'CUSTOM';
+    const sql = operation.trim().replace(/\s+/g, ' ');
+    const verb = (sql.match(/^(SELECT|INSERT|UPDATE|DELETE|BEGIN|COMMIT|ROLLBACK|PRAGMA)\b/i) || [])[1];
+    if (!verb) return 'SQL';
+    const table = (sql.match(/\b(?:FROM|INTO|UPDATE|TABLE)\s+([A-Za-z0-9_]+)/i) || [])[1];
+    return `${verb.toUpperCase()}${table ? `:${table}` : ''}`;
   }
 
   /**

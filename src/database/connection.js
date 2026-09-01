@@ -109,7 +109,9 @@ function stopPeriodicCheckpoint() {
   }
 }
 
-// Start checkpoint automatically
-startPeriodicCheckpoint();
+// Start checkpoint automatically in long-lived runtime processes only.
+if (process.env.NODE_ENV !== 'test' && process.env.STICKERBOT_DISABLE_PERIODIC_CHECKPOINT !== '1') {
+  startPeriodicCheckpoint();
+}
 
 module.exports = { db, dbHandler, startPeriodicCheckpoint, stopPeriodicCheckpoint };

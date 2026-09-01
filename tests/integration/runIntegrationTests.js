@@ -3,6 +3,7 @@
  * Aggregated integration test runner
  */
 
+const { cleanupTestEnvironment } = require('../helpers/testEnvironment');
 const { runTestSuite } = require('../helpers/testUtils');
 const { tests: databaseTests } = require('./database.test');
 const { tests: top5CommandsTests } = require('./top5commandsCommand.test');
@@ -11,6 +12,7 @@ const { tests: top5UsersTests } = require('./top5usersCommand.test');
 const { tests: lidMappingTests } = require('./lidMappingConsistency.test');
 
 async function runIntegrationSuites() {
+  let exitCode = 0;
   try {
     await runTestSuite('Database Integration Tests', databaseTests);
     await runTestSuite('Top5 Commands Handler Tests', top5CommandsTests);
@@ -19,12 +21,15 @@ async function runIntegrationSuites() {
     await runTestSuite('LID Mapping Consistency Tests', lidMappingTests);
   } catch (error) {
     console.error('Integration test suites failed:', error);
-    process.exit(1);
+    exitCode = 1;
+  } finally {
+    await cleanupTestEnvironment();
+    process.exitCode = exitCode;
   }
 }
 
 if (require.main === module) {
-  runIntegrationSuites().then(() => process.exit(0));
+  runIntegrationSuites();
 }
 
 module.exports = { runIntegrationSuites };

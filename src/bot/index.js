@@ -1,6 +1,6 @@
 const path = require('path');
 
-require('dotenv').config({ path: path.resolve(__dirname, '..', '..', '.env') });
+require('dotenv').config({ path: process.env.DOTENV_CONFIG_PATH || path.resolve(__dirname, '..', '..', '.env') });
 
 // Initialize log collector to capture bot logs
 const { getLogCollector } = require('../utils/logCollector');

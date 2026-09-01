@@ -3,6 +3,7 @@
  * Tests that the mediaProcessor correctly routes animated WebP files to multi-frame analysis
  */
 
+const { cleanupTestEnvironment } = require('../helpers/testEnvironment');
 const fs = require('fs');
 const path = require('path');
 const { isAnimatedWebpBuffer } = require('../../src/bot/stickers');
@@ -71,13 +72,13 @@ async function testAnimatedStickerProcessingFlow() {
 
 // Run test if this file is executed directly
 if (require.main === module) {
-  testAnimatedStickerProcessingFlow().then(result => {
-    if (result.failed > 0) {
-      process.exit(1);
-    }
-  }).catch(error => {
+  testAnimatedStickerProcessingFlow().then(async result => {
+    await cleanupTestEnvironment();
+    process.exitCode = result.failed > 0 ? 1 : 0;
+  }).catch(async error => {
     console.error('Test execution failed:', error);
-    process.exit(1);
+    await cleanupTestEnvironment();
+    process.exitCode = 1;
   });
 }
 

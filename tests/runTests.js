@@ -3,6 +3,7 @@
  * Test runner - runs all unit tests
  */
 
+const { cleanupTestEnvironment } = require('./helpers/testEnvironment');
 const path = require('path');
 const { runTestSuite } = require('./helpers/testUtils');
 
@@ -54,6 +55,7 @@ async function runAllTests() {
   
   const startTime = Date.now();
   const results = [];
+  let exitCode = 1;
   
   try {
     // Run all test suites
@@ -131,15 +133,17 @@ async function runAllTests() {
     
     if (totalFailed === 0) {
       console.log('🎉 All tests passed!');
-      process.exit(0);
+      exitCode = 0;
+      return;
     } else {
       console.log(`❌ ${totalFailed} tests failed`);
-      process.exit(1);
+      exitCode = 1;
+      return;
     }
     
   } catch (error) {
     console.error('💥 Test runner failed:', error);
-    process.exit(1);
+    exitCode = 1;
   } finally {
     // Cleanup test resources
     if (tagSimilarityCleanup) {
@@ -151,6 +155,8 @@ async function runAllTests() {
     if (mercadoPagoPaymentCleanup) {
       await mercadoPagoPaymentCleanup();
     }
+    await cleanupTestEnvironment();
+    process.exitCode = exitCode;
   }
 }
 
