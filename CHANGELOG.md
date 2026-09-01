@@ -1,3 +1,14 @@
+# Changelog
+
+## [0.19.0] - 2026-09-01
+
+### Novidades
+- feat(fotohd): add bounded Real-ESRGAN processing path (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/3d92e85f6d6268be7c28a836752b4b0929e00740))
+
+### Correções
+- fix(media): normalize sticker WebP canvases consistently (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/e488d389f9a7e829e68be5cbacb6feae69c30253))
+- fix(stickers): classify one-page animated headers as static (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/653c408aa471614f2a4606a1b141287a7683585d))
+
 ## [0.18.1] - 2026-09-01
 
 ### Correções
