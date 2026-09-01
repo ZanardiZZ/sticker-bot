@@ -94,3 +94,6 @@ temp/
 *.bak-*
 *.backup-*
 *-before-*
+# Local environment snapshots and disposable canary experiments
+.env.pre-*
+/spikes/001-web-same-image-canary/
