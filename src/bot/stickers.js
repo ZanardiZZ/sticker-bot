@@ -140,6 +140,23 @@ function isAnimatedWebpBuffer(buf) {
 }
 
 /**
+ * Uses Sharp's decoded page count as the authoritative animation signal.
+ * Some WhatsApp stickers contain ANIM/ANMF chunks but decode as one page.
+ * Header detection remains a bounded fallback only when Sharp cannot parse it.
+ */
+async function isAnimatedWebpBufferAuthoritative(buf) {
+  const headerDetected = isAnimatedWebpBuffer(buf);
+  if (!headerDetected) return false;
+  try {
+    const metadata = await sharp(buf, { animated: true }).metadata();
+    return Number(metadata.pages || 1) > 1;
+  } catch (error) {
+    console.warn('[Sticker] Falha ao validar páginas do WebP; usando detector de cabeçalho:', error.message);
+    return headerDetected;
+  }
+}
+
+/**
  * Detects if a WebP file is animated
  * @param {string} filePath - Path to WebP file
  * @returns {boolean} True if animated
@@ -246,7 +263,7 @@ async function reencodeAnimatedWebpWithinLimit(originalBuffer, maxBytes = MAX_AN
 
 async function ensureSafeWebpStickerWithOptions(filePath, options = {}) {
   const originalBuffer = await fsp.readFile(filePath);
-  const animated = isAnimatedWebpBuffer(originalBuffer);
+  const animated = await isAnimatedWebpBufferAuthoritative(originalBuffer);
   const forceAnimatedReencode = Boolean(options.forceAnimatedReencode);
   const needsAnimatedLimit = animated && (forceAnimatedReencode || originalBuffer.length > MAX_ANIMATED_STICKER_BYTES);
 
@@ -268,7 +285,7 @@ async function ensureSafeWebpStickerWithOptions(filePath, options = {}) {
     try {
       const cachedBuffer = await fsp.readFile(cachedPath);
       if (cachedBuffer.length > 0) {
-        const cachedAnimated = isAnimatedWebpBuffer(cachedBuffer);
+        const cachedAnimated = await isAnimatedWebpBufferAuthoritative(cachedBuffer);
         const cachePreservesAnimation = !animated || cachedAnimated;
         const cacheWithinAnimatedLimit = !needsAnimatedLimit || cachedBuffer.length <= MAX_ANIMATED_STICKER_BYTES;
         if (cachePreservesAnimation && cacheWithinAnimatedLimit) {
@@ -342,7 +359,7 @@ async function sendRawWebp(client, chatId, filePath, extraOptions = {}) {
   const withHeader = `data:image/webp;base64,${base64}`;
   const animatedFlag = typeof extraOptions.animated === 'boolean'
     ? extraOptions.animated
-    : isAnimatedWebpBuffer(buf);
+    : await isAnimatedWebpBufferAuthoritative(buf);
   const response = await client.sendRawWebpAsSticker(chatId, withHeader, {
     pack: PACK_NAME,
     author: AUTHOR_NAME,
@@ -546,6 +563,7 @@ async function sendStickerForMediaRecord(client, chatId, media) {
 module.exports = {
   sendStickerForMediaRecord,
   isAnimatedWebpBuffer,
+  isAnimatedWebpBufferAuthoritative,
   isAnimatedWebpFile,
   ensureDirSync,
   ensureSafeWebpSticker,
