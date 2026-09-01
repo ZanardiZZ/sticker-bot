@@ -393,7 +393,16 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
     }
     if (message.mimetype.startsWith('image/') && message.mimetype !== 'image/gif') {
       const isStickerMessage = message.type === 'sticker' || message.isSticker === true;
-      const incomingAnimatedWebp = message.mimetype === 'image/webp' && isAnimatedWebpBuffer(buffer);
+      let incomingAnimatedWebp = false;
+      if (message.mimetype === 'image/webp') {
+        try {
+          const actualMetadata = await sharp(buffer, { animated: true }).metadata();
+          incomingAnimatedWebp = Number(actualMetadata.pages || 1) > 1;
+        } catch (metadataError) {
+          console.warn('[MediaProcessor] Falha ao ler páginas do WebP, usando detector de cabeçalho:', metadataError.message);
+          incomingAnimatedWebp = isAnimatedWebpBuffer(buffer);
+        }
+      }
       const shouldPreserveOriginalWebp = message.mimetype === 'image/webp' && (isStickerMessage || incomingAnimatedWebp);
       if (shouldPreserveOriginalWebp) {
         bufferWebp = Buffer.from(buffer);

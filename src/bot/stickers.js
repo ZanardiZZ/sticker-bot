@@ -16,7 +16,7 @@ const { BOT_MEDIA_DIR: STORAGE_BOT_MEDIA_DIR, BOT_TEMP_DIR } = require('../paths
 const MEDIA_DIR = STORAGE_BOT_MEDIA_DIR;
 const FIXED_WEBP_DIR = path.join(BOT_TEMP_DIR, 'fixed-webp');
 const MAX_ANIMATED_STICKER_BYTES = 950 * 1024; // margem abaixo do limite prático de 1 MiB
-const ANIMATED_REENCODE_VERSION = 'animated-limit-v1';
+const ANIMATED_REENCODE_VERSION = 'animated-canvas-v2';
 
 // Conditional loading for FFmpeg
 let ffmpeg = null;
@@ -156,6 +156,42 @@ async function isAnimatedWebpBufferAuthoritative(buf) {
   }
 }
 
+async function getAnimatedAlphaBounds(input, alphaThreshold = 8) {
+  const source = sharp(input, { animated: true });
+  const metadata = await source.metadata();
+  const pages = Number(metadata.pages || 1);
+  const decoded = await source.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const width = Number(decoded.info.width || metadata.width || 1);
+  const pageHeight = Number(metadata.pageHeight || Math.floor(decoded.info.height / pages) || 1);
+  const channels = Number(decoded.info.channels || 4);
+  const frameBytes = width * pageHeight * channels;
+  let left = width;
+  let top = pageHeight;
+  let right = -1;
+  let bottom = -1;
+
+  for (let page = 0; page < pages; page += 1) {
+    const frame = decoded.data.subarray(page * frameBytes, (page + 1) * frameBytes);
+    for (let y = 0; y < pageHeight; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        if (frame[(y * width + x) * channels + 3] <= alphaThreshold) continue;
+        left = Math.min(left, x);
+        top = Math.min(top, y);
+        right = Math.max(right, x);
+        bottom = Math.max(bottom, y);
+      }
+    }
+  }
+
+  if (right < left || bottom < top) return null;
+  const padding = Math.min(8, Math.max(2, Math.round(Math.max(width, pageHeight) * 0.02)));
+  const x = Math.max(0, left - padding);
+  const y = Math.max(0, top - padding);
+  const endX = Math.min(width, right + 1 + padding);
+  const endY = Math.min(pageHeight, bottom + 1 + padding);
+  return { left: x, top: y, width: endX - x, height: endY - y };
+}
+
 /**
  * Detects if a WebP file is animated
  * @param {string} filePath - Path to WebP file
@@ -210,6 +246,13 @@ async function ensureSafeWebpSticker(filePath) {
   return ensureSafeWebpStickerWithOptions(filePath, {});
 }
 
+async function normalizeAnimatedWebpCanvas(originalBuffer, maxBytes = MAX_ANIMATED_STICKER_BYTES) {
+  return reencodeAnimatedWebpWithinLimit(originalBuffer, maxBytes, {
+    forceNormalize: true,
+    targetSize: 512
+  });
+}
+
 async function reencodeAnimatedWebpWithinLimit(originalBuffer, maxBytes = MAX_ANIMATED_STICKER_BYTES, options = {}) {
   const source = sharp(originalBuffer, { animated: true });
   const metadata = await source.metadata();
@@ -225,6 +268,8 @@ async function reencodeAnimatedWebpWithinLimit(originalBuffer, maxBytes = MAX_AN
   const background = options.background || { r: 0, g: 0, b: 0, alpha: 0 };
   const qualities = [60, 45];
   let lastSize = originalBuffer.length;
+  const bounds = await getAnimatedAlphaBounds(originalBuffer);
+  if (!bounds) throw new Error('animated_webp_fully_transparent');
 
   for (const targetSize of dimensions) {
     for (const quality of qualities) {
@@ -238,10 +283,9 @@ async function reencodeAnimatedWebpWithinLimit(originalBuffer, maxBytes = MAX_AN
         pageHeight: targetSize
       };
       const candidate = await source.clone()
+        .extract(bounds)
         .resize(targetSize, targetSize, {
-          fit: 'contain',
-          position: 'centre',
-          background,
+          fit: 'inside',
           withoutEnlargement: false
         })
         .webp(webpOptions)
@@ -265,7 +309,7 @@ async function ensureSafeWebpStickerWithOptions(filePath, options = {}) {
   const originalBuffer = await fsp.readFile(filePath);
   const animated = await isAnimatedWebpBufferAuthoritative(originalBuffer);
   const forceAnimatedReencode = Boolean(options.forceAnimatedReencode);
-  const needsAnimatedLimit = animated && (forceAnimatedReencode || originalBuffer.length > MAX_ANIMATED_STICKER_BYTES);
+  const needsAnimatedLimit = animated && (forceAnimatedReencode || originalBuffer.length > MAX_ANIMATED_STICKER_BYTES || options.normalizeCanvas !== false);
 
   let canCacheFixedWebp = true;
 
@@ -313,7 +357,10 @@ async function ensureSafeWebpStickerWithOptions(filePath, options = {}) {
       if (typeof sharp !== 'function') {
         throw new Error('Sharp não disponível para re-encode de WebP animado');
       }
-      rebuiltBuffer = await reencodeAnimatedWebpWithinLimit(originalBuffer);
+      rebuiltBuffer = await reencodeAnimatedWebpWithinLimit(originalBuffer, MAX_ANIMATED_STICKER_BYTES, {
+        forceNormalize: true,
+        targetSize: 512
+      });
     }
 
     const withMetadata = await injectStickerMetadata(rebuiltBuffer, {
@@ -569,5 +616,6 @@ module.exports = {
   ensureSafeWebpSticker,
   ensureSafeWebpStickerWithOptions,
   reencodeAnimatedWebpWithinLimit,
+  normalizeAnimatedWebpCanvas,
   MAX_ANIMATED_STICKER_BYTES
 };
