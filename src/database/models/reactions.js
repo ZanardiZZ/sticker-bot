@@ -250,25 +250,48 @@ async function getReactionAnalytics({ from, to, chatId = null, limit = 10 } = {}
   const start = Math.floor(Number(from || (Date.now() - 7 * 86400000)) / 1000);
   const end = Math.floor(Number(to || Date.now()) / 1000);
   const safeLimit = Math.min(Math.max(Number(limit) || 10, 1), 50);
-  const filter = chatId ? ' AND l.chat_id = ?' : '';
-  const base = [start, end, ...(chatId ? [chatId] : [])];
-  const topParams = [start, end, start, end, ...(chatId ? [chatId] : []), safeLimit];
-  const topMedia = await new Promise((resolve, reject) => db.all(`SELECT r.media_id, COUNT(*) AS reaction_count, (SELECT r2.emoji FROM media_reactions r2 WHERE r2.media_id = r.media_id AND r2.created_at BETWEEN ? AND ? GROUP BY r2.emoji ORDER BY COUNT(*) DESC LIMIT 1) AS top_emoji
-    FROM media_reactions r JOIN message_media_links l ON l.media_id = r.media_id
-    WHERE r.created_at BETWEEN ? AND ?${filter}
-    GROUP BY r.media_id ORDER BY reaction_count DESC LIMIT ?`, topParams, (e, rows) => e ? reject(e) : resolve(rows || [])));
+  const linkFilter = chatId
+    ? ' AND EXISTS (SELECT 1 FROM message_media_links l WHERE l.media_id = r.media_id AND l.chat_id = ?)'
+    : ' AND EXISTS (SELECT 1 FROM message_media_links l WHERE l.media_id = r.media_id)';
+  const params = [start, end, ...(chatId ? [chatId] : [])];
+  const topMedia = await new Promise((resolve, reject) => db.all(`SELECT r.media_id, COUNT(*) AS reaction_count,
+      (SELECT r2.emoji FROM media_reactions r2
+       WHERE r2.media_id = r.media_id AND r2.created_at BETWEEN ? AND ?
+         ${chatId ? 'AND EXISTS (SELECT 1 FROM message_media_links l2 WHERE l2.media_id = r2.media_id AND l2.chat_id = ?)' : 'AND EXISTS (SELECT 1 FROM message_media_links l2 WHERE l2.media_id = r2.media_id)'}
+       GROUP BY r2.emoji ORDER BY COUNT(*) DESC, r2.emoji LIMIT 1) AS top_emoji
+    FROM media_reactions r
+    WHERE r.created_at BETWEEN ? AND ?${linkFilter}
+    GROUP BY r.media_id ORDER BY reaction_count DESC, r.media_id ASC LIMIT ?`,
+  [start, end, ...(chatId ? [chatId] : []), start, end, ...(chatId ? [chatId] : []), safeLimit],
+  (e, rows) => e ? reject(e) : resolve(rows || [])));
   const emojiCounts = await new Promise((resolve, reject) => db.all(`SELECT r.emoji, COUNT(*) AS count
-    FROM media_reactions r JOIN message_media_links l ON l.media_id = r.media_id
-    WHERE r.created_at BETWEEN ? AND ?${filter}
-    GROUP BY r.emoji ORDER BY count DESC LIMIT 20`, base, (e, rows) => e ? reject(e) : resolve(rows || [])));
+    FROM media_reactions r WHERE r.created_at BETWEEN ? AND ?${linkFilter}
+    GROUP BY r.emoji ORDER BY count DESC, r.emoji LIMIT 20`, params, (e, rows) => e ? reject(e) : resolve(rows || [])));
   const total = await new Promise((resolve, reject) => db.get(`SELECT COUNT(*) AS total
-    FROM media_reactions r JOIN message_media_links l ON l.media_id = r.media_id
-    WHERE r.created_at BETWEEN ? AND ?${filter}`, base, (e, row) => e ? reject(e) : resolve(row?.total || 0)));
-  return { from: start * 1000, to: end * 1000, chatId: chatId || null, totalReactions: total, topMedia, emojiCounts };
+    FROM media_reactions r WHERE r.created_at BETWEEN ? AND ?${linkFilter}`, params, (e, row) => e ? reject(e) : resolve(row?.total || 0)));
+  const trends = await getReactionTrends({ from: start * 1000, to: end * 1000, chatId });
+  return { from: start * 1000, to: end * 1000, chatId: chatId || null, totalReactions: total, topMedia, emojiCounts, trends };
+}
+
+async function getReactionTrends({ from, to, chatId = null } = {}) {
+  const start = Math.floor(Number(from || (Date.now() - 30 * 86400000)) / 1000);
+  const end = Math.floor(Number(to || Date.now()) / 1000);
+  const linkFilter = chatId
+    ? ' AND EXISTS (SELECT 1 FROM message_media_links l WHERE l.media_id = r.media_id AND l.chat_id = ?)'
+    : ' AND EXISTS (SELECT 1 FROM message_media_links l WHERE l.media_id = r.media_id)';
+  const query = (bucket, params) => new Promise((resolve, reject) => db.all(`SELECT ${bucket} AS period, COUNT(*) AS count
+    FROM media_reactions r WHERE r.created_at BETWEEN ? AND ?${linkFilter}
+    GROUP BY period ORDER BY period ASC`, params, (e, rows) => e ? reject(e) : resolve(rows || [])));
+  const params = [start, end, ...(chatId ? [chatId] : [])];
+  return {
+    weekly: await query("strftime('%Y-W%W', r.created_at, 'unixepoch')", params),
+    monthly: await query("strftime('%Y-%m', r.created_at, 'unixepoch')", params)
+  };
 }
 
 module.exports = {
   getReactionAnalytics,
+  getReactionTrends,
   linkMessageToMedia,
   getMediaIdFromMessage,
   upsertReaction,

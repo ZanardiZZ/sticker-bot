@@ -19,6 +19,8 @@ const { isConfirmedStickerDelivery } = require('./deliveryPolicy');
 const AUTO_SEND_GROUP_ID = process.env.AUTO_SEND_GROUP_ID;
 let autoSendTasks = [];
 let lastCronExpr = null;
+let configPollTimer = null;
+let scheduleUpdatedHandler = null;
 
 const MATCHING_HOUR_EXPRESSIONS = (() => {
   const exprs = [];
@@ -87,12 +89,12 @@ async function sendRandomMediaToGroup(client, sendStickerFunction) {
         return;
       }
 
-      await incrementRandomCount(media.id);
       const delivery = await sendStickerFunction(client, AUTO_SEND_GROUP_ID, media);
       if (!isConfirmedStickerDelivery(delivery)) {
         console.warn(`[SCHEDULER] Entrega não confirmada para media ${media.id}; descrição não será enviada.`);
         return;
       }
+      await incrementRandomCount(media.id);
 
       const full = await findById(media.id);
       if (full) {
@@ -152,7 +154,8 @@ async function scheduleAutoSend(client, sendStickerFunction) {
   }
 
     // Checa periodicamente se houve alteração na config (shorter interval to pick up cross-process updates)
-    setInterval(async () => {
+  if (!configPollTimer) {
+    configPollTimer = setInterval(async () => {
       const newExpr = await getBotConfig('auto_send_cron');
       if (newExpr && newExpr !== lastCronExpr) {
         if (!cron.validate(newExpr)) {
@@ -165,10 +168,11 @@ async function scheduleAutoSend(client, sendStickerFunction) {
         lastCronExpr = newExpr;
       }
     }, 10 * 1000); // poll every 10s
+  }
 
   // Also listen for immediate updates from the webserver
-  try {
-    bus.on('bot:scheduleUpdated', (expr) => {
+  if (!scheduleUpdatedHandler) {
+    scheduleUpdatedHandler = (expr) => {
       if (!expr) return;
       if (expr === lastCronExpr) return;
       if (!cron.validate(expr)) {
@@ -179,9 +183,8 @@ async function scheduleAutoSend(client, sendStickerFunction) {
       stopScheduledTasks();
       scheduleCronExpressions([expr, ...MATCHING_HOUR_EXPRESSIONS], client, sendStickerFunction, tz);
       lastCronExpr = expr;
-    });
-  } catch (e) {
-    console.warn('[SCHEDULER] eventBus not available:', e.message);
+    };
+    bus.on('bot:scheduleUpdated', scheduleUpdatedHandler);
   }
 }
 
