@@ -1,0 +1,24 @@
+name: Sincronizar checkout local após changelog
+
+on:
+  workflow_run:
+    workflows: ["Gerar changelog e atualizar versão"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stickerbot-local-checkout-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: [self-hosted, linux, x64, stickerbot-sync]
+    timeout-minutes: 5
+    steps:
+      - name: Atualizar checkout local com commits automáticos autorizados
+        run: sudo /usr/local/sbin/stickerbot-sync
