@@ -171,6 +171,21 @@ function getReactionCountsForMedia(mediaId) {
   });
 }
 
+function getReactionCountForMediaInChat(mediaId, chatId) {
+  return new Promise((resolve, reject) => {
+    db.get(
+      `SELECT COUNT(*) AS total FROM media_reactions r
+       WHERE r.media_id = ?
+         AND EXISTS (SELECT 1 FROM message_media_links l WHERE l.media_id = r.media_id AND l.chat_id = ?)`,
+      [mediaId, chatId],
+      (err, row) => {
+        if (err) reject(err);
+        else resolve(row ? row.total : 0);
+      }
+    );
+  });
+}
+
 /**
  * Gets total reaction count for a media item
  * @param {number} mediaId - Media ID
@@ -298,6 +313,7 @@ module.exports = {
   removeReaction,
   getReactionsForMedia,
   getReactionCountsForMedia,
+  getReactionCountForMediaInChat,
   getTotalReactionCount,
   getMostReactedMedia,
   getUserReactionStats

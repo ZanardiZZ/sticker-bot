@@ -14,6 +14,7 @@ const { sendStickerForMediaRecord } = require('./stickers');
 const { initContactsTable, upsertGroup, upsertGroupMembers } = require('./contacts');
 const { initializeHistoryRecovery, setupPeriodicHistorySync } = require('./historyRecovery');
 const { getMediaIdFromMessage, upsertReaction } = require('../database');
+const { maybeNotifyReactionMilestone } = require('../services/reactionNotifications');
 const { checkAndNotifyVersionUpdate, initialize: initVersionNotifier } = require('../services/versionNotifier');
 const { AdminWatcher } = require('../services/adminWatcher');
 const memory = require('../client/memory-client');
@@ -22,7 +23,7 @@ const memory = require('../client/memory-client');
  * Handles incoming reaction events
  * @param {Object} reaction - Reaction data from server
  */
-async function handleReaction(reaction) {
+async function handleReaction(reaction, client = null) {
   const { messageId, chatId, reactorJid, emoji } = reaction;
 
   if (!messageId || !reactorJid) {
@@ -44,6 +45,11 @@ async function handleReaction(reaction) {
 
     if (result.action === 'added') {
       console.log(`[Reaction] Added ${emoji} from ${reactorJid} to media ${mediaId}`);
+      try {
+        await maybeNotifyReactionMilestone(client, { chatId, mediaId });
+      } catch (notifyErr) {
+        console.warn('[Reaction] Milestone notification skipped:', notifyErr.message);
+      }
     } else if (result.action === 'removed') {
       console.log(`[Reaction] Removed reaction from ${reactorJid} on media ${mediaId}`);
     } else if (result.action === 'updated') {
@@ -195,7 +201,7 @@ async function start(client) {
 
   // Setup reaction handling for tracking reactions to stickers
   if (typeof client.onReaction === 'function') {
-    client.onReaction(handleReaction);
+    client.onReaction((reaction) => handleReaction(reaction, client));
     console.log('✅ Registrado handler de reações');
   } else {
     console.log('⚠️ Cliente não suporta eventos de reação');
