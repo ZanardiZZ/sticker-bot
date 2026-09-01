@@ -232,14 +232,8 @@ async function deleteDuplicateMedia(hashVisual, keepOldest = true) {
         const results = await dbHandler.transaction(operations);
         console.log(`[DELETE_DUPLICATES] Transaction completed successfully, results:`, results.map(r => r.changes));
         
-        // Force WAL checkpoint to ensure data is written to main DB file
-        try {
-          await dbHandler.checkpointWAL();
-          console.log(`[DELETE_DUPLICATES] WAL checkpoint completed after deletion`);
-        } catch (walError) {
-          console.warn(`[DELETE_DUPLICATES] WAL checkpoint failed:`, walError.message);
-        }
-        
+        // SQLite autocheckpoint handles WAL maintenance; do not force TRUNCATE
+        // while other runtime processes may be reading or writing.
         // Delete files from filesystem after successful DB transaction
         for (const media of toDelete) {
           if (media.file_path && fs.existsSync(media.file_path)) {

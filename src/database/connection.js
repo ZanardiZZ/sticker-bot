@@ -33,80 +33,15 @@ if (walExists && (!dbExists || fs.statSync(walPath).size > 0)) {
   }, 100); // Small delay to ensure DB is ready
 }
 
-// Periodic WAL checkpoint with timeout and failure tracking
-let checkpointInterval = null;
-let checkpointFailures = 0;
-let consecutiveFailures = 0;
-const MAX_CONSECUTIVE_FAILURES = 10; // Higher threshold to avoid stopping too early
-const CHECKPOINT_TIMEOUT = 10000; // 10 seconds
-const CHECKPOINT_INTERVAL = 3 * 60 * 1000; // 3 minutes (more frequent to prevent WAL growth)
-
+// Automatic WAL checkpoints are handled by SQLite via wal_autocheckpoint.
+// Aggressive periodic TRUNCATE checkpoints were removed because multiple
+// long-lived processes share this database and TRUNCATE competes with writers.
 function startPeriodicCheckpoint() {
-  if (checkpointInterval) {
-    console.warn('[DB] Checkpoint interval already running');
-    return;
-  }
-
-  // Enable WAL autocheckpoint as fallback (checkpoint every 1000 pages = ~4MB)
-  db.run('PRAGMA wal_autocheckpoint = 1000', (err) => {
-    if (err) {
-      console.warn('[DB] Failed to set wal_autocheckpoint:', err.message);
-    } else {
-      console.log('[DB] WAL autocheckpoint enabled (1000 pages)');
-    }
-  });
-
-  checkpointInterval = setInterval(async () => {
-    // Skip if database is closed
-    if (dbHandler.isClosed) {
-      stopPeriodicCheckpoint();
-      return;
-    }
-
-    try {
-      // Create timeout promise
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Checkpoint timeout after 10s')), CHECKPOINT_TIMEOUT)
-      );
-
-      // Race between checkpoint and timeout
-      await Promise.race([
-        dbHandler.checkpointWAL(),
-        timeoutPromise
-      ]);
-
-      consecutiveFailures = 0; // Reset on success
-      checkpointFailures = 0;
-      console.log('[DB] Periodic WAL checkpoint completed');
-    } catch (error) {
-      // Ignore errors if database is closed
-      if (dbHandler.isClosed) {
-        stopPeriodicCheckpoint();
-        return;
-      }
-
-      consecutiveFailures++;
-      checkpointFailures++;
-      console.warn(`[DB] Periodic WAL checkpoint warning: ${error.message} (${consecutiveFailures} consecutive failures)`);
-
-      // Only warn, but keep trying (never stop permanently)
-      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-        console.error(`[DB] WARNING: ${consecutiveFailures} consecutive checkpoint failures! WAL may grow large. Check database health.`);
-        // Reset counter to avoid log spam
-        consecutiveFailures = 0;
-      }
-    }
-  }, CHECKPOINT_INTERVAL);
-
-  console.log('[DB] Started periodic WAL checkpoint (every 3 minutes)');
+  console.log('[DB] Periodic WAL checkpoint disabled; SQLite autocheckpoint remains active');
 }
 
 function stopPeriodicCheckpoint() {
-  if (checkpointInterval) {
-    clearInterval(checkpointInterval);
-    checkpointInterval = null;
-    console.log('[DB] Stopped periodic WAL checkpoint');
-  }
+  // Kept as a no-op for shutdown/test compatibility.
 }
 
 // Start checkpoint automatically in long-lived runtime processes only.

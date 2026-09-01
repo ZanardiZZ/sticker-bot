@@ -2,7 +2,7 @@ name: Sincronizar checkout local após changelog
 
 on:
   workflow_run:
-    workflows: ["Gerar changelog e atualizar versão"]
+    workflows: ['Gerar changelog e atualizar versão']
     types: [completed]
 
 permissions:
