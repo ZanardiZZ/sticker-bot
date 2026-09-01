@@ -276,9 +276,29 @@ function createLemonadeUpscaleRunner(deps = {}) {
 function createImageEnhancer(deps = {}) {
   const sharpInstance = ensureSharpInstance(deps.sharp || sharp);
   const lanczosUpscale = createLanczosUpscaler(sharpInstance);
-  const aiRunner = typeof deps.aiRunner === 'function'
+  let remoteRunner = null;
+  if (process.env.REAL_ESRGAN_URL || deps.realEsrganUrl) {
+    const { createRealEsrganHttpClient } = require('./realEsrganClient');
+    const client = createRealEsrganHttpClient({
+      baseUrl: deps.realEsrganUrl,
+      apiKey: deps.realEsrganApiKey,
+      timeoutMs: deps.timeoutMs,
+      fetch: deps.fetch
+    });
+    if (client) {
+      remoteRunner = async (buffer) => {
+        const result = await client(buffer);
+        return {
+          buffer: result.buffer,
+          info: { ...result.info, engine: 'ai', backend: 'realesrgan-ct153' }
+        };
+      };
+    }
+  }
+  const hasExplicitAiRunner = Object.prototype.hasOwnProperty.call(deps, 'aiRunner');
+  const aiRunner = hasExplicitAiRunner
     ? deps.aiRunner
-    : createLemonadeUpscaleRunner({
+    : remoteRunner || createLemonadeUpscaleRunner({
       sharp: sharpInstance,
       baseUrl: deps.baseUrl,
       apiKey: deps.apiKey,

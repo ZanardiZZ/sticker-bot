@@ -1,273 +1,215 @@
-/**
- * Foto HD command handler
- */
-
+/** Foto HD command handler: Real-ESRGAN CT153 with bounded queue. */
 const fs = require('fs');
 const path = require('path');
+const sharp = require('sharp');
+const { promisify } = require('util');
+const { execFile } = require('child_process');
+const execFileAsync = promisify(execFile);
 const { downloadMediaForMessage } = require('../../utils/mediaDownload');
 const { safeReply } = require('../../utils/safeMessaging');
-const { parseCommand, normalizeText } = require('../../utils/commandNormalizer');
+const { parseCommand } = require('../../utils/commandNormalizer');
 const { withTyping } = require('../../utils/typingIndicator');
 const { enhanceImage } = require('../../services/imageEnhancer');
-const sharp = require('sharp');
+const { createRealEsrganHttpClient } = require('../../services/realEsrganClient');
+const { fotoHdQueue, formatDuration } = require('../../services/fotoHdQueue');
 const { getHashVisual, findByHashVisual } = require('../../database/index.js');
 
 const TEMP_DIR = path.resolve(__dirname, '..', '..', 'temp');
 
-function mimetypeToFormat(mimetype) {
-  if (typeof mimetype !== 'string') {
-    return undefined;
-  }
-
-  const clean = mimetype.split(';')[0].trim().toLowerCase();
-  if (!clean.startsWith('image/')) {
-    return undefined;
-  }
-
-  const format = clean.slice('image/'.length);
-  if (format === 'jpeg' || format === 'pjpeg') {
-    return 'jpeg';
-  }
-
-  return format;
-}
-
-function ensureTempDir() {
-  if (!fs.existsSync(TEMP_DIR)) {
-    fs.mkdirSync(TEMP_DIR, { recursive: true });
-  }
-}
-
-
-function getOutputExtension(info, fallbackMime) {
-  if (info?.format) {
-    switch (info.format.toLowerCase()) {
-      case 'jpeg':
-      case 'jpg':
-        return 'jpg';
-      case 'png':
-      case 'webp':
-      case 'tiff':
-      case 'avif':
-      case 'gif':
-      case 'bmp':
-        return info.format.toLowerCase();
-      default:
-        break;
-    }
-  }
-
-  if (typeof fallbackMime === 'string') {
-    if (fallbackMime.includes('png')) return 'png';
-    if (fallbackMime.includes('jpeg')) return 'jpg';
-    if (fallbackMime.includes('webp')) return 'webp';
-  }
-
-  return 'png';
-}
-
 async function loadBufferFromRecord(record) {
-  if (!record || !record.file_path) {
-    return null;
-  }
-
-  try {
-    if (!fs.existsSync(record.file_path)) {
-      console.warn('[COMMAND:fotohd] Arquivo original não encontrado:', record.file_path);
-      return null;
-    }
-
-    return fs.readFileSync(record.file_path);
-  } catch (error) {
-    console.warn('[COMMAND:fotohd] Falha ao ler arquivo original:', error?.message || error);
-    return null;
-  }
+  if (!record?.file_path || !fs.existsSync(record.file_path)) return null;
+  try { return fs.readFileSync(record.file_path); } catch { return null; }
 }
 
 async function resolveMediaFromQuoted(client, message) {
   try {
-    // WPP/bridge payloads may expose the native ID only at key.id.
     const messageId = message?.id || message?.key?.id || message?.msgId || message?.messageId;
     const quoted = await client.getQuotedMessage(messageId);
-
-    if (!quoted || !quoted.isMedia) {
-      return { error: 'quoted_not_media' };
-    }
-
+    if (!quoted || !quoted.isMedia) return { error: 'quoted_not_media' };
     const mimetype = quoted.mimetype || quoted.mediaType || '';
-    if (typeof mimetype === 'string' && !mimetype.startsWith('image/')) {
-      return { error: 'quoted_not_image' };
-    }
-
+    if (typeof mimetype === 'string' && !mimetype.startsWith('image/')) return { error: 'quoted_not_image' };
     const download = await downloadMediaForMessage(client, quoted);
-    if (!download?.buffer) {
-      return { error: 'download_failed' };
-    }
-
-    let record = null;
-    try {
-      const hash = await getHashVisual(download.buffer);
-      if (hash) {
-        record = await findByHashVisual(hash);
-      }
-    } catch (hashError) {
-      console.warn('[COMMAND:fotohd] Falha ao calcular hash visual:', hashError?.message || hashError);
-    }
-
+    if (!download?.buffer) return { error: 'download_failed' };
     let buffer = download.buffer;
-    if (record) {
-      const storedBuffer = await loadBufferFromRecord(record);
-      if (storedBuffer) {
-        buffer = storedBuffer;
-      }
+    try {
+      const hash = await getHashVisual(buffer);
+      const record = hash ? await findByHashVisual(hash) : null;
+      const stored = await loadBufferFromRecord(record);
+      if (stored) buffer = stored;
+    } catch (error) {
+      console.warn('[COMMAND:fotohd] hash lookup failed:', error?.message || error);
     }
-
-    return {
-      buffer,
-      mimetype: download.mimetype || quoted.mimetype || 'image/png',
-      record
-    };
+    return { buffer, mimetype: download.mimetype || quoted.mimetype || 'image/png' };
   } catch (error) {
-    console.warn('[COMMAND:fotohd] Erro ao acessar mensagem respondida:', error?.message || error);
+    console.warn('[COMMAND:fotohd] quoted media failed:', error?.message || error);
     return { error: 'quoted_fetch_failed' };
   }
 }
 
-/**
- * Handles the #fotohd command (enhance image resolution)
- * @param {object} client - WhatsApp client instance
- * @param {object} message - Incoming message object
- * @param {string} chatId - Chat identifier
- * @param {object} [context] - Additional context information
- * @returns {Promise<boolean>} True if command processed
- */
-async function handleFotoHdCommand(client, message, chatId, context = {}) {
+function ensureTempDir() { fs.mkdirSync(TEMP_DIR, { recursive: true }); }
+
+async function convertAnimatedWebpToMp4(inputPath, outputPath, durations = []) {
+  const frameDir = `${outputPath}.frames`;
+  fs.mkdirSync(frameDir, { recursive: true });
+  try {
+    const metadata = await sharp(inputPath, { animated: true }).metadata();
+    const pages = Number(metadata.pages || 1);
+    const decoded = await sharp(inputPath, { animated: true })
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const width = Number(decoded.info.width || metadata.width || 1);
+    const height = Number(metadata.pageHeight || Math.floor(decoded.info.height / pages) || 1);
+    const channels = Number(decoded.info.channels || 4);
+    const frameBytes = width * height * channels;
+    const concatLines = [];
+    for (let index = 0; index < pages; index += 1) {
+      const framePath = path.join(frameDir, `frame-${String(index).padStart(5, '0')}.png`);
+      const frameStart = index * frameBytes;
+      const frameBuffer = decoded.data.subarray(frameStart, frameStart + frameBytes);
+      await sharp(frameBuffer, { raw: { width, height, channels } })
+        .png()
+        .toFile(framePath);
+      concatLines.push(`file '${framePath.replaceAll("'", "'\\\\''")}'`);
+      const delayMs = Number(durations[index] || 100);
+      concatLines.push(`duration ${Math.max(0.01, delayMs / 1000)}`);
+    }
+    const concatPath = path.join(frameDir, 'frames.ffconcat');
+    fs.writeFileSync(concatPath, concatLines.join(String.fromCharCode(10)) + String.fromCharCode(10));
+    await execFileAsync('/usr/bin/ffmpeg', [
+      '-hide_banner', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0',
+      '-i', concatPath, '-fps_mode', 'vfr', '-vf', 'format=yuv420p', '-c:v', 'libx264',
+      '-movflags', '+faststart', outputPath
+    ], { timeout: 120000 });
+    const stat = fs.statSync(outputPath);
+    if (!stat.size) throw new Error('animated_video_empty');
+  } finally {
+    fs.rmSync(frameDir, { recursive: true, force: true });
+  }
+}
+
+function secondsForJob(metadata) {
+  const frames = Number(metadata.pages || 1);
+  const width = Number(metadata.width || 1);
+  const height = Number(metadata.pageHeight || metadata.height || 1);
+  return { frames, width, height, seconds: fotoHdQueue.estimate(frames, width, height) };
+}
+
+async function sendResult(client, chatId, message, result) {
+  ensureTempDir();
+  const filename = `fotohd-${Date.now()}-${Math.random().toString(36).slice(2)}.webp`;
+  const webpPath = path.join(TEMP_DIR, filename);
+  const frames = Number(result.info?.frames || 1);
+  const dims = result.info?.width && result.info?.height ? ` (${result.info.width}×${result.info.height})` : '';
+  let sendPath = webpPath;
+  let sendFilename = filename;
+  fs.writeFileSync(webpPath, result.buffer);
+  try {
+    if (frames > 1) {
+      sendFilename = filename.replace(/\.webp$/i, '.mp4');
+      sendPath = path.join(TEMP_DIR, sendFilename);
+      await convertAnimatedWebpToMp4(webpPath, sendPath, result.info?.durations);
+    }
+    if (typeof client.sendFile !== 'function') throw new Error('send_file_not_supported');
+    if (frames > 1) {
+      await client.sendFile(chatId, sendPath, sendFilename, '', undefined, false, false, false, false, false, {
+        mimetype: 'video/mp4', asDocument: false
+      });
+    } else {
+      await client.sendFile(chatId, sendPath, sendFilename);
+    }
+    await safeReply(client, chatId, `✨ Pronto! Ampliei a imagem em 2x${dims}${frames > 1 ? `, preservando ${frames} frames em vídeo` : ''} com Real-ESRGAN na GPU.`, message.id);
+  } finally {
+    for (const temporaryPath of [webpPath, sendPath]) {
+      try { if (fs.existsSync(temporaryPath)) fs.unlinkSync(temporaryPath); } catch (error) {
+        console.warn('[COMMAND:fotohd] temp cleanup failed:', error?.message || error);
+      }
+    }
+  }
+}
+
+async function handleFotoHdCommand(client, message, chatId) {
   const rawCommand = message.body || message.caption || '';
-  if (!rawCommand.startsWith('#')) {
-    return false;
-  }
-
+  if (!rawCommand.startsWith('#')) return false;
   const { command, params: originalParams } = parseCommand(rawCommand);
-  if (command !== '#fotohd') {
-    return false;
-  }
-
-
+  if (command !== '#fotohd') return false;
   const params = Array.isArray(originalParams) ? originalParams : [];
-  if (params.length > 0) {
+  if (params.length) {
     await safeReply(client, chatId, 'Use somente #fotohd, respondendo diretamente a uma imagem ou figurinha.', message.id);
     return true;
   }
 
-  const factor = 2;
-  const usageMessage = 'Responda a uma figurinha ou imagem com #fotohd para ampliar em 2x.';
+  const resolved = await resolveMediaFromQuoted(client, message);
+  if (resolved.error) {
+    await safeReply(client, chatId, 'Responda a uma figurinha ou imagem válida para usar #fotohd.', message.id);
+    return true;
+  }
+  if (!resolved.mimetype?.startsWith('image/')) {
+    await safeReply(client, chatId, 'Apenas imagens podem ser ampliadas com #fotohd.', message.id);
+    return true;
+  }
 
-  let buffer = null;
-  let mimetype = null;
-
-
-  // Some WPPConnect payloads omit hasQuotedMsg even though the incoming
-  // message is a reply. The bridge can recover the quoted object from the
-  // current message ID and its cached quotedMsgId, so do not gate this path
-  // solely on the boolean flag.
-  if (!buffer && (message.hasQuotedMsg || message.id || message.key?.id || message.msgId || message.messageId)) {
-    const resolved = await resolveMediaFromQuoted(client, message);
-    if (resolved.error) {
-      await safeReply(client, chatId, 'Responda a uma figurinha ou imagem válida para usar #fotohd.', message.id);
+  let metadata;
+  try {
+    metadata = await sharp(resolved.buffer, { animated: true }).metadata();
+  } catch {
+    await safeReply(client, chatId, 'Não consegui ler esta imagem para o upscale.', message.id);
+    return true;
+  }
+  const job = secondsForJob(metadata);
+  const inputBuffer = resolved.buffer;
+  let queued;
+  try {
+    const run = async () => {
+      let processingBuffer = inputBuffer;
+      if (job.frames > 1) {
+        const { normalizeAnimatedWebpCanvas } = require('../../bot/stickers');
+        processingBuffer = await normalizeAnimatedWebpCanvas(processingBuffer);
+        const normalizedMetadata = await sharp(processingBuffer, { animated: true }).metadata();
+        console.log('[COMMAND:fotohd] animated canvas normalized:', {
+          pages: normalizedMetadata.pages,
+          width: normalizedMetadata.width,
+          pageHeight: normalizedMetadata.pageHeight
+        });
+      }
+      const clientRunner = createRealEsrganHttpClient();
+      if (clientRunner && process.env.REAL_ESRGAN_URL) return clientRunner(processingBuffer);
+      if (job.frames > 1) throw new Error('REAL_ESRGAN_ANIMATED_ENDPOINT_MISSING');
+      return enhanceImage(processingBuffer, { factor: 2, format: 'webp', allowFallback: false });
+    };
+    queued = fotoHdQueue.add(run, job.seconds);
+  } catch (error) {
+    if (error.code === 'FOTOHD_QUEUE_FULL') {
+      await safeReply(client, chatId, '⏳ A fila do #fotohd está cheia no momento. Tente novamente em alguns minutos.', message.id);
       return true;
     }
-    buffer = resolved.buffer;
-    mimetype = resolved.mimetype;
+    throw error;
   }
 
-  if (!buffer) {
-    await safeReply(client, chatId, usageMessage, message.id);
-    return true;
-  }
-
-  if (!mimetype || !mimetype.startsWith('image/')) {
-    await safeReply(client, chatId, 'Apenas imagens podem ser ampliadas no momento.', message.id);
-    return true;
-  }
-
-  const cleanupPaths = [];
+  const waiting = Math.max(0, queued.position - 1);
+  const queueText = waiting ? ` Há ${waiting} processamento${waiting === 1 ? '' : 's'} antes do seu.` : ' Você é o próximo da fila.';
+  await safeReply(client, chatId,
+    `🔄 Sticker ${job.frames > 1 ? 'animado' : 'estático'} recebido (${job.frames} frame${job.frames === 1 ? '' : 's'}, ${job.width}×${job.height}).\n` +
+    `⏱️ Tempo provável: ${formatDuration(job.seconds)}.${queueText}`, message.id);
 
   try {
     await withTyping(client, chatId, async () => {
-      await safeReply(client, chatId, '🔄 Melhorando a qualidade da imagem, aguarde...', message.id);
-
-      const animatedMetadata = await sharp(buffer, { animated: true }).metadata();
-
-      if (Number(animatedMetadata?.pages || 1) > 1) {
-
-        const error = new Error('animated_fotohd_pending');
-
-        error.code = 'ANIMATED_FOTOHD_PENDING_CHAINNER';
-
-        throw error;
-
-      }
-
-
-      const enhanced = await enhanceImage(buffer, { factor, format: mimetypeToFormat(mimetype) });
-      if (!enhanced || !Buffer.isBuffer(enhanced.buffer)) {
-        throw new Error('enhancer_invalid_result');
-      }
-
-      ensureTempDir();
-      const extension = getOutputExtension(enhanced.info, mimetype);
-      const filename = `fotohd-${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`;
-      const filePath = path.join(TEMP_DIR, filename);
-
-      fs.writeFileSync(filePath, enhanced.buffer);
-      cleanupPaths.push(filePath);
-
-      if (typeof client.sendFile === 'function') {
-        await client.sendFile(chatId, filePath, filename);
-      } else {
-        throw new Error('send_file_not_supported');
-      }
-
-      const dims = enhanced.info?.width && enhanced.info?.height
-        ? ` (${enhanced.info.width}×${enhanced.info.height})`
-        : '';
-
-      const engineLabel = enhanced.info?.engine === 'ai'
-        ? 'com IA'
-        : 'com interpolação Lanczos3';
-      const fallbackNotice = enhanced.info?.engine === 'ai'
-        ? ''
-        : '\n⚠️ Configure REAL_ESRGAN_BIN para habilitar o modo IA.';
-
-      await safeReply(
-        client,
-        chatId,
-        `✨ Pronto! Ampliei a imagem em ${factor}x${dims} ${engineLabel}.${fallbackNotice}`.trim(),
-        message.id
-      );
+      const result = await queued.promise;
+      await sendResult(client, chatId, message, result);
     });
   } catch (error) {
-    if (error && error.message === 'send_file_not_supported') {
-      await safeReply(client, chatId, 'Cliente não suporta envio de arquivos para #fotohd.', message.id);
-    } else if (error && error.code === 'ANIMATED_FOTOHD_PENDING_CHAINNER') {
-      await safeReply(client, chatId, 'GIFs e figurinhas animadas ainda estão em preparação para upscale quadro a quadro com ChaiNNer. Imagens estáticas já usam Real-ESRGAN no ai-lxc.', message.id);
-    } else {
-      console.error('[COMMAND:fotohd] Erro ao aprimorar imagem:', error?.message || error);
-      await safeReply(client, chatId, 'Não consegui melhorar esta imagem agora. Tente novamente mais tarde.', message.id);
-    }
-  } finally {
-    for (const tempPath of cleanupPaths) {
-      try {
-        if (fs.existsSync(tempPath)) {
-          fs.unlinkSync(tempPath);
-        }
-      } catch (cleanupError) {
-        console.warn('[COMMAND:fotohd] Falha ao limpar arquivo temporário:', cleanupError?.message || cleanupError);
-      }
-    }
+    console.error('[COMMAND:fotohd] upscale failed:', error?.message || error);
+    const limitErrors = new Set(['too_many_frames', 'dimensions_too_large', 'duration_too_long', 'output_too_large']);
+    const text = error.code === 'REAL_ESRGAN_TIMEOUT'
+      ? '⏱️ O processamento excedeu o tempo limite. A fila foi liberada; tente uma animação menor.'
+      : limitErrors.has(error.code)
+        ? '⚠️ Esta mídia excede os limites seguros do #fotohd (duração, frames, dimensões ou tamanho final).'
+        : error.code === 'worker_busy'
+          ? '⏳ O worker está ocupado. Sua solicitação não foi perdida; tente novamente em instantes.'
+          : 'Não consegui melhorar esta imagem agora. Tente novamente mais tarde.';
+    await safeReply(client, chatId, text, message.id);
   }
-
   return true;
 }
 
-module.exports = { handleFotoHdCommand };
+module.exports = { handleFotoHdCommand, secondsForJob };
