@@ -1,4 +1,7 @@
-# Changelog
+## [0.18.1] - 2026-09-01
+
+### Correções
+- fix(stickers): classify one-page animated headers as static (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/653c408aa471614f2a4606a1b141287a7683585d))
 
 ## [0.18.0] - 2026-08-23
 
