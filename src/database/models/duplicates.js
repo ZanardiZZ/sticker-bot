@@ -190,78 +190,49 @@ async function getDuplicateMediaDetails(hashVisual) {
  */
 async function deleteDuplicateMedia(hashVisual, keepOldest = true) {
   console.log(`[DELETE_DUPLICATES] Starting deletion for hash: ${hashVisual}, keepOldest: ${keepOldest}`);
-  
   const processDelete = async () => {
-    // Get all media with this hash
     const duplicates = await getDuplicateMediaDetails(hashVisual);
     console.log(`[DELETE_DUPLICATES] Found ${duplicates.length} media files with hash ${hashVisual}`);
-    
     if (duplicates.length <= 1) {
       console.log(`[DELETE_DUPLICATES] No duplicates to delete (count: ${duplicates.length})`);
-      return 0; // No duplicates to delete
+      return 0;
     }
-    
-    // Determine which ones to delete
-    const sorted = duplicates.sort((a, b) => 
-      keepOldest ? a.timestamp - b.timestamp : b.timestamp - a.timestamp
-    );
-    
+
+    const sorted = duplicates.sort((a, b) => keepOldest ? a.timestamp - b.timestamp : b.timestamp - a.timestamp);
     const toKeep = sorted[0];
     const toDelete = sorted.slice(1);
-    
-    console.log(`[DELETE_DUPLICATES] Will keep media ID ${toKeep.id}, will delete IDs: ${toDelete.map(d => d.id).join(', ')}`);
-    
+    const batchSize = 50;
     let deletedCount = 0;
-    
-    // Use transaction for atomicity
-    const operations = [];
-    
-    for (const media of toDelete) {
-      operations.push(...buildMediaDeletionOperations(media.id));
-      operations.push({
-        sql: `DELETE FROM media WHERE id = ?`,
-        params: [media.id]
-      });
-      
-      deletedCount++;
-    }
-    
-    if (operations.length > 0) {
-      console.log(`[DELETE_DUPLICATES] Executing ${operations.length} database operations in transaction`);
-      try {
-        const results = await dbHandler.transaction(operations);
-        console.log(`[DELETE_DUPLICATES] Transaction completed successfully, results:`, results.map(r => r.changes));
-        
-        // SQLite autocheckpoint handles WAL maintenance; do not force TRUNCATE
-        // while other runtime processes may be reading or writing.
-        // Delete files from filesystem after successful DB transaction
-        for (const media of toDelete) {
-          if (media.file_path && fs.existsSync(media.file_path)) {
-            try {
-              fs.unlinkSync(media.file_path);
-              console.log(`[DELETE_DUPLICATES] Deleted file: ${media.file_path}`);
-            } catch (err) {
-              console.warn(`[DELETE_DUPLICATES] Failed to delete file ${media.file_path}:`, err.message);
-            }
+
+    for (let offset = 0; offset < toDelete.length; offset += batchSize) {
+      const batch = toDelete.slice(offset, offset + batchSize);
+      const operations = [];
+      for (const media of batch) {
+        operations.push(...buildMediaDeletionOperations(media.id));
+        operations.push({ sql: 'DELETE FROM media WHERE id = ?', params: [media.id] });
+      }
+      console.log(`[DELETE_DUPLICATES] Executing batch ${Math.floor(offset / batchSize) + 1} (${batch.length} media, ${operations.length} operations)`);
+      await dbHandler.transaction('deleteDuplicateMedia', operations);
+      deletedCount += batch.length;
+
+      for (const media of batch) {
+        if (media.file_path && fs.existsSync(media.file_path)) {
+          try {
+            fs.unlinkSync(media.file_path);
+            console.log(`[DELETE_DUPLICATES] Deleted file: ${media.file_path}`);
+          } catch (err) {
+            console.warn(`[DELETE_DUPLICATES] Failed to delete file ${media.file_path}:`, err.message);
           }
         }
-        
-      } catch (error) {
-        console.error(`[DELETE_DUPLICATES] Transaction failed:`, error);
-        throw error;
       }
     }
-    
+
     console.log(`[DELETE_DUPLICATES] Successfully deleted ${deletedCount} duplicate media files, kept media ID ${toKeep.id}`);
     return deletedCount;
   };
 
-  // Use media queue if available for safety, otherwise run directly
-  if (mediaQueue) {
-    return mediaQueue.add(processDelete);
-  } else {
-    return processDelete();
-  }
+  if (mediaQueue) return mediaQueue.add(processDelete);
+  return processDelete();
 }
 
 /**
@@ -270,67 +241,45 @@ async function deleteDuplicateMedia(hashVisual, keepOldest = true) {
  * @returns {Promise<number>} Number of deleted records
  */
 async function deleteMediaByIds(mediaIds) {
-  if (!Array.isArray(mediaIds) || mediaIds.length === 0) {
-    return 0;
-  }
-  
+  if (!Array.isArray(mediaIds) || mediaIds.length === 0) return 0;
+
   const processDelete = async () => {
-    let deletedCount = 0;
-    const operations = [];
-    
+    const pending = [];
     for (const mediaId of mediaIds) {
-      // Get file path before deletion
-      let media;
-      try {
-        media = await dbHandler.get(`SELECT file_path FROM media WHERE id = ?`, [mediaId]);
-      } catch (err) {
-        const formatError = require('../../utils/formatError');
-        console.error('[DELETE_MEDIA] Error fetching media id=%s before deletion: %s', mediaId, formatError(err));
-        throw err;
+      const media = await dbHandler.get('SELECT file_path FROM media WHERE id = ?', [mediaId]);
+      if (media) pending.push({ id: mediaId, file_path: media.file_path });
+    }
+
+    const batchSize = 50;
+    let deletedCount = 0;
+    for (let offset = 0; offset < pending.length; offset += batchSize) {
+      const batch = pending.slice(offset, offset + batchSize);
+      const operations = [];
+      for (const media of batch) {
+        operations.push(...buildMediaDeletionOperations(media.id));
+        operations.push({ sql: 'DELETE FROM media WHERE id = ?', params: [media.id] });
       }
-      
-      if (media) {
-        operations.push(...buildMediaDeletionOperations(mediaId));
-        operations.push({
-          sql: `DELETE FROM media WHERE id = ?`,
-          params: [mediaId]
-        });
-        
-        // Delete file from filesystem if it exists
+      await dbHandler.transaction('deleteMediaByIds', operations);
+      deletedCount += batch.length;
+
+      for (const media of batch) {
         if (media.file_path && fs.existsSync(media.file_path)) {
           try {
             fs.unlinkSync(media.file_path);
           } catch (err) {
-            // Log full error to help debugging permission/IO issues
             const formatError = require('../../utils/formatError');
             console.warn('[DELETE_MEDIA] Failed to delete file %s: %s', media.file_path, formatError(err));
           }
         }
-        
-        deletedCount++;
       }
     }
-    
-    try {
-      if (operations.length > 0) {
-        await dbHandler.transaction(operations);
-      }
-      console.log('Deleted %s media files by ID selection', deletedCount);
-      return deletedCount;
-    } catch (err) {
-      const formatError = require('../../utils/formatError');
-      console.error('[DELETE_MEDIA] Transaction failed while deleting media IDs %s: %s', JSON.stringify(mediaIds), formatError(err));
-      // Re-throw so callers (HTTP layer) receive the error and it can be returned as 500 with logs
-      throw err;
-    }
+
+    console.log('Deleted %s media files by ID selection', deletedCount);
+    return deletedCount;
   };
 
-  // Use media queue if available for safety, otherwise run directly
-  if (mediaQueue) {
-    return mediaQueue.add(processDelete);
-  } else {
-    return processDelete();
-  }
+  if (mediaQueue) return mediaQueue.add(processDelete);
+  return processDelete();
 }
 
 /**
