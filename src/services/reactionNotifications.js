@@ -1,4 +1,4 @@
-const { getReactionCountForMediaInChat } = require('../database/models/reactions');
+const { getTotalReactionCount } = require('../database/models/reactions');
 
 const notifiedMilestones = new Map();
 
@@ -23,10 +23,10 @@ function shouldNotifyReactionMilestone({ count, threshold, key, now = Date.now()
 async function maybeNotifyReactionMilestone(client, { chatId, mediaId }) {
   const config = getReactionNotificationConfig();
   if (!config.enabled || !client || !chatId || !mediaId) return false;
-  const count = await getReactionCountForMediaInChat(mediaId, chatId);
+  const count = await getTotalReactionCount(mediaId);
   const key = `${chatId}:${mediaId}:${count}`;
   if (!shouldNotifyReactionMilestone({ ...config, count, key })) return false;
-  await client.sendText(chatId, `🔥 A figurinha #${mediaId} atingiu ${count} reações neste grupo!`);
+  await client.sendText(chatId, `🔥 A figurinha #${mediaId} atingiu ${count} reações!`);
   return true;
 }
 

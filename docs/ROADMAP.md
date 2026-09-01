@@ -1,6 +1,6 @@
 # StickerBot2 — Roadmap atual
 
-Atualizado em 2026-07-19. Este é o backlog principal. Documentos históricos não fazem parte da árvore pública atual.
+Atualizado em 2026-09-01. Este é o backlog principal. Documentos históricos não fazem parte da árvore pública atual.
 
 ## Estado operacional
 
@@ -22,8 +22,8 @@ Já existe rastreamento e `#reacts`. Implementar:
 
 - ✅ `#topreactions` com janela temporal e grupo;
 - ✅ ranking básico no painel administrativo;
-- [ ] tendências semanais/mensais;
-- [ ] notificações opcionais para stickers muito reagidos.
+- ✅ tendências semanais/mensais no painel administrativo;
+- ✅ notificações opcionais por marco, desativadas por padrão; a contagem exibida é global por mídia;
 
 ### Contrato de descrição e metadados — 🟡 parcial
 
@@ -53,8 +53,9 @@ Comando implementado: `#pesquisar <consulta>`; retorna stickers disponíveis, pr
 
 - [ ] reescrever e reativar testes antigos de `#downloadmp3` e `#fotohd`;
 - [ ] smoke test real de mídia no WhatsApp;
-- [ ] limpar backups temporários e atualizar o runbook;
-- [ ] revisar retenção do cache de mídia.
+- [ ] revisar retenção do cache de mídia;
+- ✅ scheduler atualiza `count_random` somente após entrega confirmada e evita timers/listeners duplicados;
+- ⚠️ atualizar runbook operacional com o canário de dependências WPPConnect/Puppeteer (5 vulnerabilidades transitivas high ainda abertas).
 
 ## Projetos de produto
 
