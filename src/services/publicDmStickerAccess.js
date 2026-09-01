@@ -139,33 +139,6 @@ async function evaluateAccess(userId) {
   };
 }
 
-function execute(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    dbHandler.db.run(sql, params, function onRun(error) {
-      if (error) return reject(error);
-      resolve({ changes: this.changes, lastID: this.lastID });
-    });
-  });
-}
-
-function read(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    dbHandler.db.get(sql, params, (error, row) => error ? reject(error) : resolve(row || null));
-  });
-}
-
-async function withImmediateTransaction(callback) {
-  await execute('BEGIN IMMEDIATE TRANSACTION');
-  try {
-    const result = await callback();
-    await execute('COMMIT');
-    return result;
-  } catch (error) {
-    try { await execute('ROLLBACK'); } catch (_) { /* preserve original error */ }
-    throw error;
-  }
-}
-
 async function reserveDelivery({ userId, mediaId, messageId, now = Math.floor(Date.now() / 1000) }) {
   const access = await evaluateAccess(userId);
   if (!access.eligible) return { ok: false, reason: access.blocked ? 'blocked' : 'not_allowed', access };
@@ -176,20 +149,20 @@ async function reserveDelivery({ userId, mediaId, messageId, now = Math.floor(Da
   if (!requestId) return { ok: false, reason: 'missing_message_id', access };
   const day = utcDay(now * 1000);
 
-  return withImmediateTransaction(async () => {
-    const duplicate = await read(
+  return dbHandler.transaction('reserveDelivery', async (tx) => {
+    const duplicate = await tx.get(
       'SELECT id, status, media_id FROM public_dm_delivery_usage WHERE user_id = ? AND request_message_id = ? LIMIT 1',
       [access.userId, requestId]
     );
     if (duplicate) return { ok: false, reason: 'duplicate', duplicate, access };
 
-    await execute(
+    await tx.run(
       `INSERT INTO public_dm_daily_usage (user_id, quota_day, used_count, last_delivery_at)
        VALUES (?, ?, 0, NULL)
        ON CONFLICT(user_id, quota_day) DO NOTHING`,
       [access.userId, day]
     );
-    const usage = await read(
+    const usage = await tx.get(
       'SELECT used_count, last_delivery_at FROM public_dm_daily_usage WHERE user_id = ? AND quota_day = ?',
       [access.userId, day]
     );
@@ -208,13 +181,13 @@ async function reserveDelivery({ userId, mediaId, messageId, now = Math.floor(Da
       return { ok: false, reason: 'daily_limit', access, usage };
     }
 
-    const reservation = await execute(
+    const reservation = await tx.run(
       `INSERT INTO public_dm_delivery_usage
         (user_id, media_id, request_message_id, status, requested_at, updated_at)
        VALUES (?, ?, ?, 'reserved', ?, ?)`,
       [access.userId, Number(mediaId), requestId, now, now]
     );
-    await execute(
+    await tx.run(
       `UPDATE public_dm_daily_usage
        SET used_count = used_count + 1, last_delivery_at = ?
        WHERE user_id = ? AND quota_day = ?`,

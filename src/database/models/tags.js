@@ -2,7 +2,7 @@
  * Tags model - handles tag-related database operations
  */
 
-const { db } = require('../connection');
+const { db, dbHandler } = require('../connection');
 const { expandTagsWithSynonyms } = require('../utils');
 const { normalizeTagList } = require('../../utils/tagUtils');
 
@@ -12,98 +12,20 @@ const { normalizeTagList } = require('../../utils/tagUtils');
  * @param {string} tagsString - Comma-separated tags
  * @returns {Promise<void>}
  */
-function updateMediaTags(mediaId, tagsString) {
-  return new Promise((resolve, reject) => {
-    if (!tagsString || !tagsString.trim()) {
-      // Remove all tags if empty
-      db.run('DELETE FROM media_tags WHERE media_id = ?', [mediaId], (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
-      return;
+async function updateMediaTags(mediaId, tagsString) {
+  const tags = normalizeTagList(tagsString || '');
+  await dbHandler.transaction('updateMediaTags', async (tx) => {
+    await tx.run('DELETE FROM media_tags WHERE media_id = ?', [mediaId]);
+    if (tags.length === 0) return;
+    for (const tagName of tags) {
+      await tx.run('INSERT OR IGNORE INTO tags (name, usage_count) VALUES (?, 0)', [tagName]);
     }
-
-    const tags = normalizeTagList(tagsString);
-
-    if (tags.length === 0) {
-      // If no valid tags, just delete existing
-      db.run('DELETE FROM media_tags WHERE media_id = ?', [mediaId], (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
-      return;
+    const placeholders = tags.map(() => '?').join(',');
+    const tagRows = await tx.all(`SELECT id, name FROM tags WHERE name IN (${placeholders})`, tags);
+    for (const tag of tagRows) {
+      await tx.run('INSERT INTO media_tags (media_id, tag_id) VALUES (?, ?)', [mediaId, tag.id]);
+      await tx.run('UPDATE tags SET usage_count = usage_count + 1 WHERE id = ?', [tag.id]);
     }
-
-    db.serialize(() => {
-      db.run('BEGIN TRANSACTION', (err) => {
-        if (err) return reject(err);
-      });
-
-      // Remove existing tags for this media
-      db.run('DELETE FROM media_tags WHERE media_id = ?', [mediaId], (err) => {
-        if (err) {
-          db.run('ROLLBACK');
-          return reject(err);
-        }
-
-        // Step 1: Insert all tags in batch using prepared statement
-        const insertTag = db.prepare('INSERT OR IGNORE INTO tags (name, usage_count) VALUES (?, 0)');
-        tags.forEach(tagName => insertTag.run(tagName));
-        insertTag.finalize((err) => {
-          if (err) {
-            db.run('ROLLBACK');
-            return reject(err);
-          }
-
-          // Step 2: Get all tag IDs with single query using IN clause
-          const placeholders = tags.map(() => '?').join(',');
-          db.all(
-            `SELECT id, name FROM tags WHERE name IN (${placeholders})`,
-            tags,
-            (err, tagRows) => {
-              if (err) {
-                db.run('ROLLBACK');
-                return reject(err);
-              }
-
-              if (tagRows.length === 0) {
-                db.run('COMMIT', (commitErr) => {
-                  if (commitErr) reject(commitErr);
-                  else resolve();
-                });
-                return;
-              }
-
-              // Step 3: Insert all media_tags links in batch
-              const insertLink = db.prepare('INSERT INTO media_tags (media_id, tag_id) VALUES (?, ?)');
-              tagRows.forEach(tag => insertLink.run(mediaId, tag.id));
-              insertLink.finalize((err) => {
-                if (err) {
-                  db.run('ROLLBACK');
-                  return reject(err);
-                }
-
-                // Step 4: Update all usage_counts in batch
-                const updateCount = db.prepare('UPDATE tags SET usage_count = usage_count + 1 WHERE id = ?');
-                tagRows.forEach(tag => updateCount.run(tag.id));
-                updateCount.finalize((err) => {
-                  if (err) {
-                    db.run('ROLLBACK');
-                    return reject(err);
-                  }
-
-                  // Commit transaction
-                  db.run('COMMIT', (commitErr) => {
-                    if (commitErr) reject(commitErr);
-                    else resolve();
-                  });
-                });
-              });
-            }
-          );
-        });
-      });
-    });
   });
 }
 
@@ -135,86 +57,18 @@ function getTagsForMedia(mediaId) {
  * @param {string[]} tagNames - Array of tag names
  * @returns {Promise<void>}
  */
-function setMediaTagsExact(mediaId, tagNames) {
-  return new Promise((resolve, reject) => {
-    const cleanTags = tagNames.map(t => t.trim().toLowerCase()).filter(t => t);
-    
-    db.serialize(() => {
-      db.run('BEGIN TRANSACTION');
-      
-      // Remove existing tags
-      db.run('DELETE FROM media_tags WHERE media_id = ?', [mediaId]);
-      
-      if (cleanTags.length === 0) {
-        db.run('COMMIT', (err) => {
-          if (err) reject(err);
-          else resolve();
-        });
-        return;
+async function setMediaTagsExact(mediaId, tagNames) {
+  const cleanTags = tagNames.map(t => t.trim().toLowerCase()).filter(Boolean);
+  await dbHandler.transaction('setMediaTagsExact', async (tx) => {
+    await tx.run('DELETE FROM media_tags WHERE media_id = ?', [mediaId]);
+    for (const tagName of cleanTags) {
+      await tx.run('INSERT OR IGNORE INTO tags (name, usage_count) VALUES (?, 0)', [tagName]);
+      const tag = await tx.get('SELECT id FROM tags WHERE name = ?', [tagName]);
+      if (tag) {
+        await tx.run('INSERT INTO media_tags (media_id, tag_id) VALUES (?, ?)', [mediaId, tag.id]);
+        await tx.run('UPDATE tags SET usage_count = usage_count + 1 WHERE id = ?', [tag.id]);
       }
-      
-      let completed = 0;
-      let hasError = false;
-      
-      cleanTags.forEach(tagName => {
-        // Insert tag if not exists
-        db.run(
-          'INSERT OR IGNORE INTO tags (name, usage_count) VALUES (?, 0)',
-          [tagName],
-          function(err) {
-            if (err && !hasError) {
-              hasError = true;
-              db.run('ROLLBACK');
-              reject(err);
-              return;
-            }
-            
-            // Get tag ID
-            db.get('SELECT id FROM tags WHERE name = ?', [tagName], (err2, tag) => {
-              if (err2 && !hasError) {
-                hasError = true;
-                db.run('ROLLBACK');
-                reject(err2);
-                return;
-              }
-              
-              if (tag) {
-                // Link to media
-                db.run(
-                  'INSERT INTO media_tags (media_id, tag_id) VALUES (?, ?)',
-                  [mediaId, tag.id],
-                  (err3) => {
-                    completed++;
-                    
-                    if (err3 && !hasError) {
-                      hasError = true;
-                      db.run('ROLLBACK');
-                      reject(err3);
-                      return;
-                    }
-                    
-                    if (completed === cleanTags.length && !hasError) {
-                      db.run('COMMIT', (commitErr) => {
-                        if (commitErr) reject(commitErr);
-                        else resolve();
-                      });
-                    }
-                  }
-                );
-              } else {
-                completed++;
-                if (completed === cleanTags.length && !hasError) {
-                  db.run('COMMIT', (commitErr) => {
-                    if (commitErr) reject(commitErr);
-                    else resolve();
-                  });
-                }
-              }
-            });
-          }
-        );
-      });
-    });
+    }
   });
 }
 

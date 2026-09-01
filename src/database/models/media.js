@@ -59,53 +59,45 @@ async function saveMedia(mediaData) {
     metadata = {}
   } = mediaData;
 
-  await dbHandler.run('BEGIN IMMEDIATE TRANSACTION');
+  const mediaId = await dbHandler.transaction('saveMedia', async (tx) => {
+    const firstResult = await tx.get('SELECT COUNT(*) as count FROM media WHERE id = 1');
+    let nextId;
+    if (!firstResult || firstResult.count === 0) {
+      nextId = 1;
+    } else {
+      const gapResult = await tx.get(`
+        SELECT MIN(t1.id + 1) as gap_start
+        FROM media t1
+        LEFT JOIN media t2 ON t1.id + 1 = t2.id
+        WHERE t2.id IS NULL
+        AND t1.id + 1 <= (SELECT MAX(id) FROM media)
+      `);
+      if (gapResult && gapResult.gap_start) {
+        nextId = gapResult.gap_start;
+      } else {
+        const nextResult = await tx.get('SELECT COALESCE(MAX(id), 0) + 1 as next_id FROM media');
+        nextId = nextResult && typeof nextResult.next_id === 'number' ? nextResult.next_id : 1;
+      }
+    }
 
-  try {
-    const mediaId = await getNextAvailableMediaId();
-
-    await dbHandler.run(
+    await tx.run(
       `INSERT INTO media (id, chat_id, group_id, sender_id, file_path, mimetype, timestamp,
                           description, hash_visual, hash_md5, hash_md5_stored, nsfw, extracted_text, count_random)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-      [
-        mediaId,
-        chatId,
-        groupId,
-        senderId,
-        filePath,
-        mimetype,
-        timestamp,
-        description,
-        hashVisual,
-        hashMd5,
-        hashMd5Stored,
-        nsfw,
-        extractedText
-      ]
+      [nextId, chatId, groupId, senderId, filePath, mimetype, timestamp, description, hashVisual, hashMd5, hashMd5Stored, nsfw, extractedText]
     );
-
-    // Insert into hash_buckets for LSH optimization (if hash exists)
     if (hashVisual) {
       const bucketKey = getVisualBucketKey(hashVisual);
-      await dbHandler.run(
-        `INSERT OR REPLACE INTO hash_buckets (media_id, bucket_key, hash_visual)
-         VALUES (?, ?, ?)`,
-        [mediaId, bucketKey, hashVisual]
+      await tx.run(
+        `INSERT OR REPLACE INTO hash_buckets (media_id, bucket_key, hash_visual) VALUES (?, ?, ?)`,
+        [nextId, bucketKey, hashVisual]
       );
     }
+    return nextId;
+  });
 
-    await dbHandler.run('COMMIT');
-    if (metadata && Object.keys(metadata).length) await upsertMediaMetadata(mediaId, metadata);
-    return mediaId;
-  } catch (error) {
-    try {
-      await dbHandler.run('ROLLBACK');
-    } catch (rollbackError) {
-      console.error('[DB] Falha ao executar ROLLBACK após erro em saveMedia:', rollbackError);
-    }
-    throw error;
-  }
+  if (metadata && Object.keys(metadata).length) await upsertMediaMetadata(mediaId, metadata);
+  return mediaId;
 }
 
 /**

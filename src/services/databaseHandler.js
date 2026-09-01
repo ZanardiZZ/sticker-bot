@@ -12,6 +12,8 @@ class DatabaseHandler {
     this.retryDelay = 100; // Initial delay in ms
     this.isClosed = false; // Track if database is closed
     this.slowQueryMs = Number(process.env.SQLITE_SLOW_QUERY_MS || 250);
+    this.writeQueue = Promise.resolve();
+    this.writeQueue = Promise.resolve();
 
     // Configure SQLite for better concurrency
     this.db.configure('busyTimeout', this.busyTimeout);
@@ -104,65 +106,69 @@ class DatabaseHandler {
   }
 
   /**
-   * Execute a transaction with retry logic
+   * Serialize write transactions in this process and retry the whole
+   * transaction only after a rollback has completed.
    */
-  async transaction(operations) {
-    return this.executeWithRetry(async () => {
-      return new Promise((resolve, reject) => {
-        this.db.serialize(() => {
-          this.db.run('BEGIN IMMEDIATE TRANSACTION', (beginErr) => {
-            if (beginErr) {
-              console.error('[DB] Failed to begin transaction:', beginErr);
-              return reject(beginErr);
-            }
-            
-            const executeOperations = async () => {
-              try {
-                const results = [];
-                
-                for (const op of operations) {
-                  const result = await this.promisifyOperation(op.sql, op.params);
-                  results.push(result);
-                }
-                
-                this.db.run('COMMIT', (commitErr) => {
-                  if (commitErr) {
-                    const formatError = require('../utils/formatError');
-                    console.error('[DB] Commit failed:', formatError(commitErr));
-                    
-                    // Try to rollback after commit failure
-                    this.db.run('ROLLBACK', (rollbackErr) => {
-                      if (rollbackErr) {
-                        console.error('[DB] Rollback after commit failure also failed:', formatError(rollbackErr));
-                      }
-                    });
-                    
-                    return reject(commitErr);
-                  }
-                  
-                  console.log('[DB] Transaction committed successfully with', results.length, 'operations');
-                  resolve(results);
-                });
-                
-              } catch (error) {
-                // Attempt rollback and log any rollback errors as well
-                this.db.run('ROLLBACK', (rbErr) => {
-                  const formatError = require('../utils/formatError');
-                  if (rbErr) {
-                    console.error('[DB] Rollback failed after error:', formatError(rbErr), 'original error:', formatError(error));
-                  } else {
-                    console.log('[DB] Transaction rolled back due to error:', formatError(error));
-                  }
-                  reject(error);
-                });
-              }
-            };
-            
-            executeOperations();
-          });
-        });
-      });
-    });
+  withWriteLock(operation) {
+    const run = this.writeQueue.then(operation, operation);
+    this.writeQueue = run.catch(() => undefined);
+    return run;
+  }
+
+  async transaction(nameOrOperations, maybeOperations) {
+    let name = 'transaction';
+    let operations = nameOrOperations;
+    if (typeof nameOrOperations === 'string') {
+      name = nameOrOperations;
+      operations = maybeOperations;
+    }
+    if (!Array.isArray(operations) && typeof operations !== 'function') {
+      throw new TypeError('Transaction operations must be an array or callback');
+    }
+    return this.withWriteLock(() =>
+      this.executeWithRetry(() => this.runTransaction(name, operations))
+    );
+  }
+
+  async runTransaction(name, operations) {
+    const startedAt = Date.now();
+    let began = false;
+    try {
+      await this.promisifyOperation('BEGIN IMMEDIATE TRANSACTION');
+      began = true;
+      let results;
+      if (typeof operations === 'function') {
+        const tx = {
+          run: (sql, params = []) => this.promisifyOperation(sql, params),
+          get: async (sql, params = []) => {
+            const rows = await this.promisifyOperation(sql, params);
+            return Array.isArray(rows) ? (rows[0] || null) : rows;
+          },
+          all: (sql, params = []) => this.promisifyOperation(sql, params)
+        };
+        results = await operations(tx);
+      } else {
+        results = [];
+        for (const op of operations) {
+          results.push(await this.promisifyOperation(op.sql, op.params || []));
+        }
+      }
+      await this.promisifyOperation('COMMIT');
+      const durationMs = Date.now() - startedAt;
+      console.log(`[DB:Tx] name=${name} status=committed duration_ms=${durationMs}`);
+      return results;
+    } catch (error) {
+      if (began) {
+        try {
+          await this.promisifyOperation('ROLLBACK');
+        } catch (rollbackError) {
+          console.error('[DB] Rollback failed:', rollbackError.message);
+        }
+      }
+      const durationMs = Date.now() - startedAt;
+      console.warn(`[DB:Tx] name=${name} status=rolled_back duration_ms=${durationMs}`);
+      throw error;
+    }
   }
 
   /**

@@ -70,63 +70,17 @@ async function getPackById(packId) {
  * @returns {Promise<boolean>} Success status
  */
 async function addStickerToPack(packId, mediaId) {
-  await dbHandler.run('BEGIN IMMEDIATE TRANSACTION');
-  
-  try {
-    // Check if pack exists and get current count
-    const pack = await dbHandler.get(
-      'SELECT id, sticker_count, max_stickers FROM sticker_packs WHERE id = ?',
-      [packId]
-    );
-    
-    if (!pack) {
-      throw new Error('Pack não encontrado');
-    }
-    
-    // Check if pack is full
-    if (pack.sticker_count >= pack.max_stickers) {
-      throw new Error('PACK_FULL');
-    }
-    
-    // Check if sticker already in pack
-    const existing = await dbHandler.get(
-      'SELECT 1 FROM pack_stickers WHERE pack_id = ? AND media_id = ?',
-      [packId, mediaId]
-    );
-    
-    if (existing) {
-      throw new Error('Sticker já está neste pack');
-    }
-    
-    // Get next position
-    const positionResult = await dbHandler.get(
-      'SELECT COALESCE(MAX(position), -1) + 1 as next_position FROM pack_stickers WHERE pack_id = ?',
-      [packId]
-    );
-    const nextPosition = positionResult.next_position;
-    
-    // Add sticker to pack
-    await dbHandler.run(
-      'INSERT INTO pack_stickers (pack_id, media_id, position) VALUES (?, ?, ?)',
-      [packId, mediaId, nextPosition]
-    );
-    
-    // Update pack sticker count
-    await dbHandler.run(
-      'UPDATE sticker_packs SET sticker_count = sticker_count + 1, updated_at = strftime(\'%s\',\'now\') WHERE id = ?',
-      [packId]
-    );
-    
-    await dbHandler.run('COMMIT');
-    return true;
-  } catch (error) {
-    try {
-      await dbHandler.run('ROLLBACK');
-    } catch (rollbackError) {
-      console.error('[DB] Failed to rollback after error in addStickerToPack:', rollbackError);
-    }
-    throw error;
-  }
+  await dbHandler.transaction('addStickerToPack', async (tx) => {
+    const pack = await tx.get('SELECT id, sticker_count, max_stickers FROM sticker_packs WHERE id = ?', [packId]);
+    if (!pack) throw new Error('Pack não encontrado');
+    if (pack.sticker_count >= pack.max_stickers) throw new Error('PACK_FULL');
+    const existing = await tx.get('SELECT 1 FROM pack_stickers WHERE pack_id = ? AND media_id = ?', [packId, mediaId]);
+    if (existing) throw new Error('Sticker já está neste pack');
+    const positionResult = await tx.get('SELECT COALESCE(MAX(position), -1) + 1 as next_position FROM pack_stickers WHERE pack_id = ?', [packId]);
+    await tx.run('INSERT INTO pack_stickers (pack_id, media_id, position) VALUES (?, ?, ?)', [packId, mediaId, positionResult.next_position]);
+    await tx.run("UPDATE sticker_packs SET sticker_count = sticker_count + 1, updated_at = strftime('%s','now') WHERE id = ?", [packId]);
+  });
+  return true;
 }
 
 /**
@@ -136,32 +90,14 @@ async function addStickerToPack(packId, mediaId) {
  * @returns {Promise<boolean>} Success status
  */
 async function removeStickerFromPack(packId, mediaId) {
-  await dbHandler.run('BEGIN IMMEDIATE TRANSACTION');
-  
-  try {
-    const result = await dbHandler.run(
-      'DELETE FROM pack_stickers WHERE pack_id = ? AND media_id = ?',
-      [packId, mediaId]
-    );
-    
+  const removed = await dbHandler.transaction('removeStickerFromPack', async (tx) => {
+    const result = await tx.run('DELETE FROM pack_stickers WHERE pack_id = ? AND media_id = ?', [packId, mediaId]);
     if (result.changes > 0) {
-      // Update pack sticker count
-      await dbHandler.run(
-        'UPDATE sticker_packs SET sticker_count = sticker_count - 1, updated_at = strftime(\'%s\',\'now\') WHERE id = ?',
-        [packId]
-      );
+      await tx.run("UPDATE sticker_packs SET sticker_count = sticker_count - 1, updated_at = strftime('%s','now') WHERE id = ?", [packId]);
     }
-    
-    await dbHandler.run('COMMIT');
     return result.changes > 0;
-  } catch (error) {
-    try {
-      await dbHandler.run('ROLLBACK');
-    } catch (rollbackError) {
-      console.error('[DB] Failed to rollback after error in removeStickerFromPack:', rollbackError);
-    }
-    throw error;
-  }
+  });
+  return removed;
 }
 
 /**
