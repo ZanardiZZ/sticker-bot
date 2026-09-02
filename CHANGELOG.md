@@ -1,3 +1,37 @@
+# Changelog
+
+## [0.21.1] - 2026-09-02
+
+### Novidades
+- feat(analytics): add opt-in reaction milestone notifications (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/6e587b4bf7425281065e24717b9e030f70f4a7c0))
+- feat(analytics): add reaction trends and delivery-safe rotation (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/efc61984b4b94aec8dd6f2ab4518579655aa5df2))
+- feat(fotohd): add bounded Real-ESRGAN processing path (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/3d92e85f6d6268be7c28a836752b4b0929e00740))
+
+### Correções
+- fix(deps): remediate WPPConnect Puppeteer extraction chain (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/f0b88ad63cb07d9e67dff298d98ca6193b712fe2))
+- fix(sqlite): isolate test database and instrument contention (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/31ef10ccba7d1addc96722566bd6b1cf0fecc19a))
+- fix(media): normalize sticker WebP canvases consistently (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/e488d389f9a7e829e68be5cbacb6feae69c30253))
+- fix(stickers): classify one-page animated headers as static (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/653c408aa471614f2a4606a1b141287a7683585d))
+
+### Documentação
+- docs(analytics): document reaction notification semantics (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/ae43745c0257b358d6f382f1bdc8139c5e616457))
+
+### Desempenho
+- perf(sqlite): batch media deletion transactions (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/3760221720115fe1d932e093bb85963863e7c347))
+- perf(sqlite): remove aggressive periodic checkpoints (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/c36b9c524dd773319eb62df275fb3f5a49730d81))
+
+### Refatorações
+- refactor(sqlite): serialize transactional writes (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/4269748131a4505e33d2795708eb76e1804e437d))
+
+### CI
+- ci: sync local checkout after changelog workflow (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/91f727c0ae4ba2da712688a623eceb2581e157ff))
+
+### Tarefas
+- chore: ignore local env snapshots and canary artifacts (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/da9d7da9efe0a70ed03da526767b0b89fae0a7ef))
+
+### Outros
+- revert(deps): restore WPP runtime after unstable security canary (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/7897497c53929ebdb5ba49a268054f62f60cf0a0))
+
 ## [0.21.0] - 2026-09-01
 
 ### Novidades
