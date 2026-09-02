@@ -33,7 +33,7 @@
   "license": "ISC",
   "dependencies": {
     "@tensorflow/tfjs-node": "^4.22.0",
-    "@wppconnect-team/wppconnect": "2.2.5",
+    "@wppconnect-team/wppconnect": "2.3.1",
     "@wppconnect/wa-js": "4.4.3",
     "@wppconnect/wa-version": "1.5.4470",
     "adm-zip": "0.6.0",
@@ -93,6 +93,9 @@
     "sharp": "0.35.3",
     "body-parser": "2.3.0",
     "brace-expansion": "5.0.9",
-    "js-yaml": "4.3.1"
+    "js-yaml": "4.3.1",
+    "puppeteer": "25.9.0",
+    "puppeteer-core": "25.9.0",
+    "@puppeteer/browsers": "3.2.1"
   }
 }
