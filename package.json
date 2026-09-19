@@ -37,7 +37,7 @@
     "@wppconnect-team/wppconnect": "2.2.5",
     "@wppconnect/wa-js": "4.4.3",
     "@wppconnect/wa-version": "1.5.4470",
-    "adm-zip": "0.6.0",
+    "adm-zip": "0.6.1",
     "axios": "^1.13.5",
     "bcryptjs": "^3.0.3",
     "canvas": "^3.1.2",
