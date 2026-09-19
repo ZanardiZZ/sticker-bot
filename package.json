@@ -26,7 +26,8 @@
     "bot": "node index.js",
     "bot-direct": "node index.js",
     "baileys:server": "node server.js",
-    "git:auto": "bash scripts/ops/autocommit-verified.sh"
+    "git:auto": "bash scripts/ops/autocommit-verified.sh",
+    "baileys:canary": "node src/server/baileysBridge.js"
   },
   "keywords": [],
   "author": "",
@@ -66,7 +67,8 @@
     "sqlite3": "^6.0.1",
     "uuid": "^14.0.1",
     "ws": "^8.21.0",
-    "yt-dlp-wrap": "^2.3.12"
+    "yt-dlp-wrap": "^2.3.12",
+    "@whiskeysockets/baileys": "7.0.0-rc14"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
