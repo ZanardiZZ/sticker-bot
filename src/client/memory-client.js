@@ -939,27 +939,29 @@ function parseSemanticMemoryEntry(m) {
   if (!m || typeof m !== 'object') return null;
   const uri = String(m.uri || '').trim();
   if (uri.endsWith('/.overview.md') || uri.endsWith('/.abstract.md')) return null;
-  const fact = String(m.abstract || m.description || m.content || m.text || m.title || '').trim();
+  const fact = String(m.memory || m.abstract || m.description || m.content || m.text || m.title || '').trim();
   if (!fact || fact.startsWith('viking://')) return null;
   return {
     fact,
     category: 'general',
     memoryType: 'confirmed',
     confidence: typeof m.score === 'number' ? Math.min(Math.max(m.score, 0), 1) : 0.7,
-    source: 'openviking'
+    source: m.memory ? 'mem0' : 'openviking'
   };
 }
 
 class MemoryClient {
   constructor() {
+    this.backend = String(process.env.MEMORY_BACKEND || 'openviking').trim().toLowerCase();
     this.baseUrl = this.resolveBaseUrl();
+    this.mem0ApiKey = String(process.env.MEM0_API_KEY || '').trim();
     this.initialized = false;
     this.lastHealthcheck = null;
     this.timeoutMs = parsePositiveNumber(process.env.MEMORY_TIMEOUT_MS, 4000);
     this.semanticSearchTimeoutMs = parsePositiveNumber(process.env.MEMORY_SEMANTIC_SEARCH_TIMEOUT_MS, 600);
     this.semanticSearchLimit = Math.max(parsePositiveNumber(process.env.MEMORY_SEMANTIC_SEARCH_LIMIT, 4), 1);
     this.retryCount = Math.max(parsePositiveNumber(process.env.MEMORY_RETRY_COUNT, 2) - 1, 0);
-    this.agent = process.env.OPENVIKING_AGENT || 'stickerbot';
+    this.agent = process.env.MEM0_AGENT_ID || process.env.OPENVIKING_AGENT || 'stickerbot';
     // Serialize remote writes so message bursts do not open many session/commit
     // pipelines concurrently and trip OpenViking/Lemonade timeouts.
     this.writeChain = Promise.resolve();
@@ -969,12 +971,14 @@ class MemoryClient {
   }
 
   resolveBaseUrl() {
+    if (this.backend === 'mem0') return String(process.env.MEM0_API_URL || process.env.MEMORY_API_URL || '').trim();
     return String(process.env.OPENVIKING_URL || process.env.MEMORY_API_URL || 'http://127.0.0.1:1933').trim();
   }
 
   isEnabled() {
     const raw = process.env.MEMORY_ENABLED;
     const hasUrl = !!this.resolveBaseUrl();
+    if (this.backend === 'mem0' && !this.mem0ApiKey) return false;
     if (raw === undefined) return hasUrl;
     return hasUrl && !['0', 'false', 'off', 'no'].includes(String(raw).trim().toLowerCase());
   }
@@ -984,7 +988,9 @@ class MemoryClient {
   }
 
   init() {
+    this.backend = String(process.env.MEMORY_BACKEND || 'openviking').trim().toLowerCase();
     this.baseUrl = this.resolveBaseUrl();
+    this.mem0ApiKey = String(process.env.MEM0_API_KEY || '').trim();
     this.timeoutMs = parsePositiveNumber(process.env.MEMORY_TIMEOUT_MS, 4000);
     this.semanticSearchTimeoutMs = parsePositiveNumber(process.env.MEMORY_SEMANTIC_SEARCH_TIMEOUT_MS, 600);
     this.semanticSearchLimit = Math.max(parsePositiveNumber(process.env.MEMORY_SEMANTIC_SEARCH_LIMIT, 4), 1);
@@ -995,7 +1001,7 @@ class MemoryClient {
       console.log('[MemoryClient] Integração de memória desabilitada (MEMORY_ENABLED=0 ou sem OPENVIKING_URL)');
       return this;
     }
-    console.log('[MemoryClient] 🧠 Memória híbrida: JSON local + OpenViking em', this.baseUrl);
+    console.log(`[MemoryClient] 🧠 Memória híbrida: JSON local + ${this.backend} em`, this.baseUrl);
     return this;
   }
 
@@ -1005,6 +1011,10 @@ class MemoryClient {
 
   _headers(userId) {
     const h = { 'Content-Type': 'application/json' };
+    if (this.backend === 'mem0') {
+      h['X-API-Key'] = this.mem0ApiKey;
+      return h;
+    }
     if (userId) {
       // OpenViking rejects ':' in user_id; preserve the local group namespace safely.
       const safeUserId = String(userId).replace(/:/g, '_');
@@ -1044,6 +1054,15 @@ class MemoryClient {
     if (!content || !content.trim()) return Promise.resolve(null);
     this.writeQueueDepth += 1;
     const task = this.writeChain.then(async () => {
+      if (this.backend === 'mem0') {
+        const remoteUserId = String(userId || 'anon').replace(/^group:/, 'group_').replace(/:/g, '_');
+        return this._request('POST', '/memories', {
+          messages: [{ role: 'user', content }],
+          user_id: remoteUserId,
+          agent_id: this.agent,
+          infer: false
+        }, remoteUserId);
+      }
       const requestedId = 'sb-' + (userId || 'anon') + '-' + Date.now();
       const created = await this._request('POST', '/api/v1/sessions', { id: requestedId }, userId);
       const sid = created?.result?.session_id || requestedId;
@@ -1062,6 +1081,15 @@ class MemoryClient {
 
   async _search(query, userId, targetUri = null) {
     const q = (query && query.trim()) ? query.trim() : 'memória do usuário';
+    if (this.backend === 'mem0') {
+      const remoteUserId = String(userId || 'anon').replace(/^group:/, 'group_').replace(/:/g, '_');
+      const r = await this._request('POST', '/search', {
+        query: q,
+        limit: this.semanticSearchLimit,
+        filters: { user_id: remoteUserId, agent_id: this.agent }
+      }, remoteUserId);
+      return Array.isArray(r?.results) ? r.results : [];
+    }
     const payload = { query: q, limit: this.semanticSearchLimit };
     if (Array.isArray(targetUri) && targetUri.length) {
       payload.target_uri = targetUri.map(uri => String(uri).endsWith('/') ? String(uri) : `${uri}/`);
@@ -1073,7 +1101,7 @@ class MemoryClient {
   }
 
   async _searchBounded(query, userId, targetUris = []) {
-    if (!this.isEnabled() || !userId || !Array.isArray(targetUris) || !targetUris.length) return [];
+    if (!this.isEnabled() || !userId || (this.backend !== 'mem0' && (!Array.isArray(targetUris) || !targetUris.length))) return [];
     const timeoutMs = this.semanticSearchTimeoutMs;
     let timer;
     try {
@@ -1522,8 +1550,10 @@ class MemoryClient {
 
   async healthcheck() {
     try {
-      const r = await this._request('GET', '/health');
-      const ok = !!r && r.status === 'ok';
+      const r = this.backend === 'mem0'
+        ? await this._request('GET', '/memories?user_id=healthcheck&agent_id=' + encodeURIComponent(this.agent) + '&limit=1', null, 'healthcheck')
+        : await this._request('GET', '/health');
+      const ok = this.backend === 'mem0' ? !!r : !!r && r.status === 'ok';
       this.lastHealthcheck = { ok, url: this.baseUrl, checkedAt: new Date().toISOString() };
       return this.lastHealthcheck;
     } catch (e) {

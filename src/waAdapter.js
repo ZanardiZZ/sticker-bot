@@ -22,6 +22,7 @@ class BaileysWsAdapter {
     this._pendingContacts = new Map(); // jid -> resolver
     this._pendingAcks = new Map(); // requestId -> { resolve, reject, timeout }
     this._readyWaiters = []; // resolve callbacks waiting for _ready
+    this._connectPromise = null; // serialize concurrent WebSocket connection attempts
   }
 
   _sleep(ms) {
@@ -60,19 +61,35 @@ class BaileysWsAdapter {
 
   async connect() {
     if (this.ws && this.ws.readyState === WebSocket.OPEN && this._ready) return this;
-    this.ws = new WebSocket(this.url);
+    if (this._connectPromise) return this._connectPromise;
 
-    this.ws.on('open', () => {
-      this._ready = false;
-      this._registered = false;
-      this._send({ type: 'register', token: this.token, chats: this.chats });
-    });
+    const socket = new WebSocket(this.url);
+    this.ws = socket;
+    this._connectPromise = new Promise((resolve, reject) => {
+      let settled = false;
+      const settle = (err) => {
+        if (settled) return;
+        settled = true;
+        this._connectPromise = null;
+        if (err) reject(err); else resolve(this);
+      };
 
-    this.ws.on('message', (data) => {
+      socket.on('open', () => {
+        this._ready = false;
+        this._registered = false;
+        this._send({ type: 'register', token: this.token, chats: this.chats });
+      });
+
+      socket.on('error', (err) => {
+        if (!settled) settle(err);
+      });
+
+      socket.on('message', (data) => {
       let msg; try { msg = JSON.parse(data.toString()); } catch { return; }
       if (msg.type === 'registered' && msg.ok) {
         this._registered = true;
         this._send({ type: 'subscribe', chats: this.chats });
+        settle();
       } else if (msg.type === 'connection.update') {
         const isOpen = msg?.data?.connection === 'open';
         this._ready = isOpen;
@@ -146,20 +163,28 @@ class BaileysWsAdapter {
       }
     });
 
-    this.ws.on('close', (code, reason) => {
-      console.log(`[WA Adapter] WebSocket closed (code: ${code}, reason: ${reason || 'none'})`);
-      this._ready = false;
-      this._registered = false;
-      console.log('[WA Adapter] Reconnecting in 2 seconds...');
-      setTimeout(() => this.connect().catch((err) => {
-        console.error('[WA Adapter] Reconnection failed:', err.message);
-      }), 2000);
-    });
+      socket.on('close', (code, reason) => {
+        console.log(`[WA Adapter] WebSocket closed (code: ${code}, reason: ${reason || 'none'})`);
+        // An obsolete socket must not reset/reconnect over a newer socket.
+        if (this.ws !== socket) return;
+        this._ready = false;
+        this._registered = false;
+        this._connectPromise = null;
+        console.log('[WA Adapter] Reconnecting in 2 seconds...');
+        setTimeout(() => {
+          if (this.ws === socket) this.connect().catch((err) => {
+            console.error('[WA Adapter] Reconnection failed:', err.message);
+          });
+        }, 2000);
+      });
 
-    this.ws.on('error', (err) => {
-      console.error('[WA Adapter] WebSocket error:', err.message);
+      socket.on('error', (err) => {
+        console.error('[WA Adapter] WebSocket error:', err.message);
+      });
+
+      socket.on('close', () => settle(new Error('websocket_closed_before_register')));
     });
-    return this;
+    return this._connectPromise;
   }
 
   async downloadMedia(messageId) {

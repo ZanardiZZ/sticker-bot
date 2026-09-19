@@ -565,6 +565,7 @@ async function restartService({ service }) {
     const protectedServiceNames = new Set([
       'Bot-Client',
       'WS-Socket-Server',
+      'WS-Socket-Server-Baileys',
       'sticker-bot',
       'baileys-bridge'
     ]);

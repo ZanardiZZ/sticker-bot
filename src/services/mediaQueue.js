@@ -11,7 +11,7 @@ class MediaQueue extends EventEmitter {
     this.concurrency = options.concurrency || 3; // Max concurrent processes
     this.retryAttempts = options.retryAttempts || 3;
     this.retryDelay = options.retryDelay || 1000; // Initial retry delay in ms
-    this.maxQueueSize = options.maxQueueSize || 100; // Max queue size to prevent memory issues
+    this.maxQueueSize = options.maxQueueSize ?? Number.POSITIVE_INFINITY; // Waiting jobs are admitted; disk spool is the next hardening layer
     
     this.queue = [];
     this.processing = new Set();
@@ -75,8 +75,8 @@ class MediaQueue extends EventEmitter {
       this.emit('jobAdded', queueItem.id);
       
       // Emit warning if queue is getting large (>75% full)
-      const queueUsage = this.queue.length / this.maxQueueSize;
-      if (queueUsage >= 0.75) {
+      const queueUsage = Number.isFinite(this.maxQueueSize) ? this.queue.length / this.maxQueueSize : 0;
+      if (Number.isFinite(this.maxQueueSize) && queueUsage >= 0.75) {
         this.emit('queueWarning', this.queue.length, this.maxQueueSize, queueUsage);
       }
       
@@ -174,7 +174,7 @@ class MediaQueue extends EventEmitter {
       processing: this.processing.size,
       waiting: this.queue.length,
       capacity: this.maxQueueSize,
-      usage: this.queue.length / this.maxQueueSize
+      usage: Number.isFinite(this.maxQueueSize) ? this.queue.length / this.maxQueueSize : 0
     };
   }
 

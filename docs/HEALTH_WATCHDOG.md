@@ -5,7 +5,7 @@ Monitorar continuamente a saúde do bot e aplicar auto-recuperação para falhas
 
 ## O que monitora
 1. PM2 apps obrigatórios online:
-   - WS-Socket-Server
+   - WS-Socket-Server-Baileys
    - Bot-Client
    - WebServer
 2. Endpoint de saúde web:
@@ -18,7 +18,7 @@ Monitorar continuamente a saúde do bot e aplicar auto-recuperação para falhas
 ## Ações automáticas
 - Reinicia app PM2 fora de `online`
 - Reinicia `WebServer` se healthcheck web falhar
-- Reinicia `WS-Socket-Server` quando o número de erros críticos novos no log atingir o limiar
+- Reinicia `WS-Socket-Server-Baileys` quando o número de erros críticos novos no log atingir o limiar
 - Envia alerta no WhatsApp quando houver restart automático e outros problemas críticos detectados
 
 ## Arquivos
@@ -42,7 +42,7 @@ Crontab do usuário `dev`:
 ```
 
 ## Variáveis opcionais
-- `HEALTH_WEB_PORT` (default: `3001`)
+- `HEALTH_WEB_PORT` (default: `3000`)
 - `HEALTH_WEBHOOK_PATH` (default: `/webhook/status`)
 - `HEALTH_ERROR_SCAN_LINES` (default: `300`)
 - `HEALTH_DETACHED_FRAME_THRESHOLD` (default: `3`)

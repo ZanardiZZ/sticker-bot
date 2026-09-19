@@ -11,7 +11,8 @@ const MediaQueue = require('../services/mediaQueue');
 const mediaQueue = new MediaQueue({ 
   concurrency: 3, 
   retryAttempts: 5, 
-  retryDelay: 1000 
+  retryDelay: 1000,
+  maxQueueSize: Number(process.env.STICKER_MEDIA_MAX_WAITING || 12)
 });
 
 // Models

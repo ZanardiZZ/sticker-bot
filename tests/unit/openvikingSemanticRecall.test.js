@@ -7,6 +7,7 @@ const clientPath = path.join(projectRoot, 'src/client/memory-client.js');
 const axiosPath = require.resolve('axios', { paths: [projectRoot] });
 const originalEnv = {
   MEMORY_ENABLED: process.env.MEMORY_ENABLED,
+  MEMORY_BACKEND: process.env.MEMORY_BACKEND,
   MEMORY_API_URL: process.env.MEMORY_API_URL,
   MEMORY_SEMANTIC_SEARCH_TIMEOUT_MS: process.env.MEMORY_SEMANTIC_SEARCH_TIMEOUT_MS,
   MEMORY_SEMANTIC_SEARCH_LIMIT: process.env.MEMORY_SEMANTIC_SEARCH_LIMIT
@@ -24,6 +25,7 @@ const tests = [
     name: 'OpenViking semantic memories reach user and group prompt context',
     fn: async () => {
       process.env.MEMORY_ENABLED = '1';
+      process.env.MEMORY_BACKEND = 'openviking';
       process.env.MEMORY_API_URL = 'http://memory.semantic.test';
       process.env.MEMORY_SEMANTIC_SEARCH_TIMEOUT_MS = '600';
       process.env.MEMORY_SEMANTIC_SEARCH_LIMIT = '4';
