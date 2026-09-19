@@ -211,29 +211,30 @@ async function isAnimatedWebpFile(filePath) {
  * @param {string} inputPath - Input file path
  * @returns {Promise<string>} Output MP4 file path
  */
-async function convertToMp4ForSticker(inputPath) {
-  // Check if FFmpeg is available
-  if (!ffmpeg) {
-    console.warn('[Sticker] FFmpeg não disponível, não é possível converter vídeo para sticker');
-    throw new Error('FFmpeg não disponível - conversão de vídeo para sticker desabilitada');
-  }
-  
+async function probeHasAudioStream(inputPath) {
+  if (!ffmpeg) return false;
+  return new Promise((resolve) => {
+    ffmpeg.ffprobe(inputPath, (error, data) => {
+      if (error) { console.warn('[Sticker] Falha ao sondar áudio do vídeo:', error.message); resolve(false); return; }
+      resolve(Array.isArray(data?.streams) && data.streams.some((stream) => stream.codec_type === 'audio'));
+    });
+  });
+}
+
+/** Convert silent GIF/video input to the animated WebP sticker transport. */
+async function convertToAnimatedWebpForSticker(inputPath) {
+  if (!ffmpeg) throw new Error('FFmpeg não disponível - conversão para WebP animado desabilitada');
   const outDir = path.join(MEDIA_DIR, 'tmp');
   ensureDirSync(outDir);
-  const outPath = path.join(outDir, `stk-${Date.now()}.mp4`);
-  const vf = "scale=512:-2:flags=lanczos:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black,fps=15,format=yuv420p";
-  
+  const outPath = path.join(outDir, `stk-${Date.now()}.webp`);
+  const vf = "scale=512:512:flags=lanczos:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih):color=black@0,fps=15,format=yuva420p";
   await new Promise((resolve, reject) => {
-    ffmpeg(inputPath)
-      .noAudio()
-      .videoFilters(vf)
-      .duration(6)
-      .outputOptions(['-movflags', '+faststart'])
-      .on('end', resolve)
-      .on('error', reject)
-      .save(outPath);
+    ffmpeg(inputPath).noAudio().videoFilters(vf).duration(10)
+      .outputOptions(['-an', '-c:v', 'libwebp_anim', '-loop', '0', '-vsync', '0'])
+      .outputFormat('webp').on('end', resolve).on('error', reject).save(outPath);
   });
-  
+  const meta = await sharp(outPath, { animated: true }).metadata();
+  if (Number(meta.pages || 1) <= 1) throw new Error('animated_webp_conversion_produced_static');
   return outPath;
 }
 
@@ -469,69 +470,25 @@ async function sendStickerForMediaRecord(client, chatId, media) {
       return { status: 'sent', messageId, mediaId: media.id };
     }
 
-    // 2) GIF/Video → tentar sticker animado via conversão
+    // 2) GIF/Video → WebP animado sem áudio; vídeo com áudio permanece MP4.
     if (isGif || isVideo) {
-      // Preferir mp4 como fonte
-      let mp4Path = filePath;
-      if (!isVideo) {
-        // Converter GIF para MP4 otimizado
-        try {
-          mp4Path = await convertToMp4ForSticker(filePath);
-        } catch (conversionError) {
-          console.warn('[Sticker] Erro na conversão para MP4:', conversionError.message);
-          console.warn('[Sticker] Enviando GIF original como fallback');
-          // Use o arquivo original se a conversão falhar
-        }
-      }
-
-      if (typeof client.sendMp4AsSticker === 'function') {
-        try {
-          const response = await client.sendMp4AsSticker(chatId, mp4Path, { pack: PACK_NAME, author: AUTHOR_NAME });
-          messageId = response?.messageId || null;
-
-          if (!messageId) {
-            throw new Error('sendMp4AsSticker returned no messageId');
-          }
-
-          console.log(`[Sticker] Successfully sent MP4/GIF as animated sticker for media ${media.id}`);
-
-          // Link message to media for reaction tracking
-          if (media.id) {
-            try {
-              await linkMessageToMedia(messageId, media.id, chatId);
-            } catch (linkErr) {
-              console.warn('[Sticker] Failed to link message to media:', linkErr.message);
-            }
-          }
-          return;
-        } catch (e) {
-          console.warn('sendMp4AsSticker falhou, tentando sendImageAsStickerGif (se existir):', e?.message || e);
-        }
-      }
-      if (isGif && typeof client.sendImageAsStickerGif === 'function') {
-        const response = await client.sendImageAsStickerGif(chatId, filePath, { author: AUTHOR_NAME, pack: PACK_NAME });
-        messageId = response?.messageId || null;
-
-        if (!messageId) {
-          throw new Error('sendImageAsStickerGif returned no messageId');
-        }
-
-        console.log(`[Sticker] Successfully sent GIF as animated sticker for media ${media.id}`);
-
-        // Link message to media for reaction tracking
+      const hasAudio = isVideo ? await probeHasAudioStream(filePath) : false;
+      if (!hasAudio) {
+        const animatedPath = await convertToAnimatedWebpForSticker(filePath);
+        const { filePath: safePath, animated } = await ensureSafeWebpStickerWithOptions(animatedPath, { forceAnimatedReencode: true });
+        messageId = await sendRawWebp(client, chatId, safePath, { animated });
+        if (!messageId) throw new Error('animated WebP returned no messageId');
+        console.log(`[Sticker] Successfully sent silent ${isGif ? 'GIF' : 'video'} as animated WebP sticker for media ${media.id}`);
         if (media.id) {
-          try {
-            await linkMessageToMedia(messageId, media.id, chatId);
-          } catch (linkErr) {
-            console.warn('[Sticker] Failed to link message to media:', linkErr.message);
-          }
+          try { await linkMessageToMedia(messageId, media.id, chatId); }
+          catch (linkErr) { console.warn('[Sticker] Failed to link message to media:', linkErr.message); }
         }
-        return;
+        return { status: 'sent', messageId, mediaId: media.id };
       }
-      // Fallback: envia como arquivo
-      await client.sendFile(chatId, filePath, 'media');
-      console.log(`[Sticker] Sent GIF/Video as file (no animated sticker support) for media ${media.id}`);
-      return;
+      const videoName = path.basename(filePath).toLowerCase().endsWith('.mp4') ? path.basename(filePath) : `${path.basename(filePath)}.mp4`;
+      await client.sendFile(chatId, filePath, videoName);
+      console.log(`[Sticker] Sent video with audio as MP4 for media ${media.id}`);
+      return { status: 'sent', mediaId: media.id, transport: 'video' };
     }
 
     // 3) Imagem estática → sticker estático com EXIF se disponível
@@ -609,6 +566,8 @@ async function sendStickerForMediaRecord(client, chatId, media) {
 
 module.exports = {
   sendStickerForMediaRecord,
+  probeHasAudioStream,
+  convertToAnimatedWebpForSticker,
   isAnimatedWebpBuffer,
   isAnimatedWebpBufferAuthoritative,
   isAnimatedWebpFile,

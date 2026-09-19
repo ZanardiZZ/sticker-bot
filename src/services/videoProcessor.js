@@ -7,6 +7,7 @@ const sharp = require('sharp');
 const { getTopTags } = require('../utils/messageUtils');
 const { TEMP_DIR } = require('../paths');
 const { configureFfmpeg } = require('../utils/ffmpeg');
+const { visionScheduler } = require('./adaptiveVisionScheduler');
 // Audio transcription uses the configured remote multimodal provider.
 
 // Conditional loading for FFmpeg - these may fail in some environments due to network restrictions
@@ -377,7 +378,10 @@ Responda no formato JSON:
 `.trim();
 
       console.log('[VideoProcessor] Integrando análise visual e auditiva...');
-      const integratedResult = await getAiAnnotationsFromPrompt(prompt);
+      const integratedResult = await visionScheduler.run(
+        () => getAiAnnotationsFromPrompt(prompt),
+        { label: `vision-summary:${path.basename(filePath)}` }
+      );
       
       if (integratedResult && typeof integratedResult === 'object') {
         finalDescription = integratedResult.description || frameDescriptions.split('\n')[0]?.split(': ')[1] || 'Vídeo analisado';
@@ -413,7 +417,10 @@ Responda no formato JSON:
 `.trim();
 
         console.log('[VideoProcessor] Sumarizando análise visual de múltiplos frames...');
-        const summaryResult = await getAiAnnotationsFromPrompt(prompt);
+        const summaryResult = await visionScheduler.run(
+        () => getAiAnnotationsFromPrompt(prompt),
+        { label: `vision-summary:${path.basename(filePath)}` }
+      );
         
         if (summaryResult && typeof summaryResult === 'object') {
           finalDescription = summaryResult.description || frameAnalyses[0].description || 'Vídeo processado';
@@ -466,6 +473,7 @@ async function processGif(filePath) {
   
   let tempFramePaths = [];
   let frameAnalyses = [];
+  const gifLease = visionScheduler.startGif(`gif:${path.basename(filePath)}`);
   try {
     // Para GIFs, usa timestamps fixos mais próximos
     let duration = await new Promise((res, rej) => {
@@ -494,10 +502,19 @@ async function processGif(filePath) {
       duration = 2; // Safe default duration
     }
 
-    // Para GIFs curtos, usa timestamps mais próximos
-    const timestamps = duration > 3
-      ? [duration * 0.1, duration * 0.5, duration * 0.9]
-      : [0.1, Math.max(0.5, duration * 0.3), Math.max(1, duration * 0.8)];
+    // O E4B atual tem uma única janela de inferência. Três chamadas sequenciais
+    // mais uma sumarização tornam um GIF de poucos segundos excessivamente lento.
+    // Mantemos 3 frames como opção explícita para canários de qualidade; o padrão
+    // operacional usa um frame representativo e preserva a conversão animada.
+    const requestedFrameCount = Number(process.env.STICKER_GIF_AI_FRAMES || 1);
+    const frameCount = Number.isInteger(requestedFrameCount) && requestedFrameCount >= 1
+      ? Math.min(requestedFrameCount, 3)
+      : 1;
+    const timestamps = frameCount === 1
+      ? [Math.min(0.1, Math.max(0, duration / 2))]
+      : duration > 3
+        ? [duration * 0.1, duration * 0.5, duration * 0.9]
+        : [0.1, Math.max(0.5, duration * 0.3), Math.max(1, duration * 0.8)];
 
     // Sanitize timestamps to numbers and ensure no NaN values are passed to extractFrames
     let sanitized = timestamps
@@ -518,16 +535,20 @@ async function processGif(filePath) {
       tempFramePaths = Array.isArray(extractResult) ? extractResult : (extractResult.frames || []);
       const framesTempDirLocal = extractResult.tempDir;
       console.log(`[VideoProcessor] ${tempFramePaths.length} frames extraídos com sucesso`);
-      // Analisa cada frame individualmente ANTES da limpeza
+      // Analisa frames em paralelo, com limite adaptativo global.
       console.log('[VideoProcessor] Analisando frames do GIF...');
-      for (let i = 0; i < tempFramePaths.length; i++) {
-        try {
-          const analysis = await analyzeFrame(tempFramePaths[i], i + 1);
-          if (analysis && (analysis.description || analysis.tags.length > 0)) {
-            frameAnalyses.push(analysis);
-          }
-        } catch (frameError) {
-          console.warn(`[VideoProcessor] Erro ao analisar frame ${i + 1}: ${frameError.message}`);
+      const pMap = (await import('p-map')).default;
+      const analyses = await pMap(
+        tempFramePaths,
+        (framePath, index) => visionScheduler.run(
+          () => analyzeFrame(framePath, index + 1),
+          { label: `gif-frame:${path.basename(filePath)}:${index + 1}` }
+        ),
+        { concurrency: 3 }
+      );
+      for (const analysis of analyses) {
+        if (analysis && (analysis.description || analysis.tags.length > 0)) {
+          frameAnalyses.push(analysis);
         }
       }
       // Cleanup after analysis
@@ -640,7 +661,10 @@ Responda no formato JSON:
 `.trim();
 
       console.log('[VideoProcessor] Sumarizando análise do GIF...');
-      const summaryResult = await getAiAnnotationsFromPrompt(prompt);
+      const summaryResult = await visionScheduler.run(
+        () => getAiAnnotationsFromPrompt(prompt),
+        { label: `vision-summary:${path.basename(filePath)}` }
+      );
       
       if (summaryResult && typeof summaryResult === 'object' && summaryResult.description) {
         return {
@@ -680,6 +704,7 @@ Responda no formato JSON:
       };
     }
   } finally {
+    gifLease.release();
     // Sempre limpar arquivos temporários
     if (tempFramePaths.length > 0) {
       console.log(`[VideoProcessor] Limpando ${tempFramePaths.length} arquivos temporários de frames...`);
@@ -709,6 +734,7 @@ async function processAnimatedWebp(filePath) {
   }
   
   let tempFramePaths = [];
+  let gifLease = null;
   
   try {
     // Read the animated WebP file
@@ -722,7 +748,10 @@ async function processAnimatedWebp(filePath) {
       // Not animated, process as single frame
       console.log('[VideoProcessor] WebP appears to be static, using single-frame analysis');
       const pngBuffer = await sharp(webpBuffer, { page: 0 }).png().toBuffer();
-      const aiResult = await getAiAnnotationsForGif(pngBuffer);
+      const aiResult = await visionScheduler.run(
+        () => getAiAnnotationsForGif(pngBuffer),
+        { label: `webp-static:${path.basename(filePath)}` }
+      );
       
       if (aiResult && typeof aiResult === 'object' && (aiResult.description || aiResult.tags)) {
         return {
@@ -739,6 +768,8 @@ async function processAnimatedWebp(filePath) {
       }
     }
     
+    // For animated WebP, register the GIF before scheduling any frame or summary work.
+    gifLease = visionScheduler.startGif(`webp:${path.basename(filePath)}`);
     // For animated WebP, extract up to 3 frames evenly distributed
     const totalFrames = metadata.pages;
     const framesToExtract = Math.min(3, totalFrames);
@@ -796,7 +827,10 @@ async function processAnimatedWebp(filePath) {
       async (framePath, index) => {
         try {
           const frameBuffer = await fs.promises.readFile(framePath);
-          const analysis = await getAiAnnotationsForGif(frameBuffer);
+          const analysis = await visionScheduler.run(
+            () => getAiAnnotationsForGif(frameBuffer),
+            { label: `webp-frame:${path.basename(filePath)}:${index + 1}` }
+          );
 
           if (analysis && typeof analysis === 'object' && (analysis.description || analysis.tags)) {
             console.log(`[VideoProcessor] Frame ${index + 1} analyzed successfully`);
@@ -868,7 +902,10 @@ ${topTags.join(', ')}
 Por favor, forneça uma descrição única e concisa (máximo 50 palavras) que capture a essência da animação do sticker. Foque na ação, expressão ou movimento mostrado. Use termos como "sticker animado", "animação", "movimento" em vez de "vídeo".`;
 
       try {
-        const summaryResult = await getAiAnnotationsFromPrompt(prompt);
+        const summaryResult = await visionScheduler.run(
+        () => getAiAnnotationsFromPrompt(prompt),
+        { label: `vision-summary:${path.basename(filePath)}` }
+      );
         if (summaryResult && summaryResult.description) {
           return {
             description: summaryResult.description,
@@ -919,6 +956,7 @@ Por favor, forneça uma descrição única e concisa (máximo 50 palavras) que c
       text: null
     };
   } finally {
+    if (gifLease) gifLease.release();
     // Clean up temporary files
     if (tempFramePaths.length > 0) {
       console.log(`[VideoProcessor] Cleaning up ${tempFramePaths.length} temporary frame files...`);

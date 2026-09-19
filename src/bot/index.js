@@ -9,7 +9,7 @@ const logCollector = getLogCollector(2000);
 // ---- Modular bot components
 const { initializeBot } = require('./client');
 const { scheduleAutoSend } = require('./scheduler');
-const { setupMessageHandler, handleMessage } = require('./messageHandler');
+const { setupMessageHandler, handleMessage, startMediaQueue } = require('./messageHandler');
 const { sendStickerForMediaRecord } = require('./stickers');
 const { initContactsTable, upsertGroup, upsertGroupMembers } = require('./contacts');
 const { initializeHistoryRecovery, setupPeriodicHistorySync } = require('./historyRecovery');
@@ -158,6 +158,9 @@ async function start(client) {
     await waitForClientReadiness(client);
   } catch (err) {
     console.warn('[Bot] Seguindo bootstrap sem readiness total; operações de envio usarão retries:', err?.message || err);
+  } finally {
+    // A fila persistente deve retomar jobs mesmo quando o readiness teve timeout.
+    startMediaQueue(client);
   }
   memory.init();
   const memoryHealth = await memory.healthcheck();

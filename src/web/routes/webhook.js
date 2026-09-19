@@ -15,7 +15,7 @@ const WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET;
 
 // Services to restart after deployment (order matters)
 const SERVICES_TO_RESTART = [
-  'WS-Socket-Server',  // WebSocket bridge primeiro
+  'WS-Socket-Server-Baileys', // WebSocket bridge Baileys primeiro
   'Bot-Client',        // Bot principal
   'WebServer'          // Web interface por último
 ];

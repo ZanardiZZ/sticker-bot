@@ -198,7 +198,7 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
   let tmpFilePath = null;
   let gifSourceForAnalysis = null;
   try {
-    const { buffer, mimetype: downloadedMimetype } = await downloadMediaForMessage(client, message);
+    const { buffer, mimetype: downloadedMimetype } = message.__mediaSpoolPath ? { buffer: await fs.promises.readFile(message.__mediaSpoolPath), mimetype: message.mimetype } : await downloadMediaForMessage(client, message);
     if (!message.mimetype && downloadedMimetype) {
       message.mimetype = downloadedMimetype;
     }

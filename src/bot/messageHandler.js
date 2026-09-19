@@ -2,6 +2,8 @@
  * Message handling pipeline for the bot
  */
 
+const fs = require('fs');
+const path = require('path');
 const { handleCommand, handleTaggingMode, taggingMap } = require('../commands');
 const { normalizeText } = require('../utils/commandNormalizer');
 const { logReceivedMessage } = require('./logging');
@@ -9,6 +11,7 @@ const { upsertContactFromMessage, upsertGroupFromMessage, upsertGroupUser } = re
 const { processIncomingMedia } = require('./mediaProcessor');
 const { withTyping } = require('../utils/typingIndicator');
 const { safeReply } = require('../utils/safeMessaging');
+const { downloadMediaForMessage } = require('../utils/mediaDownload');
 const { isJidGroup, normalizeJid } = require('../utils/jidUtils');
 const {
   getAllowedGroupJids,
@@ -16,7 +19,7 @@ const {
   isJidAllowed,
 } = require('../utils/whatsappRouting');
 const { resolveSenderId, markMessageAsProcessed, isMessageProcessed } = require('../database');
-const MediaQueue = require('../services/mediaQueue');
+const PersistentMediaQueue = require('../services/persistentMediaQueue');
 const { getDmUser, upsertDmUser } = require('../web/dataAccess');
 const { handleGroupChatMessage } = require('../services/conversationAgent');
 const publicDmAccess = require('../services/publicDmStickerAccess');
@@ -177,26 +180,58 @@ async function syncMemoryForGroupMessage({ userId, groupId, senderName, groupNam
 }
 
 // Create a shared media processing queue with higher retry attempts for media processing
-const mediaProcessingQueue = new MediaQueue({ 
-  concurrency: 2, // Lower concurrency to reduce resource contention
-  retryAttempts: 4, // More retries for media processing failures
-  retryDelay: 2000, // Longer delay between retries for resource-intensive operations
-  maxQueueSize: 50 // Limit queue size to prevent memory issues with large message bursts
+const mediaProcessingQueue = new PersistentMediaQueue({
+  // A single worker is intentional: E4B/Gemma inference is not safely concurrent on the RTX 3070.
+  concurrency: 1,
+  // Do not create a retry storm while the AI endpoint is unavailable.
+  retryAttempts: 2,
+  retryDelay: 5000,
+  maxWaiting: Number(process.env.STICKER_MEDIA_MAX_WAITING || 12),
+  // Admission is bounded to avoid an unbounded backlog and OpenWebUI-like timeouts.
+  dbPath: process.env.MEDIA_QUEUE_DB_PATH
 });
 
+async function spoolMediaForQueue(client, message) {
+  const { buffer, mimetype } = await downloadMediaForMessage(client, message);
+  if (!buffer || !Buffer.isBuffer(buffer)) throw new Error('media_download_empty');
+  const spoolDir = path.join(process.cwd(), 'storage', 'temp', 'media-queue');
+  await fs.promises.mkdir(spoolDir, { recursive: true });
+  const safeId = String(message.id || message.messageId || message.key?.id || Date.now()).replace(/[^A-Za-z0-9_.-]/g, '_');
+  const spoolPath = path.join(spoolDir, `${Date.now()}-${safeId}.bin`);
+  await fs.promises.writeFile(spoolPath, buffer, { flag: 'wx' });
+  return { spoolPath, mimetype: mimetype || message.mimetype || 'application/octet-stream' };
+}
+
+function startMediaQueue(client) {
+  mediaProcessingQueue.setExecutor(async (payload) => {
+    const queuedMessage = { ...payload.message, __mediaSpoolPath: payload.message.mediaSpoolPath };
+    try {
+      const processingResult = await processIncomingMedia(client, queuedMessage, payload.resolvedSenderId);
+      if (processingResult?.success === false) return;
+      if (payload.messageId && payload.chatId) await markMessageAsProcessedSafe(payload.messageId, payload.chatId);
+    } finally {
+      if (payload.message.mediaSpoolPath) {
+        try { await fs.promises.unlink(payload.message.mediaSpoolPath); } catch (cleanupErr) {
+          if (cleanupErr?.code !== 'ENOENT') console.warn('[MediaHandler] Falha ao remover spool:', cleanupErr.message);
+        }
+      }
+    }
+  });
+}
+
 // Add queue monitoring
-mediaProcessingQueue.on('jobAdded', (jobId) => {
-  const stats = mediaProcessingQueue.getStats();
-  console.log(`[MediaHandler] Media job ${jobId} queued (${stats.waiting} waiting, ${stats.processing} processing)`);
+mediaProcessingQueue.on('jobAdded', async (jobId) => {
+  const stats = await mediaProcessingQueue.getStats();
+  console.log(`[MediaHandler] Durable media job ${jobId} queued (${stats.waiting} waiting, ${stats.processing} processing)`);
 });
 
 mediaProcessingQueue.on('jobRetry', (jobId, attempt, error) => {
   console.log(`[MediaHandler] Media job ${jobId} retry ${attempt}: ${error.message}`);
 });
 
-mediaProcessingQueue.on('jobCompleted', (jobId) => {
-  const stats = mediaProcessingQueue.getStats();
-  console.log(`[MediaHandler] Media job ${jobId} completed (${stats.waiting} waiting, ${stats.processing} processing)`);
+mediaProcessingQueue.on('jobCompleted', async (jobId) => {
+  const stats = await mediaProcessingQueue.getStats();
+  console.log(`[MediaHandler] Durable media job ${jobId} completed (${stats.waiting} waiting, ${stats.processing} processing)`);
 });
 
 mediaProcessingQueue.on('queueFull', (maxSize, currentSize) => {
@@ -449,22 +484,59 @@ async function handleMessage(client, message) {
 
     // Queue media processing to avoid resource contention
     try {
-      await mediaProcessingQueue.add(async () => {
-        // Process media and mark as processed only on success. The media
-        // processor returns success:false after sending its bounded user-facing
-        // error, so failed downloads remain eligible for history recovery and
-        // do not receive a duplicate generic reply from the outer handler.
-        const processingResult = await processIncomingMedia(client, message, resolvedSenderId);
-        if (processingResult?.success === false) return;
+      let spool;
+      try {
+        spool = await spoolMediaForQueue(client, message);
+        message.mimetype = message.mimetype || spool.mimetype;
+      } catch (spoolError) {
+        console.error('[MediaHandler] Failed to spool media before queue:', spoolError?.message || spoolError);
+        await safeReply(client, chatId, '⚠️ Não foi possível baixar esta mídia para a fila. Por favor, envie-a novamente.', message.id);
+        return;
+      }
+      const queuePayload = {
+        message: {
+          id: message.id,
+          messageId: message.messageId,
+          key: message.key ? { id: message.key.id, remoteJid: message.key.remoteJid } : undefined,
+          from: message.from,
+          type: message.type,
+          mimetype: message.mimetype,
+          isMedia: message.isMedia,
+          isSticker: message.isSticker,
+          caption: message.caption,
+          body: message.body,
+          mediaKey: message.mediaKey,
+          directPath: message.directPath,
+          mediaSpoolPath: spool.spoolPath
+        },
+        resolvedSenderId,
+        messageId,
+        chatId
+      };
+      startMediaQueue(client);
+      const processingPromise = mediaProcessingQueue.add(queuePayload);
 
-        if (shouldMarkProcessed) {
-          try {
-            await markMessageAsProcessedSafe(messageId, chatId);
-          } catch (err) {
-            console.error('[MessageHandler] Error marking message as processed:', err);
-          }
-        }
-      });
+      // Acknowledge admission immediately. The user must not interpret the AI
+      // wait as a WhatsApp/download failure. With concurrency=1, this is the
+      // approximate FIFO position (the current job counts as position 1).
+      const queuedStats = await mediaProcessingQueue.getStats();
+      const queuePosition = Math.max(1, queuedStats.waiting + queuedStats.processing);
+      try {
+        await safeReply(
+          client,
+          chatId,
+          queuePosition === 1
+            ? '✅ Mídia recebida. Iniciando processamento da IA.'
+            : `✅ Mídia recebida. Aguarde: posição aproximada ${queuePosition} na fila da IA.`,
+          message.id
+        );
+      } catch (ackError) {
+        console.warn('[MediaHandler] Failed to send queue acknowledgement:', ackError?.message || ackError);
+      }
+
+      // Keep the handler promise tied to the job so existing processed-message
+      // semantics remain unchanged, but do it only after the acknowledgement.
+      await processingPromise;
     } catch (queueError) {
       // Handle queue overflow gracefully
       if (queueError.code === 'QUEUE_FULL') {
@@ -517,5 +589,6 @@ function setupMessageHandler(client, handleMessage) {
 
 module.exports = {
   handleMessage,
-  setupMessageHandler
+  setupMessageHandler,
+  startMediaQueue
 };

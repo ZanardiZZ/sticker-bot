@@ -2798,7 +2798,15 @@ app.get('/api/debug/bot-config', async (req, res) => {
 
 function fixMediaUrl(row) {
   try {
-    if (row?.url?.startsWith('/figurinhas/')) return row;
+    // Do not trust a persisted /figurinhas URL blindly: old NAS files may have
+    // been moved to the local old-stickers store or quarantine. If the target
+    // still exists, preserve the compatibility URL; otherwise let the normal
+    // candidate resolution below find the live copy by basename.
+    if (row?.url?.startsWith('/figurinhas/')) {
+      const base = decodeURIComponent(path.basename(row.url));
+      const nasPath = path.join('/mnt/nas/Media/Figurinhas', base);
+      if (fs.existsSync(nasPath)) return row;
+    }
 
     const candidates = [];
 

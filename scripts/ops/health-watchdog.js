@@ -11,12 +11,12 @@ const ROOT = path.resolve(__dirname, '..', '..');
 require('dotenv').config({ path: path.join(ROOT, '.env') });
 const LOG_DIR = path.join(ROOT, 'storage', 'logs');
 const WATCHDOG_LOG = path.join(LOG_DIR, 'health-watchdog.log');
-const PM2_ERROR_LOG = process.env.PM2_ERROR_LOG || path.join(process.env.PM2_HOME || path.join(os.homedir(), '.pm2'), 'logs', 'WS-Socket-Server-error.log');
+const PM2_ERROR_LOG = process.env.PM2_ERROR_LOG || path.join(process.env.PM2_HOME || path.join(os.homedir(), '.pm2'), 'logs', 'WS-Socket-Server-Baileys-error.log');
 const STATE_FILE = path.join(ROOT, 'storage', 'logs', 'health-watchdog.state.json');
 
-const REQUIRED_APPS = ['WS-Socket-Server', 'Bot-Client', 'WebServer'];
+const REQUIRED_APPS = ['WS-Socket-Server-Baileys', 'Bot-Client', 'WebServer'];
 const PM2_BIN = process.env.PM2_BIN || 'pm2';
-const WEB_PORT = Number(process.env.HEALTH_WEB_PORT || 3001);
+const WEB_PORT = Number(process.env.HEALTH_WEB_PORT || 3000);
 const WEBHOOK_PATH = process.env.HEALTH_WEBHOOK_PATH || '/webhook/status';
 const ERROR_SCAN_LINES = Number(process.env.HEALTH_ERROR_SCAN_LINES || 300);
 const DETACHED_FRAME_THRESHOLD = Number(process.env.HEALTH_DETACHED_FRAME_THRESHOLD || 3);
@@ -393,7 +393,7 @@ async function main() {
   const detachedCount = countDetachedFrameErrors(errorDelta.lines);
 
   if (detachedCount >= DETACHED_FRAME_THRESHOLD) {
-    state = await restartApp('WS-Socket-Server', `detached_frame_count=${detachedCount}`, state);
+    state = await restartApp('WS-Socket-Server-Baileys', `detached_frame_count=${detachedCount}`, state);
     log('warn', 'detached frame threshold reached; restarted WS-Socket-Server', {
       detachedCount,
       scanLines: ERROR_SCAN_LINES

@@ -135,12 +135,16 @@ const tests = [
       class ImmediateMediaQueue {
         constructor() {
           this.listeners = new Map();
+          this.executor = null;
         }
         on(event, handler) {
           if (!this.listeners.has(event)) {
             this.listeners.set(event, []);
           }
           this.listeners.get(event).push(handler);
+        }
+        setExecutor(executor) {
+          this.executor = executor;
         }
         emit(event, ...args) {
           const handlers = this.listeners.get(event) || [];
@@ -152,14 +156,14 @@ const tests = [
             }
           });
         }
-        getStats() {
+        async getStats() {
           return { waiting: 0, processing: 0 };
         }
-        async add(job) {
+        async add(payload) {
           const jobId = `mock-${Date.now()}`;
           this.emit('jobAdded', jobId);
           try {
-            const result = await job();
+            const result = await this.executor(payload);
             this.emit('jobCompleted', jobId, result);
             return result;
           } catch (error) {
@@ -179,7 +183,12 @@ const tests = [
         'src/bot/logging.js': mockLogging,
         'src/bot/contacts.js': mockContacts,
         'src/bot/mediaProcessor.js': mockMediaProcessor,
-        'src/services/mediaQueue.js': ImmediateMediaQueue,
+        'src/utils/mediaDownload.js': {
+          async downloadMediaForMessage() {
+            return { buffer: Buffer.from('mock-media'), mimetype: 'image/png' };
+          }
+        },
+        'src/services/persistentMediaQueue.js': ImmediateMediaQueue,
         'src/web/dataAccess.js': {
           async getDmUser() {
             return { user_id: participantJid, allowed: 1, blocked: 0 };
@@ -232,7 +241,7 @@ const tests = [
           assert(false, 'handleMessage should catch media errors internally');
         }
 
-        assertEqual(safeReplies.length, 1, 'safeReply should be triggered after media failure');
+        assert(safeReplies.some((reply) => reply.text === 'Erro ao processar sua mensagem.'), 'safeReply should report media failure');
         assertEqual(typingSessions.length, 1, 'withTyping wrapper should be used during error reply');
         assertEqual(messagesHandled.length, 3, 'all emitted messages should pass through the handler');
       });
@@ -248,11 +257,14 @@ const tests = [
 
       class ImmediateMediaQueue {
         on() {}
-        getStats() {
+        setExecutor(executor) {
+          this.executor = executor;
+        }
+        async getStats() {
           return { waiting: 0, processing: 0 };
         }
-        async add(job) {
-          return job();
+        async add(payload) {
+          return this.executor(payload);
         }
       }
 
@@ -279,7 +291,7 @@ const tests = [
         'src/bot/mediaProcessor.js': {
           async processIncomingMedia() {}
         },
-        'src/services/mediaQueue.js': ImmediateMediaQueue,
+        'src/services/persistentMediaQueue.js': ImmediateMediaQueue,
         'src/web/dataAccess.js': {
           async getDmUser() {
             return { user_id: participantJid, allowed: 1, blocked: 0 };
