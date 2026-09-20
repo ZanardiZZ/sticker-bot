@@ -1,3 +1,15 @@
+# Changelog
+
+## [0.22.0] - 2026-09-20
+
+### Novidades
+- PR #358 – feat: promote Baileys transport canary (por @ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/358))
+- PR #358 – feat: promote Baileys transport canary (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/358))
+- PR #358 – feat: promote Baileys transport canary (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/358))
+- PR #358 – feat: promote Baileys transport canary (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/358))
+- PR #358 – feat: promote Baileys transport canary (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/358))
+- PR #358 – feat: promote Baileys transport canary (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/358))
+
 ## [0.22.0] - 2026-09-19
 
 ### Novidades
