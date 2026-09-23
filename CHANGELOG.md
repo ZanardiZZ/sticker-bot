@@ -1,4 +1,8 @@
-# Changelog
+## [0.22.1] - 2026-09-23
+
+### Correções
+- PR #359 – fix(web): simplify sticker catalog header (por @ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/359))
+- PR #359 – fix(web): simplify sticker catalog header (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/359))
 
 ## [0.22.0] - 2026-09-20
 
