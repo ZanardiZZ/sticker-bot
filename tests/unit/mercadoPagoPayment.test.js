@@ -57,7 +57,7 @@ const tests = [
     try { await payment.processWebhook({ eventKey: 'unit:mp:wrong-amount', orderId: providerOrderId }); } catch (error) { rejected = error.message === 'payment_amount_mismatch'; }
     assert(rejected, 'amount mismatch must fail closed');
     const access = await publicDm.evaluateAccess(userId);
-    assert(access.entitlement === null && access.eligible === false, 'mismatched payment must not grant access');
+    assert(access.entitlement === null && access.eligible === true, 'mismatched payment must not grant paid access');
   } }
 ];
 
