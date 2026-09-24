@@ -125,7 +125,9 @@ async function evaluateAccess(userId) {
   const explicitlyAllowed = Boolean(dmUser && Number(dmUser.allowed) === 1);
   const blocked = Boolean(dmUser && Number(dmUser.blocked) === 1);
   const dailyLimit = settings.baseDailyLimit + (registeredUser ? settings.registeredExtraDailyLimit : 0);
-  const eligible = settings.enabled && !blocked && (settings.allowAll || pilotAllowed || explicitlyAllowed || Boolean(entitlement));
+  // Public DM access intentionally starts with a free quota. Registration,
+  // allowlists and entitlements are no longer prerequisites for the first uses.
+  const eligible = settings.enabled && !blocked;
   return {
     settings,
     userId: normalizedUserId,
@@ -135,7 +137,7 @@ async function evaluateAccess(userId) {
     blocked,
     eligible,
     dailyLimit,
-    source: settings.allowAll ? 'allow_all' : (entitlement ? 'entitlement' : (explicitlyAllowed ? 'dm_users' : (pilotAllowed ? 'pilot' : 'none')))
+    source: settings.allowAll ? 'allow_all' : (entitlement ? 'entitlement' : (explicitlyAllowed ? 'dm_users' : (pilotAllowed ? 'pilot' : 'free')))
   };
 }
 
@@ -163,8 +165,10 @@ async function reserveDelivery({ userId, mediaId, messageId, now = Math.floor(Da
       [access.userId, day]
     );
     const usage = await tx.get(
-      'SELECT used_count, last_delivery_at FROM public_dm_daily_usage WHERE user_id = ? AND quota_day = ?',
-      [access.userId, day]
+      `SELECT COUNT(*) AS used_count, MAX(requested_at) AS last_delivery_at
+       FROM public_dm_delivery_usage
+       WHERE user_id = ? AND requested_at > ?`,
+      [access.userId, now - 24 * 60 * 60]
     );
     if (!usage) throw new Error('public_dm_usage_unavailable');
 

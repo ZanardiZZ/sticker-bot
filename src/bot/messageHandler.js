@@ -131,12 +131,28 @@ async function handlePublicDmMessage(client, message, chatId, resolvedSenderId, 
   if (!reservation.ok) {
     const messages = {
       cooldown: `Aguarde ${reservation.retryAfter}s antes de solicitar outra figurinha.`,
-      daily_limit: `Limite diário atingido (${reservation.access.dailyLimit} figurinhas).`,
+      daily_limit: `Sua cota gratuita de ${reservation.access.dailyLimit} usos nas últimas 24 horas foi atingida.`,
       duplicate: 'Esta solicitação já foi processada.',
       not_allowed: 'Este acesso ainda não está liberado para este número.',
       blocked: 'Este acesso está bloqueado.'
     };
     if (reservation.reason !== 'duplicate') {
+      if (reservation.reason === 'daily_limit' && paymentService.isConfigured()) {
+        try {
+          const paymentLink = await paymentService.createAccessLink(userId);
+          if (paymentLink) {
+            await safeReply(
+              client,
+              chatId,
+              `${messages.daily_limit} Para continuar, abra o checkout seguro e libere o acesso por ${paymentService.getConfig().planDays} dias:\n${paymentLink}`,
+              message.id
+            );
+            return true;
+          }
+        } catch (error) {
+          console.warn('[PUBLIC_DM] falha ao criar link após cota gratuita:', error?.message || error);
+        }
+      }
       await safeReply(client, chatId, messages[reservation.reason] || 'Não foi possível processar a solicitação agora.', message.id);
     }
     return true;

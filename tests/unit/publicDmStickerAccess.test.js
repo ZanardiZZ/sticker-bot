@@ -51,11 +51,31 @@ const tests = [
     }
   },
   {
-    name: 'fails closed for an unapproved DM',
+    name: 'allows the free quota for an unapproved DM',
     fn: async () => {
       await cleanup();
       const evaluated = await access.evaluateAccess('unit-public-dm-denied@c.us');
-      assert(evaluated.eligible === false, 'unapproved user must not be eligible');
+      assert(evaluated.eligible === true, 'unregistered user should receive the free quota');
+      assert(evaluated.dailyLimit === 10, 'unregistered user free limit must be 10');
+    }
+  },
+  {
+    name: 'enforces a rolling 24-hour free quota',
+    fn: async () => {
+      await cleanup();
+      const rollingUser = 'unit-public-dm-rolling@c.us';
+      await run('DELETE FROM public_dm_delivery_usage WHERE user_id = ?', [rollingUser]);
+      for (let i = 0; i < 10; i += 1) {
+        const result = await access.reserveDelivery({ userId: rollingUser, mediaId: 17940 + i, messageId: `rolling-${i}`, now: now + 20 * i });
+        assert(result.ok === true, `free request ${i + 1} should reserve`);
+        await access.finalizeDelivery({ reservationId: result.reservationId, status: 'sent', now: now + 20 * i + 1 });
+      }
+      const blocked = await access.reserveDelivery({ userId: rollingUser, mediaId: 18000, messageId: 'rolling-10', now: now + 200 });
+      assert(blocked.reason === 'daily_limit', '11th request inside 24 hours must hit the free quota');
+      const afterWindow = await access.reserveDelivery({ userId: rollingUser, mediaId: 18001, messageId: 'rolling-after-window', now: now + 24 * 60 * 60 + 1 });
+      assert(afterWindow.ok === true, 'request after the rolling 24-hour window should be allowed');
+      await access.finalizeDelivery({ reservationId: afterWindow.reservationId, status: 'sent', now: now + 24 * 60 * 60 + 2 });
+      await run('DELETE FROM public_dm_delivery_usage WHERE user_id = ?', [rollingUser]);
     }
   }
 ];
