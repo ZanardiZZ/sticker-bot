@@ -493,6 +493,9 @@ async function handleMessage(client, message) {
         await safeReply(client, chatId, '⚠️ Não foi possível baixar esta mídia para a fila. Por favor, envie-a novamente.', message.id);
         return;
       }
+      const isGifMedia = message.isWhatsAppGif === true
+        || message.isGif === true
+        || msgMime === 'image/gif';
       const queuePayload = {
         message: {
           id: message.id,
@@ -503,6 +506,8 @@ async function handleMessage(client, message) {
           mimetype: message.mimetype,
           isMedia: message.isMedia,
           isSticker: message.isSticker,
+          isWhatsAppGif: message.isWhatsAppGif === true,
+          suppressGifNotice: isGifMedia,
           caption: message.caption,
           body: message.body,
           mediaKey: message.mediaKey,
@@ -525,9 +530,11 @@ async function handleMessage(client, message) {
         await safeReply(
           client,
           chatId,
-          queuePosition === 1
-            ? '✅ Mídia recebida. Iniciando processamento da IA.'
-            : `✅ Mídia recebida. Aguarde: posição aproximada ${queuePosition} na fila da IA.`,
+          isGifMedia
+            ? 'Recebi um GIF. Vou transformar em figurinha animada, aguarde só um instante...'
+            : queuePosition === 1
+              ? '✅ Mídia recebida. Iniciando processamento da IA.'
+              : `✅ Mídia recebida. Aguarde: posição aproximada ${queuePosition} na fila da IA.`,
           message.id
         );
       } catch (ackError) {

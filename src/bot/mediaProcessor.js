@@ -714,7 +714,9 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
 
           let convertedBuffer = null;
           let ffmpegError = null;
-          let compressionNoticeSent = false;
+          // The queue handler already sent the single user-facing GIF notice.
+          // Keep this false for direct processor calls that do not pre-ack.
+          let compressionNoticeSent = message.suppressGifNotice === true;
           const sendCompressionNotice = async (candidateSizeBytes = null) => {
             if (compressionNoticeSent) return;
 
