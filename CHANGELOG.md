@@ -1,4 +1,33 @@
-# Changelog
+## [0.23.0] - 2026-09-24
+
+### Novidades
+- feat: add free quota for public DM stickers (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/5955014a76a91c84556ff07919422e9c89daaea1))
+
+### Correções
+- PR #359 – fix(web): simplify sticker catalog header (por @ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/359))
+- fix: consolidate GIF processing acknowledgement (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/edf3a18aeaa83f43734c9727d566090cb2456e26))
+- PR #359 – fix(web): simplify sticker catalog header (via commit) (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/359))
+
+### Build
+- PR #357 – build(deps): bump adm-zip from 0.6.0 to 0.6.1 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/357))
+- PR #356 – build(deps): bump sharp from 0.35.3 to 0.35.4 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/356))
+- PR #355 – build(deps): bump nodemailer from 9.0.1 to 9.1.1 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/355))
+- PR #354 – build(deps): bump qs from 6.15.3 to 6.16.0 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/354))
+- PR #348 – build(deps-dev): bump globals from 17.8.0 to 17.9.0 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/348))
+- PR #347 – build(deps): bump express-rate-limit from 8.6.1 to 8.6.2 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/347))
+- PR #345 – build(deps): bump @wppconnect/wa-version from 1.5.4470 to 1.5.4757 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/345))
+- PR #344 – build(deps): bump p-map from 7.0.4 to 7.0.6 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/344))
+- PR #345 – build(deps): bump @wppconnect/wa-version from 1.5.4470 to 1.5.4757 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/345))
+- PR #344 – build(deps): bump p-map from 7.0.4 to 7.0.6 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/344))
+- PR #347 – build(deps): bump express-rate-limit from 8.6.1 to 8.6.2 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/347))
+- PR #348 – build(deps-dev): bump globals from 17.8.0 to 17.9.0 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/348))
+- PR #354 – build(deps): bump qs from 6.15.3 to 6.16.0 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/354))
+- PR #356 – build(deps): bump sharp from 0.35.3 to 0.35.4 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/356))
+- PR #357 – build(deps): bump adm-zip from 0.6.0 to 0.6.1 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/357))
+- PR #355 – build(deps): bump nodemailer from 9.0.1 to 9.1.1 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/355))
+
+### Testes
+- test: allow free quota after rejected payment (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/c7c732bed14f7eb65b626b34882b9de5faab35ec))
 
 ## [0.23.0] - 2026-09-24
 
