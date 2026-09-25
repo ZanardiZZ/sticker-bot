@@ -1,4 +1,7 @@
-# Changelog
+## [0.24.0] - 2026-09-25
+
+### Novidades
+- feat: improve memory and running joke detection (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/44f7d1e7fab3d783f78e8fd8e599a28e7bc9d5c3))
 
 ## [0.23.0] - 2026-09-25
 
