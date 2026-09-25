@@ -421,6 +421,23 @@ class BaileysWsAdapter {
     });
   }
 
+  async fetchMessagesFromWA(chatId, limit = 50) {
+    return this._withTransportRetry('fetchMessagesFromWA', async () => {
+      await this._ensureReady(12000);
+      const boundedLimit = Math.max(1, Math.min(Number(limit) || 50, 100));
+      const resp = await this._sendAndWaitForAck({
+        type: 'fetchMessagesFromWA',
+        chatId,
+        limit: boundedLimit
+      }, 20000);
+      return Array.isArray(resp?.messages) ? resp.messages : [];
+    });
+  }
+
+  async loadMessages(chatId, limit = 50) {
+    return this.fetchMessagesFromWA(chatId, limit);
+  }
+
   /**
    * Update group participants (add, remove, promote, demote)
    * @param {string} groupId - Group JID
@@ -454,6 +471,8 @@ class BaileysWsAdapter {
     }
 
     return {
+      fetchMessagesFromWA: (chatId, limit) => this.fetchMessagesFromWA(chatId, limit),
+      loadMessages: (chatId, limit) => this.fetchMessagesFromWA(chatId, limit),
       signalRepository: {
         lidMapping: {
           getLIDForPN: async (pn) => {

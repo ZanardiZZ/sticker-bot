@@ -3,6 +3,7 @@
 const path = require('path');
 const { runTestSuite, assert, assertEqual } = require('../helpers/testUtils');
 const { MockBaileysClient } = require('../helpers/mockBaileysClient');
+const { BaileysWsAdapter } = require('../../src/waAdapter');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 process.env.AUTO_SEND_GROUP_ID = '123456@g.us';
@@ -54,6 +55,25 @@ async function withMockedMessageHandler(mocks, testFn) {
 }
 
 const tests = [
+  {
+    name: 'Baileys adapter exposes bounded history RPC through sock',
+    fn: async () => {
+      const adapter = new BaileysWsAdapter({ url: 'ws://unused', token: 'test', chats: ['*'] });
+      const calls = [];
+      adapter._ready = true;
+      adapter.ws = { readyState: 1 };
+      adapter._sendAndWaitForAck = async (payload) => {
+        calls.push(payload);
+        return { messages: [{ id: 'history-1' }] };
+      };
+
+      const messages = await adapter.sock.fetchMessagesFromWA('123456@g.us', 500);
+      assertEqual(messages.length, 1, 'sock history method should return RPC messages');
+      assertEqual(calls[0].type, 'fetchMessagesFromWA', 'should use the history RPC type');
+      assertEqual(calls[0].chatId, '123456@g.us', 'should forward the chat ID');
+      assertEqual(calls[0].limit, 100, 'should cap history requests at 100 messages');
+    }
+  },
   {
     name: 'setupMessageHandler attaches to mock client listeners',
     fn: async () => {

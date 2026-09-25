@@ -36,6 +36,7 @@ const { tests: fotoHdQueueTests } = require('./services/fotoHdQueue.test');
 const { tests: lemonadeImageGenerationTests } = require('./services/lemonadeImageGeneration.test');
 const { tests: processedMessagesModelTests } = require('./unit/processedMessagesModel.test');
 const { tests: messageHistoryRecoveryTests } = require('./unit/messageHistoryRecovery.test');
+const { tests: baileysRpcStoreTests } = require('./unit/baileysRpcStore.test');
 const { tests: mediaDownloadRetryTests } = require('./unit/mediaDownloadRetry.test');
 const { tests: schedulerTests } = require('./unit/scheduler.test');
 const { tests: conversationRuntimeTests } = require('./unit/conversationRuntime.test');
@@ -85,6 +86,7 @@ async function runAllTests() {
     results.push(await runTestSuite('Lemonade Image Generation Tests', lemonadeImageGenerationTests));
     results.push(await runTestSuite('Processed Messages Model Tests', processedMessagesModelTests));
     results.push(await runTestSuite('Message History Recovery Tests', messageHistoryRecoveryTests));
+    results.push(await runTestSuite('Baileys RPC Store Tests', baileysRpcStoreTests));
     results.push(await runTestSuite('Media Download Retry Tests', mediaDownloadRetryTests));
     results.push(await runTestSuite('Scheduler Tests', schedulerTests));
     results.push(await runTestSuite('Conversation Runtime Tests', conversationRuntimeTests));

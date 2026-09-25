@@ -8,16 +8,37 @@ const { assert, assertEqual, runTestSuite } = require('../helpers/testUtils');
 // Test suite
 const tests = [
   {
+    name: 'fetchChatHistory should use adapter socket RPC and honor the requested limit',
+    async fn() {
+      const calls = [];
+      const client = {
+        sock: {
+          async fetchMessagesFromWA(chatId, limit) {
+            calls.push({ chatId, limit });
+            return [
+              { id: 'msg-2', timestamp: 2 },
+              { id: 'msg-1', timestamp: 1 }
+            ];
+          }
+        }
+      };
+      const { fetchChatHistory } = require('../../src/services/messageHistoryRecovery');
+      const messages = await fetchChatHistory(client, '123456@g.us', 25);
+      assertEqual(calls.length, 1, 'should call the socket history RPC once');
+      assertEqual(calls[0].chatId, '123456@g.us', 'should forward the chat ID');
+      assertEqual(calls[0].limit, 25, 'should forward the requested limit');
+      assertEqual(messages.length, 2, 'should return the messages received from the bridge');
+    }
+  },
+
+  {
     name: 'filterUnprocessedMessages should filter out processed messages',
     async fn() {
-      // Mock getProcessedMessageIds
-      const originalGetProcessedMessageIds = require('../../src/database').getProcessedMessageIds;
+      // Mock getProcessedMessageIds before loading the service module.
       const mockDb = require('../../src/database');
-      
-      mockDb.getProcessedMessageIds = async (messageIds) => {
-        return new Set(['msg-1', 'msg-3']); // msg-1 and msg-3 are processed
-      };
-
+      const originalGetProcessedMessageIds = mockDb.getProcessedMessageIds;
+      mockDb.getProcessedMessageIds = async () => new Set(['msg-1', 'msg-3']);
+      delete require.cache[require.resolve('../../src/services/messageHistoryRecovery')];
       const { filterUnprocessedMessages } = require('../../src/services/messageHistoryRecovery');
 
       const messages = [
@@ -33,8 +54,8 @@ const tests = [
       assertEqual(unprocessed[0].id, 'msg-2', 'First unprocessed should be msg-2');
       assertEqual(unprocessed[1].id, 'msg-4', 'Second unprocessed should be msg-4');
 
-      // Restore original function
       mockDb.getProcessedMessageIds = originalGetProcessedMessageIds;
+      delete require.cache[require.resolve('../../src/services/messageHistoryRecovery')];
     }
   },
 

@@ -6,6 +6,7 @@ const http = require('http');
 const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 const qrcode = require('qrcode-terminal');
+const { createBaileysRpcStore } = require('./baileysRpcStore');
 const {
   default: makeWASocket,
   useMultiFileAuthState,
@@ -16,8 +17,33 @@ const {
 
 const PORT = Number(process.env.BAILEYS_WS_PORT || 8876);
 const AUTH_DIR = process.env.BAILEYS_AUTH_DIR || path.join(__dirname, '../../storage/baileys-canary-auth');
+const RPC_STORE_FILE = process.env.BAILEYS_RPC_STORE_FILE || path.join(AUTH_DIR, 'rpc-store.json');
 const clients = new Set();
 const messages = new Map();
+let initialRpcState = null;
+try {
+  if (fs.existsSync(RPC_STORE_FILE)) initialRpcState = JSON.parse(fs.readFileSync(RPC_STORE_FILE, 'utf8'));
+} catch (error) {
+  console.warn('[BAILEYS-CANARY] rpc-store load failed:', error.message);
+}
+const rpcStore = createBaileysRpcStore({
+  maxMessagesPerChat: Number(process.env.BAILEYS_HISTORY_CACHE_LIMIT || 100),
+  initialState: initialRpcState
+});
+let rpcStoreSaveTimer;
+function scheduleRpcStoreSave() {
+  clearTimeout(rpcStoreSaveTimer);
+  rpcStoreSaveTimer = setTimeout(() => {
+    try {
+      fs.mkdirSync(path.dirname(RPC_STORE_FILE), { recursive: true, mode: 0o700 });
+      const tempFile = `${RPC_STORE_FILE}.tmp`;
+      fs.writeFileSync(tempFile, JSON.stringify(rpcStore.exportState()), { mode: 0o600 });
+      fs.renameSync(tempFile, RPC_STORE_FILE);
+    } catch (error) {
+      console.warn('[BAILEYS-CANARY] rpc-store save failed:', error.message);
+    }
+  }, 250);
+}
 let sock;
 let stopping = false;
 let reconnectTimer;
@@ -57,6 +83,8 @@ function normalize(msg) {
   const context = m.extendedTextMessage?.contextInfo || m.imageMessage?.contextInfo || m.videoMessage?.contextInfo || m.stickerMessage?.contextInfo || {};
   const id = idOf(key);
   messages.set(id, msg);
+  rpcStore.addMessages([msg]);
+  scheduleRpcStoreSave();
   const senderId = key.participant || key.remoteJid || '';
   const senderName = typeof msg.pushName === 'string' ? msg.pushName.trim() : '';
   const data = {
@@ -101,6 +129,17 @@ async function rpc(msg) {
   if (msg.type === 'sendRawWebpAsSticker') { const sent = await sock.sendMessage(msg.chatId, { sticker: dataBuffer(msg.dataUrl) }); return { messageId: sent?.key?.id || sent?.messageId || null }; }
   if (msg.type === 'sendFile' || msg.type === 'sendImageAsSticker' || msg.type === 'sendImageAsStickerGif') return sendFile({ ...msg, filePath: msg.filePath, asSticker: msg.type !== 'sendFile' });
   if (msg.type === 'simulateTyping') return sock.sendPresenceUpdate(msg.on ? 'composing' : 'paused', msg.chatId);
+  if (msg.type === 'listChats') return { chats: rpcStore.listChats() };
+  if (msg.type === 'getAllGroupsMetadata') {
+    const fetched = await sock.groupFetchAllParticipating();
+    rpcStore.upsertGroups(fetched);
+    scheduleRpcStoreSave();
+    return { groups: rpcStore.getAllGroupsMetadata() };
+  }
+  if (msg.type === 'fetchMessagesFromWA') {
+    const limit = Math.max(1, Math.min(Number(msg.limit) || 50, 100));
+    return { messages: rpcStore.getMessages(msg.chatId, limit).map(normalize) };
+  }
   if (msg.type === 'getQuotedMessage') { const key = quotedKey(msg.messageId); if (!key) throw new Error('quoted_not_found'); const q = await sock.loadMessage(key.remoteJid, key.id); return q ? normalize(q) : null; }
   if (msg.type === 'downloadMedia') { const original = messages.get(msg.messageId); if (!original) throw new Error('media_not_found'); const native = unwrap(original.message); const contentType = getContentType(native); const media = native?.[contentType] || {}; log('download request', { id: msg.messageId, contentType, hasUrl: Boolean(media.url), hasDirectPath: Boolean(media.directPath), hasMediaKey: Boolean(media.mediaKey), fileLength: media.fileLength || null }); let b; try { b = await downloadMediaMessage(original, 'buffer', {}, { reuploadRequest: async (message) => { log('reupload requested', { id: msg.messageId }); return sock.updateMediaMessage(message); } }); } catch (error) { log('download failed', { id: msg.messageId, ...fetchErrorDetails(error) }); throw error; } log('download complete', { id: msg.messageId, bytes: b.length }); return { messageId: msg.messageId, mimetype: original.message && (unwrap(original.message).imageMessage?.mimetype || unwrap(original.message).stickerMessage?.mimetype || 'application/octet-stream'), dataUrl: `data:application/octet-stream;base64,${b.toString('base64')}` }; }
   throw new Error(`unsupported_action:${msg.type}`);
@@ -121,6 +160,18 @@ async function start() {
     }, 3000);
   }
   sock.ev.on('creds.update', saveCreds);
+  sock.ev.on('messaging-history.set', (payload) => {
+    rpcStore.ingestHistory(payload);
+    scheduleRpcStoreSave();
+    log('history cache updated', {
+      chats: Array.isArray(payload?.chats) ? payload.chats.length : 0,
+      messages: Array.isArray(payload?.messages) ? payload.messages.length : 0,
+      isLatest: payload?.isLatest === true
+    });
+  });
+  sock.ev.on('chats.upsert', (chats) => { rpcStore.upsertChats(chats); scheduleRpcStoreSave(); });
+  sock.ev.on('chats.update', (chats) => { rpcStore.upsertChats(chats); scheduleRpcStoreSave(); });
+  sock.ev.on('groups.update', (groups) => { rpcStore.upsertGroups(groups); scheduleRpcStoreSave(); });
   sock.ev.on('connection.update', ({ connection, lastDisconnect, qr }) => {
     if (qr) { fs.writeFileSync(path.join(AUTH_DIR, 'pairing.qr'), qr, { mode: 0o600 }); log('QR disponível para pareamento'); qrcode.generate(qr, { small: true }); broadcast({ type: 'connection.update', data: { connection: 'qr' } }); }
     if (connection) { connectionState = connection; log(`connection=${connection}`); broadcast({ type: 'connection.update', data: { connection } }); }
@@ -131,11 +182,19 @@ async function start() {
       clearTimeout(reconnectTimer); reconnectTimer = setTimeout(() => start().catch(e => log('reconnect_failed', e.message)), 2000);
     }
   });
-  sock.ev.on('messages.upsert', ({ messages: incoming, type }) => { if (type !== 'notify') return; for (const raw of incoming) { const data = normalize(raw); broadcast({ type: 'message', data }); } });
+  sock.ev.on('messages.upsert', ({ messages: incoming, type }) => {
+    rpcStore.addMessages(incoming);
+    scheduleRpcStoreSave();
+    if (type !== 'notify') return;
+    for (const raw of incoming) {
+      const data = normalize(raw);
+      broadcast({ type: 'message', data });
+    }
+  });
 }
 const server = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/plain' }); res.end('Baileys canary\n'); });
 const wss = new WebSocketServer({ server });
-wss.on('connection', ws => { clients.add(ws); send(ws, { type: 'registered', ok: true, transport: 'baileys-canary' }); if (connectionState) send(ws, { type: 'connection.update', data: { connection: connectionState } }); ws.on('message', async raw => { let msg; try { msg = JSON.parse(raw); const result = await rpc(msg); if (msg.type === 'downloadMedia') send(ws, { type: 'media', messageId: msg.messageId, mimetype: result.mimetype, dataUrl: result.dataUrl }); else if (msg.type === 'sendRawWebpAsSticker') send(ws, { type: 'ack', requestId: msg.requestId, messageId: result?.messageId || null, result: result || { ok: true } }); else send(ws, { type: 'ack', requestId: msg.requestId, result: result || { ok: true } }); } catch (e) { if (msg?.type === 'downloadMedia') send(ws, { type: 'error', action: msg.type, messageId: msg.messageId, requestId: msg.requestId, error: e.message }); else send(ws, { type: 'error', action: msg?.type, requestId: msg?.requestId, error: e.message }); } }); ws.on('close', () => clients.delete(ws)); });
+wss.on('connection', ws => { clients.add(ws); send(ws, { type: 'registered', ok: true, transport: 'baileys-canary' }); if (connectionState) send(ws, { type: 'connection.update', data: { connection: connectionState } }); ws.on('message', async raw => { let msg; try { msg = JSON.parse(raw); const result = await rpc(msg); if (msg.type === 'downloadMedia') send(ws, { type: 'media', messageId: msg.messageId, mimetype: result.mimetype, dataUrl: result.dataUrl }); else if (msg.type === 'listChats') send(ws, { type: 'chats', requestId: msg.requestId, chats: result.chats }); else if (msg.type === 'getAllGroupsMetadata') send(ws, { type: 'groupMetadata', requestId: msg.requestId, groups: result.groups }); else if (msg.type === 'fetchMessagesFromWA') send(ws, { type: 'history', requestId: msg.requestId, messages: result.messages }); else if (msg.type === 'sendRawWebpAsSticker') send(ws, { type: 'ack', requestId: msg.requestId, messageId: result?.messageId || null, result: result || { ok: true } }); else send(ws, { type: 'ack', requestId: msg.requestId, result: result || { ok: true } }); } catch (e) { if (msg?.type === 'downloadMedia') send(ws, { type: 'error', action: msg.type, messageId: msg.messageId, requestId: msg.requestId, error: e.message }); else send(ws, { type: 'error', action: msg?.type, requestId: msg?.requestId, error: e.message }); } }); ws.on('close', () => clients.delete(ws)); });
 server.listen(PORT, '0.0.0.0', () => { log(`WebSocket listening on ws://0.0.0.0:${PORT}`); start().catch(e => { log('startup_failed', e.stack || e.message); process.exitCode = 1; }); });
-async function shutdown() { stopping = true; clearTimeout(reconnectTimer); try { sock?.end(undefined); } catch {} server.close(); }
+async function shutdown() { stopping = true; clearTimeout(reconnectTimer); clearTimeout(rpcStoreSaveTimer); try { fs.mkdirSync(path.dirname(RPC_STORE_FILE), { recursive: true, mode: 0o700 }); fs.writeFileSync(RPC_STORE_FILE, JSON.stringify(rpcStore.exportState()), { mode: 0o600 }); } catch {} try { sock?.end(undefined); } catch {} server.close(); }
 process.on('SIGTERM', shutdown); process.on('SIGINT', shutdown);
