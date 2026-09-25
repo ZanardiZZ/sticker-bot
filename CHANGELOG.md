@@ -1,3 +1,13 @@
+# Changelog
+
+## [0.24.1] - 2026-09-25
+
+### Novidades
+- feat: improve memory and running joke detection (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/44f7d1e7fab3d783f78e8fd8e599a28e7bc9d5c3))
+
+### Correções
+- fix: harden Baileys and vision fallbacks (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/66e8f28a0fad6d5cbb9b332cb3decf550e73e2ca))
+
 ## [0.24.0] - 2026-09-25
 
 ### Novidades
