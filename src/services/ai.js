@@ -1189,9 +1189,14 @@ async function extractRunningJokeFromText({
           {
             role: 'system',
             content:
-              'Analise uma mensagem recente de grupo e um pequeno histórico. ' +
-              'Identifique apenas piadas internas/apelidos coletivos já recorrentes ou explicitamente propostos para alguém/coisa do grupo. ' +
-              'Ignore brincadeiras isoladas, zoeira sem recorrência, ofensas e conteúdo ambíguo. ' +
+              'Analise a mensagem atual junto do histórico recente do grupo e detecte uma running joke (piada interna recorrente). ' +
+              'Uma running joke pode ser: apelido recorrente; frase/catchphrase repetida; referência a um erro, limitação ou comportamento conhecido; ' +
+              'ou um tema que diferentes mensagens retomam com humor, mesmo usando palavras diferentes. ' +
+              'Exija evidência de recorrência no histórico, salvo quando a mensagem propõe explicitamente um novo apelido/piada para uso futuro. ' +
+              'Não confunda repetição técnica/duplicação de eventos, pergunta repetida, risada isolada, ofensa ou meme avulso com piada interna. ' +
+              'O campo name deve ser um rótulo curto e estável (2 a 8 palavras), não uma cópia integral da mensagem. ' +
+              'O campo context deve explicar objetivamente qual é a referência e por que ela se repete. ' +
+              'Use confidence >= 0.90 somente quando houver evidência clara de recorrência ou proposta explícita. ' +
               'Responda estritamente em JSON no formato {"runningJoke":{"name":"...","origin":"...","context":"...","confidence":0.0}} ou {"runningJoke":null}.'
           },
           {
@@ -1229,6 +1234,11 @@ async function extractRunningJokeFromText({
     };
 
     if (!normalized.name || !normalized.context) {
+      return null;
+    }
+
+    const wordCount = normalized.name.split(/\s+/u).filter(Boolean).length;
+    if (wordCount < 1 || wordCount > 8 || normalized.name.length > 80) {
       return null;
     }
 

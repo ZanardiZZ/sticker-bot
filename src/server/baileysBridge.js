@@ -44,8 +44,12 @@ function normalize(msg) {
   const context = m.extendedTextMessage?.contextInfo || m.imageMessage?.contextInfo || m.videoMessage?.contextInfo || m.stickerMessage?.contextInfo || {};
   const id = idOf(key);
   messages.set(id, msg);
+  const senderId = key.participant || key.remoteJid || '';
+  const senderName = typeof msg.pushName === 'string' ? msg.pushName.trim() : '';
   const data = {
-    id, messageId: id, key: { ...key, id }, chatId: key.remoteJid || '', from: key.remoteJid || '', senderId: key.participant || key.remoteJid || '',
+    id, messageId: id, key: { ...key, id }, chatId: key.remoteJid || '', from: key.remoteJid || '', senderId,
+    pushName: senderName || undefined, notifyName: senderName || undefined,
+    sender: { id: senderId, pushname: senderName || undefined, name: senderName || undefined },
     timestamp: Number(msg.messageTimestamp || Math.floor(Date.now() / 1000)), body: text, type, mimetype: m.imageMessage?.mimetype || m.videoMessage?.mimetype || m.audioMessage?.mimetype || m.documentMessage?.mimetype || m.stickerMessage?.mimetype || '',
     isMedia: ['image', 'sticker', 'video', 'audio', 'document'].includes(type), isGroupMsg: String(key.remoteJid || '').endsWith('@g.us'), isFromMe: Boolean(key.fromMe),
     hasQuotedMsg: Boolean(context.stanzaId || context.quotedMessage), quotedMsgId: context.stanzaId || '', quotedMessage: context.quotedMessage || null,

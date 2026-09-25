@@ -199,14 +199,27 @@ function isLikelyTransientEvent(event = {}) {
     || /^(?:soft:|provisional:)/iu.test(String(event.category || ''));
 }
 
-function isLikelyUsefulMemoryMessage(text = '') {
+function isMemorableMessage(text = "") {
+  const fastPath = isLikelyUsefulMemoryMessage(text);
+  if (fastPath) return true;
+  const normalized = normalizeFactText(text);
+  if (!normalized || normalized.length < 8) return false;
+  if (/^(kkkk|hahaha|rsrs|ué|oxe|wtf|huh)$/iu.test(normalized)) return false;
+  if (/@\w+|porque|por que|como funciona|como faz|explica|detalha/iu.test(normalized)) return true;
+  if (/bug|issue|deploy|modelo|GPU|API|endpoint/iu.test(normalized)) return true;
+  return false;
+}
+
+function isLikelyUsefulMemoryMessage(text = "") {
   const normalized = normalizeFactText(text);
   if (isLowValueMemoryText(normalized) || normalized.length < 12) return false;
   if (/^#|^[/!]/u.test(normalized)) return false;
   if (/^(?:@\S+\s*)?(?:mentira|prove|responde|bot|huh|wtf|ué|oxe|kkkk+)/iu.test(normalized)) return false;
   if (/system\s+update|prompt\s*injection|ignore\s+as\s+instruções|sudo\s+|kill\s+-9|rm\s+-rf/iu.test(normalized)) return false;
-  return /\b(?:meu|minha|moro|vivo|trabalho|atuo|sou|tenho|gosto|adoro|amo|curto|prefiro|odeio|estudo|curso|torço|programo|desenvolvo|aniversário)\b/iu.test(normalized)
-    || /\b(?:vamos\s+melhorar|bug\s+report|issue|pull\s+request|refactor)\b/iu.test(normalized);
+  const hasPersonalKeyword = /(?:meu|minha|moro|vivo|trabalho|atuo|sou|tenho|gosto|adoro|amo|curto|prefiro|odeio|estudo|curso|torço|programo|desenvolvo|aniversário)/iu.test(normalized);
+  const hasTechContext = /(?:vamos\s+melhorar|bug\s+report|issue|pull\s+request|refactor|código|função|API|endpoint|deploy|container|modelo|GPU|inference|embed|search)/iu.test(normalized);
+  const hasContext = /(?:@\w+|porque|por que|como funciona|como faz|qual a diferença|o que é|explica|detalha|mostra|manda)/iu.test(normalized);
+  return hasPersonalKeyword || hasTechContext || hasContext;
 }
 
 function splitClauses(text) {
@@ -731,13 +744,37 @@ function collectRecentMessageTexts(eventsPayload) {
     .filter((text) => !/system\s+update|decode this|prompt\s*injection|sudo\s+|kill\s+-9|rm\s+-rf/iu.test(text));
 }
 
+function jokeTokens(value = '') {
+  const stopwords = new Set([
+    'a', 'ao', 'aos', 'as', 'da', 'das', 'de', 'do', 'dos', 'e', 'ela', 'ele',
+    'em', 'essa', 'esse', 'isso', 'na', 'nas', 'no', 'nos', 'o', 'os', 'pra',
+    'para', 'que', 'um', 'uma'
+  ]);
+  return normalizeJokeText(value)
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}@]+/u)
+    .filter((token) => token.length >= 3 && !stopwords.has(token));
+}
+
+function hasJokeEvidence(candidate, text = '') {
+  if (!candidate?.name) return false;
+  const normalizedText = normalizeFactText(text).toLowerCase();
+  const target = normalizeJokeText(candidate.name).toLowerCase();
+  if (!normalizedText || !target) return false;
+  if (normalizedText.includes(target)) return true;
+
+  const candidateTokens = jokeTokens(`${candidate.name} ${candidate.context || ''}`);
+  const textTokens = new Set(jokeTokens(normalizedText));
+  const uniqueCandidateTokens = [...new Set(candidateTokens)];
+  const overlap = uniqueCandidateTokens.filter((token) => textTokens.has(token));
+  if (overlap.length >= 2) return true;
+  if (overlap.length === 1 && uniqueCandidateTokens.length <= 3) return true;
+  return false;
+}
+
 function countJokeMentions(candidate, texts = []) {
   if (!candidate?.name) return 0;
-  const target = normalizeJokeText(candidate.name).toLowerCase();
-  return texts.reduce((total, text) => {
-    const normalizedText = normalizeFactText(text).toLowerCase();
-    return total + (normalizedText.includes(target) ? 1 : 0);
-  }, 0);
+  return texts.reduce((total, text) => total + (hasJokeEvidence(candidate, text) ? 1 : 0), 0);
 }
 
 function getAiHelpers() {
@@ -1201,15 +1238,41 @@ class MemoryClient {
     return { ok: true, exists: true, groupId, name: data?.name || null };
   }
 
-  async addRunningJoke(groupId, name, origin, context) {
+  async addRunningJoke(groupId, name, origin, context, confidence = 0.8) {
     const userId = `group:${groupId}`;
     const store = loadStore(userId);
-    store.jokes.push({ name, origin: origin || null, context: context || null, created_at: new Date().toISOString() });
+    const normalizedName = normalizeJokeText(name);
+    const normalizedContext = normalizeJokeText(context);
+    const existing = store.jokes.find((joke) => {
+      const currentName = normalizeJokeText(joke.name).toLowerCase();
+      const incomingName = normalizedName.toLowerCase();
+      return currentName === incomingName
+        || currentName.includes(incomingName)
+        || incomingName.includes(currentName);
+    });
+    const now = new Date().toISOString();
+    if (existing) {
+      existing.context = normalizedContext || existing.context || null;
+      existing.origin = existing.origin || origin || null;
+      existing.confidence = Math.max(Number(existing.confidence) || 0, Number(confidence) || 0.8);
+      existing.evidenceCount = (Number(existing.evidenceCount) || 1) + 1;
+      existing.lastSeenAt = now;
+    } else {
+      store.jokes.push({
+        name: normalizedName,
+        origin: origin || null,
+        context: normalizedContext || null,
+        confidence: Number(confidence) || 0.8,
+        evidenceCount: 1,
+        created_at: now,
+        lastSeenAt: now
+      });
+    }
     saveStore(userId, store);
-    enqueueGraphMemory('group', String(groupId), 'joke', 'group_joke', `${name || ''} ${context || ''}`, 0.8);
-    const content = `PIADA INTERNA do grupo ${groupId}: "${name}" (origem ${origin || 'desconhecida'}) — contexto: ${context || ''}`;
+    enqueueGraphMemory('group', String(groupId), 'joke', 'group_joke', `${normalizedName} ${normalizedContext}`, Number(confidence) || 0.8);
+    const content = `PIADA INTERNA do grupo ${groupId}: "${normalizedName}" (origem ${origin || 'desconhecida'}) — contexto: ${normalizedContext}`;
     this._remember(content, userId).catch(() => {});
-    return { ok: true };
+    return { ok: true, updated: !!existing };
   }
 
   // ------------------------------------------------------------
@@ -1397,18 +1460,19 @@ class MemoryClient {
 
     if (groupId) {
       const heuristicJoke = extractHeuristicRunningJoke(cleanedText);
-      const heuristicMentions = countJokeMentions(heuristicJoke, recentMessages);
-      if (heuristicJoke && heuristicMentions >= 1) {
+      let jokeEvidenceCount = countJokeMentions(heuristicJoke, recentMessages);
+      if (heuristicJoke && jokeEvidenceCount >= 1) {
         runningJoke = heuristicJoke;
       } else {
         if (typeof extractRunningJokeFromText === 'function' && recentMessages.length >= 2) {
           const aiJoke = await extractRunningJokeFromText({
             text: cleanedText,
             recentMessages,
+            senderName: userId,
             maxFacts: 1
           });
-          const aiMentions = countJokeMentions(aiJoke, recentMessages);
-          if (aiJoke && (aiMentions >= 1 || aiJoke.confidence >= 0.9)) {
+          jokeEvidenceCount = countJokeMentions(aiJoke, recentMessages);
+          if (aiJoke && (jokeEvidenceCount >= 1 || aiJoke.confidence >= 0.9)) {
             runningJoke = { ...aiJoke, confidence: aiJoke.confidence };
           }
         }
@@ -1428,8 +1492,18 @@ class MemoryClient {
         });
       }
 
-      if (runningJoke) {
-        await this.addRunningJoke(groupId, runningJoke.name, runningJoke.origin || userId, runningJoke.context);
+      const normalizedConfidence = Number(runningJoke?.confidence) || 0;
+      const isExplicitProposal = /(?:agora o|agora a|a partir de hoje|vamos chamar|pode chamar|chamem|todo mundo chama|apelido)/iu.test(cleanedText);
+      if (runningJoke && (jokeEvidenceCount >= 1 || isExplicitProposal || normalizedConfidence >= 0.9)) {
+        await this.addRunningJoke(
+          groupId,
+          runningJoke.name,
+          runningJoke.origin || userId,
+          runningJoke.context,
+          runningJoke.confidence
+        );
+      } else {
+        runningJoke = null;
       }
     }
 

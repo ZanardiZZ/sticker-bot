@@ -903,6 +903,11 @@ function sanitizeReplyText(reply, participantNames = []) {
 
   cleaned = collapseRepeatedPhrases(cleaned);
   cleaned = removeGlobalDuplicateLinesAndItems(cleaned);
+
+  // Models sometimes wrap the entire conversational reply in quotation marks.
+  // Strip only a matching outer pair; preserve quotes used inside the answer.
+  cleaned = cleaned.replace(/^(?:"([\s\S]*)"|“([\s\S]*)”|‘([\s\S]*)’|'([\s\S]*)')$/u, '$1$2$3$4').trim();
+
   cleaned = neutralizeLeadingCommandLikeReply(cleaned);
 
   // Re-apply list readability after dedupe passes (they may flatten separators).
