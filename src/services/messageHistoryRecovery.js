@@ -179,7 +179,7 @@ async function recoverChatHistory(client, chatId, messageHandler) {
     // Process messages in batches
     const { successCount, errorCount } = await processBatch(
       unprocessedMessages,
-      messageHandler,
+      (...args) => messageHandler(client, ...args),
       HISTORY_RECOVERY_CONFIG.batchSize
     );
 

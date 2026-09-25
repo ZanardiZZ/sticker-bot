@@ -138,7 +138,7 @@ async function rpc(msg) {
   }
   if (msg.type === 'fetchMessagesFromWA') {
     const limit = Math.max(1, Math.min(Number(msg.limit) || 50, 100));
-    return { messages: rpcStore.getMessages(msg.chatId, limit).map(normalize) };
+    return { messages: rpcStore.getNormalizedMessages(msg.chatId, limit) };
   }
   if (msg.type === 'getQuotedMessage') { const key = quotedKey(msg.messageId); if (!key) throw new Error('quoted_not_found'); const q = await sock.loadMessage(key.remoteJid, key.id); return q ? normalize(q) : null; }
   if (msg.type === 'downloadMedia') { const original = messages.get(msg.messageId); if (!original) throw new Error('media_not_found'); const native = unwrap(original.message); const contentType = getContentType(native); const media = native?.[contentType] || {}; log('download request', { id: msg.messageId, contentType, hasUrl: Boolean(media.url), hasDirectPath: Boolean(media.directPath), hasMediaKey: Boolean(media.mediaKey), fileLength: media.fileLength || null }); let b; try { b = await downloadMediaMessage(original, 'buffer', {}, { reuploadRequest: async (message) => { log('reupload requested', { id: msg.messageId }); return sock.updateMediaMessage(message); } }); } catch (error) { log('download failed', { id: msg.messageId, ...fetchErrorDetails(error) }); throw error; } log('download complete', { id: msg.messageId, bytes: b.length }); return { messageId: msg.messageId, mimetype: original.message && (unwrap(original.message).imageMessage?.mimetype || unwrap(original.message).stickerMessage?.mimetype || 'application/octet-stream'), dataUrl: `data:application/octet-stream;base64,${b.toString('base64')}` }; }

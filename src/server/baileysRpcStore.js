@@ -11,6 +11,46 @@ function timestampOf(message) {
   return Number.isFinite(value) ? value : 0;
 }
 
+function unwrap(message) {
+  let current = message || {};
+  for (const key of ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'documentWithCaptionMessage']) {
+    current = current?.[key]?.message || current;
+  }
+  return current || {};
+}
+
+function normalizeMessage(message) {
+  const key = message?.key || {};
+  const content = unwrap(message?.message);
+  const contentType = Object.keys(content)[0] || 'unknown';
+  const type = contentType === 'conversation' || contentType === 'extendedTextMessage'
+    ? 'chat'
+    : ({ imageMessage: 'image', stickerMessage: 'sticker', videoMessage: 'video', audioMessage: 'audio', documentMessage: 'document' }[contentType] || contentType);
+  const body = content.conversation || content.extendedTextMessage?.text || content.imageMessage?.caption || content.videoMessage?.caption || content.documentMessage?.caption || '';
+  const senderId = key.participant || key.remoteJid || '';
+  const senderName = typeof message?.pushName === 'string' ? message.pushName.trim() : '';
+  const id = key.id || message?.id || message?.messageId || '';
+  return {
+    id,
+    messageId: id,
+    key: { ...key, id },
+    chatId: key.remoteJid || '',
+    from: key.remoteJid || '',
+    senderId,
+    sender: { id: senderId, pushname: senderName || undefined, name: senderName || undefined },
+    pushName: senderName || undefined,
+    notifyName: senderName || undefined,
+    timestamp: timestampOf(message),
+    body,
+    caption: body,
+    type,
+    fromMe: Boolean(key.fromMe),
+    isFromMe: Boolean(key.fromMe),
+    isGroupMsg: String(key.remoteJid || '').endsWith('@g.us'),
+    rawMessage: message
+  };
+}
+
 function createBaileysRpcStore({ maxMessagesPerChat = 100, initialState = null } = {}) {
   const chats = new Map();
   const groups = new Map();
@@ -86,6 +126,10 @@ function createBaileysRpcStore({ maxMessagesPerChat = 100, initialState = null }
     return (messagesByChat.get(String(chatId)) || []).slice(-boundedLimit);
   }
 
+  function getNormalizedMessages(chatId, limit = 50) {
+    return getMessages(chatId, limit).map(normalizeMessage);
+  }
+
   function exportState() {
     return {
       chats: listChats(),
@@ -105,7 +149,7 @@ function createBaileysRpcStore({ maxMessagesPerChat = 100, initialState = null }
     }
   }
 
-  return { upsertChats, upsertGroups, addMessages, ingestHistory, listChats, getAllGroupsMetadata, getMessages, exportState };
+  return { upsertChats, upsertGroups, addMessages, ingestHistory, listChats, getAllGroupsMetadata, getMessages, getNormalizedMessages, exportState };
 }
 
 module.exports = { createBaileysRpcStore };

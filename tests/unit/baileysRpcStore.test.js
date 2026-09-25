@@ -51,6 +51,24 @@ const tests = [
     }
   },
   {
+    name: 'Baileys RPC store returns normalized history messages for the bot handler',
+    fn() {
+      const store = createBaileysRpcStore({ maxMessagesPerChat: 5 });
+      store.addMessages([{
+        key: { id: 'n1', remoteJid: '123@g.us', participant: '1@lid', fromMe: false },
+        pushName: 'Pessoa Teste',
+        messageTimestamp: 20,
+        message: { extendedTextMessage: { text: 'mensagem recuperada' } }
+      }]);
+      const history = store.getNormalizedMessages('123@g.us', 5);
+      assertEqual(history[0].id, 'n1', 'should preserve the message ID');
+      assertEqual(history[0].type, 'chat', 'should expose the normalized message type');
+      assertEqual(history[0].body, 'mensagem recuperada', 'should expose normalized text');
+      assertEqual(history[0].fromMe, false, 'should expose the fromMe flag expected by the handler');
+      assertEqual(history[0].sender.name, 'Pessoa Teste', 'should expose the sender name');
+    }
+  },
+  {
     name: 'Baileys RPC store merges history sync chats and messages',
     fn() {
       const store = createBaileysRpcStore({ maxMessagesPerChat: 5 });

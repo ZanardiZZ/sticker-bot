@@ -32,6 +32,32 @@ const tests = [
   },
 
   {
+    name: 'recoverChatHistory should invoke the bot handler with client and message',
+    async fn() {
+      const calls = [];
+      const client = {
+        sock: {
+          async fetchMessagesFromWA() {
+            return [{ id: 'sig-1', key: { id: 'sig-1' }, type: 'chat', body: 'history' }];
+          }
+        }
+      };
+      const mockDb = require('../../src/database');
+      const originalGetProcessedMessageIds = mockDb.getProcessedMessageIds;
+      mockDb.getProcessedMessageIds = async () => new Set();
+      delete require.cache[require.resolve('../../src/services/messageHistoryRecovery')];
+      const { recoverChatHistory } = require('../../src/services/messageHistoryRecovery');
+      const result = await recoverChatHistory(client, '123@g.us', async (...args) => calls.push(args));
+      assertEqual(result.errors, 0, 'should recover without handler signature errors');
+      assertEqual(calls.length, 1, 'should invoke the handler once');
+      assertEqual(calls[0][0], client, 'should pass the client as the first argument');
+      assertEqual(calls[0][1].id, 'sig-1', 'should pass the message as the second argument');
+      mockDb.getProcessedMessageIds = originalGetProcessedMessageIds;
+      delete require.cache[require.resolve('../../src/services/messageHistoryRecovery')];
+    }
+  },
+
+  {
     name: 'filterUnprocessedMessages should filter out processed messages',
     async fn() {
       // Mock getProcessedMessageIds before loading the service module.
