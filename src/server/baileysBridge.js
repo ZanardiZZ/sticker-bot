@@ -24,6 +24,19 @@ let reconnectTimer;
 let connectionState = 'connecting';
 
 function log(...args) { console.log('[BAILEYS-CANARY]', ...args); }
+function fetchErrorDetails(error) {
+  const e = error || {};
+  const c = e.cause || {};
+  return {
+    name: e.name || null,
+    message: e.message || null,
+    causeName: c.name || null,
+    causeCode: c.code || c.errno || null,
+    causeSyscall: c.syscall || null,
+    causeAddress: c.address || null,
+    causePort: c.port || null,
+  };
+}
 function send(ws, value) { if (ws.readyState === 1) ws.send(JSON.stringify(value)); }
 function broadcast(value) { for (const ws of clients) send(ws, value); }
 function idOf(key) { return key?.id || crypto.createHash('sha1').update(JSON.stringify(key || {})).digest('hex').slice(0, 20); }
@@ -89,7 +102,7 @@ async function rpc(msg) {
   if (msg.type === 'sendFile' || msg.type === 'sendImageAsSticker' || msg.type === 'sendImageAsStickerGif') return sendFile({ ...msg, filePath: msg.filePath, asSticker: msg.type !== 'sendFile' });
   if (msg.type === 'simulateTyping') return sock.sendPresenceUpdate(msg.on ? 'composing' : 'paused', msg.chatId);
   if (msg.type === 'getQuotedMessage') { const key = quotedKey(msg.messageId); if (!key) throw new Error('quoted_not_found'); const q = await sock.loadMessage(key.remoteJid, key.id); return q ? normalize(q) : null; }
-  if (msg.type === 'downloadMedia') { const original = messages.get(msg.messageId); if (!original) throw new Error('media_not_found'); const native = unwrap(original.message); const contentType = getContentType(native); const media = native?.[contentType] || {}; log('download request', { id: msg.messageId, contentType, hasUrl: Boolean(media.url), hasDirectPath: Boolean(media.directPath), hasMediaKey: Boolean(media.mediaKey), fileLength: media.fileLength || null }); const b = await downloadMediaMessage(original, 'buffer', {}, { reuploadRequest: async (message) => { log('reupload requested', { id: msg.messageId }); return sock.updateMediaMessage(message); } }); log('download complete', { id: msg.messageId, bytes: b.length }); return { messageId: msg.messageId, mimetype: original.message && (unwrap(original.message).imageMessage?.mimetype || unwrap(original.message).stickerMessage?.mimetype || 'application/octet-stream'), dataUrl: `data:application/octet-stream;base64,${b.toString('base64')}` }; }
+  if (msg.type === 'downloadMedia') { const original = messages.get(msg.messageId); if (!original) throw new Error('media_not_found'); const native = unwrap(original.message); const contentType = getContentType(native); const media = native?.[contentType] || {}; log('download request', { id: msg.messageId, contentType, hasUrl: Boolean(media.url), hasDirectPath: Boolean(media.directPath), hasMediaKey: Boolean(media.mediaKey), fileLength: media.fileLength || null }); let b; try { b = await downloadMediaMessage(original, 'buffer', {}, { reuploadRequest: async (message) => { log('reupload requested', { id: msg.messageId }); return sock.updateMediaMessage(message); } }); } catch (error) { log('download failed', { id: msg.messageId, ...fetchErrorDetails(error) }); throw error; } log('download complete', { id: msg.messageId, bytes: b.length }); return { messageId: msg.messageId, mimetype: original.message && (unwrap(original.message).imageMessage?.mimetype || unwrap(original.message).stickerMessage?.mimetype || 'application/octet-stream'), dataUrl: `data:application/octet-stream;base64,${b.toString('base64')}` }; }
   throw new Error(`unsupported_action:${msg.type}`);
 }
 async function start() {

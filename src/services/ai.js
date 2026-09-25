@@ -146,6 +146,27 @@ async function executeWithAiRetry(action, {
   }
 }
 
+async function visionChatCompletion(messages, requestOptions = {}) {
+  if (!openai) throw new Error('cliente OmniRoute de visão não configurado');
+  const configured = String(process.env.VISION_MODEL_CHAIN || process.env.OPENAI_MULTIMODAL_MODEL || '').trim();
+  const models = configured.split(',').map(value => value.trim()).filter(Boolean);
+  if (models.length === 0) models.push('codex/gpt-5.5-low', 'LemonadeLocal');
+  let lastError = null;
+  for (const model of models) {
+    try {
+      console.log('[AI][vision] tentando modelo=' + model);
+      return await executeWithAiRetry(
+        () => openai.chat.completions.create({ ...requestOptions, model, messages }),
+        { actionLabel: 'anotação de imagem (' + model + ')', maxRetries: 0 }
+      );
+    } catch (error) {
+      lastError = error;
+      console.warn('[AI][vision] modelo falhou=' + model + ' status=' + (error?.status || error?.code || error?.name || 'unknown'));
+    }
+  }
+  throw lastError || new Error('nenhum modelo de visão disponível');
+}
+
 function buildFallbackAnnotation(type = 'imagem') {
   const baseDescription = type === 'gif'
     ? 'Análise automática indisponível para o GIF no momento.'
@@ -293,7 +314,6 @@ async function getAiAnnotations(buffer) {
     
     const sharp = require('sharp');
     const DESC_MAX = 200;
-    const VISION_MODEL = process.env.OPENAI_MULTIMODAL_MODEL || 'gpt-4o-mini';
 
     const imgBuffer = await sharp(buffer)
       .resize(512, 512, { fit: 'inside' })
@@ -331,8 +351,7 @@ Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",
     ];
 
     const resp = await executeWithAiRetry(
-      () => openai.chat.completions.create({
-        model: VISION_MODEL,
+      () => visionChatCompletion(messages, {
         max_tokens: process.env.BACKFILL_MODE === '1' ? Number(process.env.BACKFILL_MAX_TOKENS || 512) : 512,
         temperature: process.env.BACKFILL_MODE === '1' ? Number(process.env.BACKFILL_TEMPERATURE || 0.2) : 0.4,
         chat_template_kwargs: { enable_thinking: false },
@@ -408,7 +427,6 @@ async function getAiAnnotationsForGif(buffer) {
     
     const sharp = require('sharp');
     const DESC_MAX = 200;
-    const VISION_MODEL = process.env.OPENAI_MULTIMODAL_MODEL || 'gpt-4o-mini';
 
     const imgBuffer = await sharp(buffer)
       .resize(512, 512, { fit: 'inside' })
@@ -447,8 +465,7 @@ Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",
     ];
 
     const resp = await executeWithAiRetry(
-      () => openai.chat.completions.create({
-        model: VISION_MODEL,
+      () => visionChatCompletion(messages, {
         max_tokens: 512,
         temperature: 0.4,
         chat_template_kwargs: { enable_thinking: false },
