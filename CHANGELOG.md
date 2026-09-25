@@ -1,3 +1,13 @@
+# Changelog
+
+## [0.23.0] - 2026-09-25
+
+### Novidades
+- feat: add free quota for public DM stickers (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/5955014a76a91c84556ff07919422e9c89daaea1))
+
+### Testes
+- test: allow free quota after rejected payment (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/c7c732bed14f7eb65b626b34882b9de5faab35ec))
+
 ## [0.23.0] - 2026-09-24
 
 ### Novidades
