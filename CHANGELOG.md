@@ -1,4 +1,12 @@
-# Changelog
+## [0.25.1] - 2026-09-26
+
+### Novidades
+- feat: add Baileys group and history RPCs (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/54e747df9a3da7de9e22288c8ba8f2b3195a7237))
+- feat: improve memory and running joke detection (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/44f7d1e7fab3d783f78e8fd8e599a28e7bc9d5c3))
+
+### Correções
+- fix: resolve dependency vulnerabilities (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/4aa0b6f1f24a6c88297eef1053ebb87527ff18a0))
+- fix: harden Baileys and vision fallbacks (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/66e8f28a0fad6d5cbb9b332cb3decf550e73e2ca))
 
 ## [0.25.1] - 2026-09-25
 
