@@ -22,10 +22,10 @@ jobs:
       github.event.workflow_run.actor.login != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout do SHA aprovado
+      - name: Checkout da branch principal
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: main
           fetch-depth: 0
 
       - name: Setup Node.js
