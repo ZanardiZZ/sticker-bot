@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.27.0] - 2026-09-26
+<!-- release-source: a7874279bff5bc38f36c58fe0548e0b6aa2faa8e -->
+
+### Novidades
+- transactional deploy, audit gates, and post-start changelog
+
+### Correções
+- avoid untrusted workflow-run checkout
+- correct deploy change count guard
+
+### Tarefas
+- publish 0.26.0
+
+### Outros
+- Merge pull request #360 from ZanardiZZ/ci/transactional-deploy-flow
+- Merge pull request #361 from ZanardiZZ/fix/deploy-guard
+
 ## [0.26.0] - 2026-09-26
 <!-- release-source: db73faad90c755a6aa3b7d6ce5a3fb0b872164a4 -->
 
