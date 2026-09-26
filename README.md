@@ -1,6 +1,6 @@
 # Sticker Bot
 
-Bot de WhatsApp para receber, catalogar, pesquisar, processar e distribuir figurinhas e outras mídias. O projeto usa SQLite, uma bridge baseada em WPPConnect, processamento local de mídia e um painel web administrativo.
+Bot de WhatsApp para receber, catalogar, pesquisar, processar e distribuir figurinhas e outras mídias. O projeto usa SQLite, uma bridge Baileys via WebSocket, processamento local de mídia e um painel web administrativo.
 
 ## Principais funções
 
@@ -48,7 +48,7 @@ pm2 logs
 
 Processos:
 
-- `WS-Socket-Server`: bridge e transporte da sessão do WhatsApp;
+- `WS-Socket-Server-Baileys`: bridge e transporte da sessão do WhatsApp;
 - `Bot-Client`: comandos, fila e processamento das mídias;
 - `WebServer`: painel administrativo HTTP, normalmente na porta `3000`.
 

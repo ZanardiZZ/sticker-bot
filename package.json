@@ -1,6 +1,6 @@
 {
   "name": "sticker-bot2",
-  "version": "0.31.0",
+  "version": "0.25.1",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -25,7 +25,7 @@
     "web": "node src/web/server.js",
     "bot": "node index.js",
     "bot-direct": "node index.js",
-    "baileys:server": "node server.js",
+    "baileys:server": "node src/server/baileysBridge.js",
     "git:auto": "bash scripts/ops/autocommit-verified.sh",
     "baileys:canary": "node src/server/baileysBridge.js"
   },
@@ -81,10 +81,6 @@
     },
     "@mapbox/node-pre-gyp": {
       "tar": "7.5.22"
-    },
-    "@wppconnect-team/wppconnect": {
-      "file-type": "file:vendor/npm-overrides/file-type",
-      "latest-version": "file:vendor/npm-overrides/latest-version"
     },
     "tar": "7.5.22",
     "form-data": "4.0.6",

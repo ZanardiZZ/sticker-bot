@@ -58,7 +58,7 @@ Observação sobre destino de alerta:
 ## Resposta rápida (SRE runbook)
 ```bash
 pm2 status
-pm2 logs WS-Socket-Server --lines 120 --nostream
+pm2 logs WS-Socket-Server-Baileys --lines 120 --nostream
 npm run ops:watchdog
 curl -sS http://localhost:3000/webhook/status
 ```

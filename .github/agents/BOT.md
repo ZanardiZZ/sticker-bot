@@ -5,8 +5,8 @@ Use this optional profile for WhatsApp, message routing, commands, sticker gener
 ## Main files
 
 - [`index.js`](<PROJECT_ROOT>/index.js): stable bot entrypoint wrapper.
-- [`server.js`](<PROJECT_ROOT>/server.js): stable bridge entrypoint wrapper.
-- [`src/server/bridge.js`](<PROJECT_ROOT>/src/server/bridge.js): WPPConnect/WA-JS bridge, message adaptation, media download/send, chat listing, LID resolution, and websocket fanout.
+- [`src/server/baileysBridge.js`](<PROJECT_ROOT>/src/server/baileysBridge.js): active Baileys transport entrypoint.
+- [`src/server/baileysBridge.js`](<PROJECT_ROOT>/src/server/baileysBridge.js): Baileys bridge, message adaptation, media download/send, chat listing, LID resolution, and websocket fanout.
 - [`src/waAdapter.js`](<PROJECT_ROOT>/src/waAdapter.js): WhatsApp adapter boundary.
 - [`src/bot/index.js`](<PROJECT_ROOT>/src/bot/index.js): bot process wiring.
 - [`src/bot/messageHandler.js`](<PROJECT_ROOT>/src/bot/messageHandler.js): message routing and orchestration.
@@ -22,8 +22,8 @@ Use this optional profile for WhatsApp, message routing, commands, sticker gener
 
 ### WhatsApp and chat compatibility
 
-- Preserve WPPConnect/WA-JS compatibility and the adapter’s tolerant handling of partial message objects.
-- Prefer `listChats()` and retain the fallback to `getAllChats()` for older/partial clients.
+- Preserve the Baileys WebSocket transport contract and the adapter’s tolerant handling of partial message objects.
+- Preserve registration/readiness replay and reconnection behavior for WebSocket consumers.
 - Preserve LID resolution, `lid_mapping`, in-memory cache invalidation, and backward-compatible message IDs.
 - Keep media send/download fallbacks and avoid assuming every collaborator exists in tests.
 
