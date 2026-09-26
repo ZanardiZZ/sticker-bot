@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.29.0] - 2026-09-26
+<!-- release-source: a334c4e3cdbded450b263a2b2b59f0cac20bead8 -->
+
+### Novidades
+- transactional deploy, audit gates, and post-start changelog
+
+### Correções
+- avoid untrusted workflow-run checkout
+- correct deploy change count guard
+- retain validation dependencies during deploy
+- ignore operational backup trees in lint
+
+### Tarefas
+- publish 0.26.0
+- publish 0.27.0
+- publish 0.28.0
+
+### Outros
+- Merge pull request #360 from ZanardiZZ/ci/transactional-deploy-flow
+- Merge pull request #361 from ZanardiZZ/fix/deploy-guard
+- Merge pull request #362 from ZanardiZZ/fix/deploy-validation-deps
+- Merge pull request #363 from ZanardiZZ/fix/ignore-operational-backups
+
 ## [0.28.0] - 2026-09-26
 <!-- release-source: 4e92391d5a56a15ef54cc8f8a0d00c472480d636 -->
 
