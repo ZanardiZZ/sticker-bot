@@ -1,366 +1,63 @@
-name: Gerar changelog e atualizar versão
+name: Gerar release após CI
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - 'CHANGELOG.md'
-      - 'package.json'
-      - 'package-lock.json'
-  workflow_dispatch: {}
-  schedule:
-    # Backup: roda todo dia às 23:55 caso algum push não tenha sido processado
-    - cron: '55 02 * * *' # 23:55 horário de Brasília (UTC-3)
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
 
 permissions:
   contents: write
-  pull-requests: read
-  issues: read
+  actions: write
+
+concurrency:
+  group: stickerbot-release-main
+  cancel-in-progress: false
 
 jobs:
-  changelog:
+  release:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.actor.login != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
-      - name: Checar repositório
+      - name: Checkout do SHA aprovado
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Fetch all history for version bump detection
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
+          cache: npm
 
       - name: Instalar dependências
         run: npm ci
 
-      - name: Incrementar versão
-        id: version
+      - name: Gerar versão e changelog juntos
+        env:
+          RELEASE_SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           node scripts/increment-version.js
           npm install --package-lock-only --ignore-scripts
-          npm install --package-lock-only --ignore-scripts
-          VERSION=$(node -p "require('./package.json').version")
-          echo "new_version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Versão atualizada para: $VERSION"
+          node scripts/generate-release-changelog.js
 
-      - name: Commit version update
+      - name: Publicar commit único da release
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add package.json package-lock.json
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: bump version to ${{ steps.version.outputs.new_version }}"
-            git push origin "HEAD:${{ github.event.repository.default_branch }}"
-          else
-            echo "Nenhuma mudança de versão para commitar"
+          git add package.json package-lock.json CHANGELOG.md
+          if git diff --cached --quiet; then
+            echo "Nenhuma release nova"
+            exit 0
           fi
-
-      - name: Gerar e publicar changelog das últimas 24h
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-
-            // 🔧 Configurações
-            const LABELS = {
-              breaking: 'breaking-change', // mude se você usa outro nome
-              user: 'user-facing',
-            };
-            const BADGES = {
-              breaking: '💥 BREAKING',
-              user: '✨ Usuário',
-            };
-
-            // ⏱️ Janela de 24h
-            const now = new Date();
-            const since = new Date(now.getTime() - 24*60*60*1000);
-            const sinceISO = since.toISOString();
-            const dateFmt = now.toISOString().slice(0,10);
-
-            // Descobre default branch
-            const { data: repoData } = await github.rest.repos.get({ owner, repo });
-            const defaultBranch = repoData.default_branch;
-
-            // Pequena ajuda
-            const typeFromText = (text = '') => {
-              const m = /^(feat|fix|docs|chore|refactor|perf|test|build|ci|style)(\(|:|!|\s)/i.exec(text);
-              return m ? m[1].toLowerCase() : 'outros';
-            };
-            const hasLabel = (labelsArr, wanted) =>
-              (labelsArr || []).some(l => (typeof l === 'string' ? l : l.name)?.toLowerCase() === wanted.toLowerCase());
-
-            // 1) PRs mesclados nas últimas 24h
-            const day = sinceISO.slice(0,10); // YYYY-MM-DD
-            const prQuery = `repo:${owner}/${repo} is:pr is:merged merged:>=${day}`;
-            const prSearch = await github.paginate(github.rest.search.issuesAndPullRequests, { q: prQuery, per_page: 100 });
-
-            const mergedPRs = prSearch
-              .filter(i => i.pull_request && i.closed_at && i.pull_request.merged_at)
-              .filter(i => new Date(i.pull_request.merged_at) >= since)
-              .map(i => {
-                const labels = i.labels?.map(l => typeof l === 'string' ? l : l.name).filter(Boolean) || [];
-                const flags = {
-                  breaking: hasLabel(labels, LABELS.breaking),
-                  user: hasLabel(labels, LABELS.user),
-                };
-                const badges = [
-                  flags.breaking ? BADGES.breaking : null,
-                  flags.user ? BADGES.user : null,
-                ].filter(Boolean).join(' ');
-                const decoratedTitle = badges ? `${badges} — ${i.title}` : i.title;
-                return {
-                  number: i.number,
-                  title: i.title,
-                  decoratedTitle,
-                  user: i.user?.login,
-                  url: i.html_url,
-                  mergedAt: i.pull_request.merged_at,
-                  labels,
-                  flags,
-                };
-              });
-
-            // 2) Commits no default branch nas últimas 24h (tolerante a mensagens ruins)
-            const commitsResp = await github.paginate(github.rest.repos.listCommits, {
-              owner, repo, sha: defaultBranch, since: sinceISO, per_page: 100,
-            });
-
-            // Ignora merges de PR (para evitar duplicidade)
-            const mergeShas = new Set();
-            const prNumberRe = /Merge pull request #(\d+)/i;
-            for (const c of commitsResp) {
-              const m = c.commit.message.match(prNumberRe);
-              if (m) mergeShas.add(c.sha);
-            }
-
-            // Ignora commits do próprio workflow de changelog (evita recursão)
-            const isChangelogCommit = (msg = '', author = '') => {
-              const lowerMsg = msg.toLowerCase();
-              const lowerAuthor = author.toLowerCase();
-              // Ignora commits do bot de changelog
-              if (lowerAuthor.includes('github-actions') || lowerAuthor.includes('github actions')) {
-                if (lowerMsg.includes('docs(changelog)') || lowerMsg.includes('chore: bump version')) {
-                  return true;
-                }
-              }
-              return false;
-            };
-
-            // Mensagens "ruins"
-            const badMsg = (msg = '') =>
-              /^(wip|fix|update|updates|minor|small|ajuste|ajustes|misc|temp|test|teste)$/i.test(msg.trim());
-
-            // (Opcional) mapeamento pasta → componente exibível
-            const componentByDir = {
-              // 'apps/web': 'App Web',
-              // 'packages/api': 'API',
-            };
-
-            async function summarizeCommit(c) {
-              // 2.1 tenta achar PR associado
-              const prsForCommit = await github.rest.repos.listPullRequestsAssociatedWithCommit({
-                owner, repo, commit_sha: c.sha
-              });
-              if (prsForCommit?.data?.length) {
-                const pr = prsForCommit.data[0];
-                // Aplica decoração se o PR tiver labels
-                const labels = pr.labels?.map(l => typeof l === 'string' ? l : l.name).filter(Boolean) || [];
-                const flags = {
-                  breaking: hasLabel(labels, LABELS.breaking),
-                  user: hasLabel(labels, LABELS.user),
-                };
-                const badges = [
-                  flags.breaking ? BADGES.breaking : null,
-                  flags.user ? BADGES.user : null,
-                ].filter(Boolean).join(' ');
-                const decoratedTitle = badges ? `${badges} — ${pr.title}` : pr.title;
-
-                return {
-                  kind: 'commit',
-                  message: `PR #${pr.number} – ${decoratedTitle} (via commit)`,
-                  author: c.author?.login || c.commit?.author?.name || 'autor desconhecido',
-                  url: pr.html_url,
-                  inferredType: typeFromText(pr.title),
-                  flags,
-                };
-              }
-
-              // 2.2 Sem PR: sumariza pelo diff
-              const files = await github.paginate(
-                github.rest.repos.listCommitFiles,
-                { owner, repo, commit_sha: c.sha, per_page: 100 }
-              );
-
-              const count = files.length;
-              const byDir = {};
-              const tags = new Set();
-
-              for (const f of files) {
-                const dir = (f.filename || '').split('/')[0] || '.';
-                byDir[dir] = (byDir[dir] || 0) + 1;
-                if (/^docs\//i.test(f.filename) || /README\.md$/i.test(f.filename)) tags.add('docs');
-                if (/^test(s)?\//i.test(f.filename) || /\.spec\.|\.test\./i.test(f.filename)) tags.add('test');
-                if (/package\.json|pnpm-lock|yarn\.lock/i.test(f.filename)) tags.add('deps');
-                if (/migrat|migration|schema|sql/i.test(f.filename)) tags.add('db');
-              }
-
-              const topDirs = Object.entries(byDir)
-                .sort((a,b)=>b[1]-a[1]).slice(0,3)
-                .map(([d,n]) => `${componentByDir[d] || d} (${n})`).join(', ');
-
-              const tagTxt = Array.from(tags).join(', ');
-              const baseMsg = c.commit?.message?.split('\n')[0] || '';
-              const readable = baseMsg && !badMsg(baseMsg)
-                ? baseMsg
-                : `Atualizações em ${count} arquivo(s) • Áreas: ${topDirs}${tagTxt ? ` • Marcadores: ${tagTxt}` : ''}`;
-
-              const inferredType =
-                typeFromText(baseMsg) !== 'outros'
-                  ? typeFromText(baseMsg)
-                  : (tags.has('docs') ? 'docs' :
-                     tags.has('test') ? 'test' :
-                     'outros');
-
-              return {
-                kind: 'commit',
-                message: `${readable}`, // sem emojis aqui (commits não têm labels)
-                author: c.author?.login || c.commit?.author?.name || 'autor desconhecido',
-                url: c.html_url,
-                inferredType,
-                flags: {}, // sem flags sem PR
-              };
-            }
-
-            const directCommits = await (async () => {
-              const toSummarize = commitsResp.filter(c => {
-                // Ignora merges de PR
-                if (mergeShas.has(c.sha)) return false;
-
-                // Ignora commits do workflow de changelog (evita duplicação)
-                const msg = c.commit?.message || '';
-                const author = c.commit?.author?.name || c.author?.login || '';
-                if (isChangelogCommit(msg, author)) return false;
-
-                return true;
-              });
-              const results = await Promise.all(toSummarize.map(summarizeCommit));
-              return results;
-            })();
-
-            // 3) Buckets por tipo + captura de avisos
-            const buckets = {
-              feat: [], fix: [], docs: [], chore: [], refactor: [], perf: [], test: [], build: [], ci: [], style: [], outros: []
-            };
-
-            const importantNotices = []; // para seção "Avisos importantes"
-
-            // PRs (com emojis/avisos)
-            for (const pr of mergedPRs) {
-              const t = typeFromText(pr.title);
-              const text = `PR #${pr.number} – ${pr.decoratedTitle} (por @${pr.user})`;
-              buckets[t] = buckets[t] || [];
-              buckets[t].push({ kind: 'PR', text, url: pr.url });
-
-              if (pr.flags.breaking || pr.flags.user) {
-                const badges = [
-                  pr.flags.breaking ? BADGES.breaking : null,
-                  pr.flags.user ? BADGES.user : null,
-                ].filter(Boolean).join(' ');
-                importantNotices.push(`- ${badges} — PR #${pr.number}: ${pr.title} ([link](${pr.url}))`);
-              }
-            }
-
-            // Commits (tolerantes, sem labels → sem avisos)
-            for (const c of directCommits) {
-              const t = c.inferredType || 'outros';
-              buckets[t] = buckets[t] || [];
-              buckets[t].push({ kind: 'commit', text: `${c.message} (por ${c.author})`, url: c.url });
-            }
-
-            // 4) Monta markdown legível
-            // Read current version from package.json
-            let currentVersion = '0.5.0';
-            try {
-              const { data: pkgData } = await github.rest.repos.getContent({ owner, repo, path: 'package.json' });
-              const pkgContent = Buffer.from(pkgData.content, pkgData.encoding || 'base64').toString('utf8');
-              const pkg = JSON.parse(pkgContent);
-              currentVersion = pkg.version || '0.5.0';
-            } catch (e) {
-              console.warn('Could not read version from package.json, using default');
-            }
-
-            const sectionTitle = `## [${currentVersion}] - ${dateFmt}`;
-
-            const order = [
-              ['feat','Novidades'],
-              ['fix','Correções'],
-              ['docs','Documentação'],
-              ['perf','Desempenho'],
-              ['refactor','Refatorações'],
-              ['build','Build'],
-              ['ci','CI'],
-              ['test','Testes'],
-              ['style','Estilo'],
-              ['chore','Tarefas'],
-              ['outros','Outros']
-            ];
-
-            let body = '';
-
-            // Se houver avisos importantes, mostra no topo
-            if (importantNotices.length) {
-              body += `\n### ⚠️ Avisos importantes\n`;
-              body += importantNotices.join('\n') + '\n';
-            }
-
-            for (const [key, label] of order) {
-              const items = buckets[key] || [];
-              if (!items.length) continue;
-              body += `\n### ${label}\n`;
-              for (const it of items) {
-                body += `- ${it.text} ([link](${it.url}))\n`;
-              }
-            }
-
-            if (!body.trim()) {
-              core.info('Nenhuma mudança relevante nas últimas 24h. Nada a fazer.');
-              return;
-            }
-
-            const newSection = `${sectionTitle}\n${body}\n`;
-
-            // 5) Lê CHANGELOG.md, insere no topo e publica
-            const path = 'CHANGELOG.md';
-            let oldSha = undefined;
-            let oldContent = '';
-            try {
-              const { data } = await github.rest.repos.getContent({ owner, repo, path });
-              if (Array.isArray(data)) throw new Error('Esperado arquivo, veio diretório');
-              oldSha = data.sha;
-              const buff = Buffer.from(data.content, data.encoding || 'base64');
-              oldContent = buff.toString('utf8');
-            } catch (e) {
-              // não existe, cria do zero
-              oldContent = '# Changelog\n\n';
-            }
-
-            const newContent = `${oldContent.startsWith('# Changelog') ? '' : '# Changelog\n\n'}${newSection}${oldContent.replace(/^# Changelog\n?\n?/,'')}`;
-
-            if (newContent === oldContent) {
-              core.info('Conteúdo do changelog não mudou. Pulando commit.');
-              return;
-            }
-
-            await github.rest.repos.createOrUpdateFileContents({
-              owner,
-              repo,
-              path,
-              message: `docs(changelog): atualizações de ${dateFmt}`,
-              content: Buffer.from(newContent, 'utf8').toString('base64'),
-              sha: oldSha,
-              branch: defaultBranch,
-            });
-
-            core.notice('Changelog atualizado com sucesso.');
+          VERSION=$(node -p "require('./package.json').version")
+          git commit -m "chore(release): publish ${VERSION}"
+          git push origin "HEAD:${{ github.event.repository.default_branch }}"
+          RELEASE_SHA=$(git rev-parse HEAD)
+          gh workflow run deploy-main.yml --ref "${{ github.event.repository.default_branch }}" -f target_sha="$RELEASE_SHA"
+        env:
+          GH_TOKEN: ${{ github.token }}

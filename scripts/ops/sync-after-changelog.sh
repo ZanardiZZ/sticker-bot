@@ -35,7 +35,7 @@ mapfile -t remote_commits < <(git rev-list --reverse "$base..origin/$BRANCH")
 for sha in "${remote_commits[@]}"; do
   subject="$(git show -s --format=%s "$sha")"
   case "$subject" in
-    'docs(changelog): '*|'chore: bump version to '* )
+    'docs(changelog): '*|'chore: bump version to '*|'chore(release): publish '* )
       log "commit automático autorizado: ${sha:0:12} $subject"
       ;;
     *)

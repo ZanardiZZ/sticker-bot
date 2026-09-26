@@ -4,9 +4,6 @@
  */
 const express = require('express');
 const crypto = require('crypto');
-const { exec } = require('child_process');
-const { promisify } = require('util');
-const execAsync = promisify(exec);
 
 const router = express.Router();
 
@@ -43,97 +40,6 @@ function verifyGitHubSignature(signature, body) {
     Buffer.from(signature),
     Buffer.from(digest)
   );
-}
-
-/**
- * Executes git pull and restarts services
- * @returns {Promise<Object>} - Deployment result
- */
-async function executeDeploy() {
-  const results = {
-    timestamp: new Date().toISOString(),
-    steps: []
-  };
-
-  try {
-    // Step 1: Git pull
-    console.log('[Webhook] Executando git pull...');
-    const { stdout: pullOutput, stderr: pullError } = await execAsync('git pull origin main');
-    results.steps.push({
-      step: 'git_pull',
-      success: true,
-      output: pullOutput,
-      error: pullError || null
-    });
-
-    // Check if there were actual changes
-    if (pullOutput.includes('Already up to date')) {
-      console.log('[Webhook] Nenhuma mudança detectada');
-      results.upToDate = true;
-      return results;
-    }
-
-    console.log('[Webhook] Código atualizado:', pullOutput);
-
-    // Step 2: Install dependencies (if package.json changed)
-    if (pullOutput.includes('package.json') || pullOutput.includes('package-lock.json')) {
-      console.log('[Webhook] Instalando dependências...');
-      const { stdout: npmOutput, stderr: npmError } = await execAsync('npm ci --production');
-      results.steps.push({
-        step: 'npm_install',
-        success: true,
-        output: npmOutput,
-        error: npmError || null
-      });
-    }
-
-    // Step 3: Restart services
-    for (const service of SERVICES_TO_RESTART) {
-      console.log(`[Webhook] Reiniciando ${service}...`);
-      try {
-        const { stdout } = await execAsync(`pm2 restart ${service}`);
-        results.steps.push({
-          step: `restart_${service}`,
-          success: true,
-          output: stdout
-        });
-
-        // Wait a bit between restarts
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      } catch (err) {
-        console.error(`[Webhook] Erro ao reiniciar ${service}:`, err.message);
-        results.steps.push({
-          step: `restart_${service}`,
-          success: false,
-          error: err.message
-        });
-      }
-    }
-
-    // Step 4: Verify services are running
-    console.log('[Webhook] Verificando status dos serviços...');
-    const { stdout: statusOutput } = await execAsync('pm2 jlist');
-    const processes = JSON.parse(statusOutput);
-
-    results.services = processes
-      .filter(p => SERVICES_TO_RESTART.includes(p.name))
-      .map(p => ({
-        name: p.name,
-        status: p.pm2_env.status,
-        uptime: p.pm2_env.pm_uptime,
-        restarts: p.pm2_env.restart_time
-      }));
-
-    results.success = true;
-    console.log('[Webhook] ✅ Deploy concluído com sucesso');
-
-  } catch (err) {
-    console.error('[Webhook] ❌ Erro durante deploy:', err.message);
-    results.success = false;
-    results.error = err.message;
-  }
-
-  return results;
 }
 
 /**
@@ -179,18 +85,11 @@ router.post('/github', express.raw({ type: 'application/json' }), async (req, re
       console.log(`[Webhook] Último commit: ${lastCommit.message}`);
     }
 
-    // Execute deployment (async, don't wait)
-    res.json({
-      message: 'Deployment started',
+    console.log('[Webhook] Deploy é controlado pelo GitHub Actions após o CI; webhook apenas confirmou o evento');
+    return res.json({
+      message: 'Push acknowledged; deployment waits for successful CI',
       commits: commits.length,
       branch: 'main'
-    });
-
-    // Run deployment in background
-    executeDeploy().then(result => {
-      console.log('[Webhook] Resultado do deploy:', JSON.stringify(result, null, 2));
-    }).catch(err => {
-      console.error('[Webhook] Deploy falhou:', err);
     });
 
   } catch (err) {
