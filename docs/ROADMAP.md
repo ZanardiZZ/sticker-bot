@@ -55,7 +55,7 @@ Comando implementado: `#pesquisar <consulta>`; retorna stickers disponíveis, pr
 - [ ] smoke test real de mídia no WhatsApp;
 - [ ] revisar retenção do cache de mídia;
 - ✅ scheduler atualiza `count_random` somente após entrega confirmada e evita timers/listeners duplicados;
-- ⚠️ atualizar runbook operacional com o canário de dependências WPPConnect/Puppeteer (5 vulnerabilidades transitivas high ainda abertas).
+- ✅ transporte de produção migrado para Baileys via WebSocket; dependências e runbook antigos removidos.
 
 ## Projetos de produto
 

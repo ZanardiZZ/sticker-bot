@@ -7,7 +7,7 @@ This is the human-facing architecture reference. Repository-wide agent rules liv
 The project is a Node.js WhatsApp sticker bot with an Express administration surface, SQLite persistence, media processing, and optional AI/integration services. Stable root entrypoints preserve compatibility, while implementation lives under `src/`.
 
 - `index.js`: bot entrypoint wrapper.
-- `server.js`: web/server entrypoint wrapper.
+- `src/server/baileysBridge.js`: Baileys WebSocket transport entrypoint.
 - `src/bot/`: message handling, sticker processing, media queues, and delivery.
 - `src/commands/`: command registry and handlers.
 - `src/server/` and `src/waAdapter.js`: bridge and WhatsApp adapter behavior.
@@ -23,8 +23,8 @@ Production process supervision uses the PM2 instance owned by the configured ope
 
 ## Important compatibility contracts
 
-- Preserve WPPConnect/WA-JS compatibility and the LID-to-phone-number mapping model.
-- Prefer `listChats()` with the documented compatibility fallback.
+- Preserve the Baileys WebSocket transport contract and the LID-to-phone-number mapping model.
+- Keep the adapter tolerant of partial message objects and transport reconnections.
 - Preserve WebP/GIF handling and the configured FFmpeg fallback chain.
 - Keep payment, privacy, authentication, and webhook secrets in external configuration.
 - Database schema changes require migrations and integration validation.

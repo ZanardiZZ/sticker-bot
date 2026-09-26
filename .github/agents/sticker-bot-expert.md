@@ -4,7 +4,7 @@ This is an optional repository profile for broad Sticker Bot work. Read the root
 
 ## Current system
 
-Sticker Bot is a Node.js WhatsApp bot with an Express administration surface, SQLite persistence, media processing, optional AI integrations, and WPPConnect/WA-JS compatibility layers. The production runtime is not a local Whisper or local LLM installation.
+Sticker Bot is a Node.js WhatsApp bot with an Express administration surface, SQLite persistence, media processing, optional AI integrations, and a Baileys WebSocket transport. The production runtime is not a local Whisper or local LLM installation.
 
 ## When to use this profile
 
@@ -20,9 +20,9 @@ Use it for changes that cross bot, bridge, commands, media, database, web, or AI
 ### Entrypoints and processes
 
 - [`index.js`](<PROJECT_ROOT>/index.js): stable bot entrypoint wrapper.
-- [`server.js`](<PROJECT_ROOT>/server.js): stable bridge entrypoint wrapper.
+- [`src/server/baileysBridge.js`](<PROJECT_ROOT>/src/server/baileysBridge.js): active Baileys transport entrypoint.
 - [`src/bot/index.js`](<PROJECT_ROOT>/src/bot/index.js): bot process wiring.
-- [`src/server/bridge.js`](<PROJECT_ROOT>/src/server/bridge.js): WPPConnect bridge, media/message adaptation, chat listing, LID resolution, and websocket fanout.
+- [`src/server/baileysBridge.js`](<PROJECT_ROOT>/src/server/baileysBridge.js): Baileys bridge, media/message adaptation, chat listing, LID resolution, and websocket fanout.
 - [`src/web/server.js`](<PROJECT_ROOT>/src/web/server.js): Express administration server.
 - `ecosystem.config.cjs`: deployment process definition; the operational PM2 instance belongs to the configured `dev` user.
 
@@ -38,8 +38,8 @@ Use it for changes that cross bot, bridge, commands, media, database, web, or AI
 
 ## Contracts that must not regress
 
-- Keep WPPConnect/WA-JS compatibility and the current WhatsApp Web adapter behavior.
-- Prefer `listChats()` and preserve the compatibility fallback to `getAllChats()`.
+- Keep the Baileys WebSocket transport and current adapter behavior stable.
+- Preserve registration/readiness replay and reconnection behavior for WebSocket consumers.
 - Preserve LID-to-phone-number resolution, `lid_mapping`, cache invalidation, and backward-compatible message IDs.
 - Preserve duplicate-media/hash fallbacks, permission checks, command analytics, and safe messaging behavior.
 - Preserve animated WebP/GIF detection and the FFmpeg fallback chain (`FFMPEG_PATH`, available `ffmpeg-static` binary, then system FFmpeg).

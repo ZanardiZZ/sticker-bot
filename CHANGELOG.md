@@ -1,142 +1,5 @@
 # Changelog
 
-## [0.31.0] - 2026-09-26
-<!-- release-source: 0a603f165677615118942aeb95b772d8584ca56b -->
-
-### Novidades
-- transactional deploy, audit gates, and post-start changelog
-
-### Correções
-- avoid untrusted workflow-run checkout
-- correct deploy change count guard
-- retain validation dependencies during deploy
-- ignore operational backup trees in lint
-- stop watchdog restart storm on webhook probe
-- configure busy timeout on shared sqlite connection
-
-### Tarefas
-- publish 0.26.0
-- publish 0.27.0
-- publish 0.28.0
-- publish 0.29.0
-- publish 0.30.0
-
-### Outros
-- Merge pull request #360 from ZanardiZZ/ci/transactional-deploy-flow
-- Merge pull request #361 from ZanardiZZ/fix/deploy-guard
-- Merge pull request #362 from ZanardiZZ/fix/deploy-validation-deps
-- Merge pull request #363 from ZanardiZZ/fix/ignore-operational-backups
-- Merge pull request #364 from ZanardiZZ/fix/watchdog-no-webhook-restart
-- Merge pull request #365 from ZanardiZZ/fix/sqlite-busy-timeout
-
-## [0.30.0] - 2026-09-26
-<!-- release-source: b3f3c894c170aa2b1b9f7e8139d4b3ee84c9d510 -->
-
-### Novidades
-- transactional deploy, audit gates, and post-start changelog
-
-### Correções
-- avoid untrusted workflow-run checkout
-- correct deploy change count guard
-- retain validation dependencies during deploy
-- ignore operational backup trees in lint
-- stop watchdog restart storm on webhook probe
-
-### Tarefas
-- publish 0.26.0
-- publish 0.27.0
-- publish 0.28.0
-- publish 0.29.0
-
-### Outros
-- Merge pull request #360 from ZanardiZZ/ci/transactional-deploy-flow
-- Merge pull request #361 from ZanardiZZ/fix/deploy-guard
-- Merge pull request #362 from ZanardiZZ/fix/deploy-validation-deps
-- Merge pull request #363 from ZanardiZZ/fix/ignore-operational-backups
-- Merge pull request #364 from ZanardiZZ/fix/watchdog-no-webhook-restart
-
-## [0.29.0] - 2026-09-26
-<!-- release-source: a334c4e3cdbded450b263a2b2b59f0cac20bead8 -->
-
-### Novidades
-- transactional deploy, audit gates, and post-start changelog
-
-### Correções
-- avoid untrusted workflow-run checkout
-- correct deploy change count guard
-- retain validation dependencies during deploy
-- ignore operational backup trees in lint
-
-### Tarefas
-- publish 0.26.0
-- publish 0.27.0
-- publish 0.28.0
-
-### Outros
-- Merge pull request #360 from ZanardiZZ/ci/transactional-deploy-flow
-- Merge pull request #361 from ZanardiZZ/fix/deploy-guard
-- Merge pull request #362 from ZanardiZZ/fix/deploy-validation-deps
-- Merge pull request #363 from ZanardiZZ/fix/ignore-operational-backups
-
-## [0.28.0] - 2026-09-26
-<!-- release-source: 4e92391d5a56a15ef54cc8f8a0d00c472480d636 -->
-
-### Novidades
-- transactional deploy, audit gates, and post-start changelog
-
-### Correções
-- avoid untrusted workflow-run checkout
-- correct deploy change count guard
-- retain validation dependencies during deploy
-
-### Tarefas
-- publish 0.26.0
-- publish 0.27.0
-
-### Outros
-- Merge pull request #360 from ZanardiZZ/ci/transactional-deploy-flow
-- Merge pull request #361 from ZanardiZZ/fix/deploy-guard
-- Merge pull request #362 from ZanardiZZ/fix/deploy-validation-deps
-
-## [0.27.0] - 2026-09-26
-<!-- release-source: a7874279bff5bc38f36c58fe0548e0b6aa2faa8e -->
-
-### Novidades
-- transactional deploy, audit gates, and post-start changelog
-
-### Correções
-- avoid untrusted workflow-run checkout
-- correct deploy change count guard
-
-### Tarefas
-- publish 0.26.0
-
-### Outros
-- Merge pull request #360 from ZanardiZZ/ci/transactional-deploy-flow
-- Merge pull request #361 from ZanardiZZ/fix/deploy-guard
-
-## [0.26.0] - 2026-09-26
-<!-- release-source: db73faad90c755a6aa3b7d6ce5a3fb0b872164a4 -->
-
-### Novidades
-- transactional deploy, audit gates, and post-start changelog
-
-### Correções
-- avoid untrusted workflow-run checkout
-
-### Outros
-- Merge pull request #360 from ZanardiZZ/ci/transactional-deploy-flow
-
-## [0.25.1] - 2026-09-26
-
-### Novidades
-- feat: add Baileys group and history RPCs (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/54e747df9a3da7de9e22288c8ba8f2b3195a7237))
-- feat: improve memory and running joke detection (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/44f7d1e7fab3d783f78e8fd8e599a28e7bc9d5c3))
-
-### Correções
-- fix: resolve dependency vulnerabilities (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/4aa0b6f1f24a6c88297eef1053ebb87527ff18a0))
-- fix: harden Baileys and vision fallbacks (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/66e8f28a0fad6d5cbb9b332cb3decf550e73e2ca))
-
 ## [0.25.1] - 2026-09-25
 
 ### Novidades
@@ -194,9 +57,7 @@
 - PR #354 – build(deps): bump qs from 6.15.3 to 6.16.0 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/354))
 - PR #348 – build(deps-dev): bump globals from 17.8.0 to 17.9.0 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/348))
 - PR #347 – build(deps): bump express-rate-limit from 8.6.1 to 8.6.2 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/347))
-- PR #345 – build(deps): bump @wppconnect/wa-version from 1.5.4470 to 1.5.4757 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/345))
 - PR #344 – build(deps): bump p-map from 7.0.4 to 7.0.6 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/344))
-- PR #345 – build(deps): bump @wppconnect/wa-version from 1.5.4470 to 1.5.4757 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/345))
 - PR #344 – build(deps): bump p-map from 7.0.4 to 7.0.6 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/344))
 - PR #347 – build(deps): bump express-rate-limit from 8.6.1 to 8.6.2 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/347))
 - PR #348 – build(deps-dev): bump globals from 17.8.0 to 17.9.0 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/348))
@@ -225,9 +86,7 @@
 - PR #354 – build(deps): bump qs from 6.15.3 to 6.16.0 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/354))
 - PR #348 – build(deps-dev): bump globals from 17.8.0 to 17.9.0 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/348))
 - PR #347 – build(deps): bump express-rate-limit from 8.6.1 to 8.6.2 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/347))
-- PR #345 – build(deps): bump @wppconnect/wa-version from 1.5.4470 to 1.5.4757 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/345))
 - PR #344 – build(deps): bump p-map from 7.0.4 to 7.0.6 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/344))
-- PR #345 – build(deps): bump @wppconnect/wa-version from 1.5.4470 to 1.5.4757 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/345))
 - PR #344 – build(deps): bump p-map from 7.0.4 to 7.0.6 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/344))
 - PR #347 – build(deps): bump express-rate-limit from 8.6.1 to 8.6.2 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/347))
 - PR #348 – build(deps-dev): bump globals from 17.8.0 to 17.9.0 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/348))
@@ -250,9 +109,7 @@
 - PR #354 – build(deps): bump qs from 6.15.3 to 6.16.0 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/354))
 - PR #348 – build(deps-dev): bump globals from 17.8.0 to 17.9.0 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/348))
 - PR #347 – build(deps): bump express-rate-limit from 8.6.1 to 8.6.2 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/347))
-- PR #345 – build(deps): bump @wppconnect/wa-version from 1.5.4470 to 1.5.4757 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/345))
 - PR #344 – build(deps): bump p-map from 7.0.4 to 7.0.6 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/344))
-- PR #345 – build(deps): bump @wppconnect/wa-version from 1.5.4470 to 1.5.4757 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/345))
 - PR #344 – build(deps): bump p-map from 7.0.4 to 7.0.6 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/344))
 - PR #347 – build(deps): bump express-rate-limit from 8.6.1 to 8.6.2 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/347))
 - PR #348 – build(deps-dev): bump globals from 17.8.0 to 17.9.0 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/348))
@@ -275,9 +132,7 @@
 - PR #354 – build(deps): bump qs from 6.15.3 to 6.16.0 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/354))
 - PR #348 – build(deps-dev): bump globals from 17.8.0 to 17.9.0 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/348))
 - PR #347 – build(deps): bump express-rate-limit from 8.6.1 to 8.6.2 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/347))
-- PR #345 – build(deps): bump @wppconnect/wa-version from 1.5.4470 to 1.5.4757 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/345))
 - PR #344 – build(deps): bump p-map from 7.0.4 to 7.0.6 (por @dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/344))
-- PR #345 – build(deps): bump @wppconnect/wa-version from 1.5.4470 to 1.5.4757 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/345))
 - PR #344 – build(deps): bump p-map from 7.0.4 to 7.0.6 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/344))
 - PR #347 – build(deps): bump express-rate-limit from 8.6.1 to 8.6.2 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/347))
 - PR #348 – build(deps-dev): bump globals from 17.8.0 to 17.9.0 (via commit) (por dependabot[bot]) ([link](https://github.com/ZanardiZZ/sticker-bot/pull/348))
@@ -320,7 +175,6 @@
 - feat(fotohd): add bounded Real-ESRGAN processing path (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/3d92e85f6d6268be7c28a836752b4b0929e00740))
 
 ### Correções
-- fix(deps): remediate WPPConnect Puppeteer extraction chain (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/f0b88ad63cb07d9e67dff298d98ca6193b712fe2))
 - fix(sqlite): isolate test database and instrument contention (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/31ef10ccba7d1addc96722566bd6b1cf0fecc19a))
 - fix(media): normalize sticker WebP canvases consistently (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/e488d389f9a7e829e68be5cbacb6feae69c30253))
 - fix(stickers): classify one-page animated headers as static (por ZanardiZZ) ([link](https://github.com/ZanardiZZ/sticker-bot/commit/653c408aa471614f2a4606a1b141287a7683585d))
@@ -830,20 +684,16 @@ Todas as mudanças relevantes do Sticker Bot serão documentadas neste arquivo.
 
 > Esta entrada está preparada para a próxima publicação. O número em `package.json` ainda permanece `0.14.2` até a aprovação final do release e da estratégia de versionamento.
 
-### Compatibilidade WhatsApp
+### Transporte WhatsApp
 
-- Atualizada a stack principal para:
-  - `@wppconnect-team/wppconnect` `2.2.5`;
-  - `@wppconnect/wa-js` `4.4.3`;
-  - `@wppconnect/wa-version` `1.5.4470`.
-- Validada a sessão WhatsApp Web `2.3000.1044151668` em estado `MAIN (NORMAL)`.
-- Substituídas chamadas ativas de `getAllChats()` por `listChats()`, mantendo fallback compatível somente nos caminhos que ainda precisam dele.
-- Mantido o contrato Baileys/WebSocket usado pelo bot, com conversão explícita das mensagens WPPConnect para o formato compatível.
+- O transporte de produção usa exclusivamente Baileys por WebSocket.
+- A sessão, o download/envio de mídia e o fanout são gerenciados por `src/server/baileysBridge.js`.
+- O `Bot-Client` consome somente `src/waAdapter.js`, com replay de readiness e reconexão controlada.
 
 ### LID, JID e envio de mídia
 
 - Mantida a normalização genérica de JIDs e o suporte a LID, PN, grupos, broadcast e demais formatos necessários ao runtime.
-- Simplificado o fluxo LID→PN para priorizar `getPnLidEntry()` nativo do WPPConnect.
+- O fluxo LID→PN é resolvido pela bridge Baileys e persistido em `lid_mapping` quando necessário.
 - Removidos fallbacks LID redundantes baseados em `getChatById()` e `checkNumberStatus()`.
 - Mantida a tabela `lid_mapping` como cache/histórico operacional, por ainda ser usada por consultas, relatórios e consistência de contatos.
 - Corrigida a invalidação do cache LID após exclusão de um mapeamento.
@@ -870,7 +720,7 @@ Todas as mudanças relevantes do Sticker Bot serão documentadas neste arquivo.
   - `pickReactionEmoji()`.
 - Removida a função órfã `rawGet()` do serviço Mercado Pago.
 - Removidos comentários stale que mencionavam os fallbacks LID já eliminados.
-- Corrigido comentário operacional que indicava incorretamente WPPConnect `2.8.x`; a configuração agora descreve a compatibilidade sem fixar uma versão incorreta.
+- Removido comentário operacional referente ao transporte anterior; a configuração agora descreve somente Baileys.
 - Artefatos temporários de testes foram arquivados antes da remoção e retirados do diretório operacional.
 - Backups reversíveis foram preservados para os lotes de limpeza.
 
