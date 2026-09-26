@@ -1,0 +1,31 @@
+name: Deploy main no CT138
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: SHA exato da release validada
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stickerbot-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, linux, x64, stickerbot-sync]
+    timeout-minutes: 15
+    steps:
+      - name: Implantar exatamente o SHA validado
+        env:
+          APPROVED_SHA: ${{ inputs.target_sha }}
+        run: sudo /usr/local/sbin/stickerbot-deploy "$APPROVED_SHA"
+
+      - name: Verificar saúde ou rollback
+        env:
+          APPROVED_SHA: ${{ inputs.target_sha }}
+        run: sudo /usr/local/sbin/stickerbot-await-deploy "$APPROVED_SHA"

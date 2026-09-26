@@ -5,6 +5,7 @@
 
 const fs = require('fs').promises;
 const path = require('path');
+const crypto = require('crypto');
 const { db } = require('../database/connection');
 const packageJson = require('../../package.json');
 
@@ -31,18 +32,30 @@ function getLastNotifiedVersion() {
  * @param {string} version
  * @returns {Promise<void>}
  */
-function setLastNotifiedVersion(version) {
+function setConfigValue(key, value) {
   return new Promise((resolve, reject) => {
-    // Try with updated_at first, fallback to without if column doesn't exist
     db.run(
-      `INSERT OR REPLACE INTO bot_config (key, value) VALUES ('last_notified_version', ?)`,
-      [version],
+      `INSERT OR REPLACE INTO bot_config (key, value) VALUES (?, ?)`,
+      [key, value],
       (err) => {
         if (err) reject(err);
         else resolve();
       }
     );
   });
+}
+
+function getConfigValue(key) {
+  return new Promise((resolve) => {
+    db.get(`SELECT value FROM bot_config WHERE key = ?`, [key], (err, row) => {
+      if (err || !row) resolve(null);
+      else resolve(row.value);
+    });
+  });
+}
+
+function setLastNotifiedVersion(version) {
+  return setConfigValue('last_notified_version', version);
 }
 
 /**
@@ -169,6 +182,19 @@ async function buildUpdateMessage(currentVersion, previousVersion) {
   return message;
 }
 
+async function markDeploymentHealthy() {
+  const deployDir = path.join(__dirname, '..', '..', 'storage', 'deploy');
+  try {
+    const targetSha = (await fs.readFile(path.join(deployDir, 'target-sha'), 'utf8')).trim();
+    if (!/^[0-9a-f]{40}$/.test(targetSha)) return;
+    await fs.mkdir(deployDir, { recursive: true });
+    await fs.writeFile(path.join(deployDir, 'healthy-sha'), `${targetSha}\n`, 'utf8');
+    console.log(`[VersionNotifier] Deploy saudável confirmado: ${targetSha.slice(0, 12)}`);
+  } catch (err) {
+    if (err.code !== 'ENOENT') console.warn('[VersionNotifier] Falha ao registrar saúde do deploy:', err.message);
+  }
+}
+
 /**
  * Checks if version changed and sends notification
  * @param {Object} client - WhatsApp client instance
@@ -182,11 +208,21 @@ async function checkAndNotifyVersionUpdate(client) {
 
   const currentVersion = packageJson.version;
   const lastNotifiedVersion = await getLastNotifiedVersion();
+  const changelog = await parseChangelogForVersion(currentVersion);
+  const changelogPayload = JSON.stringify(changelog.sections || []);
+  const releaseId = `${currentVersion}:${crypto.createHash('sha256').update(changelogPayload).digest('hex')}`;
+  const lastReleaseId = await getConfigValue('last_notified_release_id');
 
   console.log(`[VersionNotifier] Versão atual: ${currentVersion}, última notificada: ${lastNotifiedVersion || 'nenhuma'}`);
 
-  if (lastNotifiedVersion === currentVersion) {
-    console.log('[VersionNotifier] Versão não mudou, pulando notificação');
+  if (lastReleaseId === releaseId) {
+    console.log('[VersionNotifier] Release já notificado, pulando notificação');
+    await markDeploymentHealthy();
+    return false;
+  }
+
+  if ((changelog.sections || []).length === 0) {
+    console.warn('[VersionNotifier] Changelog da versão atual ausente; notificação ficará pendente');
     return false;
   }
 
@@ -203,8 +239,9 @@ async function checkAndNotifyVersionUpdate(client) {
       return false;
     }
 
-    // Update last notified version
     await setLastNotifiedVersion(currentVersion);
+    await setConfigValue('last_notified_release_id', releaseId);
+    await markDeploymentHealthy();
 
     console.log(`[VersionNotifier] ✅ Notificação de atualização enviada para ${NOTIFICATION_GROUP_ID}`);
     return true;
@@ -250,5 +287,6 @@ module.exports = {
   getLastNotifiedVersion,
   setLastNotifiedVersion,
   buildUpdateMessage,
+  markDeploymentHealthy,
   initialize
 };

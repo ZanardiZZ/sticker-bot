@@ -15,7 +15,7 @@ const { initContactsTable, upsertGroup, upsertGroupMembers } = require('./contac
 const { initializeHistoryRecovery, setupPeriodicHistorySync } = require('./historyRecovery');
 const { getMediaIdFromMessage, upsertReaction } = require('../database');
 const { maybeNotifyReactionMilestone } = require('../services/reactionNotifications');
-const { checkAndNotifyVersionUpdate, initialize: initVersionNotifier } = require('../services/versionNotifier');
+const { checkAndNotifyVersionUpdate, initialize: initVersionNotifier, markDeploymentHealthy } = require('../services/versionNotifier');
 const { AdminWatcher } = require('../services/adminWatcher');
 const memory = require('../client/memory-client');
 
@@ -216,19 +216,14 @@ async function start(client) {
   // Sync all group names from WhatsApp client into the DB
   syncAllGroupNames(client).catch(() => {});
 
-  // Initialize version notifier and check for updates
+  // Notify only after the transport passed startup readiness.
   try {
     await initVersionNotifier();
-    // Wait a bit for connection to stabilize before sending notification
-    setTimeout(async () => {
-      try {
-        await checkAndNotifyVersionUpdate(client);
-      } catch (notifyErr) {
-        console.warn('[Bot] Falha ao enviar notificação de versão:', notifyErr.message);
-      }
-    }, 5000);
+    await waitForClientReadiness(client, { attempts: 3, timeoutMs: 15000, baseDelayMs: 1000 });
+    await markDeploymentHealthy();
+    await checkAndNotifyVersionUpdate(client);
   } catch (versionErr) {
-    console.warn('[Bot] Erro ao inicializar notificador de versão:', versionErr.message);
+    console.warn('[Bot] Changelog não enviado; startup ainda não está saudável:', versionErr.message);
   }
 
   // Initialize message history recovery (runs in background)
