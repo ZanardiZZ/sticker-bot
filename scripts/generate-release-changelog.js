@@ -17,7 +17,11 @@ if (oldContent.includes(marker)) {
 
 let previous = '';
 try {
-  previous = execFileSync('git', ['log', '--format=%H', '--grep=^docs(changelog):', '-1', `${sourceSha}^`], { encoding: 'utf8' }).trim();
+  previous = execFileSync(
+    'git',
+    ['log', '--format=%H', '--extended-regexp', '--grep=^(docs\\(changelog\\):|chore\\(release\\):)', '-1', `${sourceSha}^`],
+    { encoding: 'utf8' }
+  ).trim();
 } catch (_) {
   previous = '';
 }
