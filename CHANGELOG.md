@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.31.0] - 2026-09-26
+<!-- release-source: 0a603f165677615118942aeb95b772d8584ca56b -->
+
+### Novidades
+- transactional deploy, audit gates, and post-start changelog
+
+### Correções
+- avoid untrusted workflow-run checkout
+- correct deploy change count guard
+- retain validation dependencies during deploy
+- ignore operational backup trees in lint
+- stop watchdog restart storm on webhook probe
+- configure busy timeout on shared sqlite connection
+
+### Tarefas
+- publish 0.26.0
+- publish 0.27.0
+- publish 0.28.0
+- publish 0.29.0
+- publish 0.30.0
+
+### Outros
+- Merge pull request #360 from ZanardiZZ/ci/transactional-deploy-flow
+- Merge pull request #361 from ZanardiZZ/fix/deploy-guard
+- Merge pull request #362 from ZanardiZZ/fix/deploy-validation-deps
+- Merge pull request #363 from ZanardiZZ/fix/ignore-operational-backups
+- Merge pull request #364 from ZanardiZZ/fix/watchdog-no-webhook-restart
+- Merge pull request #365 from ZanardiZZ/fix/sqlite-busy-timeout
+
 ## [0.30.0] - 2026-09-26
 <!-- release-source: b3f3c894c170aa2b1b9f7e8139d4b3ee84c9d510 -->
 
