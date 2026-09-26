@@ -21,7 +21,7 @@
 - publish 0.29.0
 - publish 0.30.0
 - publish 0.31.0
-- remove stale WPPConnect documentation and config
+- remove stale retired-transport documentation and config
 
 ### Outros
 - Merge pull request #360 from ZanardiZZ/ci/transactional-deploy-flow
@@ -30,7 +30,7 @@
 - Merge pull request #363 from ZanardiZZ/fix/ignore-operational-backups
 - Merge pull request #364 from ZanardiZZ/fix/watchdog-no-webhook-restart
 - Merge pull request #365 from ZanardiZZ/fix/sqlite-busy-timeout
-- Merge pull request #366 from ZanardiZZ/cleanup/remove-wppconnect-doc-config
+- Merge pull request #366 from ZanardiZZ/cleanup/remove-retired-transport-doc-config
 
 ## [0.25.1] - 2026-09-25
 
