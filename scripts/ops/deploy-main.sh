@@ -30,7 +30,7 @@ printf '%s\n' "$after" > "$STATE_DIR/target-sha"
 printf 'preparing\n' > "$STATE_DIR/status"
 
 mapfile -t changed < <(git diff --name-only "$before..$after")
-((\${#changed[@]} > 0)) || { log "nenhuma mudança"; exit 0; }
+(( ${#changed[@]} > 0 )) || { log "nenhuma mudança"; exit 0; }
 
 services=()
 add_service() {
