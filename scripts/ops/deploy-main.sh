@@ -75,7 +75,7 @@ rollback_pre_restart() {
   log "falha antes do restart; restaurando $before"
   git reset --hard "$before"
   if printf '%s\n' "${changed[@]}" | grep -Eq '^(package(-lock)?\.json)$'; then
-    npm ci --omit=dev
+    npm ci
   fi
   printf 'rolled-back-before-restart\n' > "$STATE_DIR/status"
   exit "$rc"
@@ -84,7 +84,7 @@ trap rollback_pre_restart ERR
 
 git merge --ff-only "$after"
 if printf '%s\n' "${changed[@]}" | grep -Eq '^(package(-lock)?\.json)$'; then
-  npm ci --omit=dev
+  npm ci
 fi
 
 npm run check
