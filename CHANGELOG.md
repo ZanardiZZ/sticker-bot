@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.28.0] - 2026-09-26
+<!-- release-source: b3fabfa17280329520dc68696403f12ed19ce5d1 -->
+
+### Correções
+- bound release changelog to previous release
+
+### Outros
+- Merge pull request #368 from ZanardiZZ/fix/release-changelog-boundary
+
 ## [0.27.0] - 2026-09-26
 <!-- release-source: 48af1f6e774781a6d20c2333cf430932d1babd47 -->
 
