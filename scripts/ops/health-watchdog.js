@@ -375,13 +375,18 @@ async function main() {
 
   const webhook = await checkWebhookStatus();
   if (!webhook.ok) {
-    state = await restartApp('WebServer', `webhook:${webhook.reason}`, state);
-    log('warn', 'webhook healthcheck failed; restarted WebServer', { reason: webhook.reason });
+    // A single webhook failure is not proof that the WebServer process died.
+    // Do not turn transient dependency/route failures into a restart storm;
+    // PM2 status and /healthz remain the process-liveness signals.
+    log('warn', 'webhook healthcheck failed; no automatic WebServer restart', {
+      reason: webhook.reason,
+      remediation: 'inspect /healthz, PM2 and dependencies before restarting'
+    });
 
     const out = await notifyIfNeeded(
       state,
       `webhook:${webhook.reason}`,
-      formatAlert('falha no healthcheck /webhook/status', webhook.reason)
+      formatAlert('falha no healthcheck /webhook/status', `${webhook.reason}; nenhum restart automático`)
     );
     state = out.state;
   } else {
