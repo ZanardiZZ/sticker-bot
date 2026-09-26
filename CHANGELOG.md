@@ -24,7 +24,7 @@
 - publish 0.29.0
 - publish 0.30.0
 - publish 0.31.0
-- remove stale WPPConnect documentation and config
+- remove stale retired-transport documentation and config
 - publish 0.26.0
 
 ### Outros
@@ -34,7 +34,7 @@
 - Merge pull request #363 from ZanardiZZ/fix/ignore-operational-backups
 - Merge pull request #364 from ZanardiZZ/fix/watchdog-no-webhook-restart
 - Merge pull request #365 from ZanardiZZ/fix/sqlite-busy-timeout
-- Merge pull request #366 from ZanardiZZ/cleanup/remove-wppconnect-doc-config
+- Merge pull request #366 from ZanardiZZ/cleanup/remove-retired-transport-doc-config
 - Merge pull request #367 from ZanardiZZ/cleanup/remove-retired-transport-name
 
 ## [0.26.0] - 2026-09-26
