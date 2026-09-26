@@ -9,8 +9,17 @@ const DatabaseHandler = require('../services/databaseHandler');
 const { DB_PATH, DB_WAL_PATH } = require('../paths');
 
 const dbPath = DB_PATH;
+const busyTimeoutMs = Number(process.env.SQLITE_BUSY_TIMEOUT_MS || 30000);
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 const db = new sqlite3.Database(dbPath);
+
+// Configure the shared connection before any raw db.run/db.all caller uses it.
+// DatabaseHandler also configures its own retry path, but several legacy routes
+// use this connection directly and otherwise receive SQLITE_BUSY immediately.
+db.configure('busyTimeout', busyTimeoutMs);
+db.run(`PRAGMA busy_timeout = ${Math.max(0, Math.floor(busyTimeoutMs))}`);
+db.run('PRAGMA journal_mode = WAL');
+db.run('PRAGMA synchronous = NORMAL');
 
 // Initialize enhanced database handler
 const dbHandler = new DatabaseHandler(db);
