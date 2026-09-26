@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.26.0] - 2026-09-26
+<!-- release-source: 6df0ba2c6d3fd5a2dc4516974ba95ad41c1b6826 -->
+
+### Novidades
+- transactional deploy, audit gates, and post-start changelog
+
+### Correções
+- avoid untrusted workflow-run checkout
+- correct deploy change count guard
+- retain validation dependencies during deploy
+- ignore operational backup trees in lint
+- stop watchdog restart storm on webhook probe
+- configure busy timeout on shared sqlite connection
+
+### Tarefas
+- publish 0.26.0
+- publish 0.27.0
+- publish 0.28.0
+- publish 0.29.0
+- publish 0.30.0
+- publish 0.31.0
+- remove stale WPPConnect documentation and config
+
+### Outros
+- Merge pull request #360 from ZanardiZZ/ci/transactional-deploy-flow
+- Merge pull request #361 from ZanardiZZ/fix/deploy-guard
+- Merge pull request #362 from ZanardiZZ/fix/deploy-validation-deps
+- Merge pull request #363 from ZanardiZZ/fix/ignore-operational-backups
+- Merge pull request #364 from ZanardiZZ/fix/watchdog-no-webhook-restart
+- Merge pull request #365 from ZanardiZZ/fix/sqlite-busy-timeout
+- Merge pull request #366 from ZanardiZZ/cleanup/remove-wppconnect-doc-config
+
 ## [0.25.1] - 2026-09-25
 
 ### Novidades
