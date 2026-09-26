@@ -9,6 +9,8 @@ module.exports = [
       'media/**',
       'node_modules/**',
       'storage/**',
+      'backups/**',
+      'spikes/**',
       'tests/temp/**',
     ],
   },
