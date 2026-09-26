@@ -1,3 +1,17 @@
+# Changelog
+
+## [0.26.0] - 2026-09-26
+<!-- release-source: db73faad90c755a6aa3b7d6ce5a3fb0b872164a4 -->
+
+### Novidades
+- transactional deploy, audit gates, and post-start changelog
+
+### Correções
+- avoid untrusted workflow-run checkout
+
+### Outros
+- Merge pull request #360 from ZanardiZZ/ci/transactional-deploy-flow
+
 ## [0.25.1] - 2026-09-26
 
 ### Novidades
