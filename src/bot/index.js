@@ -15,6 +15,7 @@ const { initContactsTable, upsertGroup, upsertGroupMembers } = require('./contac
 const { initializeHistoryRecovery, setupPeriodicHistorySync } = require('./historyRecovery');
 const { getMediaIdFromMessage, upsertReaction } = require('../database');
 const { maybeNotifyReactionMilestone } = require('../services/reactionNotifications');
+const { registrarReacao: registrarFeedbackMeme } = require('../plugins/memeGenerator');
 const { checkAndNotifyVersionUpdate, initialize: initVersionNotifier, markDeploymentHealthy } = require('../services/versionNotifier');
 const { AdminWatcher } = require('../services/adminWatcher');
 const memory = require('../client/memory-client');
@@ -32,11 +33,19 @@ async function handleReaction(reaction, client = null) {
   }
 
   try {
+    // Meme feedback uses its own message-to-meme map and must run before the
+    // generic media lookup can discard a generated sticker reaction.
+    try {
+      await registrarFeedbackMeme({ chatId, mensagemId: messageId, reactorJid, emoji, client });
+    } catch (feedbackError) {
+      console.warn('[Reaction] Meme feedback skipped:', feedbackError?.message || feedbackError);
+    }
+
     // Find the media associated with this message
     const mediaId = await getMediaIdFromMessage(messageId);
 
     if (!mediaId) {
-      // Message is not linked to any media, ignore reaction
+      // Message is not linked to any regular media; it may still be a meme.
       return;
     }
 

@@ -20,6 +20,7 @@ const GEMMA_PROMPT_BASE_URL = String(process.env.GEMMA_PROMPT_BASE_URL || proces
 const GEMMA_PROMPT_MODEL = process.env.GEMMA_PROMPT_MODEL || process.env.OPENAI_MULTIMODAL_MODEL || 'gpt-4o-mini';
 const GEMMA_PROMPT_TIMEOUT_MS = Number(process.env.GEMMA_PROMPT_TIMEOUT_MS || 30000);
 const { generateImage } = require('../services/lemonadeImageGeneration');
+const { classifyMemeFeedback, buildMemeFeedbackDirective } = require('../services/memeFeedback');
 const TRANSCRIPTION_LANGUAGE = process.env.MEME_TRANSCRIPTION_LANGUAGE || 'pt';
 const PROMPT_CACHE_SIZE = 20;
 
@@ -77,6 +78,17 @@ function all(db, sql, params = []) {
   });
 }
 
+async function ensureFeedbackTable(db) {
+  await run(db, `CREATE TABLE IF NOT EXISTS meme_feedback (
+    meme_id INTEGER NOT NULL,
+    reactor_jid TEXT NOT NULL,
+    emoji TEXT NOT NULL,
+    sentiment TEXT NOT NULL CHECK (sentiment IN ('positive', 'negative')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (meme_id, reactor_jid)
+  )`);
+}
+
 async function ensureMensagemIdColumn(db) {
   const info = await all(db, 'PRAGMA table_info(memes)');
   const hasColumn = info.some((col) => col.name === 'mensagem_id');
@@ -127,6 +139,7 @@ async function initMemesDB() {
 
   await ensureMensagemIdColumn(dbInstance);
   await ensureMessageMapTable(dbInstance);
+  await ensureFeedbackTable(dbInstance);
 
   await run(dbInstance, `CREATE VIEW IF NOT EXISTS memes_top AS
     SELECT * FROM memes WHERE reacoes_precisas >= 5`);
@@ -196,16 +209,41 @@ async function buscarMemesSimilares(tema) {
   return null;
 }
 
+async function getMemeFeedbackDirective(db) {
+  try {
+    const rows = await all(db, `SELECT
+      SUM(CASE WHEN sentiment = 'positive' THEN 1 ELSE 0 END) AS positive,
+      SUM(CASE WHEN sentiment = 'negative' THEN 1 ELSE 0 END) AS negative
+      FROM meme_feedback`);
+    const counts = rows[0] || {};
+    const examples = await all(db, `SELECT f.sentiment, m.texto_original
+      FROM meme_feedback f JOIN memes m ON m.id = f.meme_id
+      ORDER BY f.created_at DESC LIMIT 8`);
+    return buildMemeFeedbackDirective({
+      positive: Number(counts.positive || 0),
+      negative: Number(counts.negative || 0),
+      positiveExamples: examples.filter((row) => row.sentiment === 'positive').map((row) => row.texto_original),
+      negativeExamples: examples.filter((row) => row.sentiment === 'negative').map((row) => row.texto_original)
+    });
+  } catch (error) {
+    console.warn('[MemeGen] feedback - falha ao ler orientação:', error.message);
+    return '';
+  }
+}
+
 async function gerarPromptMeme(textoOriginal) {
   if (!textoOriginal || !textoOriginal.trim()) {
     throw new Error('Descrição vazia para gerar meme');
   }
   await initMemesDB();
   const normalized = textoOriginal.trim();
+  const feedbackDirective = await getMemeFeedbackDirective(dbInstance);
   const reutilizado = await buscarMemesSimilares(normalized);
   if (reutilizado) {
     return {
-      prompt: reutilizado.prompt_final,
+      prompt: feedbackDirective
+        ? `${reutilizado.prompt_final}\n\n[Internal feedback guidance]\n${feedbackDirective}`
+        : reutilizado.prompt_final,
       topText: '',
       bottomText: '',
       reutilizado: true,
@@ -216,6 +254,7 @@ async function gerarPromptMeme(textoOriginal) {
   const fallback = {
     prompt: [
       normalized,
+      feedbackDirective,
       'Create one coherent square image for a WhatsApp sticker.',
       'Use a clear subject, readable silhouette, intentional composition, expressive action, coherent lighting and a polished illustrative or photographic finish.',
       'Render any text explicitly requested by the user inside the image, preserving the wording and language; otherwise do not add text.'
@@ -250,7 +289,7 @@ async function gerarPromptMeme(textoOriginal) {
             'Keep caption fields in the language used by the user and empty when captions were not requested.'
           ].join(' ')
         },
-        { role: 'user', content: normalized }
+        { role: 'user', content: feedbackDirective ? `${normalized}\n\n[Internal feedback guidance]\n${feedbackDirective}` : normalized }
       ]
     });
 
@@ -384,25 +423,36 @@ async function registrarMeme({
   return memeId;
 }
 
-async function registrarReacao({ chatId, mensagemId, emoji, client }) {
-  if (!mensagemId || emoji !== '🎯') return null;
+async function registrarReacao({ chatId, mensagemId, reactorJid, emoji, client }) {
+  if (!mensagemId || !reactorJid) return null;
+  const sentiment = classifyMemeFeedback(emoji);
+  if (!sentiment) return null;
   const db = await getDb();
   const relation = await get(db, 'SELECT meme_id FROM meme_messages WHERE mensagem_id = ?', [mensagemId]);
   if (!relation) return null;
-  await run(db, 'UPDATE memes SET reacoes_precisas = COALESCE(reacoes_precisas,0) + 1 WHERE id = ?', [relation.meme_id]);
+
+  await run(db, `INSERT INTO meme_feedback (meme_id, reactor_jid, emoji, sentiment)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(meme_id, reactor_jid) DO UPDATE SET
+      emoji = excluded.emoji, sentiment = excluded.sentiment, created_at = CURRENT_TIMESTAMP`,
+  [relation.meme_id, reactorJid, emoji, sentiment]);
+  await run(db, `UPDATE memes SET reacoes_precisas = (
+    SELECT COUNT(*) FROM meme_feedback WHERE meme_id = ? AND sentiment = 'positive'
+  ) WHERE id = ?`, [relation.meme_id, relation.meme_id]);
+
   const meme = await get(db, 'SELECT reacoes_precisas FROM memes WHERE id = ?', [relation.meme_id]);
-  if (meme?.reacoes_precisas >= 5) {
-    console.log('[MemeGen] destaque - meme atingiu 5 🎯');
+  if (sentiment === 'positive' && meme?.reacoes_precisas >= 5) {
+    console.log('[MemeGen] destaque - meme atingiu 5 feedbacks positivos');
     if (client && chatId) {
       try {
-        await client.sendText(chatId, '💾 Meme com mais de 5 🎯 movido para coleção de destaque.');
+        await client.sendText(chatId, '💾 Meme aprovado pela comunidade e movido para coleção de destaque.');
       } catch (err) {
         console.warn('[MemeGen] destaque - falha ao avisar chat:', err.message);
       }
     }
-    await refreshPromptCache(db);
   }
-  return relation.meme_id;
+  await refreshPromptCache(db);
+  return { memeId: relation.meme_id, sentiment };
 }
 
 async function exportarMemesTop() {

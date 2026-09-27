@@ -49,6 +49,8 @@ const { tests: conversationAgentInteractionRegressionTests } = require('./unit/c
 const { tests: roadmapFeatureTests } = require('./unit/roadmapFeatures.test');
 const { tests: quotedMediaContextTests } = require('./unit/quotedMediaContext.test');
 const { tests: quotedMediaHandlerOptInTests } = require('./unit/quotedMediaHandlerOptIn.test');
+const { tests: memeFeedbackTests } = require('./unit/memeFeedback.test');
+const { tests: memeGeneratorFeedbackTests } = require('./unit/memeGeneratorFeedback.test');
 const { tests: richVisualMetadataTests } = require('./unit/richVisualMetadata.test');
 const { tests: nsfwExternalTests } = require('./unit/nsfwExternal.test');
 const { tests: publicDmStickerAccessTests, cleanup: publicDmStickerAccessCleanup } = require('./unit/publicDmStickerAccess.test');
@@ -103,6 +105,8 @@ async function runAllTests() {
     results.push(await runTestSuite('Roadmap Feature Tests', roadmapFeatureTests));
     results.push(await runTestSuite('Quoted Media Context Tests', quotedMediaContextTests));
     results.push(await runTestSuite('Quoted Media Handler Opt-in Tests', quotedMediaHandlerOptInTests));
+    results.push(await runTestSuite('Meme Feedback Tests', memeFeedbackTests));
+    results.push(await runTestSuite('Meme Generator Feedback Wiring Tests', memeGeneratorFeedbackTests));
     results.push(await runTestSuite('Rich Visual Metadata Tests', richVisualMetadataTests));
     results.push(await runTestSuite('NSFW Gemma Tests', nsfwExternalTests));
     results.push(await runTestSuite('Public DM Sticker Access Tests', publicDmStickerAccessTests));
