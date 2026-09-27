@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.29.0] - 2026-09-27
+<!-- release-source: 61fd0acfe04b1b9f9de57c4e49664b4eb51212e8 -->
+
+### Correções
+- forward Baileys reaction events
+
 ## [0.28.0] - 2026-09-26
 <!-- release-source: b3fabfa17280329520dc68696403f12ed19ce5d1 -->
 
