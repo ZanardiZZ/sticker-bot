@@ -187,6 +187,20 @@ async function start() {
     scheduleRpcStoreSave();
     if (type !== 'notify') return;
     for (const raw of incoming) {
+      const native = unwrap(raw.message);
+      const reaction = native.reactionMessage;
+      if (reaction) {
+        broadcast({
+          type: 'reaction',
+          data: {
+            messageId: reaction.key?.id || '',
+            chatId: reaction.key?.remoteJid || raw.key?.remoteJid || '',
+            reactorJid: raw.key?.participant || raw.key?.remoteJid || '',
+            emoji: reaction.text || ''
+          }
+        });
+        continue;
+      }
       const data = normalize(raw);
       broadcast({ type: 'message', data });
     }
