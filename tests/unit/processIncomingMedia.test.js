@@ -73,6 +73,7 @@ class SharpMock {
   }
   extend() { return this; }
   resize() { return this; }
+  clone() { return new SharpMock(this.filePath); }
   metadata() {
     return Promise.resolve({ width: 512, height: 512 });
   }
@@ -265,6 +266,25 @@ const tests = [
               return { buffer: Buffer.from('new-image-data'), mimetype: 'image/png' };
             }
           },
+          'src/services/ai.js': {
+            getAiAnnotations: async () => ({
+              description: 'ai-desc',
+              text: 'TEXTO VISÍVEL',
+              tags: ['tag-ai'],
+              metadata: {
+                visual_action: 'acena para a câmera',
+                emotion: 'alegria',
+                ocr_text: 'TEXTO VISÍVEL',
+                cultural_reference: 'referência de teste',
+                usage_intent: 'saudação',
+                context_signals: 'ambiente externo'
+              }
+            }),
+            getAiAnnotationsFromPrompt: async () => ({ tags: [] }),
+            getAiAnnotationsForGif: async () => ({ description: 'gif-desc', tags: ['gif-tag'] }),
+            getTagsFromTextPrompt: async () => ({ tags: [] }),
+            transcribeAudioBuffer: async () => ''
+          },
           'src/utils/safeMessaging.js': {
             safeReply: async (client, chatId, text, messageId) => {
               safeReplies.push({ chatId, text, messageId });
@@ -288,7 +308,14 @@ const tests = [
       const savedPayload = saveMediaCalls[0];
       assertEqual(savedPayload.chatId, '987@c.us', 'chatId should be stored');
       assertEqual(savedPayload.mimetype, 'image/webp', 'mimetype should be converted to webp');
-      assertEqual(savedPayload.description, 'ai-desc', 'description should come from AI annotations');
+      assertEqual(savedPayload.description, 'ai-desc', 'public description must remain concise and must not include OCR');
+      assertEqual(savedPayload.extractedText, 'TEXTO VISÍVEL', 'OCR should be persisted in its dedicated legacy field');
+      assertEqual(savedPayload.metadata.visual_action, 'acena para a câmera', 'visual action should be propagated');
+      assertEqual(savedPayload.metadata.emotion, 'alegria', 'emotion should be propagated');
+      assertEqual(savedPayload.metadata.ocr_text, 'TEXTO VISÍVEL', 'OCR should be propagated as rich metadata');
+      assertEqual(savedPayload.metadata.cultural_reference, 'referência de teste', 'cultural reference should be propagated');
+      assertEqual(savedPayload.metadata.usage_intent, 'saudação', 'usage intent should be propagated');
+      assertEqual(savedPayload.metadata.context_signals, 'ambiente externo', 'context signals should be propagated');
       assertEqual(savedPayload.tags, 'tag-ai', 'tags should be stored as comma-separated string');
       assertEqual(findByIdCalls[0], 55, 'fetch saved media by returned ID');
 
@@ -312,6 +339,71 @@ const tests = [
         }
       }
 
+      cleanTempArtifacts();
+    }
+  },
+  {
+    name: 'GIF-like processing propagates rich metadata without exposing OCR in description',
+    fn: async () => {
+      const saveMediaCalls = [];
+      const mediaDir = path.join(PROJECT_ROOT, 'storage', 'media', 'bot');
+      const existingFiles = new Set(fs.existsSync(mediaDir) ? fs.readdirSync(mediaDir) : []);
+
+      await withProcessIncomingMedia({
+        modules: {
+          'src/database/index.js': {
+            getMD5: () => 'md5-gif-rich',
+            getHashVisual: async () => 'hash-gif-rich',
+            findByHashVisual: async () => null,
+            findById: async (id) => ({ id, description: 'gif público', file_path: path.join(mediaDir, `media-gif-${id}.webp`), mimetype: 'image/webp' }),
+            saveMedia: async (payload) => { saveMediaCalls.push(payload); return 56; },
+            getTagsForMedia: async () => ['gif'],
+            updateMediaDescription: async () => {},
+            updateMediaTags: async () => {}
+          },
+          'src/utils/mediaDownload.js': {
+            downloadMediaForMessage: async () => ({ buffer: Buffer.from('gif-rich-data'), mimetype: 'image/gif' })
+          },
+          'src/services/videoProcessor.js': {
+            processVideo: async () => ({}),
+            processGif: async () => ({
+              description: 'gif público',
+              text: 'OCR PRIVADO',
+              tags: ['gif'],
+              metadata: { visual_action: 'faz sinal positivo', emotion: 'alegria', usage_intent: 'aprovação' }
+            }),
+            processAnimatedWebp: async () => ({})
+          },
+          'src/utils/gifDetection.js': { isGifLikeVideo: async () => true },
+          'src/utils/safeMessaging.js': { safeReply: async () => {} },
+          'src/bot/stickers.js': { isAnimatedWebpBuffer: () => true, sendStickerForMediaRecord: async () => {} }
+        }
+      }, async (processIncomingMedia, moduleExports) => {
+        moduleExports.__setFfmpegFactory(createFfmpegStub([Buffer.from('gif-webp-output')]));
+        await processIncomingMedia(new MockBaileysClient(), {
+          from: 'gif@c.us',
+          id: 'msg-gif-rich',
+          mimetype: 'image/gif',
+          sender: { id: 'author@c.us' }
+        });
+      });
+
+      assertEqual(saveMediaCalls.length, 1, 'GIF-like media should be saved');
+      const payload = saveMediaCalls[0];
+      assertEqual(payload.description, 'gif público', 'public GIF description must not include OCR');
+      assertEqual(payload.extractedText, 'OCR PRIVADO', 'GIF OCR should remain separate');
+      assertEqual(payload.metadata.visual_action, 'faz sinal positivo');
+      assertEqual(payload.metadata.emotion, 'alegria');
+      assertEqual(payload.metadata.ocr_text, 'OCR PRIVADO');
+      assertEqual(payload.metadata.usage_intent, 'aprovação');
+
+      if (fs.existsSync(mediaDir)) {
+        for (const fileName of fs.readdirSync(mediaDir)) {
+          if (!existingFiles.has(fileName) && fileName.startsWith('media-')) {
+            try { fs.unlinkSync(path.join(mediaDir, fileName)); } catch {}
+          }
+        }
+      }
       cleanTempArtifacts();
     }
   },
@@ -383,6 +475,86 @@ const tests = [
       assertEqual(safeReplies.length, 1, 'NSFW flow should still reply');
       assert(safeReplies[0].text.includes('BASE'), 'Reply should include generated base message');
 
+      cleanTempArtifacts();
+    }
+  },
+  {
+    name: 'Animated WebP processing propagates rich metadata without exposing OCR in description',
+    fn: async () => {
+      const saveMediaCalls = [];
+      const mediaDir = path.join(PROJECT_ROOT, 'storage', 'media', 'bot');
+      const existingFiles = new Set(fs.existsSync(mediaDir) ? fs.readdirSync(mediaDir) : []);
+      await withProcessIncomingMedia({
+        modules: {
+          'src/database/index.js': {
+            getMD5: () => 'md5-webp-rich', getHashVisual: async () => 'hash-webp-rich', findByHashVisual: async () => null,
+            findById: async (id) => ({ id, description: 'sticker público', file_path: path.join(mediaDir, `media-webp-${id}.webp`), mimetype: 'image/webp' }),
+            saveMedia: async (payload) => { saveMediaCalls.push(payload); return 58; }, getTagsForMedia: async () => ['sticker'],
+            updateMediaDescription: async () => {}, updateMediaTags: async () => {}
+          },
+          'src/utils/mediaDownload.js': { downloadMediaForMessage: async () => ({ buffer: Buffer.from('webp-rich-data'), mimetype: 'image/webp' }) },
+          'src/services/videoProcessor.js': {
+            processVideo: async () => ({}), processGif: async () => ({}),
+            processAnimatedWebp: async () => ({ description: 'sticker público', text: 'OCR WEBP', tags: ['sticker'], metadata: { visual_action: 'dança', emotion: 'alegria', cultural_reference: 'meme conhecido', usage_intent: 'comemoração', context_signals: 'animação' } })
+          },
+          'src/utils/safeMessaging.js': { safeReply: async () => {} },
+          'src/bot/stickers.js': { isAnimatedWebpBuffer: () => true, sendStickerForMediaRecord: async () => {} },
+          'sharp': Object.assign(createSharpStub(), { cache() {} })
+        }
+      }, async (processIncomingMedia) => {
+        await processIncomingMedia(new MockBaileysClient(), { from: 'webp@c.us', id: 'msg-webp-rich', mimetype: 'image/webp', type: 'sticker', isSticker: true, sender: { id: 'author@c.us' } });
+      });
+      assertEqual(saveMediaCalls.length, 1, 'animated WebP should be saved');
+      const payload = saveMediaCalls[0];
+      assertEqual(payload.description, 'sticker público');
+      assertEqual(payload.extractedText, 'OCR WEBP');
+      assertEqual(payload.metadata.visual_action, 'dança');
+      assertEqual(payload.metadata.emotion, 'alegria');
+      assertEqual(payload.metadata.ocr_text, 'OCR WEBP');
+      assertEqual(payload.metadata.cultural_reference, 'meme conhecido');
+      assertEqual(payload.metadata.usage_intent, 'comemoração');
+      assertEqual(payload.metadata.context_signals, 'animação');
+      if (fs.existsSync(mediaDir)) for (const fileName of fs.readdirSync(mediaDir)) if (!existingFiles.has(fileName) && fileName.startsWith('media-')) { try { fs.unlinkSync(path.join(mediaDir, fileName)); } catch {} }
+      cleanTempArtifacts();
+    }
+  },
+  {
+    name: 'Video processing propagates rich metadata without exposing OCR in description',
+    fn: async () => {
+      const saveMediaCalls = [];
+      const mediaDir = path.join(PROJECT_ROOT, 'storage', 'media', 'bot');
+      const existingFiles = new Set(fs.existsSync(mediaDir) ? fs.readdirSync(mediaDir) : []);
+      await withProcessIncomingMedia({
+        modules: {
+          'src/database/index.js': {
+            getMD5: () => 'md5-video-rich', getHashVisual: async () => null,
+            findByHashVisual: async () => null,
+            findById: async (id) => ({ id, description: 'vídeo público', file_path: path.join(mediaDir, `media-video-${id}.mp4`), mimetype: 'video/mp4' }),
+            saveMedia: async (payload) => { saveMediaCalls.push(payload); return 57; },
+            getTagsForMedia: async () => ['video'], updateMediaDescription: async () => {}, updateMediaTags: async () => {}
+          },
+          'src/utils/mediaDownload.js': { downloadMediaForMessage: async () => ({ buffer: Buffer.from('video-rich-data'), mimetype: 'video/mp4' }) },
+          'src/services/videoProcessor.js': {
+            processVideo: async () => ({ description: 'vídeo público', text: 'OCR VÍDEO', tags: ['video'], metadata: { visual_action: 'corre', emotion: 'entusiasmo', usage_intent: 'comemoração' } }),
+            processGif: async () => ({}), processAnimatedWebp: async () => ({})
+          },
+          'src/utils/gifDetection.js': { isGifLikeVideo: async () => false },
+          'src/services/nsfwVideoFilter.js': { isVideoNSFW: async () => false },
+          'src/utils/safeMessaging.js': { safeReply: async () => {} },
+          'src/bot/stickers.js': { isAnimatedWebpBuffer: () => false, sendStickerForMediaRecord: async () => {} }
+        }
+      }, async (processIncomingMedia) => {
+        await processIncomingMedia(new MockBaileysClient(), { from: 'video@c.us', id: 'msg-video-rich', mimetype: 'video/mp4', sender: { id: 'author@c.us' } });
+      });
+      assertEqual(saveMediaCalls.length, 1, 'video should be saved');
+      const payload = saveMediaCalls[0];
+      assertEqual(payload.description, 'vídeo público', 'public video description must not include OCR');
+      assertEqual(payload.extractedText, 'OCR VÍDEO');
+      assertEqual(payload.metadata.visual_action, 'corre');
+      assertEqual(payload.metadata.emotion, 'entusiasmo');
+      assertEqual(payload.metadata.ocr_text, 'OCR VÍDEO');
+      assertEqual(payload.metadata.usage_intent, 'comemoração');
+      if (fs.existsSync(mediaDir)) for (const fileName of fs.readdirSync(mediaDir)) if (!existingFiles.has(fileName) && fileName.startsWith('media-')) { try { fs.unlinkSync(path.join(mediaDir, fileName)); } catch {} }
       cleanTempArtifacts();
     }
   },

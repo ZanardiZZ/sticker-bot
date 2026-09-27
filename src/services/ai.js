@@ -1,5 +1,6 @@
 require('dotenv').config();
 const OpenAI = require('openai');
+const { normalizeRichMetadata, stripOcrFromDescription } = require('./richMetadata');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -339,7 +340,7 @@ async function getAiAnnotations(buffer) {
       { role: 'system', content:
         `Você é um assistente de análise de imagens. Para cada imagem, siga SEMPRE:
 1) Descreva a imagem de forma concisa (≤${DESC_MAX} chars), mencionando explicitamente o nome de toda pessoa/personagem/celebridade reconhecível. Se o nome não for conhecido, escreva "nome desconhecido". Inclua também o filme/série/anime/jogo ou contexto da obra quando aplicável.
-2) Identifique e extraia TODO o texto visível na imagem (caso exista). Se não houver texto, retorne "".
+2) Identifique e extraia TODO o texto visível na imagem (caso exista). Se não houver texto, retorne "". O texto OCR deve aparecer EXCLUSIVAMENTE em text/metadata.ocr_text, nunca em description.
 3) Gere CINCO hashtags únicas e relevantes (começando com #), incluindo hashtags para os nomes e obras sempre que conhecidos.
 Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",...],"metadata":{"visual_action":"...","emotion":"...","ocr_text":"...","cultural_reference":"...","usage_intent":"...","context_signals":"..."}}. A description deve continuar curta; metadata é interno. Não invente nomes, obras ou referências sem evidência visual.`
       },
@@ -365,6 +366,7 @@ Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",
       const parsed = JSON.parse(cleanJsonBlock(raw));
       let description = String(parsed.description || '').trim();
       let text = typeof parsed.text === 'string' ? parsed.text.trim() : '';
+      description = stripOcrFromDescription(description, text);
       let tags = Array.isArray(parsed.tags) ? parsed.tags.map(t => t.trim()) : [];
       if (tags.length < 5) {
         // Completa com hashtags geradas via pickHashtags para totalizar 5
@@ -378,7 +380,7 @@ Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",
         description: description.slice(0, DESC_MAX) || 'Sem descrição.',
         text,
         tags,
-        metadata: parsed.metadata && typeof parsed.metadata === 'object' ? parsed.metadata : {}
+        metadata: normalizeRichMetadata(parsed.metadata, { ocrText: text })
       };
     } catch {
       // The VLM can truncate a JSON response while OCR/metadata is large.
@@ -407,7 +409,7 @@ Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",
         const fallback = buildFallbackAnnotation('gif');
         return { ...fallback, text: '', tags: tags.length ? tags : fallback.tags };
       }
-      return { description, text: '', tags: tags.length ? tags : pickHashtags(description, 5) };
+      return { description, text: '', tags: tags.length ? tags : pickHashtags(description, 5), metadata: {} };
     }
   } catch (err) {
     console.error('❌ Erro na IA (imagem):', err);
@@ -452,10 +454,10 @@ async function getAiAnnotationsForGif(buffer) {
       { role: 'system', content:
         `Você é um assistente de análise de GIFs/memes. Para cada frame, sempre:
 1) Descreva o frame de forma concisa (≤${DESC_MAX} chars).
-2) Identifique e extraia TODO o texto visível no frame (caso exista). Se não houver texto, retorne "".
+2) Identifique e extraia TODO o texto visível no frame (caso exista). Se não houver texto, retorne "". O texto OCR deve aparecer EXCLUSIVAMENTE em text/metadata.ocr_text, nunca em description.
 3) Gere CINCO hashtags únicas e relevantes (começando com #).
 IMPORTANTE: Isto é um frame de um GIF/meme, NÃO um vídeo. Use termos como "cena", "imagem", "frame", "meme" ao invés de "vídeo", "filmagem" ou "gravação".
-Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",...],"metadata":{"visual_action":"...","emotion":"...","cultural_reference":"...","usage_intent":"..."}}. A description deve continuar curta; metadata é interno.`
+Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",...],"metadata":{"visual_action":"...","emotion":"...","ocr_text":"...","cultural_reference":"...","usage_intent":"...","context_signals":"..."}}. A description deve continuar curta; metadata é interno.`
       },
       { role: 'user', content: [
           { type: 'text', text: `Analise este frame de GIF/meme (≤${DESC_MAX} chars), identifique TODO o texto presente (caso exista) e gere CINCO hashtags. Foque na ação, expressão ou situação mostrada.` },
@@ -479,6 +481,7 @@ Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",
       const parsed = JSON.parse(cleanJsonBlock(raw));
       let description = String(parsed.description || '').trim();
       let text = typeof parsed.text === 'string' ? parsed.text.trim() : '';
+      description = stripOcrFromDescription(description, text);
       let tags = Array.isArray(parsed.tags) ? parsed.tags.map(t => t.trim()) : [];
       if (tags.length < 5) {
         // Completa com hashtags geradas via pickHashtags para totalizar 5
@@ -495,7 +498,8 @@ Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",
       return {
         description: description.slice(0, DESC_MAX),
         text,
-        tags
+        tags,
+        metadata: normalizeRichMetadata(parsed.metadata, { ocrText: text })
       };
     } catch {
       // The VLM can truncate a JSON response while OCR/metadata is large.
@@ -520,7 +524,7 @@ Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",
       const tags = tagsMatch
         ? [...tagsMatch[1].matchAll(/"((?:\\.|[^"\\])*)"/gu)].map(m => { try { return JSON.parse('"' + m[1] + '"').trim(); } catch { return ''; } }).filter(Boolean).slice(0, 5)
         : pickHashtags(description, 5);
-      return { description, text: '', tags: tags.length ? tags : pickHashtags(description, 5) };
+      return { description, text: '', tags: tags.length ? tags : pickHashtags(description, 5), metadata: {} };
     }
   } catch (err) {
     console.error('❌ Erro na IA (GIF frame):', err);

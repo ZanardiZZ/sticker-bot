@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { getAiAnnotationsFromPrompt, getAiAnnotations, getAiAnnotationsForGif, transcribeAudioFile } = require('./ai');
+const { mergeRichMetadata, normalizeRichMetadata } = require('./richMetadata');
 const sharp = require('sharp');
 const { getTopTags } = require('../utils/messageUtils');
 const { TEMP_DIR } = require('../paths');
@@ -235,7 +236,9 @@ async function analyzeFrame(framePath, frameIndex) {
     
     return {
       description: result.description || '',
-      tags: result.tags || []
+      tags: result.tags || [],
+      text: result.text || '',
+      metadata: normalizeRichMetadata(result.metadata)
     };
   } catch (error) {
     console.warn(`[VideoProcessor] Erro ao analisar frame ${frameIndex}:`, error.message);
@@ -437,7 +440,9 @@ Responda no formato JSON:
     
     return {
       description: finalDescription,
-      tags: finalTags
+      tags: finalTags,
+      text: frameAnalyses.map(item => item.text).filter(Boolean).join(' | '),
+      metadata: mergeRichMetadata(frameAnalyses.map(item => item.metadata))
     };
     
   } catch (error) {
@@ -636,7 +641,9 @@ async function processGif(filePath) {
       // Apenas um frame analisado
       return {
         description: frameAnalyses[0].description || 'GIF processado',
-        tags: frameAnalyses[0].tags && frameAnalyses[0].tags.length > 0 ? frameAnalyses[0].tags : ['gif']
+        tags: frameAnalyses[0].tags && frameAnalyses[0].tags.length > 0 ? frameAnalyses[0].tags : ['gif'],
+        text: frameAnalyses[0].text || '',
+        metadata: normalizeRichMetadata(frameAnalyses[0].metadata)
       };
     } else {
       // Múltiplos frames - sumariza
@@ -669,13 +676,17 @@ Responda no formato JSON:
       if (summaryResult && typeof summaryResult === 'object' && summaryResult.description) {
         return {
           description: summaryResult.description || frameAnalyses[0].description || 'GIF processado',
-          tags: summaryResult.tags && summaryResult.tags.length > 0 ? summaryResult.tags : topTags
+          tags: summaryResult.tags && summaryResult.tags.length > 0 ? summaryResult.tags : topTags,
+          text: frameAnalyses.map(item => item.text).filter(Boolean).join(' | '),
+          metadata: mergeRichMetadata(frameAnalyses.map(item => item.metadata))
         };
       } else {
         console.warn('[VideoProcessor] Resultado inválido da sumarização de GIF:', summaryResult);
         return {
           description: frameAnalyses[0].description || 'GIF processado',
-          tags: topTags.length > 0 ? topTags : ['gif']
+          tags: topTags.length > 0 ? topTags : ['gif'],
+          text: frameAnalyses.map(item => item.text).filter(Boolean).join(' | '),
+          metadata: mergeRichMetadata(frameAnalyses.map(item => item.metadata))
         };
       }
     }
@@ -757,7 +768,8 @@ async function processAnimatedWebp(filePath) {
         return {
           description: aiResult.description || 'Sticker estático processado',
           tags: Array.isArray(aiResult.tags) ? aiResult.tags : ['sticker', 'estatico'],
-          text: aiResult.text || null
+          text: aiResult.text || null,
+          metadata: normalizeRichMetadata(aiResult.metadata)
         };
       } else {
         return {
@@ -838,7 +850,8 @@ async function processAnimatedWebp(filePath) {
               frameIndex: index + 1,
               description: analysis.description,
               tags: Array.isArray(analysis.tags) ? analysis.tags : [],
-              text: analysis.text || null
+              text: analysis.text || null,
+              metadata: normalizeRichMetadata(analysis.metadata)
             };
           }
           return null;
@@ -866,7 +879,8 @@ async function processAnimatedWebp(filePath) {
       return {
         description: frameAnalyses[0].description || 'Sticker animado processado',
         tags: frameAnalyses[0].tags.length > 0 ? frameAnalyses[0].tags : ['sticker', 'animado'],
-        text: frameAnalyses[0].text || null
+        text: frameAnalyses[0].text || null,
+        metadata: normalizeRichMetadata(frameAnalyses[0].metadata)
       };
     } else {
       // Multiple frames - create comprehensive description
@@ -910,7 +924,8 @@ Por favor, forneça uma descrição única e concisa (máximo 50 palavras) que c
           return {
             description: summaryResult.description,
             tags: summaryResult.tags && summaryResult.tags.length > 0 ? summaryResult.tags : topTags,
-            text: allTexts || null
+            text: allTexts || null,
+            metadata: mergeRichMetadata(frameAnalyses.map(item => item.metadata))
           };
         }
       } catch (summaryError) {
@@ -921,7 +936,8 @@ Por favor, forneça uma descrição única e concisa (máximo 50 palavras) que c
       return {
         description: frameAnalyses[0].description || 'Sticker animado com múltiplos frames',
         tags: topTags.length > 0 ? topTags : ['sticker', 'animado'],
-        text: allTexts || null
+        text: allTexts || null,
+        metadata: mergeRichMetadata(frameAnalyses.map(item => item.metadata))
       };
     }
     

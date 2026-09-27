@@ -46,6 +46,7 @@ const { tests: stickerDeliveryPolicyTests } = require('./unit/stickerDeliveryPol
 const { tests: recentIncidentTests } = require('./unit/recentIncidents.test');
 const { tests: conversationAgentMemoryTests } = require('./unit/conversationAgentMemory.test');
 const { tests: roadmapFeatureTests } = require('./unit/roadmapFeatures.test');
+const { tests: richVisualMetadataTests } = require('./unit/richVisualMetadata.test');
 const { tests: nsfwExternalTests } = require('./unit/nsfwExternal.test');
 const { tests: publicDmStickerAccessTests, cleanup: publicDmStickerAccessCleanup } = require('./unit/publicDmStickerAccess.test');
 const { tests: mercadoPagoPaymentTests, cleanup: mercadoPagoPaymentCleanup } = require('./unit/mercadoPagoPayment.test');
@@ -96,6 +97,7 @@ async function runAllTests() {
     results.push(await runTestSuite('Recent Incident Regression Tests', recentIncidentTests));
     results.push(await runTestSuite('Conversation Agent Memory Tests', conversationAgentMemoryTests));
     results.push(await runTestSuite('Roadmap Feature Tests', roadmapFeatureTests));
+    results.push(await runTestSuite('Rich Visual Metadata Tests', richVisualMetadataTests));
     results.push(await runTestSuite('NSFW Gemma Tests', nsfwExternalTests));
     results.push(await runTestSuite('Public DM Sticker Access Tests', publicDmStickerAccessTests));
     results.push(await runTestSuite('Mercado Pago Orders Payment Tests', mercadoPagoPaymentTests));

@@ -968,13 +968,9 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
         try {
           const aiResult = await processGif(gifSourceForAnalysis || filePath);
           if (aiResult && typeof aiResult === 'object') {
+            richMetadata = aiResult.metadata || richMetadata;
+            extractedText = aiResult.text || extractedText;
             let descBase = aiResult.description || '';
-            if (aiResult.text && typeof aiResult.text === 'string' && aiResult.text.trim()) {
-              const trimmed = aiResult.text.trim();
-              if (!descBase.includes(trimmed)) {
-                descBase = descBase ? `${descBase} | Texto: ${trimmed}` : trimmed;
-              }
-            }
             const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(descBase, aiResult.tags);
             description = clean.description;
             tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
@@ -989,13 +985,9 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
         try {
           const aiResult = await processVideo(filePath);
           if (aiResult && typeof aiResult === 'object') {
-            // Garante que o texto extraído (se existir) seja incluído na descrição
+            richMetadata = aiResult.metadata || richMetadata;
+            extractedText = aiResult.text || extractedText;
             let descBase = aiResult.description || '';
-            if (aiResult.text && typeof aiResult.text === 'string' && aiResult.text.trim().length > 0) {
-              if (!descBase.includes(`Texto: ${aiResult.text.trim()}`)) {
-                descBase = descBase ? `${descBase} | Texto: ${aiResult.text.trim()}` : aiResult.text.trim();
-              }
-            }
             const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(descBase, aiResult.tags);
             description = clean.description;
             tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
@@ -1015,13 +1007,9 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
           const aiResult = await processGif(filePath);
           
           if (aiResult && typeof aiResult === 'object' && aiResult.description) {
-            // Garante que o texto extraído (se existir) seja incluído na descrição
+            richMetadata = aiResult.metadata || richMetadata;
+            extractedText = aiResult.text || extractedText;
             let descBase = aiResult.description || '';
-            if (aiResult.text && typeof aiResult.text === 'string' && aiResult.text.trim().length > 0) {
-              if (!descBase.includes(aiResult.text.trim())) {
-                descBase = descBase ? `${descBase} | Texto: ${aiResult.text.trim()}` : aiResult.text.trim();
-              }
-            }
             const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(descBase, aiResult.tags);
             description = clean.description;
             tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
@@ -1054,10 +1042,7 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
               description = clean.description;
               tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
               extractedText = aiResult.text || null;
-              // Incorporate extracted text into description if available
-              if (extractedText && extractedText.trim()) {
-                description = `${description} [Texto: ${extractedText.trim()}]`;
-              }
+              richMetadata = aiResult.metadata || richMetadata;
               console.log('⚠️ GIF processed using fallback single-frame analysis');
             } else {
               console.warn('Resultado inválido do fallback para GIF:', aiResult);
@@ -1098,10 +1083,7 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
               description = clean.description;
               tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
               extractedText = aiResult.text || null;
-              // Incorporate extracted text into description if available
-              if (extractedText && extractedText.trim()) {
-                description = `${description} [Texto: ${extractedText.trim()}]`;
-              }
+              richMetadata = aiResult.metadata || richMetadata;
               console.log('✅ Animated sticker processed using single-frame analysis (disabled multi-frame)');
             } else {
               console.warn('Resultado inválido do processamento de sticker animado (single-frame):', aiResult);
@@ -1120,10 +1102,7 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
                 description = clean.description;
                 tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
                 extractedText = aiResult.text || null;
-                // Incorporate extracted text into description if available
-                if (extractedText && extractedText.trim()) {
-                  description = `${description} [Texto: ${extractedText.trim()}]`;
-                }
+                richMetadata = aiResult.metadata || richMetadata;
                 console.log(`✅ Animated WebP processed successfully: ${description ? description.slice(0, 50) : 'no description'}...`);
               } else {
                 console.warn('Resultado inválido do processamento de sticker animado:', aiResult);
@@ -1138,6 +1117,8 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
               // Fallback to single frame analysis if multi-frame processing fails
               const aiResult = await getAiAnnotations(pngBuffer);
               if (aiResult && typeof aiResult === 'object') {
+                richMetadata = aiResult.metadata || richMetadata;
+                extractedText = aiResult.text || extractedText;
                 const clean = (cleanDescriptionTags || fallbackCleanDescriptionTags)(aiResult.description, aiResult.tags);
                 description = clean.description;
                 tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
@@ -1158,10 +1139,7 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
             description = clean.description;
             tags = clean.tags.length > 0 ? clean.tags.join(',') : '';
             extractedText = aiResult.text || null;
-            // Incorporate extracted text into description if available
-            if (extractedText && extractedText.trim()) {
-              description = `${description} [Texto: ${extractedText.trim()}]`;
-            }
+              richMetadata = aiResult.metadata || richMetadata;
           } else {
             console.warn('Resultado inválido do processamento de imagem:', aiResult);
             description = '';
