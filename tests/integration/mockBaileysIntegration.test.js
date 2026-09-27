@@ -268,6 +268,106 @@ const tests = [
     }
   },
   {
+    name: 'quoted sticker metadata is forwarded as conversation context',
+    fn: async () => {
+      const previousFlag = process.env.CONVERSATION_QUOTED_MEDIA_CONTEXT_ENABLED;
+      process.env.CONVERSATION_QUOTED_MEDIA_CONTEXT_ENABLED = '1';
+      const conversationCalls = [];
+      const groupJid = '123456@g.us';
+      const participantJid = 'participant@c.us';
+
+      class ImmediateMediaQueue {
+        on() {}
+        setExecutor(executor) { this.executor = executor; }
+        async getStats() { return { waiting: 0, processing: 0 }; }
+        async add(payload) { return this.executor(payload); }
+      }
+
+      await withMockedMessageHandler({
+        'src/commands/index.js': {
+          taggingMap: new Map(),
+          async handleCommand() { return false; },
+          async handleTaggingMode() { return false; }
+        },
+        'src/utils/safeMessaging.js': { async safeReply() {} },
+        'src/utils/typingIndicator.js': { async withTyping(_client, _chatId, fn) { return fn(); } },
+        'src/bot/logging.js': { async logReceivedMessage() {} },
+        'src/bot/contacts.js': {
+          upsertContactFromMessage() {}, upsertGroupFromMessage() {}, upsertGroupUser() {}
+        },
+        'src/bot/mediaProcessor.js': { async processIncomingMedia() {} },
+        'src/services/persistentMediaQueue.js': ImmediateMediaQueue,
+        'src/web/dataAccess.js': {
+          async getDmUser() { return { user_id: participantJid, allowed: 1, blocked: 0 }; },
+          async upsertDmUser() {}
+        },
+        'src/database/index.js': {
+          async resolveSenderId() { return participantJid; },
+          async getQuotedMediaContext(messageId, chatId) {
+            assertEqual(messageId, 'quoted-sticker-1');
+            assertEqual(chatId, groupJid);
+            return {
+              mediaId: 42,
+              mimetype: 'image/webp',
+              description: 'Gato assustado olhando para uma planilha',
+              emotion: 'pânico',
+              usageIntent: 'reação a trabalho inesperado'
+            };
+          }
+        },
+        'src/services/conversationAgent.js': {
+          async handleGroupChatMessage(_client, _message, context) {
+            conversationCalls.push(context);
+            return true;
+          }
+        },
+        'src/client/memory-client.js': { isReady() { return false; } }
+      }, async ({ handleMessage }) => {
+        await handleMessage(new MockBaileysClient(), {
+          id: 'question-1', from: groupJid, body: 'bot, isso representa o quê?',
+          type: 'chat', isMedia: false, isGroupMsg: true,
+          hasQuotedMsg: true, quotedMsgId: 'quoted-sticker-1',
+          sender: { id: participantJid },
+          key: { remoteJid: groupJid, participant: participantJid }
+        });
+      });
+
+      assertEqual(conversationCalls.length, 1);
+      assertEqual(conversationCalls[0].quotedMedia.mediaId, 42);
+      assertEqual(conversationCalls[0].quotedMedia.description, 'Gato assustado olhando para uma planilha');
+      assertEqual(conversationCalls[0].quotedMedia.emotion, 'pânico');
+      if (previousFlag === undefined) delete process.env.CONVERSATION_QUOTED_MEDIA_CONTEXT_ENABLED;
+      else process.env.CONVERSATION_QUOTED_MEDIA_CONTEXT_ENABLED = previousFlag;
+    }
+  },
+  {
+    name: 'quoted sticker context stays disabled by default',
+    fn: async () => {
+      delete process.env.CONVERSATION_QUOTED_MEDIA_CONTEXT_ENABLED;
+      let resolverCalls = 0;
+      const conversationCalls = [];
+      const groupJid = '123456@g.us';
+      class ImmediateMediaQueue { on() {} setExecutor(executor) { this.executor = executor; } async getStats() { return { waiting: 0, processing: 0 }; } async add(payload) { return this.executor(payload); } }
+      await withMockedMessageHandler({
+        'src/commands/index.js': { taggingMap: new Map(), async handleCommand() { return false; }, async handleTaggingMode() { return false; } },
+        'src/utils/safeMessaging.js': { async safeReply() {} },
+        'src/utils/typingIndicator.js': { async withTyping(_client, _chatId, fn) { return fn(); } },
+        'src/bot/logging.js': { async logReceivedMessage() {} },
+        'src/bot/contacts.js': { upsertContactFromMessage() {}, upsertGroupFromMessage() {}, upsertGroupUser() {} },
+        'src/bot/mediaProcessor.js': { async processIncomingMedia() {} },
+        'src/services/persistentMediaQueue.js': ImmediateMediaQueue,
+        'src/web/dataAccess.js': { async getDmUser() { return { allowed: 1, blocked: 0 }; }, async upsertDmUser() {} },
+        'src/database/index.js': { async resolveSenderId() { return 'participant@c.us'; }, async getQuotedMediaContext() { resolverCalls += 1; return { mediaId: 42 }; } },
+        'src/services/conversationAgent.js': { async handleGroupChatMessage(_client, _message, context) { conversationCalls.push(context); return true; } },
+        'src/client/memory-client.js': { isReady() { return false; } }
+      }, async ({ handleMessage }) => {
+        await handleMessage(new MockBaileysClient(), { id: 'question-disabled', from: groupJid, body: 'bot, e isso?', type: 'chat', isMedia: false, isGroupMsg: true, quotedMsgId: 'quoted-disabled', sender: { id: 'participant@c.us' }, key: { remoteJid: groupJid, participant: 'participant@c.us' } });
+      });
+      assertEqual(resolverCalls, 0, 'resolver must not run while feature is disabled');
+      assertEqual(conversationCalls[0].quotedMedia, null);
+    }
+  },
+  {
     name: 'handleMessage syncs memory context before group conversation replies',
     fn: async () => {
       const memoryCalls = [];

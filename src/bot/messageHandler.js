@@ -18,7 +18,7 @@ const {
   getAllowedDmJids,
   isJidAllowed,
 } = require('../utils/whatsappRouting');
-const { resolveSenderId, markMessageAsProcessed, isMessageProcessed } = require('../database');
+const { resolveSenderId, markMessageAsProcessed, isMessageProcessed, getQuotedMediaContext } = require('../database');
 const PersistentMediaQueue = require('../services/persistentMediaQueue');
 const { getDmUser, upsertDmUser } = require('../web/dataAccess');
 const { handleGroupChatMessage } = require('../services/conversationAgent');
@@ -30,6 +30,7 @@ const memory = require('../client/memory-client');
 // Rate-limited auto-reply tracker for DM request notifications
 const dmAutoReplyMap = new Map();
 const DM_AUTO_REPLY_TTL = Number(process.env.DM_AUTO_REPLY_TTL_SECONDS) || 60 * 60; // default 1 hour
+const CONVERSATION_QUOTED_MEDIA_CONTEXT_ENABLED = /^(1|true)$/i.test(process.env.CONVERSATION_QUOTED_MEDIA_CONTEXT_ENABLED || '0');
 
 function resolveSenderIdSafe(client, senderId) {
   if (typeof resolveSenderId === 'function') {
@@ -463,11 +464,21 @@ async function handleMessage(client, message) {
         console.warn('[MessageHandler] Background memory sync failed:', error?.message || error);
       });
 
+      let quotedMedia = null;
+      if (CONVERSATION_QUOTED_MEDIA_CONTEXT_ENABLED && message.quotedMsgId && typeof getQuotedMediaContext === 'function') {
+        try {
+          quotedMedia = await getQuotedMediaContext(message.quotedMsgId, chatId);
+        } catch (error) {
+          console.warn('[MessageHandler] Falha ao resolver mídia citada:', error?.message || error);
+        }
+      }
+
       const conversationHandled = await handleGroupChatMessage(client, message, {
         chatId,
         senderId: resolvedSenderId,
         senderName,
-        groupName
+        groupName,
+        quotedMedia
       });
       if (conversationHandled) {
         if (shouldMarkProcessed) {

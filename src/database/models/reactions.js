@@ -44,6 +44,44 @@ function getMediaIdFromMessage(messageId) {
 }
 
 /**
+ * Resolves safe conversational context for media quoted in the same chat.
+ * @param {string} messageId
+ * @param {string} chatId
+ * @returns {Promise<object|null>}
+ */
+function getQuotedMediaContext(messageId, chatId) {
+  if (!messageId || !chatId) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    db.get(
+      `SELECT m.id AS media_id, m.mimetype, m.description, m.extracted_text,
+              mm.visual_action, mm.emotion, mm.ocr_text, mm.cultural_reference,
+              mm.usage_intent, mm.context_signals
+       FROM message_media_links l
+       JOIN media m ON m.id = l.media_id
+       LEFT JOIN media_metadata mm ON mm.media_id = m.id
+       WHERE l.message_id = ? AND l.chat_id = ? AND m.nsfw = 0
+       LIMIT 1`,
+      [messageId, chatId],
+      (err, row) => {
+        if (err || !row) return resolve(null);
+        resolve({
+          mediaId: row.media_id,
+          mimetype: row.mimetype || '',
+          description: row.description || '',
+          extractedText: row.extracted_text || '',
+          visualAction: row.visual_action || '',
+          emotion: row.emotion || '',
+          ocrText: row.ocr_text || row.extracted_text || '',
+          culturalReference: row.cultural_reference || '',
+          usageIntent: row.usage_intent || '',
+          contextSignals: row.context_signals || ''
+        });
+      }
+    );
+  });
+}
+
+/**
  * Adds or updates a reaction to a media item
  * @param {number} mediaId - Media ID
  * @param {string} messageId - Original message ID that was reacted to
@@ -294,6 +332,7 @@ module.exports = {
   getReactionTrends,
   linkMessageToMedia,
   getMediaIdFromMessage,
+  getQuotedMediaContext,
   upsertReaction,
   removeReaction,
   getReactionsForMedia,

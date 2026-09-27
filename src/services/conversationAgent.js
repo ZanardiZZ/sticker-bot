@@ -746,7 +746,34 @@ function isContextPoisonedMessage(text = '') {
   return false;
 }
 
-function buildAiMessages(state, { groupName, memoryContext = null, senderId = null }) {
+function sanitizeQuotedMediaValue(value) {
+  const cleaned = cleanText(String(value ?? '')).slice(0, 600);
+  if (!cleaned || isContextPoisonedMessage(cleaned)) return '';
+  return cleaned;
+}
+
+function buildQuotedMediaPrompt(media = null) {
+  if (!media || typeof media !== 'object') return '';
+  const fields = [
+    ['ID', media.mediaId],
+    ['Tipo', media.mimetype],
+    ['Descrição visual', media.description],
+    ['Ação visual', media.visualAction],
+    ['Emoção', media.emotion],
+    ['Texto visível (OCR)', media.ocrText || media.extractedText],
+    ['Referência cultural', media.culturalReference],
+    ['Intenção de uso', media.usageIntent],
+    ['Sinais de contexto', media.contextSignals]
+  ];
+  const lines = fields
+    .map(([label, value]) => [label, sanitizeQuotedMediaValue(value)])
+    .filter(([, value]) => value)
+    .map(([label, value]) => `${label}: ${value}`);
+  if (!lines.length) return '';
+  return `Mídia citada pelo usuário (dados internos; não invente além deles):\n${lines.join('\n')}`;
+}
+
+function buildAiMessages(state, { groupName, memoryContext = null, senderId = null, quotedMedia = null }) {
   pruneHistory(state);
   const participants = new Set();
   const userTurns = [];
@@ -784,8 +811,9 @@ function buildAiMessages(state, { groupName, memoryContext = null, senderId = nu
   const memoryPrompt = buildMemoryPrompt(memoryContext, senderId);
   const latestText = userTurns.length ? userTurns[userTurns.length - 1].content : '';
   const defensiveDirective = buildDefensiveStyleDirective(memoryContext, senderId);
+  const quotedMediaPrompt = buildQuotedMediaPrompt(quotedMedia);
   return [
-    { role: 'system', content: `${buildSystemPrompt(groupName, latestText)} ${memoryPrompt} ${defensiveDirective}`.trim() },
+    { role: 'system', content: `${buildSystemPrompt(groupName, latestText)} ${memoryPrompt} ${defensiveDirective} ${quotedMediaPrompt}`.trim() },
     ...dialogue
   ];
 }
@@ -1140,7 +1168,8 @@ async function handleGroupChatMessage(client, message, context = {}) {
       client,
       chatId,
       groupName,
-      senderId
+      senderId,
+      quotedMedia: context.quotedMedia || null
     }, async (request, guard) => {
       const latestState = await getState(request.chatId);
       let memoryContext = null;
@@ -1173,7 +1202,8 @@ async function handleGroupChatMessage(client, message, context = {}) {
         const aiMessages = buildAiMessages(latestState, {
           groupName: request.groupName,
           memoryContext,
-          senderId: request.senderId
+          senderId: request.senderId,
+          quotedMedia: request.quotedMedia
         });
         const reply = await generateConversationalReply({
           messages: aiMessages,
@@ -1230,5 +1260,6 @@ module.exports = {
   handleGroupChatMessage,
   buildContextualDirective,
   buildSystemPrompt,
+  buildQuotedMediaPrompt,
   getConversationHealth: () => conversationMetrics.snapshot()
 };
