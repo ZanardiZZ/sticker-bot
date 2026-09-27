@@ -490,6 +490,8 @@
       <!-- Step 1: WhatsApp Configuration -->
       <div class="step active" id="step1">
         <h2>Configuração do WhatsApp</h2>
+        <div class="alert alert-info show" id="connectionState">Estado: aguardando conexão do bridge.</div>
+        <div class="summary-section" id="qrPanel" style="display:none"><h3>QR de pareamento</h3><pre id="qrValue" style="white-space:pre-wrap;word-break:break-all"></pre></div>
         <p class="step-description">Configure o grupo principal de automação, os grupos permitidos para conversa e o número do administrador.</p>
 
         <div class="form-group">
@@ -663,7 +665,7 @@
         </div>
 
         <div class="alert alert-info show">
-          <strong>⚠️ Importante:</strong> O servidor será reiniciado após a configuração. Isso pode levar alguns segundos.
+          <strong>⚠️ Importante:</strong> Revise o resumo. A configuração será gravada com backup; o reinício dos serviços será uma ação operacional separada.
         </div>
 
         <div class="buttons">
@@ -725,7 +727,22 @@
       } catch (err) {
         console.error('Failed to check setup status:', err);
       }
+      pollConnectionState();
     });
+
+    async function pollConnectionState() {
+      try {
+        const response = await fetch('/setup/qr');
+        const data = await response.json();
+        const state = document.getElementById('connectionState');
+        if (data.available) {
+          document.getElementById('qrPanel').style.display = 'block';
+          document.getElementById('qrValue').textContent = data.qr;
+          state.textContent = 'Estado: QR disponível para pareamento.';
+        }
+      } catch (_) {}
+      setTimeout(pollConnectionState, 2000);
+    }
 
     function showError(message) {
       const alert = document.getElementById('errorAlert');
@@ -887,7 +904,8 @@
       try {
         const response = await setupFetch('/setup/finalize', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ confirm: true })
         });
 
         const data = await response.json();

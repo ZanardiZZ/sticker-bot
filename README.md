@@ -36,6 +36,11 @@ npm ci
 
 Configure o `.env` conforme os comentários de `.env.example`. Nunca versionar `.env`, tokens ou credenciais.
 
+## Recursos de produto atuais
+
+- **Geração de memes:** `#criar <descrição>` ou responda a um áudio; o bot transcreve, cria o prompt, gera a imagem e envia uma figurinha. Reações positivas/negativas alimentam a orientação das próximas criações. Veja [`docs/MEME_GENERATION.md`](docs/MEME_GENERATION.md).
+- **Instalação guiada:** `bash scripts/ops/install.sh` inicia o WebServer temporário e imprime uma URL `/setup?token=...`. O wizard grava o `.env` com backup e reinicia o PM2 após a confirmação. Veja [`docs/SETUP_WIZARD.md`](docs/SETUP_WIZARD.md).
+
 ## Execução
 
 O modo recomendado usa PM2 e sobe os três processos da aplicação:

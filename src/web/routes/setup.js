@@ -9,16 +9,55 @@ const path = require('path');
 const fs = require('fs').promises;
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
+const { spawn } = require('child_process');
+const { BAILEYS_AUTH_DIR, ROOT_DIR } = require('../../paths');
 
-// Middleware: só permite acesso se SETUP_MODE=true
+const SETUP_ENABLED = /^(1|true)$/i.test(process.env.SETUP_WIZARD_ENABLED || process.env.SETUP_MODE || 'false');
+const SETUP_TOKEN = process.env.SETUP_WIZARD_TOKEN || crypto.randomBytes(24).toString('hex');
+const SETUP_COOKIE = 'sticker_setup';
+let setupCompleted = false;
+if (SETUP_ENABLED) console.log(`[Setup] Wizard enabled; bootstrap token: ${SETUP_TOKEN}`);
+
+// The wizard is opt-in and LAN exposure must be enforced by the deployment firewall.
+// Authentication uses a one-time bootstrap token exchanged for a short-lived HttpOnly cookie.
 function requireSetupMode(req, res, next) {
-  if (process.env.SETUP_MODE !== 'true') {
-    return res.redirect('/login');
+  if (!SETUP_ENABLED || setupCompleted) return res.status(404).json({ error: 'setup_disabled' });
+  const cookieToken = req.cookies?.[SETUP_COOKIE];
+  const header = String(req.get('authorization') || '');
+  const bearer = header.startsWith('Bearer ') ? header.slice(7) : '';
+  const bootstrap = String(req.query.token || req.body?.token || '');
+  const sameToken = (candidate) => Boolean(candidate)
+    && candidate.length === SETUP_TOKEN.length
+    && crypto.timingSafeEqual(Buffer.from(candidate), Buffer.from(SETUP_TOKEN));
+  const validCookie = sameToken(cookieToken);
+  const validBearer = sameToken(bearer);
+  const validBootstrap = sameToken(bootstrap);
+  if (!validCookie && !validBearer && !validBootstrap) return res.status(401).json({ error: 'setup_auth_required' });
+  if (validBootstrap && !validCookie) {
+    res.cookie(SETUP_COOKIE, SETUP_TOKEN, { httpOnly: true, sameSite: 'strict', secure: process.env.NODE_ENV === 'production', maxAge: 15 * 60 * 1000 });
   }
   next();
 }
 
 // Initialize session data if not exists
+function scheduleServiceRestart() {
+  const pm2Home = process.env.PM2_HOME || `${process.env.HOME || '/home/dev'}/.pm2`;
+  const pm2 = process.env.PM2_BIN || '/usr/bin/pm2';
+  try {
+    const child = spawn(pm2, ['restart', 'all', '--update-env'], {
+      detached: true,
+      stdio: 'ignore',
+      env: { ...process.env, PM2_HOME: pm2Home }
+    });
+    child.unref();
+    console.log('[Setup] Reinício automático dos serviços solicitado via PM2');
+    return true;
+  } catch (error) {
+    console.error('[Setup] Não foi possível solicitar reinício via PM2:', error.message);
+    return false;
+  }
+}
+
 function initSetupSession(req) {
   if (!req.session.setupData) {
     req.session.setupData = {};
@@ -43,6 +82,17 @@ router.get('/setup/status', requireSetupMode, (req, res) => {
     currentStep: req.session.setupStep || 1,
     hasData: Object.keys(req.session.setupData || {}).length > 0
   });
+});
+
+// QR is read only while pairing and is never returned in logs or persisted by this route.
+router.get('/setup/qr', requireSetupMode, async (_req, res) => {
+  try {
+    const qrPath = path.join(BAILEYS_AUTH_DIR, 'pairing.qr');
+    const qr = await fs.readFile(qrPath, 'utf8');
+    res.json({ available: true, qr });
+  } catch (_) {
+    res.json({ available: false, state: 'waiting' });
+  }
 });
 
 // POST /setup/whatsapp - Step 1: Configure WhatsApp
@@ -239,6 +289,9 @@ router.post('/setup/finalize', requireSetupMode, async (req, res) => {
     initSetupSession(req);
 
     const setupData = req.session.setupData;
+    if (req.body?.confirm !== true) {
+      return res.status(409).json({ error: 'explicit_confirmation_required', summary: true });
+    }
 
     // Validate we have minimum required data
     if (!setupData.AUTO_SEND_GROUP_ID || !setupData.GROUP_CHAT_ALLOWED_IDS || !setupData.ADMIN_NUMBER || !setupData.ADMIN_INITIAL_USERNAME) {
@@ -251,9 +304,12 @@ router.post('/setup/finalize', requireSetupMode, async (req, res) => {
 
     // 1. Generate .env file
     const envContent = generateEnvFile(setupData);
-    const envPath = path.join(__dirname, '../../.env');
-    await fs.writeFile(envPath, envContent);
-    console.log('[Setup] ✓ Created .env file');
+    const envPath = path.join(ROOT_DIR, '.env');
+    const backupPath = `${envPath}.backup-setup-${Date.now()}`;
+    try { await fs.copyFile(envPath, backupPath); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    await fs.writeFile(envPath, envContent, { mode: 0o600 });
+    await fs.chmod(envPath, 0o600);
+    console.log('[Setup] ✓ Updated local secrets file with backup');
 
     // 2. Run migrations
     try {
@@ -280,10 +336,8 @@ router.post('/setup/finalize', requireSetupMode, async (req, res) => {
       });
     }
 
-    // 4. Clear setup mode from environment
-    delete process.env.SETUP_MODE;
-
-    // 5. Clear session
+    // 4. Invalidate the bootstrap token for this process and clear the session.
+    setupCompleted = true;
     req.session.destroy();
 
     console.log('[Setup] ✓ Setup completed successfully!');
@@ -291,15 +345,11 @@ router.post('/setup/finalize', requireSetupMode, async (req, res) => {
     // Return success
     res.json({
       success: true,
-      message: 'Setup completed! Restarting services...',
+      message: 'Configuração gravada. Os serviços serão reiniciados automaticamente.',
+      restartRequired: true,
+      restartScheduled: scheduleServiceRestart(),
       redirectTo: '/login'
     });
-
-    // Schedule server restart (give time for response to send)
-    setTimeout(() => {
-      console.log('[Setup] Restarting server...');
-      process.exit(0); // PM2 or systemd will restart automatically
-    }, 2000);
 
   } catch (error) {
     console.error('[Setup] Finalize error:', error);
@@ -320,6 +370,10 @@ function generateEnvFile(data) {
 
   return `# Generated by Sticker Bot Setup Wizard
 # ${new Date().toISOString()}
+
+# Setup concluído; o wizard fica desabilitado após o primeiro boot.
+SETUP_MODE=false
+SETUP_WIZARD_ENABLED=false
 
 # ===== WHATSAPP CONFIGURATION =====
 AUTO_SEND_GROUP_ID=${data.AUTO_SEND_GROUP_ID}

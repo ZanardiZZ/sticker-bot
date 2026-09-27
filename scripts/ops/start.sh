@@ -68,13 +68,20 @@ if [ ! -f .env ]; then
 fi
 
 # Check if SETUP_MODE is still enabled
-if grep -q "SETUP_MODE=true" .env 2>/dev/null; then
-    echo "⚠️  Setup mode is still enabled"
+if grep -qE "^(SETUP_MODE|SETUP_WIZARD_ENABLED)=true" .env 2>/dev/null; then
+    SETUP_TOKEN=$(grep '^SETUP_WIZARD_TOKEN=' .env 2>/dev/null | cut -d= -f2-)
+    echo "⚠️  Setup wizard is enabled"
     echo ""
-    echo "Please complete the setup wizard first:"
+    echo "Start only the web server while completing setup:"
     echo "  npm run web"
-    echo "  Then visit: http://localhost:3000/setup"
+    if [ -n "$SETUP_TOKEN" ]; then
+        echo "  Local URL: http://localhost:3000/setup?token=$SETUP_TOKEN"
+        echo "  LAN URL:   http://$(hostname -I 2>/dev/null | awk '{print $1}'):3000/setup?token=$SETUP_TOKEN"
+    else
+        echo "  Token: check the WebServer log for the generated setup token"
+    fi
     echo ""
+    echo "After finalizing and reviewing the backup, set SETUP_WIZARD_ENABLED=false and restart PM2."
     exit 1
 fi
 

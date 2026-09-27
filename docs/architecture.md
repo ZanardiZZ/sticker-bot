@@ -13,7 +13,8 @@ The project is a Node.js WhatsApp sticker bot with an Express administration sur
 - `src/server/` and `src/waAdapter.js`: bridge and WhatsApp adapter behavior.
 - `src/database/`: database handler, models, migrations, and LID mapping.
 - `src/services/`: AI, media, payments, privacy, OpenViking, and other integrations.
-- `src/web/`: Express routes, authentication, middleware, data access, and frontend assets.
+- `src/web/`: Express routes, authentication, middleware, data access, setup wizard, and frontend assets.
+- `src/plugins/memeGenerator.js`: text/audio-to-image meme generation, sticker delivery, and feedback persistence.
 
 ## Operational boundaries
 
@@ -50,3 +51,5 @@ Use the smallest applicable command first and expand validation when the change 
 - [`LGPD_INVENTORY.md`](LGPD_INVENTORY.md): privacy inventory and retention baseline.
 - [`MEMORY_OPENVIKING.md`](MEMORY_OPENVIKING.md): current memory integration.
 - [`MERCADOPAGO_CHECKOUT_ORDERS.md`](MERCADOPAGO_CHECKOUT_ORDERS.md): payment integration.
+- [`MEME_GENERATION.md`](MEME_GENERATION.md): meme generation and feedback flow.
+- [`SETUP_WIZARD.md`](SETUP_WIZARD.md): first-boot installer and setup flow.

@@ -1,6 +1,6 @@
 # StickerBot2 — Roadmap atual
 
-Atualizado em 2026-09-01. Este é o backlog principal. Documentos históricos não fazem parte da árvore pública atual.
+Atualizado em 2026-09-27. Este é o backlog principal. Documentos históricos não fazem parte da árvore pública atual.
 
 ## Estado operacional
 
@@ -70,23 +70,31 @@ Plano detalhado em [`PUBLIC_DM_STICKER_ACCESS_PLAN.md`](./PUBLIC_DM_STICKER_ACCE
 
 **Não ativado:** o atendimento público continua fechado até a implementação e validação das gates.
 
-### Geração de memes com feedback — 🔵 não iniciado como módulo independente
+### Geração de memes com feedback — 🟡 primeira fatia implementada
 
-`texto/áudio → transcrição → prompt visual → imagem → sticker → reações → ranking`
+`texto/áudio → transcrição → prompt visual → imagem → sticker → reações → orientação futura`
 
-- [ ] módulo independente de geração;
-- [ ] registro de prompt e resultado;
-- [ ] geração a partir de áudio;
-- [ ] métricas de desempenho dos prompts;
-- [ ] aprendizado baseado em reações.
+- ✅ geração por texto e áudio no comando `#criar`;
+- ✅ registro do prompt, resultado e mensagem enviada;
+- ✅ feedback positivo/negativo por reação, com um voto por usuário/meme;
+- ✅ orientação agregada de feedback aplicada aos prompts seguintes;
+- ✅ coleção de memes aprovados após cinco feedbacks positivos;
+- [ ] canário real no WhatsApp e validação da melhoria entre gerações;
+- [ ] métricas comparativas de prompts e revisão do modelo de ranking.
 
-### Instalador/wizard web — 🔵 não iniciado
+Detalhes: [`MEME_GENERATION.md`](./MEME_GENERATION.md).
 
-- [ ] wizard `/setup`;
-- [ ] configuração inicial segura;
-- [ ] QR Code e validação WhatsApp;
-- [ ] instalação de dependências e PM2;
-- [ ] testes em instalação limpa.
+### Instalador/wizard web — 🟡 primeira versão implementada
+
+- ✅ instalador `scripts/ops/install.sh`;
+- ✅ wizard `/setup` com token temporário restrito à LAN;
+- ✅ configuração de grupos, administrador e recursos opcionais;
+- ✅ QR de pareamento exibido sem persistência adicional pela interface;
+- ✅ backup do `.env`, permissões `0600` e confirmação explícita;
+- ✅ reinício automático via PM2 após finalizar;
+- [ ] validação em instalação limpa e canário de pareamento real.
+
+Detalhes: [`SETUP_WIZARD.md`](./SETUP_WIZARD.md).
 
 ## Infraestrutura — baixa prioridade
 
