@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.30.0] - 2026-09-27
+<!-- release-source: 59b0e44c6ae845b77bcfd52e9efd27ddcdd89477 -->
+
+### Novidades
+- complete rich visual metadata pipeline
+
 ## [0.29.0] - 2026-09-27
 <!-- release-source: 61fd0acfe04b1b9f9de57c4e49664b4eb51212e8 -->
 
