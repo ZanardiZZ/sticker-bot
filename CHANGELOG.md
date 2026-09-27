@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.31.0] - 2026-09-27
+<!-- release-source: d97ac2943d7b3ad0d5361011254730e3c26aa9c7 -->
+
+### Testes
+- complete quoted media context coverage
+
 ## [0.30.0] - 2026-09-27
 <!-- release-source: 59b0e44c6ae845b77bcfd52e9efd27ddcdd89477 -->
 
