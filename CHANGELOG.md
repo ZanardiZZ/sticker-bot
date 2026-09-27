@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.0] - 2026-09-27
+<!-- release-source: 546d30144f7287a9067af8e42e82b065fae33ae4 -->
+
+### Novidades
+- add meme generation feedback loop
+- add setup wizard installer
+
 ## [0.31.0] - 2026-09-27
 <!-- release-source: d97ac2943d7b3ad0d5361011254730e3c26aa9c7 -->
 
