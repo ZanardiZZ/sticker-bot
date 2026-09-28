@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.32.1] - 2026-09-28
+<!-- release-source: 41897970b3f8e9ed5b5080cfd7bf4a2b7af1fe8e -->
+
+### Correções
+- ensure every main release gets a patch version
+
 ## [0.32.0] - 2026-09-27
 <!-- release-source: 546d30144f7287a9067af8e42e82b065fae33ae4 -->
 
