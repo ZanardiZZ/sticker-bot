@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.32.2] - 2026-09-28
+<!-- release-source: 102754d909482f58a7d023397b3339d776cb3515 -->
+
+### Correções
+- report media queue in pong
+
 ## [0.32.1] - 2026-09-28
 <!-- release-source: 41897970b3f8e9ed5b5080cfd7bf4a2b7af1fe8e -->
 
