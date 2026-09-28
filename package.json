@@ -71,7 +71,7 @@
     "@eslint/js": "^10.0.1",
     "eslint": "^10.0.3",
     "globals": "^17.9.0",
-    "prettier": "^3.8.1"
+    "prettier": "^3.9.9"
   },
   "overrides": {
     "@tensorflow/tfjs-node": {
