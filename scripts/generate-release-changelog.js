@@ -28,7 +28,7 @@ try {
 
 const range = previous ? `${previous}..${sourceSha}` : sourceSha;
 const raw = execFileSync('git', ['log', '--reverse', '--format=%s%x1f%an%x1e', range], { encoding: 'utf8' });
-const automated = /^(docs\(changelog\):|chore: bump version to )/i;
+const automated = /^(chore: bump version to |chore\(release\): publish )/i;
 const records = raw.split('\x1e').map(entry => entry.trim()).filter(Boolean).map(entry => {
   const [subject, author = ''] = entry.split('\x1f');
   return { subject: subject.trim(), author: author.trim() };

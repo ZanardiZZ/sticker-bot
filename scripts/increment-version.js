@@ -89,8 +89,10 @@ function getLastProcessedCommit() {
           // No record in database - try to find last changelog commit in git history
           // (changelog commits are created after version bumps)
           try {
+            const sourceSha = process.env.RELEASE_SOURCE_SHA;
+            const changelogRange = sourceSha ? sourceSha + '^' : 'HEAD';
             const lastChangelogCommit = execSync(
-              'git log --grep="docs(changelog)" --format=%H -1',
+              'git log --grep=\"docs(changelog)\" --format=%H -1 ' + changelogRange,
               { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }
             ).trim();
 
@@ -289,7 +291,7 @@ function analyzeCommits(sinceCommit = null) {
       const body = parts[2] ? parts[2].trim() : '';
 
       // Skip version bump commits from the workflow itself
-      if (subject.includes('chore: bump version') || subject.includes('docs(changelog)')) {
+      if (subject.includes('chore: bump version') || subject.startsWith('chore(release): publish ')) {
         continue;
       }
 
@@ -324,6 +326,8 @@ function analyzeCommits(sinceCommit = null) {
     const description = relevantCommits.length > 0
       ? relevantCommits.map(c => `- ${c.subject}`).join('\n')
       : 'Maintenance updates';
+
+    if (highestBump === 'none' && analyzedCommits.length > 0) highestBump = 'patch';
 
     return {
       bumpType: highestBump,
