@@ -57,7 +57,7 @@
     "node-webpmux": "^3.2.1",
     "nodemailer": "^9.1.1",
     "nsfwjs": "^4.2.1",
-    "openai": "^6.17.0",
+    "openai": "^7.23.0",
     "p-map": "^7.0.6",
     "pm2": "^7.0.3",
     "qrcode-terminal": "^0.12.0",
