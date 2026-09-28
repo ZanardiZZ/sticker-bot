@@ -319,6 +319,22 @@ async function handleCommand(client, message, chatId, context = {}) {
           const cronSchedule = process.env.BOT_CRON_SCHEDULE || '0 0-23 * * *';
           const botVersion = (packageJson && packageJson.version) ? packageJson.version : '1.0.0';
 
+          let queueDepth = null;
+          try {
+            const queueStats = typeof context.getMediaQueueStats === 'function'
+              ? await context.getMediaQueueStats()
+              : null;
+            if (queueStats && typeof queueStats === 'object') {
+              const waiting = Number(queueStats.waiting);
+              const processing = Number(queueStats.processing);
+              if (Number.isFinite(waiting) && Number.isFinite(processing)) {
+                queueDepth = Math.max(0, waiting) + Math.max(0, processing);
+              }
+            }
+          } catch (queueErr) {
+            console.warn('[Ping] Falha ao obter stats de fila:', queueErr?.message || queueErr);
+          }
+
           // Fetch metrics
           let avgProcessing1h = null;
           let avgProcessing24h = null;
@@ -352,7 +368,8 @@ async function handleCommand(client, message, chatId, context = {}) {
             `⏱️ Proc. médio (1h): ${formatProcessingTime(avgProcessing1h)}\n` +
             `⏱️ Proc. médio (24h): ${formatProcessingTime(avgProcessing24h)}\n` +
             `💾 Tamanho total: ${totalMediaSizeMB !== null ? totalMediaSizeMB + ' MB' : 'calculando...'}\n` +
-             `📦 Mídias no acervo: ${totalMediaCount !== null ? totalMediaCount : 'calculando...'}`;
+             `📦 Mídias no acervo: ${totalMediaCount !== null ? totalMediaCount : 'calculando...'}\n` +
+             `🧵 Fila de mídia: ${queueDepth !== null ? queueDepth : 'indisponível'}`;
 
           await safeReply(client, chatId, response, message);
           handled = true;

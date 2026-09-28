@@ -421,7 +421,8 @@ async function handleMessage(client, message) {
       resolvedSenderId,
       groupId: remoteJid,
       isGroup,
-      rawSenderId: senderId
+      rawSenderId: senderId,
+      getMediaQueueStats: () => mediaProcessingQueue.getStats()
     });
 
     if (commandHandled) {
