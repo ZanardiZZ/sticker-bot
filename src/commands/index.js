@@ -396,15 +396,14 @@ async function handleCommand(client, message, chatId, context = {}) {
 
           const wsOnline = client && client.connected !== false ? 'online' : 'offline';
 
-          let queueDepth = 'n/a';
+          let queueDepth = 'indisponível';
           try {
-            const queueStats =
-              (typeof client?.getMediaQueueStats === 'function' && client.getMediaQueueStats()) ||
-              (typeof client?.getQueueStats === 'function' && client.getQueueStats()) ||
-              null;
+            const queueStats = typeof context.getMediaQueueStats === 'function'
+              ? await context.getMediaQueueStats()
+              : null;
             if (queueStats && typeof queueStats === 'object') {
-              const waiting = Number(queueStats.waiting || 0);
-              const processing = Number(queueStats.processing || 0);
+              const waiting = Number(queueStats.waiting);
+              const processing = Number(queueStats.processing);
               if (Number.isFinite(waiting) && Number.isFinite(processing)) {
                 queueDepth = String(Math.max(0, waiting) + Math.max(0, processing));
               }

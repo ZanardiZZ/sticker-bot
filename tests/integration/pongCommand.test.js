@@ -32,7 +32,8 @@ const tests = [
       await commands.handleCommand(client, message, message.from, {
         resolvedSenderId: message.from,
         groupId: message.from,
-        isGroup: false
+        isGroup: false,
+        getMediaQueueStats: async () => ({ waiting: 2, processing: 1 })
       });
 
       assert(client.sent.length >= 1, 'should send at least one outgoing message for #pong');
@@ -41,6 +42,7 @@ const tests = [
       assert(payload.toLowerCase().includes('latência') || payload.toLowerCase().includes('latencia'), 'payload should include latency field');
       assert(payload.includes('ws:'), 'payload should include ws status');
       assert(payload.includes('fila_mídia:') || payload.includes('fila_midia:'), 'payload should include queue field');
+      assert(payload.includes('fila_mídia: 3') || payload.includes('fila_midia: 3'), 'payload should include queue depth');
       assert(payload.includes('uptime:'), 'payload should include uptime field');
     }
   },
