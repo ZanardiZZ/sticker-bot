@@ -39,7 +39,7 @@
     "axios": "^1.13.5",
     "bcryptjs": "^3.0.3",
     "canvas": "^3.1.2",
-    "compression": "^1.8.1",
+    "compression": "^1.8.2",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "csurf": "^1.11.0",
