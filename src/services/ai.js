@@ -168,6 +168,34 @@ async function visionChatCompletion(messages, requestOptions = {}) {
   throw lastError || new Error('nenhum modelo de visão disponível');
 }
 
+function normalizeAiTags(rawTags, description = '') {
+  // Normalize model output before persistence; malformed JSON often leaves noisy fragments.
+  const stopwords = new Set(['a', 'as', 'ao', 'aos', 'com', 'de', 'da', 'das', 'do', 'dos', 'e', 'em', 'na', 'nas', 'no', 'nos', 'o', 'os', 'para', 'por', 'sem', 'um', 'uma', 'uns', 'umas']);
+  const forbidden = new Set(['description', 'text', 'tags', 'metadata', 'json', 'null', 'undefined']);
+  const input = Array.isArray(rawTags) ? rawTags : (typeof rawTags === 'string' ? rawTags.split(/[,;\n]/u) : []);
+  const result = [];
+
+  const add = value => {
+    const clean = String(value || '')
+      .trim()
+      .replace(/^#+/u, '')
+      .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}_-]+$/gu, '')
+      .toLowerCase();
+    if (!clean || clean.length < 2 || forbidden.has(clean) || stopwords.has(clean) || result.includes(`#${clean}`)) return;
+    result.push(`#${clean}`);
+  };
+
+  input.forEach(add);
+  if (result.length < 5) {
+    String(description || '')
+      .toLocaleLowerCase('pt-BR')
+      .match(/[\p{L}\p{N}]{3,}/gu)?.forEach(word => {
+        if (result.length < 5) add(word);
+      });
+  }
+  return result.slice(0, 5);
+}
+
 function buildFallbackAnnotation(type = 'imagem') {
   const baseDescription = type === 'gif'
     ? 'Análise automática indisponível para o GIF no momento.'
@@ -507,15 +535,7 @@ async function getAiAnnotationsForGif(buffer) {
       let description = String(parsed.description || '').trim();
       let text = typeof parsed.text === 'string' ? parsed.text.trim() : '';
       description = stripOcrFromDescription(description, text);
-      let tags = Array.isArray(parsed.tags) ? parsed.tags.map(t => t.trim()) : [];
-      if (tags.length < 5) {
-        // Completa com hashtags geradas via pickHashtags para totalizar 5
-        const extraTags = pickHashtags(description, 5 - tags.length);
-        tags = tags.concat(extraTags).slice(0, 5);
-      } else if (tags.length > 5) {
-        tags = tags.slice(0, 5);
-      }
-      if (tags.length === 0) tags = ['#gif'];
+      const tags = normalizeAiTags(parsed.tags, description);
       if (!description) {
         const fallback = buildFallbackAnnotation('gif');
         return { ...fallback, text, tags: tags.length ? tags : fallback.tags };
@@ -1309,5 +1329,6 @@ module.exports = {
   generateConversationalReply,
   extractMemoryFactsFromText,
   extractRunningJokeFromText,
-  normalizeConversationMessages
+  normalizeConversationMessages,
+  normalizeAiTags
 };
