@@ -480,14 +480,6 @@ async function processGif(filePath) {
   console.log(`[VideoProcessor] Processando GIF: ${path.basename(filePath)}`);
   
   // Check if file exists
-  if (!fs.existsSync(filePath)) {
-    console.error(`[VideoProcessor] Arquivo GIF não encontrado: ${filePath}`);
-    return {
-      description: 'Erro: arquivo GIF não encontrado',
-      tags: ['gif', 'erro', 'arquivo-nao-encontrado']
-    };
-  }
-  
   // Check if FFmpeg is available
   if (!ffmpeg || !ffmpegPath) {
     console.warn('[VideoProcessor] FFmpeg não disponível, retornando análise básica para GIF');

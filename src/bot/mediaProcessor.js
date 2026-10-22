@@ -966,7 +966,9 @@ async function processIncomingMedia(client, message, resolvedSenderId = null) {
     if (!nsfw) {
       if (wasProcessedAsGifLike) {
         try {
-          const aiResult = await processGif(gifSourceForAnalysis || filePath);
+          const gifAnalysisPath = gifSourceForAnalysis || filePath;
+          // Use the downloaded bytes as the analysis source so temp-file cleanup cannot race GIF processing.
+          const aiResult = await processGif(gifAnalysisPath, buffer);
           if (aiResult && typeof aiResult === 'object') {
             richMetadata = aiResult.metadata || richMetadata;
             extractedText = aiResult.text || extractedText;
