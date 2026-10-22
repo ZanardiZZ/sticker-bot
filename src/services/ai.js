@@ -168,6 +168,19 @@ async function visionChatCompletion(messages, requestOptions = {}) {
   throw lastError || new Error('nenhum modelo de visão disponível');
 }
 
+function isInvalidAiDescription(value) {
+  // Reject model refusals/placeholders so they never become persisted descriptions.
+  const text = String(value || '').trim().toLocaleLowerCase('pt-BR');
+  if (!text) return true;
+  return [
+    'não foi fornecida uma imagem', 'nao foi fornecida uma imagem',
+    'não é possível gerar a descrição', 'nao e possivel gerar a descricao',
+    'não e possível gerar', 'apenas um marcador de texto',
+    '[image 1]', 'envie a imagem que deseja', 'imagem real para análise',
+    'imagem real para analise', 'não consigo analisar', 'nao consigo analisar'
+  ].some(marker => text.includes(marker));
+}
+
 function normalizeAiTags(rawTags, description = '') {
   // Normalize model output before persistence; malformed JSON often leaves noisy fragments.
   const stopwords = new Set(['a', 'as', 'ao', 'aos', 'com', 'de', 'da', 'das', 'do', 'dos', 'e', 'em', 'na', 'nas', 'no', 'nos', 'o', 'os', 'para', 'por', 'sem', 'um', 'uma', 'uns', 'umas']);
@@ -404,6 +417,7 @@ Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",
         tags = tags.slice(0, 5);
       }
       if (tags.length === 0) tags = ['#imagem'];
+      if (isInvalidAiDescription(description)) return buildFallbackAnnotation('imagem');
       return {
         description: description.slice(0, DESC_MAX) || 'Sem descrição.',
         text,
@@ -433,7 +447,7 @@ Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",
       const tags = tagsMatch
         ? [...tagsMatch[1].matchAll(/"((?:\\.|[^"\\])*)"/gu)].map(m => { try { return JSON.parse('"' + m[1] + '"').trim(); } catch { return ''; } }).filter(Boolean).slice(0, 5)
         : [];
-      if (!description) {
+      if (isInvalidAiDescription(description)) {
         const fallback = buildFallbackAnnotation('gif');
         return { ...fallback, text: '', tags: tags.length ? tags : fallback.tags };
       }
@@ -536,7 +550,7 @@ async function getAiAnnotationsForGif(buffer) {
       let text = typeof parsed.text === 'string' ? parsed.text.trim() : '';
       description = stripOcrFromDescription(description, text);
       const tags = normalizeAiTags(parsed.tags, description);
-      if (!description) {
+      if (isInvalidAiDescription(description)) {
         const fallback = buildFallbackAnnotation('gif');
         return { ...fallback, text, tags: tags.length ? tags : fallback.tags };
       }
@@ -1330,5 +1344,6 @@ module.exports = {
   extractMemoryFactsFromText,
   extractRunningJokeFromText,
   normalizeConversationMessages,
-  normalizeAiTags
+  normalizeAiTags,
+  isInvalidAiDescription
 };

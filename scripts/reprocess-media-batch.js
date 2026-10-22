@@ -4,12 +4,12 @@ const fs = require('fs');
 const path = require('path');
 const { db, updateMediaDescription, updateMediaTags } = require('../src/database');
 const { getAiAnnotations, getAiAnnotationsForGif } = require('../src/services/ai');
-const { normalizeAiTags } = require('../src/services/ai');
+const { normalizeAiTags, isInvalidAiDescription } = require('../src/services/ai');
 const sharp = require('sharp');
 
 function isDescriptionMissing(value) {
   const text = String(value || '').trim().toLowerCase();
-  return !text || text.includes('indisponível') || text.includes('indisponivel') || text === 'sem descrição.' || text === 'sem descricao.';
+  return !text || text.includes('indisponível') || text.includes('indisponivel') || text === 'sem descrição.' || text === 'sem descricao.' || isInvalidAiDescription(text);
 }
 
 function hasBadTags(value) {
