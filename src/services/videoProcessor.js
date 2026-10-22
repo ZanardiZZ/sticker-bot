@@ -476,10 +476,22 @@ Responda no formato JSON:
 }
 
 // Função simplificada para GIFs - apenas análise visual de 3 frames
-async function processGif(filePath) {
+async function processGif(filePath, sourceBuffer = null) {
   console.log(`[VideoProcessor] Processando GIF: ${path.basename(filePath)}`);
   
-  // Check if file exists
+  // Restore the downloaded source if temporary-file cleanup raced GIF analysis.
+  if (!fs.existsSync(filePath) && Buffer.isBuffer(sourceBuffer)) {
+    await fs.promises.writeFile(filePath, sourceBuffer);
+    console.warn(`[VideoProcessor] Restored missing GIF analysis input: ${filePath}`);
+  }
+  if (!fs.existsSync(filePath)) {
+    console.error(`[VideoProcessor] Arquivo GIF não encontrado: ${filePath}`);
+    return {
+      description: 'Erro: arquivo GIF não encontrado',
+      tags: ['gif', 'erro', 'arquivo-nao-encontrado']
+    };
+  }
+
   // Check if FFmpeg is available
   if (!ffmpeg || !ffmpegPath) {
     console.warn('[VideoProcessor] FFmpeg não disponível, retornando análise básica para GIF');
