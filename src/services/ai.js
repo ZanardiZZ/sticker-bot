@@ -347,6 +347,15 @@ async function getTagsFromTextPrompt(prompt) {
  * @param {Buffer} buffer Buffer da imagem.
  * @returns {Promise<{description: string|null, tags: string[]|null}>}
  */
+async function prepareVisionImage(buffer) {
+  // Lemonade/Qwen accepts PNG data URLs reliably; normalize every visual input here.
+  const sharp = require('sharp');
+  return sharp(buffer)
+    .resize(512, 512, { fit: 'inside', withoutEnlargement: true })
+    .png()
+    .toBuffer();
+}
+
 async function getAiAnnotations(buffer) {
   try {
     if (!openai) {
@@ -354,13 +363,8 @@ async function getAiAnnotations(buffer) {
       return { description: null, tags: null };
     }
     
-    const sharp = require('sharp');
     const DESC_MAX = 200;
-
-    const imgBuffer = await sharp(buffer)
-      .resize(512, 512, { fit: 'inside' })
-      .png()
-      .toBuffer();
+    const imgBuffer = await prepareVisionImage(buffer);
     const b64 = imgBuffer.toString('base64');
 
     function cleanJsonBlock(text) {
@@ -469,13 +473,8 @@ async function getAiAnnotationsForGif(buffer) {
       return { description: null, tags: null };
     }
     
-    const sharp = require('sharp');
     const DESC_MAX = 200;
-
-    const imgBuffer = await sharp(buffer)
-      .resize(512, 512, { fit: 'inside' })
-      .png()
-      .toBuffer();
+    const imgBuffer = await prepareVisionImage(buffer);
     const b64 = imgBuffer.toString('base64');
     // Force a fresh multimodal evaluation for each image. The llama.cpp/Lemonade
     // prompt cache can otherwise reuse a prior visual result when the text prompt
@@ -1345,5 +1344,6 @@ module.exports = {
   extractRunningJokeFromText,
   normalizeConversationMessages,
   normalizeAiTags,
-  isInvalidAiDescription
+  isInvalidAiDescription,
+  prepareVisionImage
 };
