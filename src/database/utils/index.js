@@ -305,6 +305,14 @@ function hammingDistance(hash1, hash2) {
     return h && (len === 16 || len === 256);
   });
 
+  // A static image and an animated asset are different media kinds.
+  // Never let one matching GIF frame classify them as visually similar.
+  const isAnimated1 = rawFrames1.length > 1;
+  const isAnimated2 = rawFrames2.length > 1;
+  if (isAnimated1 !== isAnimated2) {
+    return 1024;
+  }
+
   const nonDegFrames1 = rawFrames1.filter(h => !isDegenerateHash(h));
   const nonDegFrames2 = rawFrames2.filter(h => !isDegenerateHash(h));
 

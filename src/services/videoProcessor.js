@@ -246,6 +246,27 @@ async function analyzeFrame(framePath, frameIndex) {
   }
 }
 
+async function analyzeGifFrame(framePath, frameIndex) {
+  try {
+    if (!fs.existsSync(framePath)) {
+      console.warn(`[VideoProcessor] Frame GIF ${frameIndex} não encontrado: ${framePath}`);
+      return { description: '', tags: [] };
+    }
+    const buffer = await fs.promises.readFile(framePath);
+    const result = await getAiAnnotationsForGif(buffer);
+    console.log(`[VideoProcessor] Frame GIF ${frameIndex} analisado: ${result.description?.slice(0, 30) || 'sem descrição'}...`);
+    return {
+      description: result.description || '',
+      tags: result.tags || [],
+      text: result.text || '',
+      metadata: normalizeRichMetadata(result.metadata)
+    };
+  } catch (error) {
+    console.warn(`[VideoProcessor] Erro ao analisar frame GIF ${frameIndex}:`, error.message);
+    return { description: '', tags: [] };
+  }
+}
+
 // Função principal: processa vídeo, gera prompt com imagens + transcrição e solicita IA
 async function processVideo(filePath) {
   console.log(`[VideoProcessor] Processando arquivo: ${path.basename(filePath)}`);
@@ -297,7 +318,7 @@ async function processVideo(filePath) {
       async (framePath, index) => {
         return analyzeFrame(framePath, index + 1);
       },
-      { concurrency: 3 } // Limite para evitar rate limits da OpenAI API
+      { concurrency: 1 } // Limite para evitar rate limits da OpenAI API
     );
 
     // Verifica áudio
@@ -546,7 +567,7 @@ async function processGif(filePath) {
       const analyses = await pMap(
         tempFramePaths,
         (framePath, index) => visionScheduler.run(
-          () => analyzeFrame(framePath, index + 1),
+          () => analyzeGifFrame(framePath, index + 1),
           { label: `gif-frame:${path.basename(filePath)}:${index + 1}` }
         ),
         { concurrency: 3 }

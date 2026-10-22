@@ -8,7 +8,7 @@ const os = require('os');
 const crypto = require('crypto');
 const sharp = require('sharp');
 const { spawnSync } = require('child_process');
-const { getAiAnnotations } = require('../../services/ai');
+const { getAiAnnotations, getAiAnnotationsForGif } = require('../../services/ai');
 const { getMD5, isFileProcessed, upsertProcessedFile, getDHash, getAnimatedDHashes } = require('../utils');
 const { findByHashVisual, findByHashMd5, saveMedia } = require('./media');
 const { updateMediaTags } = require('./tags');
@@ -457,7 +457,7 @@ async function processOldStickers() {
         let description = null;
         let tags = null;
         try {
-          const aiResult = await getAiAnnotations(bufferWebp);
+          const aiResult = await getAiAnnotationsForGif(bufferWebp);
           if (aiResult && typeof aiResult === 'object') {
             description = aiResult.description || null;
             tags = aiResult.tags ? aiResult.tags.join(',') : null;
