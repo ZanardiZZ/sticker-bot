@@ -347,7 +347,7 @@ async function handleCriarMemeCommand(client, message, chatId, params = '', cont
 
     await sendStatusMessage(client, chatId, '🖼️ Enviando figurinha...');
 
-    if ((promptInfo.promptProvider !== 'gemma4-zimage') && (captions.topText || captions.bottomText)) {
+    if ((promptInfo.promptProvider !== 'image-generation') && (captions.topText || captions.bottomText)) {
       try {
         await applyCaptionsToSticker(imagemInfo.webpPath, captions);
       } catch (captionError) {

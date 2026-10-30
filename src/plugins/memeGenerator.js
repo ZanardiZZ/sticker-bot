@@ -16,16 +16,16 @@ const STICKER_DIR = BOT_MEDIA_DIR;
 const DB_PATH = path.join(DATA_DIR, 'memes.sqlite');
 const DATASET_PATH = path.join(DATA_DIR, 'prompt_training_set.json');
 const EXPORT_PATH = path.join(DATA_DIR, 'memes_best.json');
-const GEMMA_PROMPT_BASE_URL = String(process.env.GEMMA_PROMPT_BASE_URL || process.env.OPENAI_MULTIMODAL_BASE_URL || 'http://192.168.20.24:13305/v1').replace(/\/$/, '');
-const GEMMA_PROMPT_MODEL = process.env.GEMMA_PROMPT_MODEL || process.env.OPENAI_MULTIMODAL_MODEL || 'gpt-4o-mini';
-const GEMMA_PROMPT_TIMEOUT_MS = Number(process.env.GEMMA_PROMPT_TIMEOUT_MS || 30000);
+const OPENAI_MULTIMODAL_BASE_URL = String(process.env.OPENAI_MULTIMODAL_BASE_URL || '').replace(/\/$/, '');
+const OPENAI_MULTIMODAL_MODEL = process.env.OPENAI_MULTIMODAL_MODEL || 'stickerbot';
+const MULTIMODAL_PROMPT_TIMEOUT_MS = Number(process.env.MULTIMODAL_PROMPT_TIMEOUT_MS || 30000);
 const { generateImage } = require('../services/lemonadeImageGeneration');
 const { classifyMemeFeedback, buildMemeFeedbackDirective } = require('../services/memeFeedback');
 const TRANSCRIPTION_LANGUAGE = process.env.MEME_TRANSCRIPTION_LANGUAGE || 'pt';
 const PROMPT_CACHE_SIZE = 20;
 
 let dbInstance = null;
-let gemmaPromptClient = null;
+let omniRoutePromptClient = null;
 let initialized = false;
 let promptCache = [];
 
@@ -34,15 +34,15 @@ function ensureDataDirs() {
   if (!fs.existsSync(STICKER_DIR)) fs.mkdirSync(STICKER_DIR, { recursive: true });
 }
 
-function ensureGemmaPromptClient() {
-  if (gemmaPromptClient) return gemmaPromptClient;
-  gemmaPromptClient = new OpenAI({
+function ensureOmniRoutePromptClient() {
+  if (omniRoutePromptClient) return omniRoutePromptClient;
+  omniRoutePromptClient = new OpenAI({
     apiKey: process.env.GEMMA_PROMPT_API_KEY || 'not-required',
-    baseURL: GEMMA_PROMPT_BASE_URL,
-    timeout: GEMMA_PROMPT_TIMEOUT_MS,
+    baseURL: OPENAI_MULTIMODAL_BASE_URL,
+    timeout: MULTIMODAL_PROMPT_TIMEOUT_MS,
     maxRetries: 0
   });
-  return gemmaPromptClient;
+  return omniRoutePromptClient;
 }
 
 async function getDb() {
@@ -266,10 +266,10 @@ async function gerarPromptMeme(textoOriginal) {
   };
 
   try {
-    const gemma = ensureGemmaPromptClient();
-    console.log('[MemeGen] prompt - enriquecendo com Gemma4 para Z-Image-Turbo (' + GEMMA_PROMPT_MODEL + ')');
-    const response = await gemma.chat.completions.create({
-      model: GEMMA_PROMPT_MODEL,
+    const omniRoute = ensureOmniRoutePromptClient();
+    console.log('[MemeGen] prompt - enriquecendo com OmniRoute4 para Z-Image-Turbo (' + OPENAI_MULTIMODAL_MODEL + ')');
+    const response = await omniRoute.chat.completions.create({
+      model: OPENAI_MULTIMODAL_MODEL,
       temperature: 0.2,
       max_tokens: 500,
       chat_template_kwargs: { enable_thinking: false },
@@ -296,20 +296,20 @@ async function gerarPromptMeme(textoOriginal) {
     const rawContent = String(response.choices?.[0]?.message?.content || '').trim();
     const jsonStart = rawContent.indexOf('{');
     const jsonEnd = rawContent.lastIndexOf('}');
-    if (jsonStart < 0 || jsonEnd <= jsonStart) throw new Error('Gemma4 não retornou JSON');
+    if (jsonStart < 0 || jsonEnd <= jsonStart) throw new Error('OmniRoute4 não retornou JSON');
     const parsed = JSON.parse(rawContent.slice(jsonStart, jsonEnd + 1));
     const prompt = String(parsed.image_prompt || '').trim();
-    if (!prompt) throw new Error('Gemma4 retornou image_prompt vazio');
+    if (!prompt) throw new Error('OmniRoute4 retornou image_prompt vazio');
 
     return {
       prompt,
       topText: String(parsed.caption_top || '').trim(),
       bottomText: String(parsed.caption_bottom || '').trim(),
       reutilizado: false,
-      promptProvider: 'gemma4-zimage'
+      promptProvider: 'image-generation'
     };
   } catch (error) {
-    console.warn('[MemeGen] prompt - Gemma4 indisponível; usando fallback local (' + (error?.status || error?.code || error?.message || 'erro') + ')');
+    console.warn('[MemeGen] prompt - OmniRoute4 indisponível; usando fallback local (' + (error?.status || error?.code || error?.message || 'erro') + ')');
     return fallback;
   }
 }
@@ -369,7 +369,7 @@ async function processarAudioParaMeme(client, audioMessage, options = {}) {
     throw new Error('Falha ao baixar áudio para meme');
   }
 
-  console.log('[MemeGen] audio - transcrevendo com Gemma 4');
+  console.log('[MemeGen] audio - transcrevendo com Qwen3-VL');
   const transcription = await transcribeAudioBuffer(buffer, { language: TRANSCRIPTION_LANGUAGE });
   const textoOriginal = String(transcription || '').trim();
   if (!textoOriginal || textoOriginal.startsWith('Áudio não transcrito')) {

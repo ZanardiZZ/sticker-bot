@@ -32,7 +32,7 @@ function buildPrompt(mode) {
 function extractJson(raw) { const text = String(raw || ''); const a = text.indexOf('{'); const b = text.lastIndexOf('}'); return JSON.parse(a >= 0 && b > a ? text.slice(a, b + 1) : text); }
 function reviewClient() {
   const apiKey = process.env.STICKER_REVIEW_API_KEY || process.env.LEMONADE_UPSCALE_API_KEY || process.env.OPENAI_MULTIMODAL_API_KEY || process.env.OPENAI_API_KEY;
-  const baseURL = process.env.STICKER_REVIEW_BASE_URL || process.env.OPENAI_MULTIMODAL_BASE_URL || 'http://192.168.20.24:13305/v1';
+  const baseURL = process.env.OPENAI_MULTIMODAL_BASE_URL || '';
   return apiKey ? new OpenAI({ apiKey, baseURL, timeout: Number(process.env.STICKER_REVIEW_TIMEOUT_MS || 90000) }) : null;
 }
 async function processJob(job) {
@@ -46,7 +46,7 @@ async function processJob(job) {
   const sharp = require('sharp');
   const png = await sharp(buffer).resize(768, 768, { fit: 'inside' }).png().toBuffer();
   const response = await client.chat.completions.create({
-    model: process.env.STICKER_REVIEW_MODEL || 'gemma-4-12B-it-qat-GGUF-UD-Q4_K_XL',
+    model: process.env.OPENAI_MULTIMODAL_MODEL || 'stickerbot',
     temperature: 0,
     max_tokens: Number(process.env.STICKER_REVIEW_MAX_TOKENS || 2048),
     chat_template_kwargs: { enable_thinking: false },
@@ -55,7 +55,7 @@ async function processJob(job) {
   const choice = response?.choices?.[0] || {};
   const raw = choice?.message?.content || choice?.message?.reasoning_content || '';
   const result = extractJson(raw);
-  result.model = process.env.STICKER_REVIEW_MODEL || 'gemma-4-12B-it-qat-GGUF-UD-Q4_K_XL';
+  result.model = process.env.OPENAI_MULTIMODAL_MODEL || 'stickerbot';
   result.finish_reason = choice.finish_reason || null;
   result.review_mode = job.mode;
   return result;
@@ -73,7 +73,7 @@ async function runQueue() {
     } catch (error) {
       const message = error?.message || String(error);
       await dbRun('UPDATE sticker_reviews SET status=?, error=?, completed_at=? WHERE id=?', ['failed', message.slice(0, 1000), Date.now(), job.id]).catch(() => {});
-      await safeReply(job.client, job.chatId, `⚠️ Não foi possível reavaliar o sticker ${job.mediaId}: ${message}. O endpoint Gemma 12B pode estar offline.`, job.message);
+      await safeReply(job.client, job.chatId, `⚠️ Não foi possível reavaliar o sticker ${job.mediaId}: ${message}. O endpoint endpoint OmniRoute pode estar indisponível.`, job.message);
     } finally { activeKeys.delete(job.key); }
   }
   running = false;
@@ -91,6 +91,6 @@ async function enqueueReevaluation({ mediaId, mode = 'geral', requesterId, clien
   const row = await dbRun('INSERT INTO sticker_reviews(media_id,requester_id,mode,status,requested_at) VALUES(?,?,?,?,?)', [mediaId, requesterId, normalized, 'queued', Date.now()]);
   activeKeys.add(key); queue.push({ id: row.lastID, mediaId: Number(mediaId), mode: normalized, requesterId, client, chatId, message, key });
   runQueue().catch(error => console.error('[StickerReview] queue failure:', error));
-  return { ok: true, queued: true, message: `🧪 Reavaliação do sticker ${mediaId} enfileirada (${normalized}). Vou usar o Gemma 12B e aviso quando terminar.` };
+  return { ok: true, queued: true, message: `🧪 Reavaliação do sticker ${mediaId} enfileirada (${normalized}). Vou usar o endpoint OmniRoute e aviso quando terminar.` };
 }
 module.exports = { enqueueReevaluation, normalizeMode };

@@ -156,7 +156,7 @@ const HELP_ENTRIES = [
   },
   {
     command: '#reavaliar <id> [geral|personagem|texto|referencia]',
-    description: 'Reavalia um sticker com o Gemma 12B. Use uma flag para limitar o foco da revisão.',
+    description: 'Reavalia um sticker usando o endpoint OmniRoute. Use uma flag para limitar o foco da revisão.',
     example: '#reavaliar 5120 texto'
   },
   {

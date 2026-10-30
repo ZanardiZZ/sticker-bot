@@ -181,6 +181,28 @@ function isInvalidAiDescription(value) {
   ].some(marker => text.includes(marker));
 }
 
+function extractExplicitHashtags(text) {
+  return [...String(text || '').matchAll(/#[\p{L}\p{N}_-]+/gu)].map(match => match[0]);
+}
+
+function splitTrailingHashtags(text) {
+  const source = String(text || '').trim();
+  const matches = [...source.matchAll(/#[\p{L}\p{N}_-]+/gu)];
+  if (!matches.length) return { text: source, tags: [] };
+  const last = matches[matches.length - 1];
+  if (source.slice(last.index + last[0].length).trim()) return { text: source, tags: [] };
+  let first = matches.length - 1;
+  while (first > 0) {
+    const gap = source.slice(matches[first - 1].index + matches[first - 1][0].length, matches[first].index);
+    if (!/^[\s,;|]+$/u.test(gap)) break;
+    first -= 1;
+  }
+  const before = source.slice(0, matches[first].index)
+    .replace(/[\s:;,|]*(?:hashtags?|tags?)\s*:?\s*$/iu, '')
+    .trim();
+  return { text: before, tags: extractExplicitHashtags(source.slice(matches[first].index)) };
+}
+
 function normalizeAiTags(rawTags, description = '') {
   // Normalize model output before persistence; malformed JSON often leaves noisy fragments.
   const stopwords = new Set(['a', 'as', 'ao', 'aos', 'com', 'de', 'da', 'das', 'do', 'dos', 'e', 'em', 'na', 'nas', 'no', 'nos', 'o', 'os', 'para', 'por', 'sem', 'um', 'uma', 'uns', 'umas']);
@@ -199,13 +221,6 @@ function normalizeAiTags(rawTags, description = '') {
   };
 
   input.forEach(add);
-  if (result.length < 5) {
-    String(description || '')
-      .toLocaleLowerCase('pt-BR')
-      .match(/[\p{L}\p{N}]{3,}/gu)?.forEach(word => {
-        if (result.length < 5) add(word);
-      });
-  }
   return result.slice(0, 5);
 }
 
@@ -230,13 +245,13 @@ function buildFallbackAnnotation(type = 'imagem') {
 async function normalizeAudioBufferToWav(buffer) {
   if (!ffmpegPath) throw new Error('FFmpeg não disponível para normalizar áudio');
   const id = crypto.randomBytes(8).toString('hex');
-  const input = path.join(TEMP_DIR, 'gemma-audio-' + id + '.input');
-  const output = path.join(TEMP_DIR, 'gemma-audio-' + id + '.wav');
+  const input = path.join(TEMP_DIR, 'multimodal-audio-' + id + '.input');
+  const output = path.join(TEMP_DIR, 'multimodal-audio-' + id + '.wav');
   fs.mkdirSync(TEMP_DIR, { recursive: true });
   fs.writeFileSync(input, buffer);
   try {
     await new Promise((resolve, reject) => {
-      const timeoutMs = Number(process.env.GEMMA_AUDIO_NORMALIZE_TIMEOUT_MS || 30000);
+      const timeoutMs = Number(process.env.MULTIMODAL_AUDIO_NORMALIZE_TIMEOUT_MS || 30000);
       const child = spawn(ffmpegPath, ['-hide_banner', '-loglevel', 'error', '-i', input, '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-f', 'wav', output], { stdio: ['ignore', 'ignore', 'pipe'] });
       let stderr = '';
       const timer = setTimeout(() => {
@@ -259,20 +274,20 @@ async function normalizeAudioBufferToWav(buffer) {
   }
 }
 
-const audioApiKey = process.env.GEMMA_AUDIO_API_KEY || process.env.OPENAI_API_KEY || 'not-required';
-const audioBaseURL = process.env.GEMMA_AUDIO_BASE_URL || process.env.OPENAI_MULTIMODAL_BASE_URL || '';
+const audioApiKey = process.env.OPENAI_MULTIMODAL_API_KEY || process.env.OPENAI_API_KEY || 'not-required';
+const audioBaseURL = process.env.OPENAI_MULTIMODAL_BASE_URL || '';
 const audioAi = createOpenAIClient({ apiKey: audioApiKey, baseURL: audioBaseURL });
 
 async function transcribeAudioBuffer(buffer, { language = process.env.AUDIO_TRANSCRIPTION_LANGUAGE || 'pt' } = {}) {
   try {
     if (!audioAi) {
-      console.warn('[AI] Cliente Gemma de áudio não configurado');
-      return 'Áudio não transcrito - Gemma não configurado.';
+      console.warn('[AI] Cliente OmniRoute de áudio não configurado');
+      return 'Áudio não transcrito - OmniRoute não configurado.';
     }
     if (!buffer || buffer.length < 16) return 'Áudio não transcrito - arquivo inválido.';
     const wav = await normalizeAudioBufferToWav(buffer);
-    const model = process.env.AUDIO_TRANSCRIPTION_MODEL || process.env.GEMMA_NSFW_MODEL || process.env.OPENAI_MULTIMODAL_MODEL;
-    if (!model) return 'Áudio não transcrito - modelo Gemma não configurado.';
+    const model = process.env.AUDIO_TRANSCRIPTION_MODEL || process.env.OPENAI_MULTIMODAL_MODEL;
+    if (!model) return 'Áudio não transcrito - modelo OmniRoute não configurado.';
     const response = await executeWithAiRetry(
       () => audioAi.chat.completions.create({
         model,
@@ -293,13 +308,13 @@ async function transcribeAudioBuffer(buffer, { language = process.env.AUDIO_TRAN
           }
         ]
       }),
-      { actionLabel: 'transcrição de áudio com Gemma' }
+      { actionLabel: 'transcrição de áudio com OmniRoute' }
     );
     const text = String(response?.choices?.[0]?.message?.content || response?.choices?.[0]?.message?.reasoning_content || '').trim();
     return text || 'Áudio sem conteúdo transcrito.';
   } catch (error) {
-    console.warn('[AI] Erro ao transcrever áudio com Gemma:', error.message);
-    return 'Áudio não transcrito - erro no Gemma.';
+    console.warn('[AI] Erro ao transcrever áudio com OmniRoute:', error.message);
+    return 'Áudio não transcrito - erro no OmniRoute.';
   }
 }
 
@@ -316,7 +331,7 @@ async function getTagsFromTextPrompt(prompt) {
     
     const response = await executeWithAiRetry(
       () => openai.chat.completions.create({
-        model: process.env.OPENAI_MULTIMODAL_MODEL || 'gpt-4o-mini',
+        model: process.env.OPENAI_MULTIMODAL_MODEL || 'stickerbot',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.3,
         max_tokens: 200,
@@ -325,16 +340,10 @@ async function getTagsFromTextPrompt(prompt) {
     );
 
     const text = response.choices[0].message.content.trim();
-
-    // Espera tags separados por vírgula: "tag1, tag2, tag3 ..."
-
     if (!text) return { description: null, tags: null };
-
-    // Quebra por vírgula e limpa espaços
-    const tags = text.split(',')
-      .map(t => t.trim())
-      .filter(t => t.length > 0);
-
+    const explicit = extractExplicitHashtags(text);
+    const candidates = explicit.length ? explicit : text.split(/[,;\n|]/u).map(t => t.trim());
+    const tags = normalizeAiTags(candidates, '');
     return { description: null, tags: tags.length ? tags : null };
   } catch (error) {
     console.error('Erro em getTagsFromTextPrompt:', error);
@@ -407,20 +416,17 @@ Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",
     );
 
     const raw = resp.choices[0].message.content;
+    if (process.env.STICKER_AI_DEBUG_RAW === '1') console.log('[AI][debug][image] finish_reason=' + String(resp?.choices?.[0]?.finish_reason || '') + ' raw_length=' + String(raw.length) + ' raw=' + JSON.stringify(String(raw).slice(0, 3000)));
     try {
       const parsed = JSON.parse(cleanJsonBlock(raw));
       let description = String(parsed.description || '').trim();
       let text = typeof parsed.text === 'string' ? parsed.text.trim() : '';
       description = stripOcrFromDescription(description, text);
-      let tags = Array.isArray(parsed.tags) ? parsed.tags.map(t => t.trim()) : [];
-      if (tags.length < 5) {
-        // Completa com hashtags geradas via pickHashtags para totalizar 5
-        const extraTags = pickHashtags(description, 5 - tags.length);
-        tags = tags.concat(extraTags).slice(0, 5);
-      } else if (tags.length > 5) {
-        tags = tags.slice(0, 5);
-      }
-      if (tags.length === 0) tags = ['#imagem'];
+      const trailing = splitTrailingHashtags(description);
+      description = trailing.text || description;
+      const tagResult = await getTagsFromTextPrompt('Gere somente cinco hashtags relevantes, inteiras e específicas para esta descrição de sticker. Responda somente com hashtags separadas por vírgula, sem explicação. Descrição: ' + description + (text ? '\nTexto visível: ' + text : ''));
+      const tags = tagResult.tags || [];
+      if (process.env.STICKER_AI_DEBUG_RAW === '1') console.log('[AI][debug][image-parsed] description_length=' + String(description.length) + ' tags=' + JSON.stringify(tags));
       if (isInvalidAiDescription(description)) return buildFallbackAnnotation('imagem');
       return {
         description: description.slice(0, DESC_MAX) || 'Sem descrição.',
@@ -448,14 +454,16 @@ Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",
       }
       description = description.slice(0, DESC_MAX);
       const tagsMatch = source.match(/"tags"\s*:\s*\[([\s\S]*?)(?:\]|$)/u);
-      const tags = tagsMatch
-        ? [...tagsMatch[1].matchAll(/"((?:\\.|[^"\\])*)"/gu)].map(m => { try { return JSON.parse('"' + m[1] + '"').trim(); } catch { return ''; } }).filter(Boolean).slice(0, 5)
-        : [];
+      let tags = normalizeAiTags(extractExplicitHashtags(source), '');
+      if (!tags.length && description && !isInvalidAiDescription(description)) {
+        const tagResult = await getTagsFromTextPrompt('Gere somente cinco hashtags relevantes para este sticker. Responda somente com hashtags separadas por vírgula, sem explicação. Descrição: ' + description);
+        tags = tagResult.tags || [];
+      }
       if (isInvalidAiDescription(description)) {
         const fallback = buildFallbackAnnotation('gif');
         return { ...fallback, text: '', tags: tags.length ? tags : fallback.tags };
       }
-      return { description, text: '', tags: tags.length ? tags : pickHashtags(description, 5), metadata: {} };
+      return { description, text: '', tags, metadata: {} };
     }
   } catch (err) {
     console.error('❌ Erro na IA (imagem):', err);
@@ -543,12 +551,17 @@ async function getAiAnnotationsForGif(buffer) {
     }
 
     const raw = resp?.choices?.[0]?.message?.content || '';
+    if (process.env.STICKER_AI_DEBUG_RAW === '1') console.log('[AI][debug][gif] finish_reason=' + String(resp?.choices?.[0]?.finish_reason || '') + ' raw_length=' + String(raw.length) + ' raw=' + JSON.stringify(String(raw).slice(0, 3000)));
     try {
       const parsed = JSON.parse(cleanJsonBlock(raw));
       let description = String(parsed.description || '').trim();
       let text = typeof parsed.text === 'string' ? parsed.text.trim() : '';
       description = stripOcrFromDescription(description, text);
-      const tags = normalizeAiTags(parsed.tags, description);
+      const trailing = splitTrailingHashtags(description);
+      description = trailing.text || description;
+      const tagResult = await getTagsFromTextPrompt('Gere somente cinco hashtags relevantes, inteiras e específicas para este sticker animado. Responda somente com hashtags separadas por vírgula, sem explicação. Descrição: ' + description + (text ? '\nTexto visível: ' + text : ''));
+      const tags = tagResult.tags || [];
+      if (process.env.STICKER_AI_DEBUG_RAW === '1') console.log('[AI][debug][gif-parsed] description_length=' + String(description.length) + ' tags=' + JSON.stringify(tags));
       if (isInvalidAiDescription(description)) {
         const fallback = buildFallbackAnnotation('gif');
         return { ...fallback, text, tags: tags.length ? tags : fallback.tags };
@@ -578,11 +591,12 @@ async function getAiAnnotationsForGif(buffer) {
           .trim();
       }
       description = description.slice(0, DESC_MAX) || 'Sem descrição.';
-      const tagsMatch = source.match(/"tags"\s*:\s*\[([\s\S]*?)(?:\]|$)/u);
-      const tags = tagsMatch
-        ? [...tagsMatch[1].matchAll(/"((?:\\.|[^"\\])*)"/gu)].map(m => { try { return JSON.parse('"' + m[1] + '"').trim(); } catch { return ''; } }).filter(Boolean).slice(0, 5)
-        : pickHashtags(description, 5);
-      return { description, text: '', tags: tags.length ? tags : pickHashtags(description, 5), metadata: {} };
+      let tags = normalizeAiTags(extractExplicitHashtags(source), '');
+      if (!tags.length && description && !isInvalidAiDescription(description)) {
+        const tagResult = await getTagsFromTextPrompt('Gere somente cinco hashtags relevantes para este sticker animado. Responda somente com hashtags separadas por vírgula, sem explicação. Descrição: ' + description);
+        tags = tagResult.tags || [];
+      }
+      return { description, text: '', tags, metadata: {} };
     }
   } catch (err) {
     console.error('❌ Erro na IA (GIF frame):', err);

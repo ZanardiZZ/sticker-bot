@@ -216,7 +216,7 @@ async function transcribeAudio(audioPath) {
     const transcription = await transcribeAudioFile(audioPath, { language: 'pt' });
     return transcription.startsWith('Áudio não transcrito') ? '' : transcription;
   } catch (error) {
-    console.warn('[VideoProcessor] Erro ao transcrever áudio com Gemma:', error.message);
+    console.warn('[VideoProcessor] Erro ao transcrever áudio com OmniRoute:', error.message);
     return '';
   }
 }
@@ -532,7 +532,7 @@ async function processGif(filePath, sourceBuffer = null) {
       duration = 2; // Safe default duration
     }
 
-    // O E4B atual tem uma única janela de inferência. Três chamadas sequenciais
+    // O backend multimodal tem uma única janela de inferência. Três chamadas sequenciais
     // mais uma sumarização tornam um GIF de poucos segundos excessivamente lento.
     // Mantemos 3 frames como opção explícita para canários de qualidade; o padrão
     // operacional usa um frame representativo e preserva a conversão animada.

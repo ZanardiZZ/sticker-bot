@@ -2,7 +2,7 @@ const axios = require('axios');
 const OpenAI = require('openai');
 const sharp = require('sharp');
 
-const PROVIDERS = (process.env.NSFW_EXTERNAL_PROVIDER || 'huggingface,openai')
+const PROVIDERS = (process.env.NSFW_EXTERNAL_PROVIDER || 'omniroute')
   .split(',')
   .map(p => p.trim().toLowerCase())
   .filter(Boolean);
@@ -214,19 +214,20 @@ async function classifyWithOpenAI(buffer, { mimeType } = {}) {
 }
 
 
-let gemmaClient = null;
+let omniRouteNsfwClient = null;
 
-function getGemmaClient() {
-  if (!gemmaClient) {
-    const baseURL = process.env.GEMMA_NSFW_BASE_URL || process.env.OPENAI_MULTIMODAL_BASE_URL || '';
+function getOmniRouteNsfwClient() {
+  if (!omniRouteNsfwClient) {
+    const baseURL = process.env.OPENAI_MULTIMODAL_BASE_URL || '';
+    if (!baseURL) return null;
     const options = { apiKey: process.env.GEMMA_NSFW_API_KEY || 'not-required' };
     if (baseURL) options.baseURL = baseURL;
-    gemmaClient = new OpenAI(options);
+    omniRouteNsfwClient = new OpenAI(options);
   }
-  return gemmaClient;
+  return omniRouteNsfwClient;
 }
 
-function parseGemmaModeration(content) {
+function parseOmniRouteModeration(content) {
   const raw = String(content || '').trim();
   const start = raw.indexOf('{');
   const end = raw.lastIndexOf('}');
@@ -242,15 +243,15 @@ function parseGemmaModeration(content) {
   }
 }
 
-async function classifyWithGemma(buffer) {
+async function classifyWithOmniRoute(buffer) {
   if (!buffer || buffer.length === 0) return null;
-  const client = getGemmaClient();
-  const model = process.env.GEMMA_NSFW_MODEL || process.env.OPENAI_MULTIMODAL_MODEL;
+  const client = getOmniRouteNsfwClient();
+  const model = process.env.OPENAI_MULTIMODAL_MODEL || process.env.OPENAI_MULTIMODAL_MODEL;
   if (!model) {
-    logDebug('Gemma NSFW model is not configured');
+    logDebug('OmniRoute NSFW model is not configured');
     return null;
   }
-  const minConfidence = normalizeScore(process.env.NSFW_GEMMA_MIN_CONFIDENCE, 0.65);
+  const minConfidence = normalizeScore(process.env.NSFW_OMNIROUTE_MIN_CONFIDENCE, 0.65);
   try {
     const png = await sharp(buffer).resize(512, 512, { fit: 'inside' }).png().toBuffer();
     const response = await client.chat.completions.create({
@@ -272,9 +273,9 @@ async function classifyWithGemma(buffer) {
         }
       ]
     });
-    const parsed = parseGemmaModeration(response?.choices?.[0]?.message?.content);
+    const parsed = parseOmniRouteModeration(response?.choices?.[0]?.message?.content);
     if (!parsed || parsed.decision === 'uncertain') {
-      logDebug('Gemma NSFW returned no decisive classification', parsed);
+      logDebug('OmniRoute NSFW returned no decisive classification', parsed);
       return null;
     }
     const explicit = ['nsfw', 'sexual', 'explicit', 'porn', 'pornography', 'hentai', 'sexual_minors'].some(x => parsed.decision.includes(x));
@@ -282,7 +283,7 @@ async function classifyWithGemma(buffer) {
     if (!explicit && !safe) return null;
     const sexualMinors = parsed.decision.includes('sexual_minors');
     if (explicit && !sexualMinors && parsed.confidence < minConfidence) {
-      logDebug('Gemma NSFW confidence below threshold; delegating to fallback', parsed);
+      logDebug('OmniRoute NSFW confidence below threshold; delegating to fallback', parsed);
       return null;
     }
     const flagged = explicit && (sexualMinors || parsed.confidence >= minConfidence);
@@ -290,11 +291,11 @@ async function classifyWithGemma(buffer) {
       nsfw: flagged,
       confidence: parsed.confidence,
       label: explicit ? parsed.decision : 'safe',
-      provider: 'gemma',
+      provider: 'omniroute',
       raw: { decision: parsed.decision, confidence: parsed.confidence, reason: parsed.reason }
     };
   } catch (error) {
-    logDebug('Gemma NSFW request failed:', error?.message || error);
+    logDebug('OmniRoute NSFW request failed:', error?.message || error);
     return null;
   }
 }
@@ -306,8 +307,8 @@ async function classifyImage(buffer, options = {}) {
     if (provider === 'huggingface') {
       const result = await classifyWithHuggingFace(buffer, options);
       if (result) return result;
-    } else if (provider === 'gemma') {
-      const result = await classifyWithGemma(buffer);
+    } else if (provider === 'omniroute') {
+      const result = await classifyWithOmniRoute(buffer);
       if (result) return result;
     } else if (provider === 'openai') {
       const result = await classifyWithOpenAI(buffer, options);
@@ -322,8 +323,8 @@ function isExternalModerationEnabled() {
     if (provider === 'huggingface') {
       return Boolean(process.env.HUGGINGFACE_API_KEY);
     }
-    if (provider === 'gemma') {
-      return Boolean(process.env.GEMMA_NSFW_MODEL || process.env.OPENAI_MULTIMODAL_MODEL);
+    if (provider === 'omniroute') {
+      return Boolean(process.env.OPENAI_MULTIMODAL_MODEL || process.env.OPENAI_MULTIMODAL_MODEL);
     }
     if (provider === 'openai') {
       return Boolean(process.env.OPENAI_MODERATION_API_KEY || process.env.OPENAI_API_KEY);
