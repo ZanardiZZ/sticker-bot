@@ -198,7 +198,7 @@ async function syncMemoryForGroupMessage({ userId, groupId, senderName, groupNam
 
 // Create a shared media processing queue with higher retry attempts for media processing
 const mediaProcessingQueue = new PersistentMediaQueue({
-  // A single worker is intentional: E4B/Gemma inference is not safely concurrent on the RTX 3070.
+  // A single worker is intentional: multimodal inference is not safely concurrent on the GPU.
   concurrency: 1,
   // Do not create a retry storm while the AI endpoint is unavailable.
   retryAttempts: 2,
@@ -547,7 +547,10 @@ async function handleMessage(client, message) {
         chatId
       };
       startMediaQueue(client);
+      // Attach a rejection handler immediately so QUEUE_FULL cannot become an
+      // unhandled rejection while the acknowledgement is being sent.
       const processingPromise = mediaProcessingQueue.add(queuePayload);
+      processingPromise.catch(() => {});
 
       // Acknowledge admission immediately. The user must not interpret the AI
       // wait as a WhatsApp/download failure. With concurrency=1, this is the
