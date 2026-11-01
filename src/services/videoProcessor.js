@@ -574,7 +574,8 @@ async function processGif(filePath, sourceBuffer = null) {
           () => analyzeGifFrame(framePath, index + 1),
           { label: `gif-frame:${path.basename(filePath)}:${index + 1}` }
         ),
-        { concurrency: 3 }
+        // Processa frames em série para não saturar o backend escolhido.
+        { concurrency: 1 }
       );
       for (const analysis of analyses) {
         if (analysis && (analysis.description || analysis.tags.length > 0)) {
