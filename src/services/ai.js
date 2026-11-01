@@ -424,8 +424,7 @@ Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",
       description = stripOcrFromDescription(description, text);
       const trailing = splitTrailingHashtags(description);
       description = trailing.text || description;
-      const tagResult = await getTagsFromTextPrompt('Gere somente cinco hashtags relevantes, inteiras e específicas para esta descrição de sticker. Responda somente com hashtags separadas por vírgula, sem explicação. Descrição: ' + description + (text ? '\nTexto visível: ' + text : ''));
-      const tags = tagResult.tags || [];
+      const tags = normalizeAiTags(parsed.tags, description);
       if (process.env.STICKER_AI_DEBUG_RAW === '1') console.log('[AI][debug][image-parsed] description_length=' + String(description.length) + ' tags=' + JSON.stringify(tags));
       if (isInvalidAiDescription(description)) return buildFallbackAnnotation('imagem');
       return {
@@ -456,8 +455,7 @@ Responda ESTRITAMENTE em JSON: {"description":"...","text":"...","tags":["#...",
       const tagsMatch = source.match(/"tags"\s*:\s*\[([\s\S]*?)(?:\]|$)/u);
       let tags = normalizeAiTags(extractExplicitHashtags(source), '');
       if (!tags.length && description && !isInvalidAiDescription(description)) {
-        const tagResult = await getTagsFromTextPrompt('Gere somente cinco hashtags relevantes para este sticker. Responda somente com hashtags separadas por vírgula, sem explicação. Descrição: ' + description);
-        tags = tagResult.tags || [];
+        tags = normalizeAiTags([], description);
       }
       if (isInvalidAiDescription(description)) {
         const fallback = buildFallbackAnnotation('gif');
@@ -559,8 +557,7 @@ async function getAiAnnotationsForGif(buffer) {
       description = stripOcrFromDescription(description, text);
       const trailing = splitTrailingHashtags(description);
       description = trailing.text || description;
-      const tagResult = await getTagsFromTextPrompt('Gere somente cinco hashtags relevantes, inteiras e específicas para este sticker animado. Responda somente com hashtags separadas por vírgula, sem explicação. Descrição: ' + description + (text ? '\nTexto visível: ' + text : ''));
-      const tags = tagResult.tags || [];
+      const tags = normalizeAiTags(parsed.tags, description);
       if (process.env.STICKER_AI_DEBUG_RAW === '1') console.log('[AI][debug][gif-parsed] description_length=' + String(description.length) + ' tags=' + JSON.stringify(tags));
       if (isInvalidAiDescription(description)) {
         const fallback = buildFallbackAnnotation('gif');
@@ -593,8 +590,7 @@ async function getAiAnnotationsForGif(buffer) {
       description = description.slice(0, DESC_MAX) || 'Sem descrição.';
       let tags = normalizeAiTags(extractExplicitHashtags(source), '');
       if (!tags.length && description && !isInvalidAiDescription(description)) {
-        const tagResult = await getTagsFromTextPrompt('Gere somente cinco hashtags relevantes para este sticker animado. Responda somente com hashtags separadas por vírgula, sem explicação. Descrição: ' + description);
-        tags = tagResult.tags || [];
+        tags = normalizeAiTags([], description);
       }
       return { description, text: '', tags, metadata: {} };
     }
