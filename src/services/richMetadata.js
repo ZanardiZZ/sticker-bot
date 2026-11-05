@@ -17,16 +17,15 @@ function normalizeRichMetadata(metadata = {}, { ocrText } = {}) {
   return normalized;
 }
 
-
 function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\$&');
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function stripOcrFromDescription(description, ocrText) {
   let cleaned = String(description || '').trim();
   const lines = String(ocrText || '').split(/[\n|;]/u).map(value => value.trim()).filter(value => value.length >= 2);
   for (const line of [...new Set(lines)].sort((a, b) => b.length - a.length)) {
-    cleaned = cleaned.replace(new RegExp(`(?:[\s\"'“”‘’:\-–—]*)${escapeRegExp(line)}`, 'giu'), '');
+    cleaned = cleaned.replace(new RegExp(String.raw`(?:[\s"'“”‘’–—:-]*)${escapeRegExp(line)}`, 'giu'), '');
   }
   return cleaned.replace(/\s+([,.;:!?])/gu, '$1').replace(/\s{2,}/gu, ' ').trim();
 }
