@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.33.0] - 2026-11-05
+<!-- release-source: 99d817716c51ffc214c950d3e73f884320337db5 -->
+
+### Novidades
+- add safe media reprocessing batch
+
+### Correções
+- align StickerBot OmniRoute runtime
+- normalize malformed AI tags
+- reject vision refusal descriptions
+- normalize vision inputs as png
+- prevent gif analysis source races
+- restore missing gif analysis input
+- handle full media queue without unhandled rejection
+- align local vision and meme runtime
+- keep visual analysis independent from tag generation
+- process GIF frames sequentially
+- resolve dependency vulnerabilities
+- remove useless regexp escapes
+
+### Testes
+- restore Gemma NSFW moderation path
+
+### Build
+- bump prettier from 3.8.3 to 3.9.9
+- bump openai from 6.37.0 to 7.23.0
+- bump dotenv from 17.4.2 to 18.0.3
+- bump nodemailer from 9.1.1 to 10.0.10
+- bump eslint from 10.3.0 to 10.11.0
+- bump axios from 1.19.0 to 1.20.0
+- bump music-metadata from 11.15.0 to 11.16.1
+- bump compression from 1.8.1 to 1.8.2
+- bump undici from 6.28.0 to 6.29.1
+- bump ip-address from 10.4.0 to 10.7.5
+- bump follow-redirects from 1.16.0 to 1.16.2
+- bump qs from 6.16.0 to 6.17.1
+- bump sharp from 0.35.4 to 0.35.5
+- bump proxy-addr from 2.0.7 to 2.0.8
+- bump nodemailer from 10.0.10 to 10.1.4
+- bump basic-ftp and pm2
+
+### Tarefas
+- remove legacy backup artifacts
+
 ## [0.32.2] - 2026-09-28
 <!-- release-source: 102754d909482f58a7d023397b3339d776cb3515 -->
 
