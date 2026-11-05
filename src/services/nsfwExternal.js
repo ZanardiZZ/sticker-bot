@@ -214,6 +214,82 @@ async function classifyWithOpenAI(buffer, { mimeType } = {}) {
 }
 
 
+let gemmaNsfwClient = null;
+
+function getGemmaNsfwClient() {
+  if (!gemmaNsfwClient) {
+    const baseURL = process.env.GEMMA_NSFW_BASE_URL || '';
+    if (!baseURL) return null;
+    gemmaNsfwClient = new OpenAI({
+      apiKey: process.env.GEMMA_NSFW_API_KEY || process.env.OPENAI_API_KEY || 'not-required',
+      baseURL
+    });
+  }
+  return gemmaNsfwClient;
+}
+
+function parseGemmaModeration(content) {
+  const raw = String(content || '').trim();
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  try {
+    const parsed = JSON.parse(raw.slice(start, end + 1));
+    const decision = String(parsed.decision || parsed.classification || parsed.category || '').trim().toLowerCase();
+    const confidence = Math.max(0, Math.min(1, normalizeScore(parsed.confidence, 0)));
+    if (!decision) return null;
+    return { decision, confidence, reason: String(parsed.reason || '').slice(0, 160) };
+  } catch {
+    return null;
+  }
+}
+
+async function classifyWithGemma(buffer, { mimeType = 'image/png' } = {}) {
+  if (!buffer || buffer.length === 0) return null;
+  const client = getGemmaNsfwClient();
+  const model = process.env.GEMMA_NSFW_MODEL || '';
+  if (!client || !model) return null;
+  const minConfidence = normalizeScore(process.env.NSFW_GEMMA_MIN_CONFIDENCE, 0.65);
+
+  try {
+    const response = await client.chat.completions.create({
+      model,
+      temperature: 0,
+      max_tokens: 128,
+      chat_template_kwargs: { enable_thinking: false },
+      messages: [
+        {
+          role: 'system',
+          content: 'Classifique somente conteúdo sexual explícito. Responda SOMENTE JSON válido no formato {"decision":"safe|nsfw|uncertain","confidence":0.0,"reason":"texto curto"}.'
+        },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Classifique esta imagem. Em caso de dúvida, use decision="uncertain".' },
+            { type: 'image_url', image_url: { url: `data:${mimeType};base64,${buffer.toString('base64')}` } }
+          ]
+        }
+      ]
+    });
+    const parsed = parseGemmaModeration(response?.choices?.[0]?.message?.content);
+    if (!parsed || parsed.decision === 'uncertain') return null;
+    const explicit = ['nsfw', 'sexual', 'explicit', 'porn', 'pornography', 'hentai', 'sexual_minors'].some(x => parsed.decision.includes(x));
+    const safe = ['safe', 'sfw', 'non_nsfw'].includes(parsed.decision);
+    if (!explicit && !safe) return null;
+    if (explicit && !parsed.decision.includes('sexual_minors') && parsed.confidence < minConfidence) return null;
+    return {
+      nsfw: explicit,
+      confidence: parsed.confidence,
+      label: explicit ? 'nsfw' : 'safe',
+      provider: 'gemma',
+      raw: { decision: parsed.decision, confidence: parsed.confidence, reason: parsed.reason }
+    };
+  } catch (error) {
+    logDebug('Gemma NSFW request failed:', error?.message || error);
+    return null;
+  }
+}
+
 let omniRouteNsfwClient = null;
 
 function getOmniRouteNsfwClient() {
@@ -307,6 +383,9 @@ async function classifyImage(buffer, options = {}) {
     if (provider === 'huggingface') {
       const result = await classifyWithHuggingFace(buffer, options);
       if (result) return result;
+    } else if (provider === 'gemma') {
+      const result = await classifyWithGemma(buffer, options);
+      if (result) return result;
     } else if (provider === 'omniroute') {
       const result = await classifyWithOmniRoute(buffer);
       if (result) return result;
@@ -322,6 +401,9 @@ function isExternalModerationEnabled() {
   return PROVIDERS.some(provider => {
     if (provider === 'huggingface') {
       return Boolean(process.env.HUGGINGFACE_API_KEY);
+    }
+    if (provider === 'gemma') {
+      return Boolean(process.env.GEMMA_NSFW_BASE_URL && process.env.GEMMA_NSFW_MODEL);
     }
     if (provider === 'omniroute') {
       return Boolean(process.env.OPENAI_MULTIMODAL_MODEL || process.env.OPENAI_MULTIMODAL_MODEL);
