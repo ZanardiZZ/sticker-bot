@@ -96,7 +96,7 @@ printf '%s\n' "${services[@]}" > "$STATE_DIR/services"
 printf 'prepared\n' > "$STATE_DIR/status"
 trap - ERR
 
-if ((\${#services[@]} == 0)); then
+if (( ${#services[@]} == 0 )); then
   printf 'deployed-no-restart\n' > "$STATE_DIR/status"
   log "deploy concluído sem serviço afetado; HEAD=$(git rev-parse HEAD)"
   exit 0

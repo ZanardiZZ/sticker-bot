@@ -18,7 +18,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: [self-hosted, linux, x64, stickerbot-sync]
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - name: Implantar exatamente o SHA validado
         env:
