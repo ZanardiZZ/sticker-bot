@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.34.0] - 2026-11-05
+<!-- release-source: c0ccc8b208de2f4aa7268deef12dd9174b172d39 -->
+
+### Correções
+- make CT138 deploy workflow complete
+
 ## [0.33.0] - 2026-11-05
 <!-- release-source: 99d817716c51ffc214c950d3e73f884320337db5 -->
 
